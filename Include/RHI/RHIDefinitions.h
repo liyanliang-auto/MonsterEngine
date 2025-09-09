@@ -19,6 +19,49 @@ namespace MonsterRender::RHI {
         UnorderedAccess = 1 << 9
     };
     
+    // Enable bitwise operations for EResourceUsage
+    inline constexpr EResourceUsage operator|(EResourceUsage lhs, EResourceUsage rhs) {
+        return static_cast<EResourceUsage>(
+            static_cast<uint32>(lhs) | static_cast<uint32>(rhs)
+        );
+    }
+    
+    inline constexpr EResourceUsage operator&(EResourceUsage lhs, EResourceUsage rhs) {
+        return static_cast<EResourceUsage>(
+            static_cast<uint32>(lhs) & static_cast<uint32>(rhs)
+        );
+    }
+    
+    inline constexpr EResourceUsage operator^(EResourceUsage lhs, EResourceUsage rhs) {
+        return static_cast<EResourceUsage>(
+            static_cast<uint32>(lhs) ^ static_cast<uint32>(rhs)
+        );
+    }
+    
+    inline constexpr EResourceUsage operator~(EResourceUsage rhs) {
+        return static_cast<EResourceUsage>(~static_cast<uint32>(rhs));
+    }
+    
+    inline constexpr EResourceUsage& operator|=(EResourceUsage& lhs, EResourceUsage rhs) {
+        lhs = lhs | rhs;
+        return lhs;
+    }
+    
+    inline constexpr EResourceUsage& operator&=(EResourceUsage& lhs, EResourceUsage rhs) {
+        lhs = lhs & rhs;
+        return lhs;
+    }
+    
+    inline constexpr EResourceUsage& operator^=(EResourceUsage& lhs, EResourceUsage rhs) {
+        lhs = lhs ^ rhs;
+        return lhs;
+    }
+    
+    // Helper function to check if a specific usage flag is set
+    inline constexpr bool hasResourceUsage(EResourceUsage usage, EResourceUsage flag) {
+        return (usage & flag) != EResourceUsage::None;
+    }
+    
     // Buffer description
     struct BufferDesc {
         uint32 size = 0;

@@ -256,4 +256,9 @@ class IRHIDevice {
 - 维护与不同库版本的兼容性
 - 记录所有外部依赖及其用途
 
+### 支持跨平台：
+Windows
+Linux
+Android
+
 本文档作为使用UE5启发的架构和现代C++最佳实践开发MonsterRender引擎的基础指南。
