@@ -3,6 +3,7 @@
 #include "Core/CoreMinimal.h"
 #include "RHI/IRHIDevice.h"
 #include "Platform/Vulkan/VulkanRHI.h"
+#include "RHI/RHI.h"
 
 namespace MonsterRender::RHI::Vulkan {
     

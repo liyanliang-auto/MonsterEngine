@@ -10,6 +10,7 @@
 #endif
 
 #include <vulkan/vulkan.h>
+#include <RHI/RHIDefinitions.h>
 
 namespace MonsterRender::RHI::Vulkan {
     
@@ -44,6 +45,14 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkQueueWaitIdle vkQueueWaitIdle = nullptr;
         PFN_vkDeviceWaitIdle vkDeviceWaitIdle = nullptr;
         
+        // Synchronization functions
+        PFN_vkCreateSemaphore vkCreateSemaphore = nullptr;
+        PFN_vkDestroySemaphore vkDestroySemaphore = nullptr;
+        PFN_vkCreateFence vkCreateFence = nullptr;
+        PFN_vkDestroyFence vkDestroyFence = nullptr;
+        PFN_vkWaitForFences vkWaitForFences = nullptr;
+        PFN_vkResetFences vkResetFences = nullptr;
+        
         // Memory functions
         PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties = nullptr;
         PFN_vkAllocateMemory vkAllocateMemory = nullptr;
@@ -62,6 +71,8 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkDestroyImage vkDestroyImage = nullptr;
         PFN_vkGetImageMemoryRequirements vkGetImageMemoryRequirements = nullptr;
         PFN_vkBindImageMemory vkBindImageMemory = nullptr;
+        PFN_vkCreateImageView vkCreateImageView = nullptr;
+        PFN_vkDestroyImageView vkDestroyImageView = nullptr;
         
         // Swapchain functions (loaded dynamically based on extensions)
         PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR = nullptr;
@@ -71,7 +82,11 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkQueuePresentKHR vkQueuePresentKHR = nullptr;
         
         // Surface functions
-        PFN_vkCreateSurfaceKHR vkCreateSurfaceKHR = nullptr;
+#if PLATFORM_WINDOWS
+        PFN_vkCreateWin32SurfaceKHR vkCreateWin32SurfaceKHR = nullptr;
+#elif PLATFORM_LINUX
+        PFN_vkCreateXlibSurfaceKHR vkCreateXlibSurfaceKHR = nullptr;
+#endif
         PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR = nullptr;
         PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR vkGetPhysicalDeviceSurfaceCapabilitiesKHR = nullptr;
         PFN_vkGetPhysicalDeviceSurfaceFormatsKHR vkGetPhysicalDeviceSurfaceFormatsKHR = nullptr;
@@ -158,6 +173,11 @@ namespace MonsterRender::RHI::Vulkan {
          */
         uint32 findMemoryType(const VkPhysicalDeviceMemoryProperties& memProperties, 
                             uint32 typeFilter, VkMemoryPropertyFlags properties);
+        
+        /**
+         * Create platform-specific surface
+         */
+        VkResult createSurface(VkInstance instance, void* windowHandle, VkSurfaceKHR* surface);
         
         /**
          * Create Vulkan debug messenger

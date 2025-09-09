@@ -29,26 +29,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -152,6 +152,9 @@
     <ClCompile Include="Source\RHI\IRHIResource.cpp" />
     <ClCompile Include="Source\RHI\RHI.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanAPI.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanCommandList.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanDevice.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanUtils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Assert.h" />
@@ -164,6 +167,7 @@
     <ClInclude Include="Include\RHI\IRHIResource.h" />
     <ClInclude Include="Include\RHI\RHI.h" />
     <ClInclude Include="Include\RHI\RHIDefinitions.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanCommandList.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanDevice.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanRHI.h" />
   </ItemGroup>
