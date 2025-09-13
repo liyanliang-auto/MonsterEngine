@@ -114,7 +114,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;PLATFORM_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)Include;$(VULKAN_SDK)\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -124,6 +124,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -132,7 +133,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;PLATFORM_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)Include;$(VULKAN_SDK)\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -144,16 +145,22 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Source\Core\Log.cpp" />
     <ClCompile Include="Source\Engine.cpp" />
+    <ClCompile Include="Source\TriangleRenderer.cpp" />
     <ClCompile Include="Source\RHI\IRHIResource.cpp" />
     <ClCompile Include="Source\RHI\RHI.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanAPI.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanBuffer.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandList.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDevice.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanShader.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanTexture.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanUtils.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -162,14 +169,19 @@
     <ClInclude Include="Include\Core\CoreTypes.h" />
     <ClInclude Include="Include\Core\Log.h" />
     <ClInclude Include="Include\Engine.h" />
+    <ClInclude Include="Include\TriangleRenderer.h" />
     <ClInclude Include="Include\RHI\IRHICommandList.h" />
     <ClInclude Include="Include\RHI\IRHIDevice.h" />
     <ClInclude Include="Include\RHI\IRHIResource.h" />
     <ClInclude Include="Include\RHI\RHI.h" />
     <ClInclude Include="Include\RHI\RHIDefinitions.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanBuffer.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanCommandList.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanDevice.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanRHI.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanShader.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanTexture.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanUtils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

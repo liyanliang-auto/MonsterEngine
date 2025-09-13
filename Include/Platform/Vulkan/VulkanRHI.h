@@ -74,6 +74,10 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkCreateImageView vkCreateImageView = nullptr;
         PFN_vkDestroyImageView vkDestroyImageView = nullptr;
         
+        // Shader module functions
+        PFN_vkCreateShaderModule vkCreateShaderModule = nullptr;
+        PFN_vkDestroyShaderModule vkDestroyShaderModule = nullptr;
+        
         // Swapchain functions (loaded dynamically based on extensions)
         PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR = nullptr;
         PFN_vkDestroySwapchainKHR vkDestroySwapchainKHR = nullptr;

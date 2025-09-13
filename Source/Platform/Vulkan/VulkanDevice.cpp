@@ -1,5 +1,8 @@
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandList.h"
+#include "Platform/Vulkan/VulkanBuffer.h"
+#include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanShader.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Core/Log.h"
 
@@ -168,23 +171,39 @@ namespace MonsterRender::RHI::Vulkan {
     
     // Resource creation methods - stub implementations for now
     TSharedPtr<IRHIBuffer> VulkanDevice::createBuffer(const BufferDesc& desc) {
-        MR_LOG_ERROR("VulkanDevice::createBuffer not implemented yet");
-        return nullptr;
+        auto vulkanBuffer = MakeShared<VulkanBuffer>(this, desc);
+        if (!vulkanBuffer->isValid()) {
+            MR_LOG_ERROR("Failed to create Vulkan buffer: " + desc.debugName);
+            return nullptr;
+        }
+        return vulkanBuffer;
     }
     
     TSharedPtr<IRHITexture> VulkanDevice::createTexture(const TextureDesc& desc) {
-        MR_LOG_ERROR("VulkanDevice::createTexture not implemented yet");
-        return nullptr;
+        auto vulkanTexture = MakeShared<VulkanTexture>(this, desc);
+        if (!vulkanTexture->isValid()) {
+            MR_LOG_ERROR("Failed to create Vulkan texture: " + desc.debugName);
+            return nullptr;
+        }
+        return vulkanTexture;
     }
     
     TSharedPtr<IRHIVertexShader> VulkanDevice::createVertexShader(TSpan<const uint8> bytecode) {
-        MR_LOG_ERROR("VulkanDevice::createVertexShader not implemented yet");
-        return nullptr;
+        auto vulkanShader = MakeShared<VulkanVertexShader>(this, bytecode);
+        if (!vulkanShader->isValid()) {
+            MR_LOG_ERROR("Failed to create Vulkan vertex shader");
+            return nullptr;
+        }
+        return vulkanShader;
     }
     
     TSharedPtr<IRHIPixelShader> VulkanDevice::createPixelShader(TSpan<const uint8> bytecode) {
-        MR_LOG_ERROR("VulkanDevice::createPixelShader not implemented yet");
-        return nullptr;
+        auto vulkanShader = MakeShared<VulkanPixelShader>(this, bytecode);
+        if (!vulkanShader->isValid()) {
+            MR_LOG_ERROR("Failed to create Vulkan pixel shader");
+            return nullptr;
+        }
+        return vulkanShader;
     }
     
     TSharedPtr<IRHIPipelineState> VulkanDevice::createPipelineState(const PipelineStateDesc& desc) {
