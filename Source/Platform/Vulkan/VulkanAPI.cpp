@@ -53,8 +53,11 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Load global functions
+        // 创建Vulkan实例
         s_functions.vkCreateInstance = (PFN_vkCreateInstance)vkGetInstanceProcAddr(nullptr, "vkCreateInstance");
+        // 枚举实例扩展
         s_functions.vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceExtensionProperties");
+        // 枚举验证层
         s_functions.vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceLayerProperties");
         
         if (!s_functions.vkCreateInstance || 
