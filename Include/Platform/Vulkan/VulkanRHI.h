@@ -27,6 +27,7 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkGetPhysicalDeviceProperties vkGetPhysicalDeviceProperties = nullptr;
         PFN_vkGetPhysicalDeviceFeatures vkGetPhysicalDeviceFeatures = nullptr;
         PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties = nullptr;
+        PFN_vkEnumerateDeviceExtensionProperties vkEnumerateDeviceExtensionProperties = nullptr;
         PFN_vkCreateDevice vkCreateDevice = nullptr;
         PFN_vkDestroyDevice vkDestroyDevice = nullptr;
         PFN_vkGetDeviceQueue vkGetDeviceQueue = nullptr;
@@ -95,6 +96,7 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR vkGetPhysicalDeviceSurfaceCapabilitiesKHR = nullptr;
         PFN_vkGetPhysicalDeviceSurfaceFormatsKHR vkGetPhysicalDeviceSurfaceFormatsKHR = nullptr;
         PFN_vkGetPhysicalDeviceSurfacePresentModesKHR vkGetPhysicalDeviceSurfacePresentModesKHR = nullptr;
+        PFN_vkGetPhysicalDeviceSurfaceSupportKHR vkGetPhysicalDeviceSurfaceSupportKHR = nullptr;
         
         // Debug functions
         PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT = nullptr;

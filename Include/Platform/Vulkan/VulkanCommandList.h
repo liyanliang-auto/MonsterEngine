@@ -23,6 +23,9 @@ namespace MonsterRender::RHI::Vulkan {
         VulkanCommandList(VulkanCommandList&&) = delete;
         VulkanCommandList& operator=(VulkanCommandList&&) = delete;
         
+        // Initialization
+        bool initialize();
+        
         // IRHICommandList interface implementation
         void begin() override;
         void end() override;
@@ -64,6 +67,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Vulkan-specific getters
         VkCommandBuffer getCommandBuffer() const { return m_commandBuffer; }
+        VkCommandBuffer getVulkanCommandBuffer() const { return m_commandBuffer; }
         bool isRecording() const { return m_isRecording; }
         
     private:

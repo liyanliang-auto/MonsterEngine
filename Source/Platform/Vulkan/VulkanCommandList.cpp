@@ -22,6 +22,20 @@ namespace MonsterRender::RHI::Vulkan {
         }
     }
     
+    bool VulkanCommandList::initialize() {
+        MR_LOG_INFO("Initializing Vulkan command list...");
+        
+        // TODO: Allocate actual command buffer from device command pool
+        // For now, just mark as initialized
+        // When we implement proper command buffer allocation:
+        // 1. Get command pool from VulkanDevice
+        // 2. Allocate command buffer using vkAllocateCommandBuffers
+        // 3. Store the allocated command buffer in m_commandBuffer
+        
+        MR_LOG_INFO("Vulkan command list initialized successfully (placeholder)");
+        return true;
+    }
+    
     void VulkanCommandList::begin() {
         ensureNotRecording("begin");
         
