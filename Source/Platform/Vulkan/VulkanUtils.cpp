@@ -144,14 +144,50 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         VkResult createSurface(VkInstance instance, void* windowHandle, VkSurfaceKHR* surface) {
+            if (!instance || !surface) {
+                MR_LOG_ERROR("Invalid parameters for surface creation");
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            
+            const auto& functions = VulkanAPI::getFunctions();
+            
             #if PLATFORM_WINDOWS
-                // For now, just return an error - we'll implement this when we have proper windowing
-                MR_LOG_WARNING("Surface creation not implemented for Windows");
-                return VK_ERROR_FEATURE_NOT_PRESENT;
+                if (functions.vkCreateWin32SurfaceKHR && windowHandle) {
+                    VkWin32SurfaceCreateInfoKHR createInfo{};
+                    createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+                    createInfo.hinstance = GetModuleHandle(nullptr);
+                    createInfo.hwnd = static_cast<HWND>(windowHandle);
+                    
+                    VkResult result = functions.vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, surface);
+                    if (result == VK_SUCCESS) {
+                        MR_LOG_INFO("Vulkan Win32 surface created successfully");
+                    } else {
+                        MR_LOG_ERROR("Failed to create Vulkan Win32 surface: " + std::to_string(result));
+                    }
+                    return result;
+                } else {
+                    MR_LOG_ERROR("Win32 surface creation function not available or invalid window handle");
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                }
             #elif PLATFORM_LINUX
-                // For now, just return an error - we'll implement this when we have proper windowing
-                MR_LOG_WARNING("Surface creation not implemented for Linux");
-                return VK_ERROR_FEATURE_NOT_PRESENT;
+                if (functions.vkCreateXlibSurfaceKHR && windowHandle) {
+                    // For X11/Xlib surface creation
+                    VkXlibSurfaceCreateInfoKHR createInfo{};
+                    createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+                    createInfo.dpy = static_cast<Display*>(glfwGetX11Display());
+                    createInfo.window = reinterpret_cast<Window>(windowHandle);
+                    
+                    VkResult result = functions.vkCreateXlibSurfaceKHR(instance, &createInfo, nullptr, surface);
+                    if (result == VK_SUCCESS) {
+                        MR_LOG_INFO("Vulkan X11 surface created successfully");
+                    } else {
+                        MR_LOG_ERROR("Failed to create Vulkan X11 surface: " + std::to_string(result));
+                    }
+                    return result;
+                } else {
+                    MR_LOG_ERROR("X11 surface creation function not available or invalid window handle");
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                }
             #else
                 MR_LOG_ERROR("Surface creation not supported on this platform");
                 return VK_ERROR_FEATURE_NOT_PRESENT;

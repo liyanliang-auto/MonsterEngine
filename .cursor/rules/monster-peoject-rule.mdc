@@ -265,4 +265,5 @@ Linux
 Android
 
 引擎的所有设计、架构、代码实现均参考UE5.
+所有代码实现参考UE5,UE5源码github链接：@https://github.com/EpicGames/UnrealEngine 
 本文档作为使用UE5启发的架构和现代C++最佳实践开发MonsterRender引擎的基础指南。
