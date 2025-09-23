@@ -134,6 +134,6 @@ namespace MonsterRender::Platform::GLFW {
         // Helper methods
         void setupCallbacks();
         void updateWindowProperties();
-        GLFWWindow* getWindowFromGLFW(GLFWwindow* window);
+        static GLFWWindow* getWindowFromGLFW(GLFWwindow* window);
     };
 }
