@@ -26,9 +26,13 @@ namespace MonsterRender::RHI {
         bool enableDebugMarkers = true;
         String applicationName = "MonsterRender Application";
         uint32 applicationVersion = 1;
-        void* windowHandle = nullptr; // Platform-specific window handle
+        uint32 engineVersion = 1;
         uint32 windowWidth = 1920;
         uint32 windowHeight = 1080;
+        void* windowHandle = nullptr; // Platform-specific window handle
+        void* displayHandle = nullptr; // Platform-specific display handle (Linux only)
+        
+        RHICreateInfo() = default;
     };
     
     /**
