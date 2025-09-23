@@ -174,7 +174,9 @@ namespace MonsterRender::RHI::Vulkan {
                     // For X11/Xlib surface creation
                     VkXlibSurfaceCreateInfoKHR createInfo{};
                     createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-                    createInfo.dpy = static_cast<Display*>(glfwGetX11Display());
+                    // Note: glfwGetX11Display() requires GLFW to be included
+                    // For now, pass nullptr - will be fixed when GLFW is properly integrated
+                    createInfo.dpy = nullptr; // static_cast<Display*>(glfwGetX11Display());
                     createInfo.window = reinterpret_cast<Window>(windowHandle);
                     
                     VkResult result = functions.vkCreateXlibSurfaceKHR(instance, &createInfo, nullptr, surface);

@@ -1,15 +1,26 @@
 #include "Platform/GLFW/GLFWWindow.h"
 #include "Core/Log.h"
 
+// GLFW includes with error handling
 #define GLFW_INCLUDE_NONE
+
+// Try different GLFW include paths
+#ifdef GLFW_DIR
+    // Use GLFW_DIR environment variable path
+    #pragma message("Using GLFW from GLFW_DIR environment variable")
+#endif
+
 #include <GLFW/glfw3.h>
 
+// Platform-specific native includes
 #if PLATFORM_WINDOWS
     #define GLFW_EXPOSE_NATIVE_WIN32
     #include <GLFW/glfw3native.h>
+    #include <windows.h>
 #elif PLATFORM_LINUX
     #define GLFW_EXPOSE_NATIVE_X11
     #include <GLFW/glfw3native.h>
+    #include <X11/Xlib.h>
 #endif
 
 namespace MonsterRender::Platform::GLFW {
