@@ -1,6 +1,7 @@
 #include "Platform/Vulkan/VulkanCommandList.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Core/Log.h"
+#include "Platform/Vulkan/VulkanBuffer.h"
 
 namespace MonsterRender::RHI::Vulkan {
     
