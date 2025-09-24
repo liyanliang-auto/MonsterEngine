@@ -79,6 +79,21 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkCreateShaderModule vkCreateShaderModule = nullptr;
         PFN_vkDestroyShaderModule vkDestroyShaderModule = nullptr;
         
+        // Render pass functions
+        PFN_vkCreateRenderPass vkCreateRenderPass = nullptr;
+        PFN_vkDestroyRenderPass vkDestroyRenderPass = nullptr;
+        PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass = nullptr;
+        PFN_vkCmdEndRenderPass vkCmdEndRenderPass = nullptr;
+        
+        // Command buffer functions
+        PFN_vkCmdDraw vkCmdDraw = nullptr;
+        PFN_vkCmdDrawIndexed vkCmdDrawIndexed = nullptr;
+        PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers = nullptr;
+        PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer = nullptr;
+        PFN_vkCmdBindPipeline vkCmdBindPipeline = nullptr;
+        PFN_vkCmdSetViewport vkCmdSetViewport = nullptr;
+        PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
+        
         // Swapchain functions (loaded dynamically based on extensions)
         PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR = nullptr;
         PFN_vkDestroySwapchainKHR vkDestroySwapchainKHR = nullptr;

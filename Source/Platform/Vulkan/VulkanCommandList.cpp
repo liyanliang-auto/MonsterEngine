@@ -16,35 +16,76 @@ namespace MonsterRender::RHI::Vulkan {
     VulkanCommandList::~VulkanCommandList() {
         MR_LOG_INFO("Destroying Vulkan command list...");
         
-        // TODO: Free command buffer back to command pool
-        if (m_commandBuffer != VK_NULL_HANDLE) {
-            // Will be implemented when we have proper command buffer allocation
+        // Free command buffer back to command pool
+        if (m_commandBuffer != VK_NULL_HANDLE && m_device) {
+            const auto& functions = VulkanAPI::getFunctions();
+            VkDevice device = m_device->getLogicalDevice();
+            VkCommandPool commandPool = m_device->getCommandPool();
+            
+            if (device && commandPool) {
+                functions.vkFreeCommandBuffers(device, commandPool, 1, &m_commandBuffer);
+                m_commandBuffer = VK_NULL_HANDLE;
+            }
         }
     }
     
     bool VulkanCommandList::initialize() {
         MR_LOG_INFO("Initializing Vulkan command list...");
         
-        // TODO: Allocate actual command buffer from device command pool
-        // For now, just mark as initialized
-        // When we implement proper command buffer allocation:
-        // 1. Get command pool from VulkanDevice
-        // 2. Allocate command buffer using vkAllocateCommandBuffers
-        // 3. Store the allocated command buffer in m_commandBuffer
+        if (!m_device) {
+            MR_LOG_ERROR("VulkanDevice is null during command list initialization");
+            return false;
+        }
         
-        MR_LOG_INFO("Vulkan command list initialized successfully (placeholder)");
+        // Get Vulkan functions and device handles
+        const auto& functions = VulkanAPI::getFunctions();
+        VkDevice device = m_device->getLogicalDevice();
+        VkCommandPool commandPool = m_device->getCommandPool();
+        
+        if (!device || !commandPool) {
+            MR_LOG_ERROR("Invalid Vulkan device or command pool");
+            return false;
+        }
+        
+        // Allocate command buffer from device command pool
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = commandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+        
+        VkResult result = functions.vkAllocateCommandBuffers(device, &allocInfo, &m_commandBuffer);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to allocate Vulkan command buffer: " + std::to_string(result));
+            return false;
+        }
+        
+        MR_LOG_INFO("Vulkan command list initialized successfully");
         return true;
     }
     
     void VulkanCommandList::begin() {
         ensureNotRecording("begin");
         
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot begin recording");
+            return;
+        }
+        
         MR_LOG_DEBUG("Beginning command list recording");
         
-        // TODO: Begin command buffer recording
-        // VkCommandBufferBeginInfo beginInfo{};
-        // beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        // vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
+        // Begin command buffer recording
+        const auto& functions = VulkanAPI::getFunctions();
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // Following UE5 pattern
+        beginInfo.pInheritanceInfo = nullptr;
+        
+        VkResult result = functions.vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to begin command buffer recording: " + std::to_string(result));
+            return;
+        }
         
         m_isRecording = true;
         m_inRenderPass = false;
@@ -53,27 +94,51 @@ namespace MonsterRender::RHI::Vulkan {
     void VulkanCommandList::end() {
         ensureRecording("end");
         
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot end recording");
+            return;
+        }
+        
         MR_LOG_DEBUG("Ending command list recording");
         
         // End render pass if still active
         if (m_inRenderPass) {
-            // TODO: End Vulkan render pass
-            // vkCmdEndRenderPass(m_commandBuffer);
+            const auto& functions = VulkanAPI::getFunctions();
+            functions.vkCmdEndRenderPass(m_commandBuffer);
             m_inRenderPass = false;
+            MR_LOG_DEBUG("Ended active render pass");
         }
         
-        // TODO: End command buffer recording
-        // vkEndCommandBuffer(m_commandBuffer);
+        // End command buffer recording
+        const auto& functions = VulkanAPI::getFunctions();
+        VkResult result = functions.vkEndCommandBuffer(m_commandBuffer);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to end command buffer recording: " + std::to_string(result));
+            return;
+        }
         
         m_isRecording = false;
     }
     
     void VulkanCommandList::reset() {
+        ensureNotRecording("reset");
+        
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot reset");
+            return;
+        }
+        
         MR_LOG_DEBUG("Resetting command list");
         
-        // TODO: Reset command buffer
-        // vkResetCommandBuffer(m_commandBuffer, 0);
+        // Reset command buffer - allows reuse
+        const auto& functions = VulkanAPI::getFunctions();
+        VkResult result = functions.vkResetCommandBuffer(m_commandBuffer, 0);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to reset command buffer: " + std::to_string(result));
+            return;
+        }
         
+        // Reset state tracking
         m_isRecording = false;
         m_inRenderPass = false;
         m_currentPipelineState.reset();
@@ -104,15 +169,25 @@ namespace MonsterRender::RHI::Vulkan {
     void VulkanCommandList::setViewport(const Viewport& viewport) {
         ensureRecording("setViewport");
         
-        // TODO: Set Vulkan viewport
-        // VkViewport vkViewport{};
-        // vkViewport.x = viewport.x;
-        // vkViewport.y = viewport.y;
-        // vkViewport.width = viewport.width;
-        // vkViewport.height = viewport.height;
-        // vkViewport.minDepth = viewport.minDepth;
-        // vkViewport.maxDepth = viewport.maxDepth;
-        // vkCmdSetViewport(m_commandBuffer, 0, 1, &vkViewport);
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot set viewport");
+            return;
+        }
+        
+        // Set Vulkan viewport
+        VkViewport vkViewport{};
+        vkViewport.x = viewport.x;
+        vkViewport.y = viewport.y;
+        vkViewport.width = viewport.width;
+        vkViewport.height = viewport.height;
+        vkViewport.minDepth = viewport.minDepth;
+        vkViewport.maxDepth = viewport.maxDepth;
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdSetViewport(m_commandBuffer, 0, 1, &vkViewport);
+        
+        MR_LOG_DEBUG("Viewport set: " + std::to_string(viewport.width) + "x" + std::to_string(viewport.height) + 
+                    " at (" + std::to_string(viewport.x) + "," + std::to_string(viewport.y) + ")");
     }
     
     void VulkanCommandList::setScissorRect(const ScissorRect& scissorRect) {
@@ -130,47 +205,134 @@ namespace MonsterRender::RHI::Vulkan {
     void VulkanCommandList::setPipelineState(TSharedPtr<IRHIPipelineState> pipelineState) {
         ensureRecording("setPipelineState");
         
+        if (!pipelineState) {
+            MR_LOG_WARNING("Attempting to set null pipeline state");
+            return;
+        }
+        
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot set pipeline state");
+            return;
+        }
+        
         m_currentPipelineState = pipelineState;
         
-        // TODO: Bind Vulkan pipeline
-        // VkPipeline vkPipeline = static_cast<VulkanPipelineState*>(pipelineState.get())->getPipeline();
-        // vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline);
+        // TODO: Bind Vulkan pipeline when VulkanPipelineState is implemented
+        // For now, just log the operation
+        MR_LOG_DEBUG("Pipeline state set (actual binding deferred until VulkanPipelineState is implemented)");
+        
+        // Future implementation:
+        // auto* vulkanPipeline = static_cast<VulkanPipelineState*>(pipelineState.get());
+        // VkPipeline vkPipeline = vulkanPipeline->getPipeline();
+        // const auto& functions = VulkanAPI::getFunctions();
+        // functions.vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline);
     }
     
     void VulkanCommandList::setVertexBuffers(uint32 startSlot, TSpan<TSharedPtr<IRHIBuffer>> vertexBuffers) {
         ensureRecording("setVertexBuffers");
         
-        // TODO: Bind Vulkan vertex buffers
-        // TArray<VkBuffer> vkBuffers;
-        // TArray<VkDeviceSize> vkOffsets;
-        // for (auto& buffer : vertexBuffers) {
-        //     vkBuffers.push_back(static_cast<VulkanBuffer*>(buffer.get())->getBuffer());
-        //     vkOffsets.push_back(0);
-        // }
-        // vkCmdBindVertexBuffers(m_commandBuffer, startSlot, vkBuffers.size(), vkBuffers.data(), vkOffsets.data());
+        if (vertexBuffers.empty()) {
+            MR_LOG_WARNING("Attempting to bind empty vertex buffer array");
+            return;
+        }
+        
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot set vertex buffers");
+            return;
+        }
+        
+        // Prepare Vulkan buffer arrays
+        TArray<VkBuffer> vkBuffers;
+        TArray<VkDeviceSize> vkOffsets;
+        
+        vkBuffers.reserve(vertexBuffers.size());
+        vkOffsets.reserve(vertexBuffers.size());
+        
+        for (const auto& buffer : vertexBuffers) {
+            if (!buffer) {
+                MR_LOG_WARNING("Null vertex buffer detected, skipping");
+                continue;
+            }
+            
+            // Cast to VulkanBuffer and get the native handle
+            auto* vulkanBuffer = static_cast<VulkanBuffer*>(buffer.get());
+            vkBuffers.push_back(vulkanBuffer->getBuffer());
+            vkOffsets.push_back(0); // Start at beginning of buffer
+        }
+        
+        if (!vkBuffers.empty()) {
+            const auto& functions = VulkanAPI::getFunctions();
+            functions.vkCmdBindVertexBuffers(m_commandBuffer, startSlot, 
+                                           static_cast<uint32>(vkBuffers.size()), 
+                                           vkBuffers.data(), vkOffsets.data());
+            
+            MR_LOG_DEBUG("Bound " + std::to_string(vkBuffers.size()) + " vertex buffer(s) starting at slot " + std::to_string(startSlot));
+        }
     }
     
     void VulkanCommandList::setIndexBuffer(TSharedPtr<IRHIBuffer> indexBuffer, bool is32Bit) {
         ensureRecording("setIndexBuffer");
         
-        // TODO: Bind Vulkan index buffer
-        // VkBuffer vkBuffer = static_cast<VulkanBuffer*>(indexBuffer.get())->getBuffer();
-        // VkIndexType indexType = is32Bit ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16;
-        // vkCmdBindIndexBuffer(m_commandBuffer, vkBuffer, 0, indexType);
+        if (!indexBuffer) {
+            MR_LOG_WARNING("Attempting to bind null index buffer");
+            return;
+        }
+        
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot set index buffer");
+            return;
+        }
+        
+        // Cast to VulkanBuffer and get the native handle
+        auto* vulkanBuffer = static_cast<VulkanBuffer*>(indexBuffer.get());
+        VkBuffer vkBuffer = vulkanBuffer->getBuffer();
+        VkIndexType indexType = is32Bit ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16;
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdBindIndexBuffer(m_commandBuffer, vkBuffer, 0, indexType);
+        
+        MR_LOG_DEBUG("Index buffer bound with " + std::string(is32Bit ? "32-bit" : "16-bit") + " indices");
     }
     
     void VulkanCommandList::draw(uint32 vertexCount, uint32 startVertexLocation) {
         ensureRecording("draw");
         
-        // TODO: Issue Vulkan draw command
-        // vkCmdDraw(m_commandBuffer, vertexCount, 1, startVertexLocation, 0);
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot draw");
+            return;
+        }
+        
+        if (vertexCount == 0) {
+            MR_LOG_WARNING("Draw called with 0 vertices");
+            return;
+        }
+        
+        // Issue Vulkan draw command
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdDraw(m_commandBuffer, vertexCount, 1, startVertexLocation, 0);
+        
+        MR_LOG_DEBUG("Draw: " + std::to_string(vertexCount) + " vertices starting at " + std::to_string(startVertexLocation));
     }
     
     void VulkanCommandList::drawIndexed(uint32 indexCount, uint32 startIndexLocation, int32 baseVertexLocation) {
         ensureRecording("drawIndexed");
         
-        // TODO: Issue Vulkan indexed draw command
-        // vkCmdDrawIndexed(m_commandBuffer, indexCount, 1, startIndexLocation, baseVertexLocation, 0);
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot draw indexed");
+            return;
+        }
+        
+        if (indexCount == 0) {
+            MR_LOG_WARNING("DrawIndexed called with 0 indices");
+            return;
+        }
+        
+        // Issue Vulkan indexed draw command
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdDrawIndexed(m_commandBuffer, indexCount, 1, startIndexLocation, baseVertexLocation, 0);
+        
+        MR_LOG_DEBUG("DrawIndexed: " + std::to_string(indexCount) + " indices starting at " + 
+                    std::to_string(startIndexLocation) + " with base vertex " + std::to_string(baseVertexLocation));
     }
     
     void VulkanCommandList::drawInstanced(uint32 vertexCountPerInstance, uint32 instanceCount,
