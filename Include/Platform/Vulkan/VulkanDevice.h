@@ -49,6 +49,11 @@ namespace MonsterRender::RHI::Vulkan {
         
         TSharedPtr<IRHICommandList> createCommandList() override;
         void executeCommandLists(TSpan<TSharedPtr<IRHICommandList>> commandLists) override;
+        
+        // Vulkan-specific accessors
+        VkDevice getLogicalDevice() const { return m_device; }
+        VkCommandPool getCommandPool() const { return m_commandPool; }
+        VkPhysicalDevice getPhysicalDevice() const { return m_physicalDevice; }
         IRHICommandList* getImmediateCommandList() override;
         
         void waitForIdle() override;
