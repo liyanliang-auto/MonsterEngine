@@ -54,9 +54,9 @@ namespace MonsterRender {
         
     private:
         RHI::IRHIDevice* m_device = nullptr;
-        std::shared_ptr<RHI::IRHIBuffer> m_vertexBuffer;
-        std::shared_ptr<RHI::IRHIShader> m_vertexShader;
-        std::shared_ptr<RHI::IRHIShader> m_pixelShader;
-        std::shared_ptr<RHI::IRHIPipelineState> m_pipelineState;
+        TSharedPtr<RHI::IRHIBuffer> m_vertexBuffer;
+        TSharedPtr<RHI::IRHIVertexShader> m_vertexShader;
+        TSharedPtr<RHI::IRHIPixelShader> m_pixelShader;
+        TSharedPtr<RHI::IRHIPipelineState> m_pipelineState;
     };
 }

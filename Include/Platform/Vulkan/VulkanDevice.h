@@ -9,6 +9,8 @@ namespace MonsterRender::RHI::Vulkan {
     
     // Forward declarations
     class VulkanCommandList;
+    class VulkanPipelineState;
+    class VulkanPipelineCache;
     
     /**
      * Queue family information
@@ -119,6 +121,9 @@ namespace MonsterRender::RHI::Vulkan {
         // Command handling
         VkCommandPool m_commandPool = VK_NULL_HANDLE;
         TUniquePtr<VulkanCommandList> m_immediateCommandList;
+        
+        // Pipeline cache
+        TUniquePtr<VulkanPipelineCache> m_pipelineCache;
         
         // Synchronization
         TArray<VkSemaphore> m_imageAvailableSemaphores;

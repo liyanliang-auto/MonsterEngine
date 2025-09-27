@@ -1,5 +1,6 @@
 #include "Platform/Vulkan/VulkanCommandList.h"
 #include "Platform/Vulkan/VulkanDevice.h"
+#include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Core/Log.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 
@@ -218,15 +219,23 @@ namespace MonsterRender::RHI::Vulkan {
         
         m_currentPipelineState = pipelineState;
         
-        // TODO: Bind Vulkan pipeline when VulkanPipelineState is implemented
-        // For now, just log the operation
-        MR_LOG_DEBUG("Pipeline state set (actual binding deferred until VulkanPipelineState is implemented)");
+        // Cast to VulkanPipelineState and bind the pipeline
+        auto* vulkanPipeline = static_cast<VulkanPipelineState*>(pipelineState.get());
+        if (!vulkanPipeline || !vulkanPipeline->isValid()) {
+            MR_LOG_ERROR("Invalid Vulkan pipeline state");
+            return;
+        }
         
-        // Future implementation:
-        // auto* vulkanPipeline = static_cast<VulkanPipelineState*>(pipelineState.get());
-        // VkPipeline vkPipeline = vulkanPipeline->getPipeline();
-        // const auto& functions = VulkanAPI::getFunctions();
-        // functions.vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline);
+        VkPipeline vkPipeline = vulkanPipeline->getPipeline();
+        if (vkPipeline == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Vulkan pipeline is null");
+            return;
+        }
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline);
+        
+        MR_LOG_DEBUG("Pipeline state bound successfully: " + pipelineState->getDebugName());
     }
     
     void VulkanCommandList::setVertexBuffers(uint32 startSlot, TSpan<TSharedPtr<IRHIBuffer>> vertexBuffers) {

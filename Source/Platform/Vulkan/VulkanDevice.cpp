@@ -3,6 +3,7 @@
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanShader.h"
+#include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Core/Log.h"
@@ -104,7 +105,14 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Step 9: Query device capabilities
+        // Step 9: Create pipeline cache
+        m_pipelineCache = MakeUnique<VulkanPipelineCache>(this);
+        if (!m_pipelineCache) {
+            MR_LOG_ERROR("Failed to create pipeline cache");
+            return false;
+        }
+        
+        // Step 10: Query device capabilities
         queryCapabilities();
         
         MR_LOG_INFO("Vulkan device initialized successfully");
@@ -211,23 +219,22 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     TSharedPtr<IRHIPipelineState> VulkanDevice::createPipelineState(const PipelineStateDesc& desc) {
-        // TODO: Implement Vulkan graphics pipeline creation
-        // This is a complex operation that requires:
-        // - Creating shader modules from vertex/pixel shaders
-        // - Setting up vertex input description
-        // - Configuring rasterization state
-        // - Setting up blend state
-        // - Creating render pass
-        // - Creating pipeline layout
-        // - Creating graphics pipeline
+        MR_LOG_INFO("Creating Vulkan pipeline state: " + desc.debugName);
         
-        MR_LOG_WARNING("VulkanDevice::createPipelineState is a stub implementation");
-        MR_LOG_INFO("Pipeline state request: " + desc.debugName);
+        if (!m_pipelineCache) {
+            MR_LOG_ERROR("Pipeline cache not initialized");
+            return nullptr;
+        }
         
-        // For now, return nullptr to indicate not implemented
-        // This will be implemented in a future update when we have proper
-        // render pass and pipeline state infrastructure
-        return nullptr;
+        // Use pipeline cache to get or create pipeline state
+        auto pipelineState = m_pipelineCache->getOrCreatePipelineState(desc);
+        if (!pipelineState) {
+            MR_LOG_ERROR("Failed to create pipeline state: " + desc.debugName);
+            return nullptr;
+        }
+        
+        MR_LOG_INFO("Pipeline state created successfully: " + desc.debugName);
+        return pipelineState;
     }
     
     TSharedPtr<IRHICommandList> VulkanDevice::createCommandList() {
