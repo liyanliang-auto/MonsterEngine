@@ -4,6 +4,9 @@
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Core/Log.h"
 
+#include <mutex>
+#include <functional>
+
 namespace MonsterRender::RHI::Vulkan {
     
     VulkanPipelineState::VulkanPipelineState(VulkanDevice* device, const PipelineStateDesc& desc)
@@ -295,7 +298,10 @@ namespace MonsterRender::RHI::Vulkan {
         VkPipelineMultisampleStateCreateInfo multisampling = createMultisampleState();
         
         // Color blend state
+        TArray<VkPipelineColorBlendAttachmentState> colorBlendAttachments = createColorBlendAttachments();
         VkPipelineColorBlendStateCreateInfo colorBlending = createColorBlendState();
+        colorBlending.attachmentCount = static_cast<uint32>(colorBlendAttachments.size());
+        colorBlending.pAttachments = colorBlendAttachments.data();
         
         // Depth stencil state
         VkPipelineDepthStencilStateCreateInfo depthStencil = createDepthStencilState();
@@ -497,14 +503,13 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     VkPipelineColorBlendStateCreateInfo VulkanPipelineState::createColorBlendState() const {
-        TArray<VkPipelineColorBlendAttachmentState> colorBlendAttachments = createColorBlendAttachments();
-        
+        // Note: This function should be called within createGraphicsPipeline where the attachments array is managed
         VkPipelineColorBlendStateCreateInfo colorBlending{};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlending.logicOpEnable = VK_FALSE;
         colorBlending.logicOp = VK_LOGIC_OP_COPY;
-        colorBlending.attachmentCount = static_cast<uint32>(colorBlendAttachments.size());
-        colorBlending.pAttachments = colorBlendAttachments.data();
+        colorBlending.attachmentCount = 0; // Will be set by caller
+        colorBlending.pAttachments = nullptr; // Will be set by caller
         colorBlending.blendConstants[0] = 0.0f;
         colorBlending.blendConstants[1] = 0.0f;
         colorBlending.blendConstants[2] = 0.0f;

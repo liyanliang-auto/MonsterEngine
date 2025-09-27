@@ -4,6 +4,8 @@
 #include "RHI/IRHIResource.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 
+#include <mutex>
+
 namespace MonsterRender::RHI::Vulkan {
     
     // Forward declarations

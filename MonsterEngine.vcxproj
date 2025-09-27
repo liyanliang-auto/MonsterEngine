@@ -166,6 +166,7 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanShader.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanTexture.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanUtils.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanPipelineState.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -190,6 +191,7 @@
     <ClInclude Include="Include\Platform\Vulkan\VulkanShader.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanTexture.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanUtils.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanPipelineState.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
