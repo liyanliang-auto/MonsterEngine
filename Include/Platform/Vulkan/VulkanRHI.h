@@ -85,6 +85,15 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass = nullptr;
         PFN_vkCmdEndRenderPass vkCmdEndRenderPass = nullptr;
         
+        // Pipeline functions
+        PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines = nullptr;
+        PFN_vkCreateComputePipelines vkCreateComputePipelines = nullptr;
+        PFN_vkDestroyPipeline vkDestroyPipeline = nullptr;
+        PFN_vkCreatePipelineLayout vkCreatePipelineLayout = nullptr;
+        PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout = nullptr;
+        PFN_vkCreatePipelineCache vkCreatePipelineCache = nullptr;
+        PFN_vkDestroyPipelineCache vkDestroyPipelineCache = nullptr;
+        
         // Command buffer functions
         PFN_vkCmdDraw vkCmdDraw = nullptr;
         PFN_vkCmdDrawIndexed vkCmdDrawIndexed = nullptr;
