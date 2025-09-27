@@ -87,8 +87,8 @@ namespace MonsterRender::RHI::Vulkan {
     uint32 VulkanPipelineState::getSize() const {
         // Estimate pipeline size based on shader modules and state
         uint32 size = 0;
-        size += m_shaderModules.size() * sizeof(VkShaderModule);
-        size += m_reflectionData.size() * sizeof(ShaderReflectionData);
+        size += static_cast<uint32>(m_shaderModules.size()) * sizeof(VkShaderModule);
+        size += static_cast<uint32>(m_reflectionData.size()) * sizeof(ShaderReflectionData);
         size += sizeof(VkPipeline) + sizeof(VkPipelineLayout) + sizeof(VkRenderPass);
         return size;
     }
