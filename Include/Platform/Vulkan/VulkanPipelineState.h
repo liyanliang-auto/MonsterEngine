@@ -203,6 +203,6 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Helper methods
         uint64 calculateDescHash(const PipelineStateDesc& desc) const;
-        void updateStats(bool hit);
+        void updateStats(bool hit) const;
     };
 }
