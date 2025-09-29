@@ -1,5 +1,6 @@
 #include "TriangleRenderer.h"
 #include "Core/Log.h"
+#include "Core/ShaderCompiler.h"
 
 namespace MonsterRender {
 
@@ -65,106 +66,30 @@ namespace MonsterRender {
     }
     
     bool TriangleRenderer::createShaders() {
-        // Simple vertex shader SPIR-V bytecode
-        // This is a minimal valid SPIR-V shader for demonstration
-        TArray<uint8> vertexShaderCode = {
-            // SPIR-V magic number and minimal header
-            0x03, 0x02, 0x23, 0x07,  // Magic number
-            0x00, 0x00, 0x01, 0x00,  // Version 1.0
-            0x0A, 0x00, 0x0B, 0x00,  // Generator magic number
-            0x10, 0x00, 0x00, 0x00,  // Bound on all ids
-            0x00, 0x00, 0x00, 0x00,  // Reserved, must be 0
-            
-            // OpCapability Shader
-            0x11, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00,
-            
-            // OpMemoryModel Logical GLSL450
-            0x0E, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-            
-            // OpEntryPoint Vertex %main "main"
-            0x0F, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
-            
-            // OpName %main "main"
-            0x05, 0x00, 0x04, 0x00, 0x04, 0x00, 0x00, 0x00, 0x6D, 0x61, 0x69, 0x6E,
-            
-            // OpTypeVoid %void
-            0x13, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00,
-            
-            // OpTypeFunction %void_func %void
-            0x21, 0x00, 0x03, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
-            
-            // OpFunction %void %main None %void_func
-            0x36, 0x00, 0x05, 0x00, 0x02, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
-            
-            // OpLabel
-            0xF8, 0x00, 0x02, 0x00, 0x05, 0x00, 0x00, 0x00,
-            
-            // OpReturn
-            0xFD, 0x00, 0x01, 0x00,
-            
-            // OpFunctionEnd
-            0x38, 0x00, 0x01, 0x00
-        };
-        
-        TArray<uint8> fragmentShaderCode = {
-            // SPIR-V magic number and minimal header
-            0x03, 0x02, 0x23, 0x07,  // Magic number
-            0x00, 0x00, 0x01, 0x00,  // Version 1.0
-            0x0A, 0x00, 0x0B, 0x00,  // Generator magic number
-            0x10, 0x00, 0x00, 0x00,  // Bound on all ids
-            0x00, 0x00, 0x00, 0x00,  // Reserved, must be 0
-            
-            // OpCapability Shader
-            0x11, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00,
-            
-            // OpMemoryModel Logical GLSL450
-            0x0E, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-            
-            // OpEntryPoint Fragment %main "main"
-            0x0F, 0x00, 0x04, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
-            
-            // OpExecutionMode %main OriginUpperLeft
-            0x10, 0x00, 0x03, 0x00, 0x04, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00,
-            
-            // OpName %main "main"
-            0x05, 0x00, 0x04, 0x00, 0x04, 0x00, 0x00, 0x00, 0x6D, 0x61, 0x69, 0x6E,
-            
-            // OpTypeVoid %void
-            0x13, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00,
-            
-            // OpTypeFunction %void_func %void
-            0x21, 0x00, 0x03, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
-            
-            // OpFunction %void %main None %void_func
-            0x36, 0x00, 0x05, 0x00, 0x02, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
-            
-            // OpLabel
-            0xF8, 0x00, 0x02, 0x00, 0x05, 0x00, 0x00, 0x00,
-            
-            // OpReturn
-            0xFD, 0x00, 0x01, 0x00,
-            
-            // OpFunctionEnd
-            0x38, 0x00, 0x01, 0x00
-        };
-        
-        // Create vertex shader
-        m_vertexShader = m_device->createVertexShader(TSpan<const uint8>(vertexShaderCode.data(), vertexShaderCode.size()));
-        if (!m_vertexShader) {
-            MR_LOG_ERROR("Failed to create vertex shader");
+        // Compile GLSL from Shaders directory
+        ShaderCompileOptions vsOpt; vsOpt.language = EShaderLanguage::GLSL; vsOpt.stage = EShaderStageKind::Vertex; vsOpt.entryPoint = "main";
+        ShaderCompileOptions psOpt = vsOpt; psOpt.stage = EShaderStageKind::Fragment;
+
+        String vsPath = "Shaders/Triangle.vert";
+        String psPath = "Shaders/Triangle.frag";
+
+        auto vsSpv = ShaderCompiler::compileFromFile(vsPath, vsOpt);
+        if (vsSpv.empty()) {
+            MR_LOG_ERROR("Failed to compile vertex shader: " + vsPath);
             return false;
         }
-        
-        // Create pixel shader
-        m_pixelShader = m_device->createPixelShader(TSpan<const uint8>(fragmentShaderCode.data(), fragmentShaderCode.size()));
-        if (!m_pixelShader) {
-            MR_LOG_ERROR("Failed to create pixel shader");
+        auto psSpv = ShaderCompiler::compileFromFile(psPath, psOpt);
+        if (psSpv.empty()) {
+            MR_LOG_ERROR("Failed to compile fragment shader: " + psPath);
             return false;
         }
-        
-        MR_LOG_INFO("Triangle shaders created successfully");
+
+        m_vertexShader = m_device->createVertexShader(TSpan<const uint8>(vsSpv.data(), vsSpv.size()));
+        if (!m_vertexShader) return false;
+        m_pixelShader = m_device->createPixelShader(TSpan<const uint8>(psSpv.data(), psSpv.size()));
+        if (!m_pixelShader) return false;
+
+        MR_LOG_INFO("Triangle shaders compiled and created successfully");
         return true;
     }
     
