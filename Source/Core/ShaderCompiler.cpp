@@ -29,13 +29,20 @@ namespace MonsterRender {
         String exe = useGLSLC ? "glslc" : "dxc";
         TArray<String> args;
 
+        // Offline cache: if output exists and newer than source, reuse
+        String outPath = getTemporarySpirvPath(filePath);
+        uint64 srcTime = getLastWriteTime(filePath);
+        uint64 outTime = getLastWriteTime(outPath);
+        if (outTime && outTime >= srcTime) {
+            return readFileBytes(outPath);
+        }
+
         if (useGLSLC) {
             // glslc -fshader-stage=vert file -o file.spv -g
             args.push_back("-fshader-stage=" + getStageArgGLSLC(options.stage));
             if (options.generateDebugInfo) args.push_back("-g");
             for (auto& def : options.definitions) args.push_back("-D" + def);
             args.push_back(filePath);
-            String outPath = getTemporarySpirvPath(filePath);
             args.push_back("-o");
             args.push_back(outPath);
 
@@ -53,14 +60,14 @@ namespace MonsterRender {
             if (options.generateDebugInfo) args.push_back("-Zi");
             for (auto& def : options.definitions) { args.push_back("-D"); args.push_back(def); }
             args.push_back(filePath);
-            args.push_back("-Fo"); args.push_back(getTemporarySpirvPath(filePath));
+            args.push_back("-Fo"); args.push_back(outPath);
 
             String so, se; int ec = -1;
             if (!runProcess(exe, args, "", so, se, ec) || ec != 0) {
                 MR_LOG_ERROR("dxc failed: " + se);
                 return result;
             }
-            result = readFileBytes(getTemporarySpirvPath(filePath));
+            result = readFileBytes(outPath);
         }
 
         return result;

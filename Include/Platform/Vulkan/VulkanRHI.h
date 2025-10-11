@@ -102,6 +102,15 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkCmdBindPipeline vkCmdBindPipeline = nullptr;
         PFN_vkCmdSetViewport vkCmdSetViewport = nullptr;
         PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
+
+        // Descriptor sets
+        PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout = nullptr;
+        PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout = nullptr;
+        PFN_vkCreateDescriptorPool vkCreateDescriptorPool = nullptr;
+        PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool = nullptr;
+        PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets = nullptr;
+        PFN_vkFreeDescriptorSets vkFreeDescriptorSets = nullptr;
+        PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets = nullptr;
         
         // Swapchain functions (loaded dynamically based on extensions)
         PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR = nullptr;
@@ -125,6 +134,9 @@ namespace MonsterRender::RHI::Vulkan {
         // Debug functions
         PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT = nullptr;
         PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT = nullptr;
+        PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT = nullptr;
+        PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT = nullptr;
+        PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT = nullptr;
     };
     
     /**

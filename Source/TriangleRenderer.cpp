@@ -17,6 +17,20 @@ namespace MonsterRender {
             return;
         }
         
+        // Hot-reload: recompile shaders if sources changed
+        static uint64 s_vsTime = 0, s_psTime = 0;
+        const String vsPath = "Shaders/Triangle.vert";
+        const String psPath = "Shaders/Triangle.frag";
+        uint64 vsTime = ShaderCompiler::getLastWriteTime(vsPath);
+        uint64 psTime = ShaderCompiler::getLastWriteTime(psPath);
+        if ((vsTime && vsTime != s_vsTime) || (psTime && psTime != s_psTime)) {
+            s_vsTime = vsTime; s_psTime = psTime;
+            MR_LOG_INFO("Shader sources changed. Recompiling...");
+            if (createShaders()) {
+                createPipelineState();
+            }
+        }
+
         // Set up rendering state
         cmdList->setPipelineState(m_pipelineState);
         TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers = {m_vertexBuffer};
