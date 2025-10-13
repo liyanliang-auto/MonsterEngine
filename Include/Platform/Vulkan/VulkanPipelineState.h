@@ -122,6 +122,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkPipeline m_pipeline;
         VkPipelineLayout m_pipelineLayout;
         VkRenderPass m_renderPass;
+        TArray<VkDescriptorSetLayout> m_descriptorSetLayouts;
         
         // Shader modules
         TArray<VkShaderModule> m_shaderModules;

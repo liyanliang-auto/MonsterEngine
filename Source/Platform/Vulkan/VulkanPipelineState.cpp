@@ -147,22 +147,88 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
-        // For now, create a basic pipeline layout without descriptor sets
-        // TODO: Implement descriptor set layout creation based on shader reflection
+        // Aggregate descriptor bindings from all shader stages
+        // Maps (set, binding) -> VkDescriptorSetLayoutBinding
+        TMap<uint32, TArray<VkDescriptorSetLayoutBinding>> setBindings;
+        
+        // Collect bindings from vertex shader
+        if (m_desc.vertexShader) {
+            auto* vulkanVS = static_cast<VulkanVertexShader*>(m_desc.vertexShader.get());
+            const auto& bindings = vulkanVS->getDescriptorBindings();
+            for (const auto& binding : bindings) {
+                // Assume set=0 for now; enhance later for multi-set support
+                setBindings[0].push_back(binding);
+            }
+        }
+        
+        // Collect bindings from pixel shader
+        if (m_desc.pixelShader) {
+            auto* vulkanPS = static_cast<VulkanPixelShader*>(m_desc.pixelShader.get());
+            const auto& bindings = vulkanPS->getDescriptorBindings();
+            for (const auto& binding : bindings) {
+                // Merge with existing bindings, combining stage flags if binding already exists
+                bool found = false;
+                for (auto& existing : setBindings[0]) {
+                    if (existing.binding == binding.binding) {
+                        existing.stageFlags |= binding.stageFlags;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    setBindings[0].push_back(binding);
+                }
+            }
+        }
+        
+        // Create VkDescriptorSetLayouts for each set
+        TArray<VkDescriptorSetLayout> descriptorSetLayouts;
+        for (const auto& [setIndex, bindings] : setBindings) {
+            if (bindings.empty()) continue;
+            
+            VkDescriptorSetLayoutCreateInfo layoutInfo{};
+            layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            layoutInfo.bindingCount = static_cast<uint32>(bindings.size());
+            layoutInfo.pBindings = bindings.data();
+            
+            VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
+            VkResult result = functions.vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &setLayout);
+            if (result != VK_SUCCESS) {
+                MR_LOG_ERROR("Failed to create descriptor set layout for set " + std::to_string(setIndex) + ": " + std::to_string(result));
+                // Clean up previously created layouts
+                for (auto layout : descriptorSetLayouts) {
+                    functions.vkDestroyDescriptorSetLayout(device, layout, nullptr);
+                }
+                return false;
+            }
+            
+            descriptorSetLayouts.push_back(setLayout);
+            MR_LOG_DEBUG("Created descriptor set layout for set " + std::to_string(setIndex) + " with " + std::to_string(bindings.size()) + " bindings");
+        }
+        
+        // Store descriptor set layouts for later cleanup
+        m_descriptorSetLayouts = descriptorSetLayouts;
+        
+        // Create pipeline layout with descriptor set layouts
         VkPipelineLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layoutInfo.setLayoutCount = 0;
-        layoutInfo.pSetLayouts = nullptr;
+        layoutInfo.setLayoutCount = static_cast<uint32>(descriptorSetLayouts.size());
+        layoutInfo.pSetLayouts = descriptorSetLayouts.empty() ? nullptr : descriptorSetLayouts.data();
         layoutInfo.pushConstantRangeCount = 0;
         layoutInfo.pPushConstantRanges = nullptr;
         
         VkResult result = functions.vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_pipelineLayout);
         if (result != VK_SUCCESS) {
             MR_LOG_ERROR("Failed to create pipeline layout: " + std::to_string(result));
+            // Clean up descriptor set layouts
+            for (auto layout : m_descriptorSetLayouts) {
+                functions.vkDestroyDescriptorSetLayout(device, layout, nullptr);
+            }
+            m_descriptorSetLayouts.clear();
             return false;
         }
         
-        MR_LOG_DEBUG("Pipeline layout created successfully");
+        MR_LOG_DEBUG("Pipeline layout created successfully with " + std::to_string(descriptorSetLayouts.size()) + " descriptor sets");
         return true;
     }
     
@@ -360,6 +426,14 @@ namespace MonsterRender::RHI::Vulkan {
                 functions.vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
                 m_pipelineLayout = VK_NULL_HANDLE;
             }
+            
+            // Cleanup descriptor set layouts
+            for (auto layout : m_descriptorSetLayouts) {
+                if (layout != VK_NULL_HANDLE) {
+                    functions.vkDestroyDescriptorSetLayout(device, layout, nullptr);
+                }
+            }
+            m_descriptorSetLayouts.clear();
             
             if (m_renderPass != VK_NULL_HANDLE) {
                 functions.vkDestroyRenderPass(device, m_renderPass, nullptr);
