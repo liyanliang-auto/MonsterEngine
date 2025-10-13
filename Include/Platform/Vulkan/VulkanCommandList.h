@@ -65,6 +65,28 @@ namespace MonsterRender::RHI::Vulkan {
         void endEvent() override;
         void setMarker(const String& name) override;
         
+        // UE5-style resource binding APIs
+        /**
+         * Set shader uniform buffer (UE5: SetShaderUniformBuffer)
+         * @param slot Binding slot index
+         * @param buffer Uniform buffer to bind
+         */
+        void setShaderUniformBuffer(uint32 slot, TSharedPtr<IRHIBuffer> buffer);
+        
+        /**
+         * Set shader texture (UE5: SetShaderTexture)
+         * @param slot Binding slot index
+         * @param texture Texture to bind
+         */
+        void setShaderTexture(uint32 slot, TSharedPtr<IRHITexture> texture);
+        
+        /**
+         * Set shader sampler (UE5: SetShaderSampler)
+         * @param slot Binding slot index
+         * @param sampler Sampler to bind (currently combined with texture)
+         */
+        void setShaderSampler(uint32 slot, TSharedPtr<IRHITexture> texture);
+        
         // Vulkan-specific getters
         VkCommandBuffer getCommandBuffer() const { return m_commandBuffer; }
         VkCommandBuffer getVulkanCommandBuffer() const { return m_commandBuffer; }
@@ -87,7 +109,18 @@ namespace MonsterRender::RHI::Vulkan {
         TArray<TSharedPtr<IRHITexture>> m_boundRenderTargets;
         TSharedPtr<IRHITexture> m_boundDepthStencil;
         
+        // Resource binding state (for descriptor sets)
+        struct BoundResource {
+            TSharedPtr<IRHIBuffer> buffer;
+            TSharedPtr<IRHITexture> texture;
+            bool isDirty = true;
+        };
+        TMap<uint32, BoundResource> m_boundResources; // slot -> resource
+        VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
+        VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
+        
         // Debug state
         uint32 m_eventDepth = 0;
+        bool m_debugUtilsAvailable = false;
     };
 }

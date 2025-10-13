@@ -49,6 +49,20 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
+        // Check if VK_EXT_debug_utils is available (for debug builds)
+#if defined(_DEBUG) || defined(DEBUG)
+        m_debugUtilsAvailable = (functions.vkCmdBeginDebugUtilsLabelEXT != nullptr &&
+                                 functions.vkCmdEndDebugUtilsLabelEXT != nullptr &&
+                                 functions.vkCmdInsertDebugUtilsLabelEXT != nullptr);
+        if (m_debugUtilsAvailable) {
+            MR_LOG_INFO("VK_EXT_debug_utils is available - debug markers enabled");
+        } else {
+            MR_LOG_WARNING("VK_EXT_debug_utils is not available - debug markers disabled");
+        }
+#else
+        m_debugUtilsAvailable = false;
+#endif
+        
         // Allocate command buffer from device command pool
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -397,7 +411,21 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void VulkanCommandList::beginEvent(const String& name) {
-        // TODO: Use VK_EXT_debug_utils for debug markers
+#if defined(_DEBUG) || defined(DEBUG)
+        if (m_debugUtilsAvailable && m_commandBuffer != VK_NULL_HANDLE) {
+            const auto& functions = VulkanAPI::getFunctions();
+            if (functions.vkCmdBeginDebugUtilsLabelEXT) {
+                VkDebugUtilsLabelEXT label{};
+                label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+                label.pLabelName = name.c_str();
+                label.color[0] = 1.0f;
+                label.color[1] = 1.0f;
+                label.color[2] = 1.0f;
+                label.color[3] = 1.0f;
+                functions.vkCmdBeginDebugUtilsLabelEXT(m_commandBuffer, &label);
+            }
+        }
+#endif
         ++m_eventDepth;
     }
     
@@ -405,11 +433,88 @@ namespace MonsterRender::RHI::Vulkan {
         if (m_eventDepth > 0) {
             --m_eventDepth;
         }
-        // TODO: Use VK_EXT_debug_utils for debug markers
+#if defined(_DEBUG) || defined(DEBUG)
+        if (m_debugUtilsAvailable && m_commandBuffer != VK_NULL_HANDLE) {
+            const auto& functions = VulkanAPI::getFunctions();
+            if (functions.vkCmdEndDebugUtilsLabelEXT) {
+                functions.vkCmdEndDebugUtilsLabelEXT(m_commandBuffer);
+            }
+        }
+#endif
     }
     
     void VulkanCommandList::setMarker(const String& name) {
-        // TODO: Use VK_EXT_debug_utils for debug markers
+#if defined(_DEBUG) || defined(DEBUG)
+        if (m_debugUtilsAvailable && m_commandBuffer != VK_NULL_HANDLE) {
+            const auto& functions = VulkanAPI::getFunctions();
+            if (functions.vkCmdInsertDebugUtilsLabelEXT) {
+                VkDebugUtilsLabelEXT label{};
+                label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+                label.pLabelName = name.c_str();
+                label.color[0] = 1.0f;
+                label.color[1] = 0.5f;
+                label.color[2] = 0.0f;
+                label.color[3] = 1.0f;
+                functions.vkCmdInsertDebugUtilsLabelEXT(m_commandBuffer, &label);
+            }
+        }
+#endif
+    }
+    
+    void VulkanCommandList::setShaderUniformBuffer(uint32 slot, TSharedPtr<IRHIBuffer> buffer) {
+        ensureRecording("setShaderUniformBuffer");
+        
+        if (!buffer) {
+            MR_LOG_WARNING("Attempting to bind null uniform buffer to slot " + std::to_string(slot));
+#if defined(_DEBUG) || defined(DEBUG)
+            if (m_debugUtilsAvailable) {
+                setMarker("ERROR: Missing uniform buffer binding at slot " + std::to_string(slot));
+            }
+#endif
+            return;
+        }
+        
+        // Track bound resource
+        auto& resource = m_boundResources[slot];
+        resource.buffer = buffer;
+        resource.texture.reset();
+        resource.isDirty = true;
+        
+        MR_LOG_DEBUG("Uniform buffer bound to slot " + std::to_string(slot));
+        
+        // TODO: Allocate and update descriptor set when pipeline is set
+        // For now, this is a placeholder for future descriptor set implementation
+    }
+    
+    void VulkanCommandList::setShaderTexture(uint32 slot, TSharedPtr<IRHITexture> texture) {
+        ensureRecording("setShaderTexture");
+        
+        if (!texture) {
+            MR_LOG_WARNING("Attempting to bind null texture to slot " + std::to_string(slot));
+#if defined(_DEBUG) || defined(DEBUG)
+            if (m_debugUtilsAvailable) {
+                setMarker("ERROR: Missing texture binding at slot " + std::to_string(slot));
+            }
+#endif
+            return;
+        }
+        
+        // Track bound resource
+        auto& resource = m_boundResources[slot];
+        resource.texture = texture;
+        resource.buffer.reset();
+        resource.isDirty = true;
+        
+        MR_LOG_DEBUG("Texture bound to slot " + std::to_string(slot));
+        
+        // TODO: Allocate and update descriptor set when pipeline is set
+        // For now, this is a placeholder for future descriptor set implementation
+    }
+    
+    void VulkanCommandList::setShaderSampler(uint32 slot, TSharedPtr<IRHITexture> texture) {
+        // For Vulkan, samplers are often combined with textures (combined image sampler)
+        // This is a simplified implementation
+        setShaderTexture(slot, texture);
     }
     
     void VulkanCommandList::ensureNotRecording(const char* operation) const {
