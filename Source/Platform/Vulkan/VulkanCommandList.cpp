@@ -2,6 +2,7 @@
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
+#include "Platform/Vulkan/VulkanShader.h"
 #include "Core/Log.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 
