@@ -4,6 +4,7 @@
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanShader.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
+#include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Core/Log.h"
@@ -112,7 +113,14 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Step 10: Query device capabilities
+        // Step 10: Create descriptor set allocator
+        m_descriptorSetAllocator = MakeUnique<VulkanDescriptorSetAllocator>(this);
+        if (!m_descriptorSetAllocator) {
+            MR_LOG_ERROR("Failed to create descriptor set allocator");
+            return false;
+        }
+        
+        // Step 11: Query device capabilities
         queryCapabilities();
         
         MR_LOG_INFO("Vulkan device initialized successfully");
@@ -299,6 +307,11 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         const auto& functions = VulkanAPI::getFunctions();
+        
+        // Begin new frame for descriptor set allocator
+        if (m_descriptorSetAllocator) {
+            m_descriptorSetAllocator->beginFrame(m_currentFrame);
+        }
         
         // Wait for previous frame
         functions.vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);

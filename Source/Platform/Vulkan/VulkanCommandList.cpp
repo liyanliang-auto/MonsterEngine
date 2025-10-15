@@ -1,6 +1,7 @@
 #include "Platform/Vulkan/VulkanCommandList.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
+#include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Core/Log.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 
@@ -331,6 +332,9 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        // Update and bind descriptor sets if needed
+        updateAndBindDescriptorSets();
+        
         // Issue Vulkan draw command
         const auto& functions = VulkanAPI::getFunctions();
         functions.vkCmdDraw(m_commandBuffer, vertexCount, 1, startVertexLocation, 0);
@@ -527,5 +531,136 @@ namespace MonsterRender::RHI::Vulkan {
         if (!m_isRecording) {
             MR_LOG_ERROR(String("Cannot call ") + operation + " while command list is not recording");
         }
+    }
+    
+    void VulkanCommandList::updateAndBindDescriptorSets() {
+        // Check if we have a pipeline state with descriptor set layouts
+        if (!m_currentPipelineState) {
+            return;
+        }
+        
+        // Check if any resources are bound
+        if (m_boundResources.empty()) {
+            return;
+        }
+        
+        auto* vulkanPipeline = static_cast<VulkanPipelineState*>(m_currentPipelineState.get());
+        VkPipelineLayout pipelineLayout = vulkanPipeline->getPipelineLayout();
+        
+        if (pipelineLayout == VK_NULL_HANDLE) {
+            return;
+        }
+        
+        // Get descriptor set allocator
+        auto* allocator = m_device->getDescriptorSetAllocator();
+        if (!allocator) {
+            MR_LOG_WARNING("Descriptor set allocator not available");
+            return;
+        }
+        
+        // Check if any resources are dirty (need update)
+        bool needsUpdate = false;
+        for (const auto& [slot, resource] : m_boundResources) {
+            if (resource.isDirty) {
+                needsUpdate = true;
+                break;
+            }
+        }
+        
+        if (!needsUpdate && m_currentDescriptorSet != VK_NULL_HANDLE) {
+            // Descriptor set is still valid, just bind it
+            const auto& functions = VulkanAPI::getFunctions();
+            functions.vkCmdBindDescriptorSets(
+                m_commandBuffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipelineLayout,
+                0, // first set
+                1, // descriptor set count
+                &m_currentDescriptorSet,
+                0, // dynamic offset count
+                nullptr // dynamic offsets
+            );
+            return;
+        }
+        
+        // Get bindings from shaders
+        TArray<VkDescriptorSetLayoutBinding> allBindings;
+        if (m_currentPipelineState->getDesc().vertexShader) {
+            auto* vulkanVS = static_cast<VulkanVertexShader*>(m_currentPipelineState->getDesc().vertexShader.get());
+            const auto& bindings = vulkanVS->getDescriptorBindings();
+            for (const auto& binding : bindings) {
+                allBindings.push_back(binding);
+            }
+        }
+        if (m_currentPipelineState->getDesc().pixelShader) {
+            auto* vulkanPS = static_cast<VulkanPixelShader*>(m_currentPipelineState->getDesc().pixelShader.get());
+            const auto& bindings = vulkanPS->getDescriptorBindings();
+            for (const auto& binding : bindings) {
+                // Merge with existing
+                bool found = false;
+                for (auto& existing : allBindings) {
+                    if (existing.binding == binding.binding) {
+                        existing.stageFlags |= binding.stageFlags;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    allBindings.push_back(binding);
+                }
+            }
+        }
+        
+        if (allBindings.empty()) {
+            return; // No bindings needed
+        }
+        
+        // Get descriptor set layout from pipeline (assume set 0)
+        auto& descriptorLayouts = vulkanPipeline->getDescriptorSetLayouts();
+        if (descriptorLayouts.empty()) {
+            return;
+        }
+        
+        // Allocate descriptor set
+        m_currentDescriptorSet = allocator->allocate(descriptorLayouts[0], allBindings);
+        if (m_currentDescriptorSet == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Failed to allocate descriptor set");
+            return;
+        }
+        
+        // Collect bound buffers and textures
+        TMap<uint32, TSharedPtr<IRHIBuffer>> buffers;
+        TMap<uint32, TSharedPtr<IRHITexture>> textures;
+        for (const auto& [slot, resource] : m_boundResources) {
+            if (resource.buffer) {
+                buffers[slot] = resource.buffer;
+            }
+            if (resource.texture) {
+                textures[slot] = resource.texture;
+            }
+        }
+        
+        // Update descriptor set
+        allocator->updateDescriptorSet(m_currentDescriptorSet, allBindings, buffers, textures);
+        
+        // Bind descriptor set
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdBindDescriptorSets(
+            m_commandBuffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout,
+            0, // first set
+            1, // descriptor set count
+            &m_currentDescriptorSet,
+            0, // dynamic offset count
+            nullptr // dynamic offsets
+        );
+        
+        // Clear dirty flags
+        for (auto& [slot, resource] : m_boundResources) {
+            resource.isDirty = false;
+        }
+        
+        MR_LOG_DEBUG("Descriptor set allocated, updated, and bound successfully");
     }
 }

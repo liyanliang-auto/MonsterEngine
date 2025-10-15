@@ -11,6 +11,7 @@ namespace MonsterRender::RHI::Vulkan {
     class VulkanCommandList;
     class VulkanPipelineState;
     class VulkanPipelineCache;
+    class VulkanDescriptorSetAllocator;
     
     /**
      * Queue family information
@@ -79,6 +80,8 @@ namespace MonsterRender::RHI::Vulkan {
         const QueueFamily& getPresentQueueFamily() const { return m_presentQueueFamily; }
         const VkPhysicalDeviceMemoryProperties& getMemoryProperties() const { return m_memoryProperties; }
         
+        VulkanDescriptorSetAllocator* getDescriptorSetAllocator() const { return m_descriptorSetAllocator.get(); }
+        
     private:
         // Initialization helper functions
         bool createInstance(const RHICreateInfo& createInfo);
@@ -124,6 +127,9 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Pipeline cache
         TUniquePtr<VulkanPipelineCache> m_pipelineCache;
+        
+        // Descriptor set allocator
+        TUniquePtr<VulkanDescriptorSetAllocator> m_descriptorSetAllocator;
         
         // Synchronization
         TArray<VkSemaphore> m_imageAvailableSemaphores;
