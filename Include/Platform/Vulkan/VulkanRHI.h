@@ -108,9 +108,11 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout = nullptr;
         PFN_vkCreateDescriptorPool vkCreateDescriptorPool = nullptr;
         PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool = nullptr;
+        PFN_vkResetDescriptorPool vkResetDescriptorPool = nullptr;
         PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets = nullptr;
         PFN_vkFreeDescriptorSets vkFreeDescriptorSets = nullptr;
         PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets = nullptr;
+        PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets = nullptr;
         
         // Swapchain functions (loaded dynamically based on extensions)
         PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR = nullptr;

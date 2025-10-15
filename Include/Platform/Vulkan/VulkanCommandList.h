@@ -96,6 +96,7 @@ namespace MonsterRender::RHI::Vulkan {
         // Helper methods
         void ensureNotRecording(const char* operation) const;
         void ensureRecording(const char* operation) const;
+        void updateAndBindDescriptorSets();
         
     private:
         VulkanDevice* m_device = nullptr;

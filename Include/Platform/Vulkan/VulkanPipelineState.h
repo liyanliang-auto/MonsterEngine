@@ -114,6 +114,11 @@ namespace MonsterRender::RHI::Vulkan {
          */
         EResourceUsage getUsage() const override { return EResourceUsage::None; }
         
+        /**
+         * Get descriptor set layouts
+         */
+        const TArray<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return m_descriptorSetLayouts; }
+        
     private:
         VulkanDevice* m_device;
         bool m_isValid;
