@@ -82,6 +82,12 @@ namespace MonsterRender::RHI::Vulkan {
         
         VulkanDescriptorSetAllocator* getDescriptorSetAllocator() const { return m_descriptorSetAllocator.get(); }
         
+        // Render pass and framebuffer accessors
+        VkRenderPass getRenderPass() const { return m_renderPass; }
+        VkFramebuffer getCurrentFramebuffer() const;
+        const VkExtent2D& getSwapchainExtent() const { return m_swapchainExtent; }
+        VkFormat getSwapchainFormat() const { return m_swapchainImageFormat; }
+        
     private:
         // Initialization helper functions
         bool createInstance(const RHICreateInfo& createInfo);
@@ -90,6 +96,8 @@ namespace MonsterRender::RHI::Vulkan {
         bool selectPhysicalDevice();
         bool createLogicalDevice();
         bool createSwapchain(const RHICreateInfo& createInfo);
+        bool createRenderPass();
+        bool createFramebuffers();
         bool createCommandPool();
         bool createSyncObjects();
         
@@ -120,6 +128,10 @@ namespace MonsterRender::RHI::Vulkan {
         TArray<VkImageView> m_swapchainImageViews;
         VkFormat m_swapchainImageFormat = VK_FORMAT_UNDEFINED;
         VkExtent2D m_swapchainExtent = {0, 0};
+        
+        // Render pass and framebuffers
+        VkRenderPass m_renderPass = VK_NULL_HANDLE;
+        TArray<VkFramebuffer> m_swapchainFramebuffers;
         
         // Command handling
         VkCommandPool m_commandPool = VK_NULL_HANDLE;

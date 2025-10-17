@@ -94,33 +94,45 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Step 7: Create command pool
+        // Step 7: Create render pass
+        if (!createRenderPass()) {
+            MR_LOG_ERROR("Failed to create render pass");
+            return false;
+        }
+        
+        // Step 8: Create framebuffers
+        if (!createFramebuffers()) {
+            MR_LOG_ERROR("Failed to create framebuffers");
+            return false;
+        }
+        
+        // Step 9: Create command pool
         if (!createCommandPool()) {
             MR_LOG_ERROR("Failed to create command pool");
             return false;
         }
         
-        // Step 8: Create synchronization objects
+        // Step 10: Create synchronization objects
         if (!createSyncObjects()) {
             MR_LOG_ERROR("Failed to create synchronization objects");
             return false;
         }
         
-        // Step 9: Create pipeline cache
+        // Step 11: Create pipeline cache
         m_pipelineCache = MakeUnique<VulkanPipelineCache>(this);
         if (!m_pipelineCache) {
             MR_LOG_ERROR("Failed to create pipeline cache");
             return false;
         }
         
-        // Step 10: Create descriptor set allocator
+        // Step 12: Create descriptor set allocator
         m_descriptorSetAllocator = MakeUnique<VulkanDescriptorSetAllocator>(this);
         if (!m_descriptorSetAllocator) {
             MR_LOG_ERROR("Failed to create descriptor set allocator");
             return false;
         }
         
-        // Step 11: Query device capabilities
+        // Step 13: Query device capabilities
         queryCapabilities();
         
         MR_LOG_INFO("Vulkan device initialized successfully");
@@ -148,6 +160,20 @@ namespace MonsterRender::RHI::Vulkan {
             // Destroy command pool
             if (m_commandPool != VK_NULL_HANDLE) {
                 functions.vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+            }
+            
+            // Destroy framebuffers
+            for (auto framebuffer : m_swapchainFramebuffers) {
+                if (framebuffer != VK_NULL_HANDLE) {
+                    functions.vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+                }
+            }
+            m_swapchainFramebuffers.clear();
+            
+            // Destroy render pass
+            if (m_renderPass != VK_NULL_HANDLE) {
+                functions.vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+                m_renderPass = VK_NULL_HANDLE;
             }
             
             // Destroy swapchain
@@ -771,6 +797,103 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("Swapchain extent: " + std::to_string(m_swapchainExtent.width) + "x" + std::to_string(m_swapchainExtent.height));
         
         return true;
+    }
+    
+    bool VulkanDevice::createRenderPass() {
+        MR_LOG_INFO("Creating render pass...");
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        // Color attachment (swapchain image)
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = m_swapchainImageFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear before rendering
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store result to memory
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Don't care about initial layout
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Ready for presentation
+        
+        // Attachment reference for subpass
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0; // Index in attachment descriptions array
+        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        
+        // Subpass description
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorAttachmentRef;
+        
+        // Subpass dependency (for automatic layout transitions)
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL; // Implicit subpass before render pass
+        dependency.dstSubpass = 0; // Our first (and only) subpass
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        
+        // Create render pass
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = &colorAttachment;
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
+        
+        VkResult result = functions.vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create render pass! Result: " + std::to_string(result));
+            return false;
+        }
+        
+        MR_LOG_INFO("Render pass created successfully");
+        return true;
+    }
+    
+    bool VulkanDevice::createFramebuffers() {
+        MR_LOG_INFO("Creating framebuffers...");
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        // Create one framebuffer for each swapchain image view
+        m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
+        
+        for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
+            VkImageView attachments[] = {
+                m_swapchainImageViews[i]
+            };
+            
+            VkFramebufferCreateInfo framebufferInfo{};
+            framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebufferInfo.renderPass = m_renderPass;
+            framebufferInfo.attachmentCount = 1;
+            framebufferInfo.pAttachments = attachments;
+            framebufferInfo.width = m_swapchainExtent.width;
+            framebufferInfo.height = m_swapchainExtent.height;
+            framebufferInfo.layers = 1;
+            
+            VkResult result = functions.vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]);
+            if (result != VK_SUCCESS) {
+                MR_LOG_ERROR("Failed to create framebuffer " + std::to_string(i) + "! Result: " + std::to_string(result));
+                return false;
+            }
+        }
+        
+        MR_LOG_INFO("Created " + std::to_string(m_swapchainFramebuffers.size()) + " framebuffers successfully");
+        return true;
+    }
+    
+    VkFramebuffer VulkanDevice::getCurrentFramebuffer() const {
+        if (m_currentImageIndex >= m_swapchainFramebuffers.size()) {
+            MR_LOG_ERROR("Current image index out of range: " + std::to_string(m_currentImageIndex));
+            return VK_NULL_HANDLE;
+        }
+        return m_swapchainFramebuffers[m_currentImageIndex];
     }
     
     bool VulkanDevice::createCommandPool() {
