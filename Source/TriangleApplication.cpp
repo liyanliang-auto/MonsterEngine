@@ -76,8 +76,11 @@ private:
         // Begin frame rendering
         cmdList->begin();
         
-        // Clear render target (when implemented)
-        // For now, just render the triangle
+        // Set render targets (begins render pass and clears to black)
+        TArray<TSharedPtr<RHI::IRHITexture>> renderTargets; // Empty = use default swapchain
+        cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+        
+        // Render the triangle
         m_triangleRenderer->render(cmdList);
         
         // End command recording

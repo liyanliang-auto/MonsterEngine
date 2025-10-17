@@ -169,7 +169,12 @@ namespace MonsterRender::RHI::Vulkan {
                                             TSharedPtr<IRHITexture> depthStencil) {
         ensureRecording("setRenderTargets");
         
-        MR_LOG_DEBUG("Setting render targets");
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot set render targets");
+            return;
+        }
+        
+        MR_LOG_DEBUG("Setting render targets and beginning render pass");
         
         // Store bound render targets for state tracking
         m_boundRenderTargets.clear();
@@ -178,10 +183,35 @@ namespace MonsterRender::RHI::Vulkan {
         }
         m_boundDepthStencil = depthStencil;
         
-        // TODO: Implement Vulkan render pass begin/framebuffer binding
-        // This involves creating/caching render pass objects and framebuffers
+        // For now, support rendering to the default swapchain framebuffer
+        // In the future, this should handle custom render targets
+        VkRenderPass renderPass = m_device->getRenderPass();
+        VkFramebuffer framebuffer = m_device->getCurrentFramebuffer();
+        const VkExtent2D& extent = m_device->getSwapchainExtent();
+        
+        if (renderPass == VK_NULL_HANDLE || framebuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Invalid render pass or framebuffer");
+            return;
+        }
+        
+        // Set up clear values
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // Black with full alpha
+        
+        // Begin render pass
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = framebuffer;
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = extent;
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdBeginRenderPass(m_commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         
         m_inRenderPass = true;
+        MR_LOG_DEBUG("Render pass began successfully");
     }
     
     void VulkanCommandList::setViewport(const Viewport& viewport) {
@@ -328,6 +358,11 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        if (!m_inRenderPass) {
+            MR_LOG_ERROR("Cannot draw without an active render pass. Call setRenderTargets first.");
+            return;
+        }
+        
         if (vertexCount == 0) {
             MR_LOG_WARNING("Draw called with 0 vertices");
             return;
@@ -348,6 +383,11 @@ namespace MonsterRender::RHI::Vulkan {
         
         if (m_commandBuffer == VK_NULL_HANDLE) {
             MR_LOG_ERROR("Command buffer is null, cannot draw indexed");
+            return;
+        }
+        
+        if (!m_inRenderPass) {
+            MR_LOG_ERROR("Cannot draw without an active render pass. Call setRenderTargets first.");
             return;
         }
         
