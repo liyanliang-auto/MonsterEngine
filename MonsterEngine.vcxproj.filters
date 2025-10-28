@@ -72,6 +72,15 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanDescriptorSet.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Platform\Vulkan\VulkanPipelineState.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Core\ShaderCompiler.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\MemorySystemTest.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Assert.h">
@@ -144,6 +153,12 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Include\Platform\Vulkan\VulkanDescriptorSet.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Platform\Vulkan\VulkanPipelineState.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Core\ShaderCompiler.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

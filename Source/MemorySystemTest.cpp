@@ -4,33 +4,34 @@
 #include <chrono>
 
 namespace MonsterRender {
+namespace MemorySystemTest {
 
 /**
  * MemorySystem 测试用例集
  * 用于验证内存管理器的所有功能
  */
-class MemorySystemTest {
-public:
-    static void runAllTests() {
-        MR_LOG_INFO("=== MemorySystem Test Suite Started ===\n");
 
-        testInitialization();
-        testSmallObjectPool();
-        testFrameScratchPool();
-        testTexturePool();
-        testThreadLocalCache();
-        testHugePages();
-        testEmptyPageTrimming();
-        testStatistics();
-        testConcurrency();
-        testEdgeCases();
+void runAllTests() {
+    MR_LOG_INFO("=== MemorySystem Test Suite Started ===\n");
 
-        MR_LOG_INFO("\n=== MemorySystem Test Suite Completed ===");
-    }
+    testInitialization();
+    testSmallObjectPool();
+    testFrameScratchPool();
+    testTexturePool();
+    testThreadLocalCache();
+    testHugePages();
+    testEmptyPageTrimming();
+    testStatistics();
+    testConcurrency();
+    testEdgeCases();
 
-private:
-    // 测试1：初始化和关闭
-    static void testInitialization() {
+    MR_LOG_INFO("\n=== MemorySystem Test Suite Completed ===");
+}
+
+namespace {  // Anonymous namespace for internal test functions
+
+// 测试1：初始化和关闭
+void testInitialization() {
         MR_LOG_INFO("\n[Test 1] Initialization and Shutdown");
         
         auto& memSys = MemorySystem::get();
@@ -43,8 +44,8 @@ private:
         MR_LOG_INFO("  ✓ Huge pages available: " + String(memSys.isHugePagesAvailable() ? "YES" : "NO"));
     }
 
-    // 测试2：小对象池（16B - 1024B）
-    static void testSmallObjectPool() {
+// 测试2：小对象池（16B - 1024B）
+void testSmallObjectPool() {
         MR_LOG_INFO("\n[Test 2] Small Object Pool");
         
         auto& memSys = MemorySystem::get();
@@ -99,8 +100,8 @@ private:
         MR_LOG_INFO("  ✓ Freed all objects");
     }
 
-    // 测试3：帧临时缓冲池
-    static void testFrameScratchPool() {
+// 测试3：帧临时缓冲池
+void testFrameScratchPool() {
         MR_LOG_INFO("\n[Test 3] Frame Scratch Pool");
         
         auto& memSys = MemorySystem::get();
@@ -140,7 +141,7 @@ private:
     }
 
     // 测试4：纹理缓冲池
-    static void testTexturePool() {
+void testTexturePool() {
         MR_LOG_INFO("\n[Test 4] Texture Buffer Pool");
         
         auto& memSys = MemorySystem::get();
@@ -182,7 +183,7 @@ private:
     }
 
     // 测试5：线程本地缓存（TLS Cache）
-    static void testThreadLocalCache() {
+void testThreadLocalCache() {
         MR_LOG_INFO("\n[Test 5] Thread-Local Cache");
         
         auto& memSys = MemorySystem::get();
@@ -220,7 +221,7 @@ private:
     }
 
     // 测试6：大页支持
-    static void testHugePages() {
+void testHugePages() {
         MR_LOG_INFO("\n[Test 6] Huge Pages Support");
         
         auto& memSys = MemorySystem::get();
@@ -251,7 +252,7 @@ private:
     }
 
     // 测试7：空页回收
-    static void testEmptyPageTrimming() {
+void testEmptyPageTrimming() {
         MR_LOG_INFO("\n[Test 7] Empty Page Trimming");
         
         auto& memSys = MemorySystem::get();
@@ -286,7 +287,7 @@ private:
     }
 
     // 测试8：统计信息
-    static void testStatistics() {
+void testStatistics() {
         MR_LOG_INFO("\n[Test 8] Memory Statistics");
         
         auto& memSys = MemorySystem::get();
@@ -323,7 +324,7 @@ private:
     }
 
     // 测试9：并发测试
-    static void testConcurrency() {
+void testConcurrency() {
         MR_LOG_INFO("\n[Test 9] Concurrent Allocation Test");
         
         auto& memSys = MemorySystem::get();
@@ -384,7 +385,7 @@ private:
     }
 
     // 测试10：边界情况
-    static void testEdgeCases() {
+void testEdgeCases() {
         MR_LOG_INFO("\n[Test 10] Edge Cases");
         
         auto& memSys = MemorySystem::get();
@@ -417,13 +418,9 @@ private:
         
         MR_LOG_INFO("  ✓ All edge cases passed");
     }
-};
 
-} // namespace MonsterRender
+}  // anonymous namespace
 
-// 独立测试入口点
-// 在main.cpp中调用: MonsterRender::runMemorySystemTests();
-void runMemorySystemTests() {
-    MonsterRender::MemorySystemTest::runAllTests();
-}
+}  // namespace MemorySystemTest
+}  // namespace MonsterRender
 
