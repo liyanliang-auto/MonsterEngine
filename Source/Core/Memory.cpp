@@ -4,6 +4,15 @@
 #include <new>
 #include <algorithm>
 
+// Platform-specific includes for huge pages
+#if PLATFORM_WINDOWS
+	#include <Windows.h>
+#elif PLATFORM_LINUX
+	#include <sys/mman.h>
+	#include <unistd.h>
+	#include <fcntl.h>
+#endif
+
 namespace MonsterRender {
 
 	static constexpr size_t kSmallPageSize = 64ull * 1024ull; // 64KB pages for small bins
