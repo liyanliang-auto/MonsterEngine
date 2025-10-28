@@ -19,6 +19,8 @@ namespace MonsterRender {
         }
         
         MR_LOG_INFO("Initializing MonsterRender Engine...");
+        // Initialize memory system first
+        MemorySystem::get().initialize();
         
         // Initialize RHI system
         MR_LOG_INFO("Available RHI backends:");
@@ -62,6 +64,9 @@ namespace MonsterRender {
         
         m_initialized = false;
         MR_LOG_INFO("MonsterRender Engine shutdown complete");
+
+        // Shutdown memory system last
+        MemorySystem::get().shutdown();
     }
     
     void Engine::run() {
