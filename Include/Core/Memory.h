@@ -2,16 +2,19 @@
 
 #include "Core/CoreMinimal.h"
 
-// Platform-specific alignment
+// Platform-specific alignment and huge pages
 #if PLATFORM_WINDOWS
 	#define MR_CACHE_LINE_SIZE 64
 	#define MR_SIMD_ALIGNMENT 32  // AVX2
+	#define MR_HUGE_PAGE_SIZE (2ull * 1024ull * 1024ull)  // 2MB on Windows
 #elif PLATFORM_LINUX
 	#define MR_CACHE_LINE_SIZE 64
 	#define MR_SIMD_ALIGNMENT 16  // SSE
+	#define MR_HUGE_PAGE_SIZE (2ull * 1024ull * 1024ull)  // 2MB on Linux (default)
 #else
 	#define MR_CACHE_LINE_SIZE 64
 	#define MR_SIMD_ALIGNMENT 16
+	#define MR_HUGE_PAGE_SIZE (2ull * 1024ull * 1024ull)
 #endif
 
 namespace MonsterRender {
@@ -54,6 +57,11 @@ namespace MonsterRender {
 		// Maintenance & Defragmentation
 		void  trimEmptyPages();  // Release empty pages back to system
 		void  compactTextureBlocks();  // Merge free regions
+
+		// Huge Pages Support
+		bool  isHugePagesAvailable() const;  // Check if huge pages are supported
+		bool  enableHugePages(bool enable);   // Enable/disable huge pages for new allocations
+		void  setHugePagesForTextures(bool enable);  // Use huge pages for texture pool
 
 		// Memory Statistics
 		struct MemoryStats {
@@ -181,6 +189,11 @@ namespace MonsterRender {
 		std::atomic<uint64> m_textureAllocations{0};
 		std::atomic<uint64> m_textureFrees{0};
 
+		// Huge pages configuration
+		bool m_hugePagesEnabled = false;
+		bool m_hugePagesAvailable = false;
+		bool m_useHugePagesForTextures = true;  // Textures benefit most from huge pages
+
 		// TLS cache (thread_local in cpp)
 		static thread_local ThreadLocalCache* t_tlsCache;
 
@@ -197,6 +210,11 @@ namespace MonsterRender {
 		void* allocateFromFreeList(TextureBlock& block, size_t size, size_t alignment);
 		void addToFreeList(TextureBlock& block, void* ptr, size_t size);
 		void mergeFreeRegions(TextureBlock& block);
+
+		// Huge pages platform-specific helpers
+		bool detectHugePagesSupport();
+		void* allocateHugePages(size_t size);
+		void freeHugePages(void* ptr, size_t size);
 	};
 
 }
