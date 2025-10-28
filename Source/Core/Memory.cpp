@@ -32,6 +32,14 @@ namespace MonsterRender {
 	}
 
 	bool MemorySystem::initialize(uint64 frameScratchSizeBytes, uint64 texturePoolBlockSizeBytes) {
+		// Detect huge pages support
+		m_hugePagesAvailable = detectHugePagesSupport();
+		if (m_hugePagesAvailable) {
+			MR_LOG_INFO("Huge Pages (2MB) are available on this system");
+		} else {
+			MR_LOG_INFO("Huge Pages not available, using standard page allocation");
+		}
+
 		// Initialize small bins: 16,32,64,128,256,512,1024
 		uint32 size = 16;
 		for (uint32 i = 0; i < kNumSmallBins; ++i) {
@@ -91,6 +99,11 @@ namespace MonsterRender {
 					TextureFreeRegion* next = region->next;
 					delete region;
 					region = next;
+				}
+				// Free huge pages if used
+				if (block->usesHugePages && block->rawHugePagePtr) {
+					freeHugePages(block->rawHugePagePtr, static_cast<size_t>(block->capacity));
+					block->rawHugePagePtr = nullptr;
 				}
 			}
 			m_textureBlocks.clear();
@@ -331,11 +344,13 @@ namespace MonsterRender {
 		std::scoped_lock lock(block.mutex);
 		TextureFreeRegion* prev = nullptr;
 		TextureFreeRegion* region = block.freeList;
+		uint8* basePtr = block.usesHugePages ? block.rawHugePagePtr : block.buffer.get();
+		
 		while (region) {
 			uint64 alignedOffset = static_cast<uint64>(alignUp(static_cast<size_t>(region->offset), alignment));
 			if (alignedOffset + size <= region->offset + region->size) {
 				// Found a suitable region
-				void* ptr = block.buffer.get() + alignedOffset;
+				void* ptr = basePtr + alignedOffset;
 				// Split region if there's leftover space
 				uint64 usedSize = (alignedOffset - region->offset) + size;
 				if (region->size > usedSize + 64) {  // Keep region if >64B left
@@ -362,7 +377,8 @@ namespace MonsterRender {
 
 	void MemorySystem::addToFreeList(TextureBlock& block, void* ptr, size_t size) {
 		std::scoped_lock lock(block.mutex);
-		uint64 offset = static_cast<uint8*>(ptr) - block.buffer.get();
+		uint8* basePtr = block.usesHugePages ? block.rawHugePagePtr : block.buffer.get();
+		uint64 offset = static_cast<uint8*>(ptr) - basePtr;
 		auto* newRegion = new TextureFreeRegion{offset, size, nullptr};
 		// Insert sorted by offset
 		if (!block.freeList || block.freeList->offset > offset) {
@@ -416,7 +432,8 @@ namespace MonsterRender {
 				if (block->offset.compare_exchange_weak(off, next, std::memory_order_acq_rel)) {
 					block->usedBytes.fetch_add(alignedSize, std::memory_order_relaxed);
 					m_textureUsedBytes.fetch_add(alignedSize, std::memory_order_relaxed);
-					return block->buffer.get() + alignedOff;
+					uint8* basePtr = block->usesHugePages ? block->rawHugePagePtr : block->buffer.get();
+					return basePtr + alignedOff;
 				}
 			}
 		}
@@ -424,14 +441,35 @@ namespace MonsterRender {
 		// Allocate new block
 		std::scoped_lock lock(m_textureBlocksMutex);
 		uint64 blockSize = std::max<uint64>(m_textureBlockSize, alignedSize);
+		
+		// Try huge pages first if enabled and size >= 2MB
+		void* hugePagePtr = nullptr;
+		bool usedHugePages = false;
+		if (m_useHugePagesForTextures && blockSize >= MR_HUGE_PAGE_SIZE) {
+			hugePagePtr = allocateHugePages(static_cast<size_t>(blockSize));
+			if (hugePagePtr) {
+				usedHugePages = true;
+				MR_LOG_INFO("Allocated texture block with huge pages: " + std::to_string(blockSize / 1024 / 1024) + "MB");
+			}
+		}
+
 		auto block = MakeUnique<TextureBlock>();
 		block->capacity = blockSize;
-		block->buffer = MakeUnique<uint8[]>(static_cast<size_t>(blockSize));
+		block->usesHugePages = usedHugePages;
+		
+		if (usedHugePages) {
+			// Store huge page pointer
+			block->rawHugePagePtr = reinterpret_cast<uint8*>(hugePagePtr);
+		} else {
+			// Standard allocation
+			block->buffer = MakeUnique<uint8[]>(static_cast<size_t>(blockSize));
+		}
+		
 		block->offset.store(0, std::memory_order_relaxed);
 		block->usedBytes.store(0, std::memory_order_relaxed);
 		block->freeList = nullptr;
 		
-		void* ptr = block->buffer.get();
+		void* ptr = block->usesHugePages ? block->rawHugePagePtr : block->buffer.get();
 		block->offset.store(alignedSize, std::memory_order_relaxed);
 		block->usedBytes.store(alignedSize, std::memory_order_relaxed);
 		m_textureReservedBytes.fetch_add(blockSize, std::memory_order_relaxed);
@@ -446,7 +484,8 @@ namespace MonsterRender {
 		
 		// Find which block owns this pointer
 		for (auto& block : m_textureBlocks) {
-			uint8* blockStart = block->buffer.get();
+			uint8* basePtr = block->usesHugePages ? block->rawHugePagePtr : block->buffer.get();
+			uint8* blockStart = basePtr;
 			uint8* blockEnd = blockStart + block->capacity;
 			if (reinterpret_cast<uint8*>(ptr) >= blockStart && reinterpret_cast<uint8*>(ptr) < blockEnd) {
 				// TODO: Track allocation size for proper free
@@ -603,6 +642,145 @@ namespace MonsterRender {
 	
 	uint64 MemorySystem::getReservedTextureBytes() const { 
 		return m_textureReservedBytes.load(std::memory_order_relaxed); 
+	}
+
+	// Huge Pages Implementation
+	bool MemorySystem::detectHugePagesSupport() {
+#if PLATFORM_WINDOWS
+		// On Windows, check for SeLockMemoryPrivilege
+		HANDLE hToken;
+		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+			return false;
+		}
+
+		// Try to get lock memory privilege
+		LUID luid;
+		if (!LookupPrivilegeValue(nullptr, SE_LOCK_MEMORY_NAME, &luid)) {
+			CloseHandle(hToken);
+			return false;
+		}
+
+		// Check if process has the privilege
+		PRIVILEGE_SET privs;
+		privs.PrivilegeCount = 1;
+		privs.Control = PRIVILEGE_SET_ALL_NECESSARY;
+		privs.Privilege[0].Luid = luid;
+		privs.Privilege[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+		BOOL hasPrivilege = FALSE;
+		if (!PrivilegeCheck(hToken, &privs, &hasPrivilege)) {
+			CloseHandle(hToken);
+			return false;
+		}
+
+		CloseHandle(hToken);
+		return hasPrivilege == TRUE;
+
+#elif PLATFORM_LINUX
+		// On Linux, check if huge pages are available
+		// Try to read /proc/meminfo for HugePages_Total
+		FILE* fp = fopen("/proc/meminfo", "r");
+		if (!fp) return false;
+
+		char line[256];
+		bool found = false;
+		while (fgets(line, sizeof(line), fp)) {
+			if (strncmp(line, "HugePages_Total:", 16) == 0) {
+				int total = 0;
+				if (sscanf(line + 16, "%d", &total) == 1 && total > 0) {
+					found = true;
+				}
+				break;
+			}
+		}
+		fclose(fp);
+		return found;
+
+#else
+		return false;
+#endif
+	}
+
+	void* MemorySystem::allocateHugePages(size_t size) {
+		if (!m_hugePagesAvailable || !m_hugePagesEnabled) {
+			return nullptr;  // Fallback to normal allocation
+		}
+
+		// Align size to huge page boundary
+		size = alignUp(size, MR_HUGE_PAGE_SIZE);
+
+#if PLATFORM_WINDOWS
+		// Windows: Use VirtualAlloc with MEM_LARGE_PAGES
+		void* ptr = VirtualAlloc(
+			nullptr,
+			size,
+			MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES,
+			PAGE_READWRITE
+		);
+
+		if (ptr) {
+			MR_LOG_DEBUG("Allocated " + std::to_string(size / 1024 / 1024) + "MB with huge pages (Windows)");
+			return ptr;
+		} else {
+			DWORD error = GetLastError();
+			MR_LOG_WARNING("Failed to allocate huge pages (error " + std::to_string(error) + "), falling back to normal allocation");
+			return nullptr;
+		}
+
+#elif PLATFORM_LINUX
+		// Linux: Use mmap with MAP_HUGETLB
+		void* ptr = mmap(
+			nullptr,
+			size,
+			PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB,
+			-1,
+			0
+		);
+
+		if (ptr != MAP_FAILED) {
+			MR_LOG_DEBUG("Allocated " + std::to_string(size / 1024 / 1024) + "MB with huge pages (Linux)");
+			return ptr;
+		} else {
+			MR_LOG_WARNING("Failed to allocate huge pages, falling back to normal allocation");
+			return nullptr;
+		}
+
+#else
+		return nullptr;
+#endif
+	}
+
+	void MemorySystem::freeHugePages(void* ptr, size_t size) {
+		if (!ptr) return;
+
+#if PLATFORM_WINDOWS
+		VirtualFree(ptr, 0, MEM_RELEASE);
+
+#elif PLATFORM_LINUX
+		size = alignUp(size, MR_HUGE_PAGE_SIZE);
+		munmap(ptr, size);
+
+#endif
+	}
+
+	bool MemorySystem::isHugePagesAvailable() const {
+		return m_hugePagesAvailable;
+	}
+
+	bool MemorySystem::enableHugePages(bool enable) {
+		if (enable && !m_hugePagesAvailable) {
+			MR_LOG_WARNING("Cannot enable huge pages: not available on this system");
+			return false;
+		}
+		m_hugePagesEnabled = enable;
+		MR_LOG_INFO(String("Huge pages ") + (enable ? "enabled" : "disabled"));
+		return true;
+	}
+
+	void MemorySystem::setHugePagesForTextures(bool enable) {
+		m_useHugePagesForTextures = enable && m_hugePagesAvailable;
+		MR_LOG_INFO(String("Huge pages for textures ") + (m_useHugePagesForTextures ? "enabled" : "disabled"));
 	}
 
 }
