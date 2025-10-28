@@ -163,6 +163,7 @@
     <ClCompile Include="Source\Core\Log.cpp" />
     <ClCompile Include="Source\Core\Window.cpp" />
     <ClCompile Include="Source\Engine.cpp" />
+    <ClCompile Include="Source\MemorySystemTest.cpp" />
     <ClCompile Include="Source\Platform\GLFW\GLFWWindow.cpp" />
     <ClCompile Include="Source\TriangleApplication.cpp" />
     <ClCompile Include="Source\TriangleRenderer.cpp" />
