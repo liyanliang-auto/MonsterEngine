@@ -159,6 +159,7 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Source\Core\Application.cpp" />
+    <ClCompile Include="Source\Core\Memory.cpp" />
     <ClCompile Include="Source\Core\Log.cpp" />
     <ClCompile Include="Source\Core\Window.cpp" />
     <ClCompile Include="Source\Engine.cpp" />
@@ -183,6 +184,7 @@
     <ClInclude Include="Include\Core\Assert.h" />
     <ClInclude Include="Include\Core\CoreMinimal.h" />
     <ClInclude Include="Include\Core\CoreTypes.h" />
+    <ClInclude Include="Include\Core\Memory.h" />
     <ClInclude Include="Include\Core\Input.h" />
     <ClInclude Include="Include\Core\Log.h" />
     <ClInclude Include="Include\Core\Window.h" />
