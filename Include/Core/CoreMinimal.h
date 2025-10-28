@@ -32,6 +32,7 @@
 #include "Core/CoreTypes.h"
 #include "Core/Log.h"
 #include "Core/Assert.h"
+#include "Core/Memory.h"
 
 // Engine namespace
 namespace MonsterRender {
