@@ -158,11 +158,13 @@ namespace MonsterRender {
 
 		struct TextureBlock {
 			TUniquePtr<uint8[]> buffer;
+			uint8* rawHugePagePtr = nullptr;  // Huge page raw pointer (if used)
 			uint64 capacity = 0;
 			std::atomic<uint64> offset{0};  // Bump allocator offset
 			TextureFreeRegion* freeList = nullptr;  // Linked list of free regions
 			std::mutex mutex;  // Per-block lock for free-list
 			std::atomic<uint64> usedBytes{0};
+			bool usesHugePages = false;  // Track if this block uses huge pages
 		};
 
 	private:
