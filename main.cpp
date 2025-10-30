@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
     Logger::getInstance().setMinLevel(ELogLevel::Debug);
     
     // Check for test mode flag
-    bool runTests = false;
+    bool runTests = true;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
             runTests = true;
