@@ -62,24 +62,54 @@ namespace MonsterRender::RHI::Vulkan {
         VkMemoryRequirements memRequirements;
         functions.vkGetImageMemoryRequirements(device, m_image, &memRequirements);
         
-        // Setup memory allocation info
-        m_memoryAllocateInfo = {};
-        m_memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        m_memoryAllocateInfo.allocationSize = memRequirements.size;
-        m_memoryAllocateInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        
-        // Allocate memory
-        result = functions.vkAllocateMemory(device, &m_memoryAllocateInfo, nullptr, &m_deviceMemory);
-        if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to allocate image memory: " + std::to_string(result));
-            return false;
+        // Use FVulkanMemoryManager for allocation (UE5-style sub-allocation)
+        auto* memoryManager = m_device->getMemoryManager();
+        if (memoryManager) {
+            FVulkanMemoryManager::FAllocationRequest request{};
+            request.Size = memRequirements.size;
+            request.Alignment = memRequirements.alignment;
+            request.MemoryTypeBits = memRequirements.memoryTypeBits;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.bDedicated = (memRequirements.size >= 16 * 1024 * 1024);  // 16MB+ use dedicated
+            
+            if (memoryManager->Allocate(request, m_allocation)) {
+                m_deviceMemory = m_allocation.DeviceMemory;
+                m_usesMemoryManager = true;
+                
+                // Bind image to allocated memory
+                result = functions.vkBindImageMemory(device, m_image, m_deviceMemory, m_allocation.Offset);
+                if (result != VK_SUCCESS) {
+                    MR_LOG_ERROR("Failed to bind image memory: " + std::to_string(result));
+                    memoryManager->Free(m_allocation);
+                    m_usesMemoryManager = false;
+                    return false;
+                }
+                
+                MR_LOG_DEBUG("Successfully allocated image memory via memory manager: " + m_desc.debugName);
+            } else {
+                MR_LOG_WARNING("Memory manager allocation failed, falling back to direct allocation");
+            }
         }
         
-        // Bind image to memory
-        result = functions.vkBindImageMemory(device, m_image, m_deviceMemory, 0);
-        if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to bind image memory: " + std::to_string(result));
-            return false;
+        // Fallback to direct allocation
+        if (!m_usesMemoryManager) {
+            m_memoryAllocateInfo = {};
+            m_memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            m_memoryAllocateInfo.allocationSize = memRequirements.size;
+            m_memoryAllocateInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            
+            result = functions.vkAllocateMemory(device, &m_memoryAllocateInfo, nullptr, &m_deviceMemory);
+            if (result != VK_SUCCESS) {
+                MR_LOG_ERROR("Failed to allocate image memory: " + std::to_string(result));
+                return false;
+            }
+            
+            result = functions.vkBindImageMemory(device, m_image, m_deviceMemory, 0);
+            if (result != VK_SUCCESS) {
+                MR_LOG_ERROR("Failed to bind image memory: " + std::to_string(result));
+                return false;
+            }
         }
         
         // Create image view
@@ -102,16 +132,25 @@ namespace MonsterRender::RHI::Vulkan {
                 m_imageView = VK_NULL_HANDLE;
             }
             
-            // Free device memory
-            if (m_deviceMemory != VK_NULL_HANDLE) {
-                functions.vkFreeMemory(device, m_deviceMemory, nullptr);
-                m_deviceMemory = VK_NULL_HANDLE;
-            }
-            
             // Destroy image
             if (m_image != VK_NULL_HANDLE) {
                 functions.vkDestroyImage(device, m_image, nullptr);
                 m_image = VK_NULL_HANDLE;
+            }
+            
+            // Free memory using memory manager if applicable
+            if (m_usesMemoryManager) {
+                auto* memoryManager = m_device->getMemoryManager();
+                if (memoryManager && m_allocation.DeviceMemory != VK_NULL_HANDLE) {
+                    memoryManager->Free(m_allocation);
+                    m_usesMemoryManager = false;
+                }
+            } else {
+                // Direct allocation path
+                if (m_deviceMemory != VK_NULL_HANDLE) {
+                    functions.vkFreeMemory(device, m_deviceMemory, nullptr);
+                    m_deviceMemory = VK_NULL_HANDLE;
+                }
             }
         }
     }

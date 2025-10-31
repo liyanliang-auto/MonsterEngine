@@ -3,6 +3,7 @@
 #include "Core/CoreMinimal.h"
 #include "RHI/IRHIResource.h"
 #include "Platform/Vulkan/VulkanRHI.h"
+#include "Platform/Vulkan/FVulkanMemoryManager.h"
 
 namespace MonsterRender::RHI::Vulkan {
     
@@ -47,6 +48,10 @@ namespace MonsterRender::RHI::Vulkan {
         VkDeviceSize m_offset = 0;
         void* m_mappedData = nullptr;
         bool m_persistentMapped = false;
+        
+        // Memory manager allocation (UE5-style)
+        FVulkanMemoryManager::FAllocation m_allocation{};
+        bool m_usesMemoryManager = false;
         
         // Creation info
         VkBufferCreateInfo m_bufferCreateInfo{};

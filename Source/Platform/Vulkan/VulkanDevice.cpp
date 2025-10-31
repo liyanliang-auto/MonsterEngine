@@ -132,7 +132,15 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Step 13: Query device capabilities
+        // Step 13: Create memory manager (UE5-style sub-allocation)
+        m_memoryManager = MakeUnique<FVulkanMemoryManager>(m_device, m_physicalDevice);
+        if (!m_memoryManager) {
+            MR_LOG_ERROR("Failed to create memory manager");
+            return false;
+        }
+        MR_LOG_INFO("FVulkanMemoryManager initialized (UE5-style sub-allocation enabled)");
+        
+        // Step 14: Query device capabilities
         queryCapabilities();
         
         MR_LOG_INFO("Vulkan device initialized successfully");
@@ -184,6 +192,17 @@ namespace MonsterRender::RHI::Vulkan {
             // Destroy image views
             for (auto imageView : m_swapchainImageViews) {
                 functions.vkDestroyImageView(m_device, imageView, nullptr);
+            }
+            
+            // Clean up high-level systems before device destruction
+            m_immediateCommandList.reset();
+            m_pipelineCache.reset();
+            m_descriptorSetAllocator.reset();
+            
+            // Destroy memory manager (must be before device destruction)
+            if (m_memoryManager) {
+                MR_LOG_INFO("Destroying FVulkanMemoryManager...");
+                m_memoryManager.reset();
             }
             
             // Destroy logical device

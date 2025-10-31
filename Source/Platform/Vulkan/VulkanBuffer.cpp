@@ -51,27 +51,68 @@ namespace MonsterRender::RHI::Vulkan {
             m_memoryProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         }
         
-        // Setup memory allocation info
+        // Use FVulkanMemoryManager for allocation (UE5-style sub-allocation)
+        auto* memoryManager = m_device->getMemoryManager();
+        if (memoryManager) {
+            FVulkanMemoryManager::FAllocationRequest request{};
+            request.Size = memRequirements.size;
+            request.Alignment = memRequirements.alignment;
+            request.MemoryTypeBits = memRequirements.memoryTypeBits;
+            request.RequiredFlags = m_memoryProperties;
+            request.PreferredFlags = m_memoryProperties;
+            request.bDedicated = false;  // Allow sub-allocation
+            
+            if (memoryManager->Allocate(request, m_allocation)) {
+                m_deviceMemory = m_allocation.DeviceMemory;
+                m_usesMemoryManager = true;
+                
+                // Bind buffer to allocated memory
+                result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, m_allocation.Offset);
+                if (result != VK_SUCCESS) {
+                    MR_LOG_ERROR("Failed to bind buffer memory: " + std::to_string(result));
+                    memoryManager->Free(m_allocation);
+                    m_usesMemoryManager = false;
+                    return false;
+                }
+                
+                // Map memory if CPU accessible
+                if (m_desc.cpuAccessible && !m_allocation.MappedPointer) {
+                    result = functions.vkMapMemory(device, m_deviceMemory, m_allocation.Offset, m_allocation.Size, 0, &m_mappedData);
+                    if (result != VK_SUCCESS) {
+                        MR_LOG_ERROR("Failed to map buffer memory: " + std::to_string(result));
+                        return false;
+                    }
+                    m_persistentMapped = true;
+                } else if (m_allocation.MappedPointer) {
+                    m_mappedData = m_allocation.MappedPointer;
+                    m_persistentMapped = true;
+                }
+                
+                MR_LOG_DEBUG("Successfully created Vulkan buffer with managed memory: " + m_desc.debugName);
+                return true;
+            }
+        }
+        
+        // Fallback to direct allocation (old path)
+        MR_LOG_WARNING("FVulkanMemoryManager not available, using direct allocation for: " + m_desc.debugName);
+        
         m_memoryAllocateInfo = {};
         m_memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         m_memoryAllocateInfo.allocationSize = memRequirements.size;
         m_memoryAllocateInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, m_memoryProperties);
         
-        // Allocate memory
         result = functions.vkAllocateMemory(device, &m_memoryAllocateInfo, nullptr, &m_deviceMemory);
         if (result != VK_SUCCESS) {
             MR_LOG_ERROR("Failed to allocate buffer memory: " + std::to_string(result));
             return false;
         }
         
-        // Bind buffer to memory
         result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, 0);
         if (result != VK_SUCCESS) {
             MR_LOG_ERROR("Failed to bind buffer memory: " + std::to_string(result));
             return false;
         }
         
-        // For CPU accessible buffers, set up persistent mapping
         if (m_desc.cpuAccessible) {
             result = functions.vkMapMemory(device, m_deviceMemory, 0, m_desc.size, 0, &m_mappedData);
             if (result != VK_SUCCESS) {
@@ -90,23 +131,38 @@ namespace MonsterRender::RHI::Vulkan {
             const auto& functions = VulkanAPI::getFunctions();
             VkDevice device = m_device->getDevice();
             
-            // Unmap memory if mapped
-            if (m_mappedData != nullptr) {
-                functions.vkUnmapMemory(device, m_deviceMemory);
-                m_mappedData = nullptr;
-                m_persistentMapped = false;
-            }
-            
-            // Free device memory
-            if (m_deviceMemory != VK_NULL_HANDLE) {
-                functions.vkFreeMemory(device, m_deviceMemory, nullptr);
-                m_deviceMemory = VK_NULL_HANDLE;
-            }
-            
-            // Destroy buffer
+            // Destroy buffer first
             if (m_buffer != VK_NULL_HANDLE) {
                 functions.vkDestroyBuffer(device, m_buffer, nullptr);
                 m_buffer = VK_NULL_HANDLE;
+            }
+            
+            // Free memory using memory manager if applicable
+            if (m_usesMemoryManager) {
+                auto* memoryManager = m_device->getMemoryManager();
+                if (memoryManager && m_allocation.DeviceMemory != VK_NULL_HANDLE) {
+                    // Unmap if manually mapped (manager doesn't track this)
+                    if (m_mappedData != nullptr && !m_allocation.MappedPointer) {
+                        functions.vkUnmapMemory(device, m_deviceMemory);
+                    }
+                    
+                    memoryManager->Free(m_allocation);
+                    m_mappedData = nullptr;
+                    m_persistentMapped = false;
+                    m_usesMemoryManager = false;
+                }
+            } else {
+                // Direct allocation path
+                if (m_mappedData != nullptr) {
+                    functions.vkUnmapMemory(device, m_deviceMemory);
+                    m_mappedData = nullptr;
+                    m_persistentMapped = false;
+                }
+                
+                if (m_deviceMemory != VK_NULL_HANDLE) {
+                    functions.vkFreeMemory(device, m_deviceMemory, nullptr);
+                    m_deviceMemory = VK_NULL_HANDLE;
+                }
             }
         }
     }
