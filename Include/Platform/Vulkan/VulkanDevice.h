@@ -5,6 +5,10 @@
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "RHI/RHI.h"
 
+namespace MonsterRender::RHI {
+    class FVulkanMemoryManager;
+}
+
 namespace MonsterRender::RHI::Vulkan {
     
     // Forward declarations
@@ -82,6 +86,9 @@ namespace MonsterRender::RHI::Vulkan {
         
         VulkanDescriptorSetAllocator* getDescriptorSetAllocator() const { return m_descriptorSetAllocator.get(); }
         
+        // Memory manager (UE5-style)
+        FVulkanMemoryManager* getMemoryManager() const { return m_memoryManager.get(); }
+        
         // Render pass and framebuffer accessors
         VkRenderPass getRenderPass() const { return m_renderPass; }
         VkFramebuffer getCurrentFramebuffer() const;
@@ -142,6 +149,9 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Descriptor set allocator
         TUniquePtr<VulkanDescriptorSetAllocator> m_descriptorSetAllocator;
+        
+        // Memory manager (UE5-style sub-allocation)
+        TUniquePtr<FVulkanMemoryManager> m_memoryManager;
         
         // Synchronization
         TArray<VkSemaphore> m_imageAvailableSemaphores;
