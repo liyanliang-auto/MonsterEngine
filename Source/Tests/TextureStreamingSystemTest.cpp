@@ -15,6 +15,44 @@
 #include <fstream>
 
 namespace MonsterRender {
+
+// ============================================================================
+// Mock FTexture class for testing (in MonsterRender namespace)
+// ============================================================================
+
+class FTexture {
+public:
+    FTexture(const String& name, uint32 width, uint32 height, uint32 mipLevels)
+        : Name(name), Width(width), Height(height), TotalMipLevels(mipLevels), ResidentMips(1) {
+        
+        // Calculate mip sizes (each mip is 1/4 the size of previous)
+        for (uint32 i = 0; i < TotalMipLevels && i < 16; ++i) {
+            uint32 mipWidth = std::max(1u, Width >> i);
+            uint32 mipHeight = std::max(1u, Height >> i);
+            SizePerMip[i] = mipWidth * mipHeight * 4; // 4 bytes per pixel (RGBA8)
+        }
+        
+        FilePath = "Textures/" + name + ".dds";
+    }
+
+    String Name;
+    String FilePath;
+    uint32 Width;
+    uint32 Height;
+    uint32 TotalMipLevels;
+    uint32 ResidentMips;
+    SIZE_T SizePerMip[16] = {};
+    void* MipData[16] = {};
+
+    SIZE_T GetTotalSize() const {
+        SIZE_T total = 0;
+        for (uint32 i = 0; i < ResidentMips; ++i) {
+            total += SizePerMip[i];
+        }
+        return total;
+    }
+};
+
 namespace TextureStreamingSystemTest {
 
 // ============================================================================
@@ -109,40 +147,6 @@ private:
     String testName;
     std::chrono::high_resolution_clock::time_point startTime;
     double durationMs = 0.0;
-};
-
-// Mock FTexture class for testing
-class FTexture {
-public:
-    FTexture(const String& name, uint32 width, uint32 height, uint32 mipLevels)
-        : Name(name), Width(width), Height(height), TotalMipLevels(mipLevels), ResidentMips(1) {
-        
-        // Calculate mip sizes (each mip is 1/4 the size of previous)
-        for (uint32 i = 0; i < TotalMipLevels && i < 16; ++i) {
-            uint32 mipWidth = std::max(1u, Width >> i);
-            uint32 mipHeight = std::max(1u, Height >> i);
-            SizePerMip[i] = mipWidth * mipHeight * 4; // 4 bytes per pixel (RGBA8)
-        }
-        
-        FilePath = "Textures/" + name + ".dds";
-    }
-
-    String Name;
-    String FilePath;
-    uint32 Width;
-    uint32 Height;
-    uint32 TotalMipLevels;
-    uint32 ResidentMips;
-    SIZE_T SizePerMip[16] = {};
-    void* MipData[16] = {};
-
-    SIZE_T GetTotalSize() const {
-        SIZE_T total = 0;
-        for (uint32 i = 0; i < ResidentMips; ++i) {
-            total += SizePerMip[i];
-        }
-        return total;
-    }
 };
 
 // ============================================================================
