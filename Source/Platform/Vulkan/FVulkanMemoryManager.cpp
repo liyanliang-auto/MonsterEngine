@@ -9,6 +9,8 @@
 namespace MonsterRender {
 namespace RHI {
 
+using namespace Vulkan;
+
 // ============================================================================
 // FMemoryHeap Implementation (Free-List Allocator)
 // ============================================================================
@@ -129,8 +131,8 @@ bool FVulkanMemoryManager::FMemoryHeap::Allocate(VkDeviceSize Size, VkDeviceSize
                 OutAllocation.MemoryTypeIndex = MemoryTypeIndex;
                 OutAllocation.MappedPointer = nullptr;
                 OutAllocation.bDedicated = false;
-                OutAllocation.Heap = this;
-                OutAllocation.Block = current;
+                OutAllocation.Heap = reinterpret_cast<FMemoryHeap*>(this);
+                OutAllocation.Block = reinterpret_cast<FMemoryBlock*>(current);
                 
                 return true;
             }
@@ -148,7 +150,7 @@ void FVulkanMemoryManager::FMemoryHeap::Free(const FAllocation& Allocation)
 {
     std::lock_guard<std::mutex> lock(HeapMutex);
     
-    FMemoryBlock* block = Allocation.Block;
+    FMemoryBlock* block = reinterpret_cast<FMemoryBlock*>(Allocation.Block);
     if (!block) {
         MR_LOG_ERROR("FMemoryHeap::Free: Invalid block pointer");
         return;
@@ -287,7 +289,7 @@ void FVulkanMemoryManager::Free(FAllocation& Allocation)
     } else {
         // Free from heap
         if (Allocation.Heap) {
-            Allocation.Heap->Free(Allocation);
+            reinterpret_cast<FMemoryHeap*>(Allocation.Heap)->Free(Allocation);
             MR_LOG_DEBUG("FVulkanMemoryManager: Freed " + 
                          std::to_string(Allocation.Size / 1024) + "KB from heap");
         } else {
