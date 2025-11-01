@@ -4,8 +4,27 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
+#include <span>
+#include <unordered_map>
+#include <optional>
+#include <functional>
+#include <cstddef>
+
+// Platform-specific macros
+#if defined(_WIN32) || defined(_WIN64)
+    #define PLATFORM_WINDOWS 1
+    #define FORCEINLINE __forceinline
+#elif defined(__linux__)
+    #define PLATFORM_LINUX 1
+    #define FORCEINLINE inline __attribute__((always_inline))
+#else
+    #define FORCEINLINE inline
+#endif
 
 namespace MonsterRender {
+    // Size type (similar to UE5's SIZE_T)
+    using SIZE_T = std::size_t;
     // Basic integer types
     using uint8  = std::uint8_t;
     using uint16 = std::uint16_t;
