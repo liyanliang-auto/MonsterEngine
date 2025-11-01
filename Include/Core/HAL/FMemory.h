@@ -82,7 +82,7 @@ public:
     template<typename T, typename... Args>
     static FORCEINLINE T* New(Args&&... InArgs) {
         void* Mem = Malloc(sizeof(T), alignof(T));
-        return new(Mem) T(Forward<Args>(InArgs)...);
+        return new(Mem) T(std::forward<Args>(InArgs)...);
     }
 
     template<typename T>
