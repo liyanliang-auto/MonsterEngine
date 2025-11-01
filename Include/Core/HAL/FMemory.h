@@ -9,6 +9,19 @@
 
 namespace MonsterRender {
 
+// Forward declarations
+class FMalloc;
+
+/**
+ * FMemoryStats - Memory allocation statistics
+ */
+struct FMemoryStats {
+    uint64 TotalAllocated = 0;
+    uint64 TotalReserved = 0;
+    uint64 AllocationCount = 0;
+    uint64 FreeCount = 0;
+};
+
 /**
  * FMemory - Static class for memory operations (similar to UE5's FMemory)
  * 
@@ -114,7 +127,7 @@ public:
 
     // Stats
     static uint64 GetTotalAllocatedMemory();
-    static void GetMemoryStats(struct FMemoryStats& OutStats);
+    static void GetMemoryStats(FMemoryStats& OutStats);
 
     static constexpr uint32 DEFAULT_ALIGNMENT = alignof(std::max_align_t);
 

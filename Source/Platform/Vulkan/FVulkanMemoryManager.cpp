@@ -2,7 +2,7 @@
 // MonsterEngine - Vulkan Memory Manager Implementation
 
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
-#include "Platform/Vulkan/VulkanAPI.h"
+#include "Platform/Vulkan/VulkanRHI.h"
 #include "Core/Log.h"
 #include <algorithm>
 

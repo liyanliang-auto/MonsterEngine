@@ -78,6 +78,16 @@ private:
     // Process streaming requests
     void ProcessStreamingRequests();
 
+    // Stream in/out methods
+    void StreamInMips(FStreamingTexture* StreamingTexture);
+    void StreamOutMips(FStreamingTexture* StreamingTexture);
+    
+    // Helper methods
+    bool EvictLowPriorityTextures(SIZE_T RequiredSize);
+    void LoadMipsFromDisk(FTexture* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory);
+    float CalculateScreenSize(FTexture* Texture);
+    SIZE_T CalculateMipSize(FTexture* Texture, uint32 StartMip, uint32 EndMip);
+
     TUniquePtr<FTexturePool> TexturePool;
     std::vector<FStreamingTexture> StreamingTextures;
     std::mutex StreamingMutex;
