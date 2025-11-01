@@ -43,7 +43,13 @@ uint64 FMemory::GetTotalAllocatedMemory() {
 }
 
 void FMemory::GetMemoryStats(FMemoryStats& OutStats) {
-    FMemoryManager::Get().GetAllocator()->GetMemoryStats(OutStats);
+    FMalloc::FMemoryStats allocatorStats;
+    FMemoryManager::Get().GetAllocator()->GetMemoryStats(allocatorStats);
+    // Copy the stats to our structure
+    OutStats.TotalAllocated = allocatorStats.TotalAllocated;
+    OutStats.TotalReserved = allocatorStats.TotalReserved;
+    OutStats.AllocationCount = allocatorStats.AllocationCount;
+    OutStats.FreeCount = allocatorStats.FreeCount;
 }
 
 } // namespace MonsterRender
