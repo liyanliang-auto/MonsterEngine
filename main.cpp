@@ -6,6 +6,9 @@ namespace MonsterRender {
     namespace MemorySystemTest {
         void runAllTests();  // Forward declaration
     }
+    namespace FMemorySystemTest {
+        void runFMemoryTests();  // Forward declaration
+    }
 }
 
 // Entry point following UE5's application architecture
@@ -34,11 +37,21 @@ int main(int argc, char** argv) {
         MR_LOG_INFO("======================================");
         MR_LOG_INFO("\n");
         
+        // Run original memory system tests
         MemorySystemTest::runAllTests();
+        
+        MR_LOG_INFO("\n\n");
+        MR_LOG_INFO("======================================");
+        MR_LOG_INFO("  FMemory System Tests");
+        MR_LOG_INFO("======================================");
+        MR_LOG_INFO("\n");
+        
+        // Run FMemory system tests
+        FMemorySystemTest::runFMemoryTests();
         
         MR_LOG_INFO("\n");
         MR_LOG_INFO("======================================");
-        MR_LOG_INFO("  Test Mode Completed");
+        MR_LOG_INFO("  All Tests Completed");
         MR_LOG_INFO("======================================");
         MR_LOG_INFO("\n");
         
