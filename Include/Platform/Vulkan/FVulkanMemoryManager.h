@@ -47,9 +47,9 @@ public:
         void* MappedPointer;  // Non-null if memory is mappable and mapped
         bool bDedicated;
         
-        // Internal tracking
-        class FMemoryHeap* Heap;
-        class FMemoryBlock* Block;
+        // Internal tracking (use void* to avoid exposing internal types)
+        void* Heap;
+        void* Block;
     };
 
     // Allocation/Free

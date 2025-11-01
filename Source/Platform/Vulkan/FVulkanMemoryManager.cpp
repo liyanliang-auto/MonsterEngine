@@ -131,8 +131,8 @@ bool FVulkanMemoryManager::FMemoryHeap::Allocate(VkDeviceSize Size, VkDeviceSize
                 OutAllocation.MemoryTypeIndex = MemoryTypeIndex;
                 OutAllocation.MappedPointer = nullptr;
                 OutAllocation.bDedicated = false;
-                OutAllocation.Heap = reinterpret_cast<FMemoryHeap*>(this);
-                OutAllocation.Block = reinterpret_cast<FMemoryBlock*>(current);
+                OutAllocation.Heap = this;
+                OutAllocation.Block = current;
                 
                 return true;
             }
@@ -150,7 +150,7 @@ void FVulkanMemoryManager::FMemoryHeap::Free(const FAllocation& Allocation)
 {
     std::lock_guard<std::mutex> lock(HeapMutex);
     
-    FMemoryBlock* block = reinterpret_cast<FMemoryBlock*>(Allocation.Block);
+    FMemoryBlock* block = static_cast<FMemoryBlock*>(Allocation.Block);
     if (!block) {
         MR_LOG_ERROR("FMemoryHeap::Free: Invalid block pointer");
         return;
@@ -252,7 +252,7 @@ bool FVulkanMemoryManager::Allocate(const FAllocationRequest& Request, FAllocati
     }
     
     // Create new heap
-    VkDeviceSize heapSize = std::max(DEFAULT_HEAP_SIZE, Request.Size * 2);
+    VkDeviceSize heapSize = std::max<VkDeviceSize>(DEFAULT_HEAP_SIZE, Request.Size * 2);
     FMemoryHeap* newHeap = FindOrCreateHeap(memoryTypeIndex, heapSize);
     
     if (!newHeap) {
@@ -289,7 +289,7 @@ void FVulkanMemoryManager::Free(FAllocation& Allocation)
     } else {
         // Free from heap
         if (Allocation.Heap) {
-            reinterpret_cast<FMemoryHeap*>(Allocation.Heap)->Free(Allocation);
+            static_cast<FMemoryHeap*>(Allocation.Heap)->Free(Allocation);
             MR_LOG_DEBUG("FVulkanMemoryManager: Freed " + 
                          std::to_string(Allocation.Size / 1024) + "KB from heap");
         } else {
