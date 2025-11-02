@@ -165,6 +165,10 @@ namespace MonsterRender::RHI::Vulkan {
                 }
             }
             
+            // Clean up command lists BEFORE destroying command pool
+            // (command buffers must be freed before the pool is destroyed)
+            m_immediateCommandList.reset();
+            
             // Destroy command pool
             if (m_commandPool != VK_NULL_HANDLE) {
                 functions.vkDestroyCommandPool(m_device, m_commandPool, nullptr);
@@ -195,7 +199,7 @@ namespace MonsterRender::RHI::Vulkan {
             }
             
             // Clean up high-level systems before device destruction
-            m_immediateCommandList.reset();
+            // (m_immediateCommandList already reset before command pool destruction)
             m_pipelineCache.reset();
             m_descriptorSetAllocator.reset();
             
