@@ -123,6 +123,9 @@
     <ClCompile Include="Source\Tests\TextureStreamingSystemTest.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Tests\VulkanMemoryManagerTest.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Assert.h">
