@@ -169,6 +169,17 @@ void FTextureStreamingManager::GetStreamingStats(FStreamingStats& OutStats) {
     OutStats.PendingStreamOut = 0;
 
     for (const auto& st : StreamingTextures) {
+        // 添加安全检查
+        if (!st.Texture) {
+            MR_LOG_WARNING("GetStreamingStats: Found null texture pointer");
+            continue;
+        }
+        
+        // 验证纹理对象是否有效
+        if (st.Texture->TotalMipLevels == 0 || st.Texture->TotalMipLevels > 16) {
+            MR_LOG_ERROR("GetStreamingStats: Invalid texture detected");
+            continue;
+        }
         if (st.RequestedMips != st.ResidentMips) {
             ++OutStats.NumStreamingTextures;
             
@@ -202,7 +213,17 @@ void FTextureStreamingManager::UpdatePriorities() {
     // Reference: UE5's FStreamingManagerTexture::UpdatePriorities()
     
     for (auto& st : StreamingTextures) {
-        if (!st.Texture) continue;
+        // 添加更严格的安全检查
+        if (!st.Texture) {
+            MR_LOG_WARNING("UpdatePriorities: Found null texture pointer");
+            continue;
+        }
+        
+        // 验证纹理对象是否有效
+        if (st.Texture->TotalMipLevels == 0 || st.Texture->TotalMipLevels > 16) {
+            MR_LOG_ERROR("UpdatePriorities: Invalid texture detected, skipping");
+            continue;
+        }
 
         // Calculate priority based on multiple factors:
         // 1. Distance from camera (closer = higher priority)
@@ -246,7 +267,17 @@ void FTextureStreamingManager::ProcessStreamingRequests() {
 
     // Process requests in priority order
     for (auto* st : sortedTextures) {
-        if (!st->Texture) continue;
+        // 添加安全检查
+        if (!st || !st->Texture) {
+            MR_LOG_WARNING("ProcessStreamingRequests: Found null pointer");
+            continue;
+        }
+        
+        // 验证纹理对象是否有效
+        if (st->Texture->TotalMipLevels == 0 || st->Texture->TotalMipLevels > 16) {
+            MR_LOG_ERROR("ProcessStreamingRequests: Invalid texture detected");
+            continue;
+        }
 
         if (st->RequestedMips > st->ResidentMips) {
             // Stream in more mips
@@ -286,11 +317,13 @@ void FTextureStreamingManager::StreamInMips(FStreamingTexture* StreamingTexture)
         return;
     }
 
-    // Load mips asynchronously (simplified for now - will be enhanced with async IO)
-    // TODO: Implement proper async IO with threading
-    std::thread([texture, currentMips, targetMips, mipMemory, this]() {
-        LoadMipsFromDisk(texture, currentMips, targetMips, mipMemory);
-    }).detach();
+    // FIXED: 使用同步加载避免野指针访问
+    // 原因：detached thread 可能在 texture 对象销毁后仍在运行
+    // TODO: 使用 FAsyncFileIO 实现真正的异步加载（带生命周期管理）
+    LoadMipsFromDisk(texture, currentMips, targetMips, mipMemory);
+    
+    // 更新 resident mips
+    StreamingTexture->ResidentMips = targetMips;
 
     MR_LOG_INFO("Streaming in mips: " + texture->FilePath + 
                 " (Mips " + std::to_string(currentMips) + " -> " + std::to_string(targetMips) + ")");
@@ -376,7 +409,18 @@ float FTextureStreamingManager::CalculateScreenSize(FTexture* Texture) {
 }
 
 SIZE_T FTextureStreamingManager::CalculateMipSize(FTexture* Texture, uint32 StartMip, uint32 EndMip) {
-    if (!Texture) return 0;
+    // 添加安全检查
+    if (!Texture) {
+        MR_LOG_WARNING("CalculateMipSize: Texture pointer is null");
+        return 0;
+    }
+
+    // 验证指针是否仍然有效（基础检查）
+    if (Texture->TotalMipLevels == 0 || Texture->TotalMipLevels > 16) {
+        MR_LOG_ERROR("CalculateMipSize: Invalid texture (TotalMipLevels = " + 
+                     std::to_string(Texture->TotalMipLevels) + ")");
+        return 0;
+    }
 
     SIZE_T totalSize = 0;
     for (uint32 mip = StartMip; mip < EndMip && mip < Texture->TotalMipLevels; ++mip) {
