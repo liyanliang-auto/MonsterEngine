@@ -33,10 +33,10 @@ int main(int argc, char** argv) {
     Logger::getInstance().setMinLevel(ELogLevel::Debug);
     
     // Check for test mode flag
-    bool runMemoryTests = false;
+    bool runMemoryTests = true;
     bool runTextureTests = false;
     bool runVirtualTextureTests = false;
-    bool runVulkanMemoryTests = false;
+    bool runVulkanMemoryTests = true;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
