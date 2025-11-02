@@ -178,6 +178,7 @@
     <ClCompile Include="Source\Tests\TextureStreamingSystemTest.cpp" />
     <ClCompile Include="Source\Tests\TextureStreamingTest.cpp" />
     <ClCompile Include="Source\Tests\VirtualTextureSystemTest.cpp" />
+    <ClCompile Include="Source\Tests\VulkanMemoryManagerTest.cpp" />
     <ClCompile Include="Source\Tests\VulkanMemoryTest.cpp" />
     <ClCompile Include="Source\TriangleApplication.cpp" />
     <ClCompile Include="Source\TriangleRenderer.cpp" />

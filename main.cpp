@@ -16,6 +16,11 @@ namespace MonsterRender {
         void RunAllTests();  // Forward declaration
         void RunRealWorldScenarioTests();  // Forward declaration
     }
+    namespace VulkanMemoryManagerTest {
+        void RunBasicTests();  // Forward declaration
+        void RunScenarioTests();  // Forward declaration
+        void RunAllTests();  // Forward declaration
+    }
 }
 
 // Entry point following UE5's application architecture
@@ -31,6 +36,7 @@ int main(int argc, char** argv) {
     bool runMemoryTests = false;
     bool runTextureTests = false;
     bool runVirtualTextureTests = false;
+    bool runVulkanMemoryTests = false;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -43,18 +49,23 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-virtual-texture") == 0 || strcmp(argv[i], "-tvt") == 0) {
             runVirtualTextureTests = true;
         }
+        else if (strcmp(argv[i], "--test-vulkan-memory") == 0 || strcmp(argv[i], "-tvm") == 0) {
+            runVulkanMemoryTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
     }
     
     // Default behavior: run all tests
-    if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && !runAllTests) {
+    if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
+        !runVulkanMemoryTests && !runAllTests) {
         runAllTests = true;
     }
     
     // Run tests if requested
-    if (runMemoryTests || runTextureTests || runVirtualTextureTests || runAllTests) {
+    if (runMemoryTests || runTextureTests || runVirtualTextureTests || 
+        runVulkanMemoryTests || runAllTests) {
         MR_LOG_INFO("\n");
         MR_LOG_INFO("==========================================");
         MR_LOG_INFO("  MonsterEngine Test Suite");
@@ -104,6 +115,18 @@ int main(int argc, char** argv) {
             // Run real-world scenario tests
             MR_LOG_INFO("\n");
             VirtualTextureSystemTest::RunRealWorldScenarioTests();
+        }
+        
+        // Run Vulkan memory manager tests
+        if (runVulkanMemoryTests || runAllTests) {
+            MR_LOG_INFO("\n\n");
+            MR_LOG_INFO("==========================================");
+            MR_LOG_INFO("  Vulkan Memory Manager Tests");
+            MR_LOG_INFO("==========================================");
+            MR_LOG_INFO("");
+            
+            // Run all Vulkan memory tests
+            VulkanMemoryManagerTest::RunAllTests();
         }
         
         MR_LOG_INFO("\n");
