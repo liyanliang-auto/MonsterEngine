@@ -412,8 +412,9 @@ void RunRealWorldScenarioTests() {
                 uint32 facadeStartY = 10;
                 
                 for (uint32 mip = 0; mip < 3; ++mip) {
-                    for (uint32 y = 0; y < (15 >> mip); ++y) {
-                        for (uint32 x = 0; x < (15 >> mip); ++x) {
+                    uint32 range = 15 >> mip;
+                    for (uint32 y = 0; y < range; ++y) {
+                        for (uint32 x = 0; x < range; ++x) {
                             uint32 px = (facadeStartX >> mip) + x;
                             uint32 py = (facadeStartY >> mip) + y;
                             
@@ -615,7 +616,7 @@ void RunRealWorldScenarioTests() {
         MR_LOG_INFO("    Evictions: " + std::to_string(stats.NumPageEvictions));
         MR_LOG_INFO("    Pages Never Exceeded Budget: " +
                     std::to_string(stats.NumPhysicalPages - stats.NumFreePages) +
-                    " <= " + std::to_string(stats.NumPhysicalPages) + " ✓");
+                    " <= " + std::to_string(stats.NumPhysicalPages) + " [OK]");
         
         if (stats.NumPageEvictions > 0) {
             MR_LOG_INFO("  [OK] LRU eviction enforced memory budget");
