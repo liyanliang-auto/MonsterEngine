@@ -21,13 +21,21 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("Destroying Vulkan command list...");
         
         // Free command buffer back to command pool
+        // Note: If the command pool has already been destroyed, the command buffer
+        // will be implicitly freed, so we only need to free it if the pool still exists
         if (m_commandBuffer != VK_NULL_HANDLE && m_device) {
             const auto& functions = VulkanAPI::getFunctions();
             VkDevice device = m_device->getLogicalDevice();
             VkCommandPool commandPool = m_device->getCommandPool();
             
-            if (device && commandPool) {
+            // Only free if both device and command pool are still valid
+            // If command pool is destroyed first, command buffers are implicitly freed
+            if (device != VK_NULL_HANDLE && commandPool != VK_NULL_HANDLE && 
+                functions.vkFreeCommandBuffers != nullptr) {
                 functions.vkFreeCommandBuffers(device, commandPool, 1, &m_commandBuffer);
+                m_commandBuffer = VK_NULL_HANDLE;
+            } else {
+                // Command pool already destroyed, just clear the handle
                 m_commandBuffer = VK_NULL_HANDLE;
             }
         }
