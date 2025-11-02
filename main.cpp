@@ -12,6 +12,10 @@ namespace MonsterRender {
     namespace TextureStreamingSystemTest {
         void runTextureStreamingTests();  // Forward declaration
     }
+    namespace VirtualTextureSystemTest {
+        void RunAllTests();  // Forward declaration
+        void RunRealWorldScenarioTests();  // Forward declaration
+    }
 }
 
 // Entry point following UE5's application architecture
@@ -24,9 +28,10 @@ int main(int argc, char** argv) {
     Logger::getInstance().setMinLevel(ELogLevel::Debug);
     
     // Check for test mode flag
-    bool runMemoryTests = true;
-    bool runTextureTests = true;
-    bool runAllTests = true;
+    bool runMemoryTests = false;
+    bool runTextureTests = false;
+    bool runVirtualTextureTests = false;
+    bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
@@ -35,18 +40,21 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-texture") == 0 || strcmp(argv[i], "-tt") == 0) {
             runTextureTests = true;
         }
+        else if (strcmp(argv[i], "--test-virtual-texture") == 0 || strcmp(argv[i], "-tvt") == 0) {
+            runVirtualTextureTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
     }
     
     // Default behavior: run all tests
-    if (!runMemoryTests && !runTextureTests && !runAllTests) {
+    if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && !runAllTests) {
         runAllTests = true;
     }
     
     // Run tests if requested
-    if (runMemoryTests || runTextureTests || runAllTests) {
+    if (runMemoryTests || runTextureTests || runVirtualTextureTests || runAllTests) {
         MR_LOG_INFO("\n");
         MR_LOG_INFO("==========================================");
         MR_LOG_INFO("  MonsterEngine Test Suite");
@@ -80,6 +88,22 @@ int main(int argc, char** argv) {
             MR_LOG_INFO("");
             
             TextureStreamingSystemTest::runTextureStreamingTests();
+        }
+        
+        // Run virtual texture system tests
+        if (runVirtualTextureTests || runAllTests) {
+            MR_LOG_INFO("\n\n");
+            MR_LOG_INFO("==========================================");
+            MR_LOG_INFO("  Virtual Texture System Tests");
+            MR_LOG_INFO("==========================================");
+            MR_LOG_INFO("");
+            
+            // Run basic tests
+            VirtualTextureSystemTest::RunAllTests();
+            
+            // Run real-world scenario tests
+            MR_LOG_INFO("\n");
+            VirtualTextureSystemTest::RunRealWorldScenarioTests();
         }
         
         MR_LOG_INFO("\n");
