@@ -15,7 +15,7 @@
 namespace MonsterRender {
 namespace RHI {
 
-// 前向声明
+// Forward declaration
 class FVulkanMemoryPool;
 
 /**
@@ -57,55 +57,55 @@ struct FVulkanAllocation {
 };
 
 /**
- * FVulkanMemoryPool - GPU 内存池
+ * FVulkanMemoryPool - GPU Memory Pool
  * 
- * 管理特定内存类型的 VkDeviceMemory 大块内存，使用 Free-List 算法进行子分配。
- * 每个 Pool 对应一个 VkDeviceMemory 对象（默认 64MB）。
+ * Manages VkDeviceMemory large blocks for specific memory type, using Free-List algorithm for sub-allocation.
+ * Each Pool corresponds to one VkDeviceMemory object (default 64MB).
  * 
- * 参考 UE5: FVulkanResourceHeap
+ * Reference UE5: FVulkanResourceHeap
  */
 class FVulkanMemoryPool {
 public:
     /**
-     * 构造函数
-     * @param Device Vulkan 逻辑设备
-     * @param PoolSize 池的大小 (字节)
-     * @param MemoryTypeIndex 内存类型索引
-     * @param bHostVisible 是否为 Host 可见内存 (可映射)
+     * Constructor
+     * @param Device Vulkan logical device
+     * @param PoolSize Pool size (bytes)
+     * @param MemoryTypeIndex Memory type index
+     * @param bHostVisible Whether it's Host-visible memory (mappable)
      */
     FVulkanMemoryPool(VkDevice Device, VkDeviceSize PoolSize, uint32 MemoryTypeIndex, bool bHostVisible);
     ~FVulkanMemoryPool();
     
-    // 不可拷贝
+    // Non-copyable
     FVulkanMemoryPool(const FVulkanMemoryPool&) = delete;
     FVulkanMemoryPool& operator=(const FVulkanMemoryPool&) = delete;
     
     /**
-     * 尝试从池中分配内存
-     * @param Size 请求的大小
-     * @param Alignment 对齐要求
-     * @param OutAllocation 输出分配结果
-     * @return 是否成功分配
+     * Try to allocate from pool
+     * @param Size Requested size
+     * @param Alignment Alignment requirement
+     * @param OutAllocation Output allocation result
+     * @return Whether allocation succeeded
      */
     bool Allocate(VkDeviceSize Size, VkDeviceSize Alignment, FVulkanAllocation& OutAllocation);
     
     /**
-     * 释放分配
-     * @param Allocation 要释放的分配
+     * Free allocation
+     * @param Allocation Allocation to free
      */
     void Free(const FVulkanAllocation& Allocation);
     
     /**
-     * 映射内存到 CPU 地址空间
-     * @param Allocation 要映射的分配
-     * @param OutMappedPtr 输出映射的指针
-     * @return 是否成功
+     * Map memory to CPU address space
+     * @param Allocation Allocation to map
+     * @param OutMappedPtr Output mapped pointer
+     * @return Whether succeeded
      */
     bool Map(FVulkanAllocation& Allocation, void** OutMappedPtr);
     
     /**
-     * 取消映射
-     * @param Allocation 要取消映射的分配
+     * Unmap memory
+     * @param Allocation Allocation to unmap
      */
     void Unmap(FVulkanAllocation& Allocation);
     
@@ -118,49 +118,49 @@ public:
     bool IsHostVisible() const { return bHostVisible; }
     
     /**
-     * 碎片整理：合并相邻的空闲块
+     * Defragmentation: Merge adjacent free blocks
      */
     void Defragment();
 
 private:
     /**
-     * FMemoryBlock - 内存块节点（Free-List 链表）
+     * FMemoryBlock - Memory block node (Free-List linked list)
      * 
-     * 每个块表示池中的一段内存区域，可能是空闲或已分配。
+     * Each block represents a memory region in the pool, can be free or allocated.
      */
     struct FMemoryBlock {
-        VkDeviceSize Offset;            // 在池中的偏移
-        VkDeviceSize Size;              // 块的大小
-        bool bFree;                     // 是否空闲
-        FMemoryBlock* Next;             // 链表下一个节点
-        FMemoryBlock* Prev;             // 链表上一个节点
+        VkDeviceSize Offset;            // Offset in pool
+        VkDeviceSize Size;              // Block size
+        bool bFree;                     // Whether free
+        FMemoryBlock* Next;             // Next node in list
+        FMemoryBlock* Prev;             // Previous node in list
         
         FMemoryBlock(VkDeviceSize InOffset, VkDeviceSize InSize, bool InFree)
             : Offset(InOffset), Size(InSize), bFree(InFree), Next(nullptr), Prev(nullptr) {}
     };
     
-    // Vulkan 对象
-    VkDevice Device;                    // 逻辑设备
-    VkDeviceMemory DeviceMemory;        // 大块内存句柄
-    void* PersistentMappedPtr;          // 持久映射指针 (如果 Host 可见)
+    // Vulkan objects
+    VkDevice Device;                    // Logical device
+    VkDeviceMemory DeviceMemory;        // Large block memory handle
+    void* PersistentMappedPtr;          // Persistent mapped pointer (if Host-visible)
     
-    // 池属性
-    VkDeviceSize PoolSize;              // 池的总大小
-    uint32 MemoryTypeIndex;             // 内存类型
-    bool bHostVisible;                  // 是否可映射
+    // Pool properties
+    VkDeviceSize PoolSize;              // Total pool size
+    uint32 MemoryTypeIndex;             // Memory type
+    bool bHostVisible;                  // Whether mappable
     
-    // 分配追踪
-    std::atomic<VkDeviceSize> UsedSize; // 已使用大小 (原子操作)
-    FMemoryBlock* FreeList;             // 空闲块链表头
-    std::mutex PoolMutex;               // 线程安全锁
+    // Allocation tracking
+    std::atomic<VkDeviceSize> UsedSize; // Used size (atomic operation)
+    FMemoryBlock* FreeList;             // Free list head
+    std::mutex PoolMutex;               // Thread-safe lock
     
-    // 内部辅助函数
-    void MergeFreeBlocks();             // 合并相邻空闲块
-    FMemoryBlock* FindFirstFit(VkDeviceSize Size, VkDeviceSize Alignment);  // First-Fit 查找
+    // Internal helper functions
+    void MergeFreeBlocks();             // Merge adjacent free blocks
+    FMemoryBlock* FindFirstFit(VkDeviceSize Size, VkDeviceSize Alignment);  // First-Fit search
 };
 
 /**
- * FVulkanMemoryManager - Vulkan 内存管理器 (单例)
+ * FVulkanMemoryManager - Vulkan Memory Manager (Singleton)
  * 
  * 管理所有 GPU 内存分配，为不同内存类型维护独立的内存池。
  * 实现策略：
