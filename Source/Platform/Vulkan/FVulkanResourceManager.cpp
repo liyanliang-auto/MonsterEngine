@@ -449,25 +449,10 @@ FRHIBufferRef FVulkanResourceManager::CreateBuffer(
     VkMemoryPropertyFlags MemoryFlags,
     uint32 Stride)
 {
-    // Use existing VulkanBuffer implementation
-    VulkanBuffer* buffer = new VulkanBuffer(Device, Size, MemoryFlags);
-    
-    if (!buffer->initialize()) {
-        MR_LOG_ERROR("FVulkanResourceManager: Buffer initialization failed");
-        delete buffer;
-        return nullptr;
-    }
-    
-    // Track
-    {
-        std::lock_guard<std::mutex> lock(ResourcesMutex);
-        ActiveBuffers.push_back(buffer);
-    }
-    
-    TotalBufferCount.fetch_add(1);
-    TotalBufferMemory.fetch_add(Size);
-    
-    return FRHIBufferRef(buffer);
+    // TODO: Implement FRHIBuffer creation
+    // For now, use CreateMultiBuffer for dynamic buffers
+    MR_LOG_WARNING("FVulkanResourceManager::CreateBuffer: Not yet implemented, use CreateMultiBuffer instead");
+    return nullptr;
 }
 
 TRefCountPtr<FVulkanResourceMultiBuffer> FVulkanResourceManager::CreateMultiBuffer(
