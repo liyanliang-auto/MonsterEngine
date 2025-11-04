@@ -52,7 +52,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkImageLayout m_currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         
         // Memory manager allocation (UE5-style)
-        FVulkanMemoryManager::FAllocation m_allocation{};
+        FVulkanAllocation m_allocation{};
         bool m_usesMemoryManager = false;
         
         // Creation info

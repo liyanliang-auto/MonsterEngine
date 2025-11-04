@@ -20,7 +20,7 @@ static void PrintMemoryStats(FVulkanMemoryManager& manager, const char* label) {
     MR_LOG_INFO("  Total Allocated: " + std::to_string(stats.TotalAllocated / (1024 * 1024)) + " MB");
     MR_LOG_INFO("  Total Reserved: " + std::to_string(stats.TotalReserved / (1024 * 1024)) + " MB");
     MR_LOG_INFO("  Allocation Count: " + std::to_string(stats.AllocationCount));
-    MR_LOG_INFO("  Heap Count: " + std::to_string(stats.HeapCount));
+    MR_LOG_INFO("  Heap Count: " + std::to_string(stats.PoolCount));
     MR_LOG_INFO("  Largest Free Block: " + std::to_string(stats.LargestFreeBlock / (1024 * 1024)) + " MB");
     MR_LOG_INFO("============================================");
 }

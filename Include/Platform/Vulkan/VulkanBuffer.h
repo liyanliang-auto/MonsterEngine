@@ -50,7 +50,7 @@ namespace MonsterRender::RHI::Vulkan {
         bool m_persistentMapped = false;
         
         // Memory manager allocation (UE5-style)
-        FVulkanMemoryManager::FAllocation m_allocation{};
+        FVulkanAllocation m_allocation{};
         bool m_usesMemoryManager = false;
         
         // Creation info

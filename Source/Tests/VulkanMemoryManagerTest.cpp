@@ -100,7 +100,7 @@ static void Test_BasicAllocation() {
     
     MR_LOG_INFO("  Memory stats:");
     MR_LOG_INFO("    Total allocated: " + FormatMemorySize(stats.TotalAllocated));
-    MR_LOG_INFO("    Heap count: " + std::to_string(stats.HeapCount));
+    MR_LOG_INFO("    Heap count: " + std::to_string(stats.PoolCount));
     
     MR_LOG_INFO("  [OK] Test 1 completed\n");
 }
@@ -153,13 +153,13 @@ static void Test_SubAllocation() {
     MR_LOG_INFO("  Sub-allocation stats:");
     MR_LOG_INFO("    Total allocated: " + FormatMemorySize(stats.TotalAllocated));
     MR_LOG_INFO("    Total reserved: " + FormatMemorySize(stats.TotalReserved));
-    MR_LOG_INFO("    Heap count: " + std::to_string(stats.HeapCount));
+    MR_LOG_INFO("    Heap count: " + std::to_string(stats.PoolCount));
     MR_LOG_INFO("    Allocation count: " + std::to_string(stats.AllocationCount));
     
     float utilization = (float)stats.TotalAllocated / stats.TotalReserved * 100.0f;
     MR_LOG_INFO("    Memory utilization: " + std::to_string(utilization) + "%");
     
-    if (stats.HeapCount <= 2) {
+    if (stats.PoolCount <= 2) {
         MR_LOG_INFO("  [OK] Sub-allocation working correctly (multiple buffers share few heaps)");
     }
     
@@ -260,9 +260,9 @@ static void Test_Fragmentation() {
     MR_LOG_INFO("    After free: " + FormatMemorySize(stats2.TotalAllocated));
     MR_LOG_INFO("    Largest free block: " + FormatMemorySize(stats2.LargestFreeBlock));
     
-    // Try compaction
-    memoryManager->Compact();
-    MR_LOG_INFO("  [OK] Executed memory compaction");
+    // Try defragmentation
+    memoryManager->DefragmentAll();
+    MR_LOG_INFO("  [OK] Executed memory defragmentation");
     
     MR_LOG_INFO("  [OK] Test 4 completed\n");
 }
@@ -419,7 +419,7 @@ static void Test_HeapGrowth() {
             FVulkanMemoryManager::FMemoryStats stats;
             memoryManager->GetMemoryStats(stats);
             MR_LOG_INFO("    " + std::to_string(i + 1) + " buffers: " +
-                        std::to_string(stats.HeapCount) + " heaps, " +
+                        std::to_string(stats.PoolCount) + " heaps, " +
                         FormatMemorySize(stats.TotalReserved) + " total reserved");
         }
     }
@@ -428,11 +428,11 @@ static void Test_HeapGrowth() {
     memoryManager->GetMemoryStats(finalStats);
     
     MR_LOG_INFO("  Final stats:");
-    MR_LOG_INFO("    Heap count: " + std::to_string(finalStats.HeapCount));
+    MR_LOG_INFO("    Heap count: " + std::to_string(finalStats.PoolCount));
     MR_LOG_INFO("    Total allocated: " + FormatMemorySize(finalStats.TotalAllocated));
     MR_LOG_INFO("    Total reserved: " + FormatMemorySize(finalStats.TotalReserved));
     
-    if (finalStats.HeapCount > 1) {
+    if (finalStats.PoolCount > 1) {
         MR_LOG_INFO("  [OK] Heap auto-growth working correctly");
     }
     
@@ -643,7 +643,7 @@ static void Scenario_GameAssetLoading() {
     MR_LOG_INFO("  Loading stats:");
     MR_LOG_INFO("    Load time: " + std::to_string(duration.count()) + " ms");
     MR_LOG_INFO("    Total memory: " + FormatMemorySize(stats.TotalAllocated));
-    MR_LOG_INFO("    Heap count: " + std::to_string(stats.HeapCount));
+    MR_LOG_INFO("    Heap count: " + std::to_string(stats.PoolCount));
     MR_LOG_INFO("    Allocation count: " + std::to_string(stats.AllocationCount));
     
     float avgAllocTime = (float)duration.count() / stats.AllocationCount;
@@ -749,7 +749,7 @@ static void Scenario_ParticleSystem() {
     MR_LOG_INFO("  Particle system stats:");
     MR_LOG_INFO("    Allocation time: " + std::to_string(duration.count()) + " us");
     MR_LOG_INFO("    Total memory: " + FormatMemorySize(stats.TotalAllocated));
-    MR_LOG_INFO("    Heap count: " + std::to_string(stats.HeapCount));
+    MR_LOG_INFO("    Heap count: " + std::to_string(stats.PoolCount));
     
     float allocPerEmitter = (float)duration.count() / numEmitters;
     MR_LOG_INFO("    Per-emitter alloc time: " + std::to_string(allocPerEmitter) + " us");
@@ -877,7 +877,7 @@ static void Scenario_TerrainSystem() {
     
     MR_LOG_INFO("  Terrain system stats:");
     MR_LOG_INFO("    Total memory: " + FormatMemorySize(stats.TotalAllocated));
-    MR_LOG_INFO("    Heap count: " + std::to_string(stats.HeapCount));
+    MR_LOG_INFO("    Heap count: " + std::to_string(stats.PoolCount));
     MR_LOG_INFO("    Per-chunk avg: " + 
                 FormatMemorySize(stats.TotalAllocated / terrainChunks));
     
