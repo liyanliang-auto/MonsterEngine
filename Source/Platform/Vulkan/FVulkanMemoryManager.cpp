@@ -162,9 +162,9 @@ bool FVulkanMemoryPool::Allocate(VkDeviceSize Size, VkDeviceSize Alignment, FVul
                     OutAllocation.bMapped = true;
                 }
                 
-                MR_LOG_DEBUG("FVulkanMemoryPool: 子分配 " + std::to_string(Size / 1024) + 
-                             "KB (偏移: " + std::to_string(current->Offset) + 
-                             ", 利用率: " + std::to_string(UsedSize.load() * 100 / PoolSize) + "%)");
+                MR_LOG_DEBUG("FVulkanMemoryPool: Sub-allocated " + std::to_string(Size / 1024) + 
+                             "KB (offset: " + std::to_string(current->Offset) + 
+                             ", utilization: " + std::to_string(UsedSize.load() * 100 / PoolSize) + "%)");
                 
                 return true;
             }
@@ -174,8 +174,8 @@ bool FVulkanMemoryPool::Allocate(VkDeviceSize Size, VkDeviceSize Alignment, FVul
         current = current->Next;
     }
     
-    // 没有找到合适的块
-    MR_LOG_DEBUG("FVulkanMemoryPool: 无法分配 " + std::to_string(Size / 1024) + "KB (池已满)");
+    // No suitable block found
+    MR_LOG_DEBUG("FVulkanMemoryPool: Cannot allocate " + std::to_string(Size / 1024) + "KB (pool full)");
     return false;
 }
 
@@ -185,12 +185,12 @@ void FVulkanMemoryPool::Free(const FVulkanAllocation& Allocation)
     
     FMemoryBlock* block = static_cast<FMemoryBlock*>(Allocation.AllocationHandle);
     if (!block) {
-        MR_LOG_ERROR("FVulkanMemoryPool::Free: 无效的块指针");
+        MR_LOG_ERROR("FVulkanMemoryPool::Free: Invalid block pointer");
         return;
     }
     
     if (block->bFree) {
-        MR_LOG_WARNING("FVulkanMemoryPool::Free: 尝试释放已经空闲的块");
+        MR_LOG_WARNING("FVulkanMemoryPool::Free: Trying to free already free block");
         return;
     }
     
@@ -198,8 +198,8 @@ void FVulkanMemoryPool::Free(const FVulkanAllocation& Allocation)
     block->bFree = true;
     UsedSize.fetch_sub(block->Size);
     
-    MR_LOG_DEBUG("FVulkanMemoryPool: 释放 " + std::to_string(block->Size / 1024) + 
-                 "KB (利用率: " + std::to_string(UsedSize.load() * 100 / PoolSize) + "%)");
+    MR_LOG_DEBUG("FVulkanMemoryPool: Freed " + std::to_string(block->Size / 1024) + 
+                 "KB (utilization: " + std::to_string(UsedSize.load() * 100 / PoolSize) + "%)");
     
     // 合并相邻的空闲块
     MergeFreeBlocks();
@@ -208,7 +208,7 @@ void FVulkanMemoryPool::Free(const FVulkanAllocation& Allocation)
 bool FVulkanMemoryPool::Map(FVulkanAllocation& Allocation, void** OutMappedPtr)
 {
     if (!bHostVisible) {
-        MR_LOG_ERROR("FVulkanMemoryPool::Map: 尝试映射 Device专用 内存");
+        MR_LOG_ERROR("FVulkanMemoryPool::Map: Trying to map Device-local memory");
         return false;
     }
     
@@ -226,7 +226,7 @@ bool FVulkanMemoryPool::Map(FVulkanAllocation& Allocation, void** OutMappedPtr)
     VkResult result = functions.vkMapMemory(Device, DeviceMemory, Allocation.Offset, Allocation.Size, 0, &mappedPtr);
     
     if (result != VK_SUCCESS) {
-        MR_LOG_ERROR("FVulkanMemoryPool::Map: 映射失败，VkResult: " + std::to_string(result));
+        MR_LOG_ERROR("FVulkanMemoryPool::Map: Map failed, VkResult: " + std::to_string(result));
         return false;
     }
     
@@ -436,7 +436,7 @@ bool FVulkanMemoryManager::Allocate(const FAllocationRequest& Request, FVulkanAl
 void FVulkanMemoryManager::Free(FVulkanAllocation& Allocation)
 {
     if (!Allocation.IsValid()) {
-        MR_LOG_WARNING("FVulkanMemoryManager::Free: 尝试释放无效分配");
+        MR_LOG_WARNING("FVulkanMemoryManager::Free: Trying to free invalid allocation");
         return;
     }
     
@@ -448,7 +448,7 @@ void FVulkanMemoryManager::Free(FVulkanAllocation& Allocation)
         if (Allocation.Pool) {
             Allocation.Pool->Free(Allocation);
         } else {
-            MR_LOG_ERROR("FVulkanMemoryManager::Free: 无效的池指针");
+            MR_LOG_ERROR("FVulkanMemoryManager::Free: Invalid pool pointer");
         }
     }
     
@@ -459,7 +459,7 @@ void FVulkanMemoryManager::Free(FVulkanAllocation& Allocation)
 bool FVulkanMemoryManager::MapMemory(FVulkanAllocation& Allocation, void** OutMappedPtr)
 {
     if (!Allocation.IsValid()) {
-        MR_LOG_ERROR("FVulkanMemoryManager::MapMemory: 无效分配");
+        MR_LOG_ERROR("FVulkanMemoryManager::MapMemory: Invalid allocation");
         return false;
     }
     
@@ -475,7 +475,7 @@ bool FVulkanMemoryManager::MapMemory(FVulkanAllocation& Allocation, void** OutMa
                                                 Allocation.Offset, Allocation.Size, 0, OutMappedPtr);
         
         if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("FVulkanMemoryManager::MapMemory: 映射失败，VkResult: " + std::to_string(result));
+            MR_LOG_ERROR("FVulkanMemoryManager::MapMemory: Map failed, VkResult: " + std::to_string(result));
             return false;
         }
         
@@ -519,7 +519,7 @@ uint32 FVulkanMemoryManager::FindMemoryType(uint32 TypeFilter, VkMemoryPropertyF
         }
     }
     
-    MR_LOG_ERROR("FVulkanMemoryManager: 找不到合适的内存类型");
+    MR_LOG_ERROR("FVulkanMemoryManager: Cannot find suitable memory type");
     return 0;
 }
 
@@ -553,19 +553,19 @@ void FVulkanMemoryManager::GetMemoryStats(FMemoryStats& OutStats)
         }
     }
     
-    MR_LOG_DEBUG("===== FVulkanMemoryManager 统计 =====");
-    MR_LOG_DEBUG("  总分配: " + std::to_string(OutStats.TotalAllocated / (1024 * 1024)) + "MB");
-    MR_LOG_DEBUG("  总保留: " + std::to_string(OutStats.TotalReserved / (1024 * 1024)) + "MB");
-    MR_LOG_DEBUG("  池数量: " + std::to_string(OutStats.PoolCount));
-    MR_LOG_DEBUG("  独立分配数: " + std::to_string(OutStats.DedicatedAllocationCount));
+    MR_LOG_DEBUG("===== FVulkanMemoryManager Stats =====");
+    MR_LOG_DEBUG("  Total allocated: " + std::to_string(OutStats.TotalAllocated / (1024 * 1024)) + "MB");
+    MR_LOG_DEBUG("  Total reserved: " + std::to_string(OutStats.TotalReserved / (1024 * 1024)) + "MB");
+    MR_LOG_DEBUG("  Pool count: " + std::to_string(OutStats.PoolCount));
+    MR_LOG_DEBUG("  Dedicated allocations: " + std::to_string(OutStats.DedicatedAllocationCount));
     MR_LOG_DEBUG("  DeviceLocal: " + std::to_string(OutStats.DeviceLocalAllocated / (1024 * 1024)) + "MB");
     MR_LOG_DEBUG("  HostVisible: " + std::to_string(OutStats.HostVisibleAllocated / (1024 * 1024)) + "MB");
-    MR_LOG_DEBUG("=====================================");
+    MR_LOG_DEBUG("=======================================");
 }
 
 void FVulkanMemoryManager::DefragmentAll()
 {
-    MR_LOG_INFO("FVulkanMemoryManager: 开始碎片整理...");
+    MR_LOG_INFO("FVulkanMemoryManager: Starting defragmentation...");
     
     for (uint32 i = 0; i < VK_MAX_MEMORY_TYPES; ++i) {
         std::lock_guard<std::mutex> lock(PoolsMutex[i]);
@@ -575,19 +575,19 @@ void FVulkanMemoryManager::DefragmentAll()
         }
     }
     
-    MR_LOG_INFO("FVulkanMemoryManager: 碎片整理完成");
+    MR_LOG_INFO("FVulkanMemoryManager: Defragmentation completed");
 }
 
 void FVulkanMemoryManager::TrimUnusedPools()
 {
-    MR_LOG_INFO("FVulkanMemoryManager: 清理未使用的池...");
+    MR_LOG_INFO("FVulkanMemoryManager: Trimming unused pools...");
     
     uint32 trimmedCount = 0;
     
     for (uint32 i = 0; i < VK_MAX_MEMORY_TYPES; ++i) {
         std::lock_guard<std::mutex> lock(PoolsMutex[i]);
         
-        // 移除完全未使用的池
+        // Remove completely unused pools
         auto it = Pools[i].begin();
         while (it != Pools[i].end()) {
             if ((*it)->GetUsedSize() == 0) {
@@ -599,7 +599,7 @@ void FVulkanMemoryManager::TrimUnusedPools()
         }
     }
     
-    MR_LOG_INFO("FVulkanMemoryManager: 清理了 " + std::to_string(trimmedCount) + " 个未使用的池");
+    MR_LOG_INFO("FVulkanMemoryManager: Trimmed " + std::to_string(trimmedCount) + " unused pools");
 }
 
 FVulkanMemoryPool* FVulkanMemoryManager::FindOrCreatePool(uint32 MemoryTypeIndex, VkDeviceSize RequiredSize)
@@ -608,8 +608,8 @@ FVulkanMemoryPool* FVulkanMemoryManager::FindOrCreatePool(uint32 MemoryTypeIndex
     
     // 检查是否达到池数量上限
     if (Pools[MemoryTypeIndex].size() >= MAX_POOLS_PER_TYPE) {
-        MR_LOG_WARNING("FVulkanMemoryManager: 内存类型 " + std::to_string(MemoryTypeIndex) + 
-                       " 的池数量已达上限 (" + std::to_string(MAX_POOLS_PER_TYPE) + ")");
+        MR_LOG_WARNING("FVulkanMemoryManager: Memory type " + std::to_string(MemoryTypeIndex) + 
+                       " pool count reached limit (" + std::to_string(MAX_POOLS_PER_TYPE) + ")");
         return nullptr;
     }
     
@@ -624,7 +624,7 @@ FVulkanMemoryPool* FVulkanMemoryManager::CreatePool(uint32 MemoryTypeIndex, VkDe
     auto newPool = MakeUnique<FVulkanMemoryPool>(Device, PoolSize, MemoryTypeIndex, bHostVisible);
     
     if (newPool->GetDeviceMemory() == VK_NULL_HANDLE) {
-        MR_LOG_ERROR("FVulkanMemoryManager: 创建池失败");
+        MR_LOG_ERROR("FVulkanMemoryManager: Failed to create pool");
         return nullptr;
     }
     
@@ -647,7 +647,7 @@ bool FVulkanMemoryManager::AllocateDedicated(const FAllocationRequest& Request, 
     VkResult result = functions.vkAllocateMemory(Device, &allocInfo, nullptr, &dedicatedMemory);
     
     if (result != VK_SUCCESS) {
-        MR_LOG_ERROR("FVulkanMemoryManager: 独立Allocation failed，VkResult: " + std::to_string(result));
+        MR_LOG_ERROR("FVulkanMemoryManager: Dedicated allocation failed, VkResult: " + std::to_string(result));
         return false;
     }
     
@@ -663,7 +663,7 @@ bool FVulkanMemoryManager::AllocateDedicated(const FAllocationRequest& Request, 
     
     DedicatedAllocationCount.fetch_add(1);
     
-    MR_LOG_INFO("FVulkanMemoryManager: 独立分配 " + 
+    MR_LOG_INFO("FVulkanMemoryManager: Dedicated allocation " + 
                 std::to_string(Request.Size / (1024 * 1024)) + "MB");
     
     return true;
@@ -679,7 +679,7 @@ void FVulkanMemoryManager::FreeDedicated(FVulkanAllocation& Allocation)
     
     functions.vkFreeMemory(Device, Allocation.DeviceMemory, nullptr);
     
-    MR_LOG_DEBUG("FVulkanMemoryManager: 释放独立分配 (" + 
+    MR_LOG_DEBUG("FVulkanMemoryManager: Freed dedicated allocation (" + 
                  std::to_string(Allocation.Size / (1024 * 1024)) + "MB)");
 }
 
