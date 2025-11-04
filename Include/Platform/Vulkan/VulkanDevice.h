@@ -88,6 +88,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Memory manager (UE5-style)
         FVulkanMemoryManager* getMemoryManager() const { return m_memoryManager.get(); }
+        FVulkanMemoryManager* GetMemoryManager() const { return m_memoryManager.get(); } // UE5 naming style
         
         // Render pass and framebuffer accessors
         VkRenderPass getRenderPass() const { return m_renderPass; }
