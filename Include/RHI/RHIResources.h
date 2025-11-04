@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 // MonsterEngine - RHI Resource Base Classes (UE5-style)
 //
-// 参考 UE5: Engine/Source/Runtime/RHI/Public/RHIResources.h
+// Reference UE5: Engine/Source/Runtime/RHI/Public/RHIResources.h
 
 #pragma once
 
@@ -13,12 +13,12 @@ namespace MonsterRender {
 namespace RHI {
 
 /**
- * FRHIResource - RHI 资源基类
+ * FRHIResource - RHI Resource Base Class
  * 
- * 所有 RHI 资源（Buffer、Texture、Shader 等）的基类
- * 提供引用计数、生命周期管理
+ * Base class for all RHI resources (Buffer, Texture, Shader, etc.)
+ * Provides reference counting and lifecycle management
  * 
- * 参考 UE5: FRHIResource
+ * Reference UE5: FRHIResource
  */
 class FRHIResource {
 public:
@@ -29,7 +29,7 @@ public:
     
     virtual ~FRHIResource() = default;
     
-    // 引用计数管理
+    // Reference counting
     uint32 AddRef() const {
         return RefCount.fetch_add(1) + 1;
     }
@@ -46,25 +46,25 @@ public:
         return RefCount.load();
     }
     
-    // 资源提交状态（用于延迟初始化）
+    // Resource commit status (for deferred initialization)
     bool IsCommitted() const { return bCommitted; }
     void SetCommitted(bool committed) { bCommitted = committed; }
     
-    // 调试信息
+    // Debug info
     void SetDebugName(const String& name) { DebugName = name; }
     const String& GetDebugName() const { return DebugName; }
 
 protected:
-    mutable std::atomic<uint32> RefCount;  // 引用计数（线程安全）
-    bool bCommitted;                       // 是否已提交到 GPU
-    String DebugName;                      // 调试名称
+    mutable std::atomic<uint32> RefCount;  // Thread-safe reference count
+    bool bCommitted;                       // Whether committed to GPU
+    String DebugName;                      // Debug name
 };
 
 /**
- * TRefCountPtr - 引用计数智能指针
+ * TRefCountPtr - Reference counting smart pointer
  * 
- * 自动管理 FRHIResource 的引用计数
- * 参考 UE5: TRefCountPtr
+ * Automatically manages FRHIResource reference counting
+ * Reference UE5: TRefCountPtr
  */
 template<typename T>
 class TRefCountPtr {
@@ -140,10 +140,10 @@ private:
 };
 
 /**
- * FRHIBuffer - RHI 缓冲区基类
+ * FRHIBuffer - RHI Buffer Base Class
  * 
- * 表示 GPU 缓冲区（Vertex Buffer、Index Buffer、Uniform Buffer 等）
- * 参考 UE5: FRHIBuffer
+ * Represents GPU buffer (Vertex Buffer, Index Buffer, Uniform Buffer, etc.)
+ * Reference UE5: FRHIBuffer
  */
 class FRHIBuffer : public FRHIResource {
 public:
@@ -155,29 +155,29 @@ public:
     
     virtual ~FRHIBuffer() = default;
     
-    // 缓冲区属性
+    // Buffer properties
     uint32 GetSize() const { return Size; }
     EResourceUsage GetUsage() const { return Usage; }
     uint32 GetStride() const { return Stride; }
     
-    // 映射/取消映射（需要子类实现）
+    // Map/Unmap (must be implemented by subclass)
     virtual void* Lock(uint32 Offset, uint32 InSize) = 0;
     virtual void Unlock() = 0;
     
-    // GPU 虚拟地址（用于 Shader 直接访问）
+    // GPU virtual address (for shader direct access)
     virtual uint64 GetGPUVirtualAddress() const { return 0; }
 
 protected:
-    uint32 Size;              // 缓冲区大小（字节）
-    EResourceUsage Usage;     // 使用标志
-    uint32 Stride;            // 元素步长（用于结构化缓冲区）
+    uint32 Size;              // Buffer size (bytes)
+    EResourceUsage Usage;     // Usage flags
+    uint32 Stride;            // Element stride (for structured buffers)
 };
 
 /**
- * FRHITexture - RHI 纹理基类
+ * FRHITexture - RHI Texture Base Class
  * 
- * 表示 GPU 纹理（Texture2D、Texture3D、TextureCube 等）
- * 参考 UE5: FRHITexture
+ * Represents GPU texture (Texture2D, Texture3D, TextureCube, etc.)
+ * Reference UE5: FRHITexture
  */
 class FRHITexture : public FRHIResource {
 public:
@@ -187,7 +187,7 @@ public:
     
     virtual ~FRHITexture() = default;
     
-    // 纹理属性
+    // Texture properties
     uint32 GetWidth() const { return Desc.width; }
     uint32 GetHeight() const { return Desc.height; }
     uint32 GetDepth() const { return Desc.depth; }
@@ -198,11 +198,11 @@ public:
     const TextureDesc& GetDesc() const { return Desc; }
 
 protected:
-    TextureDesc Desc;  // 纹理描述符
+    TextureDesc Desc;  // Texture descriptor
 };
 
 /**
- * FRHIVertexBuffer - 顶点缓冲区
+ * FRHIVertexBuffer - Vertex Buffer
  */
 class FRHIVertexBuffer : public FRHIBuffer {
 public:
@@ -212,7 +212,7 @@ public:
 };
 
 /**
- * FRHIIndexBuffer - 索引缓冲区
+ * FRHIIndexBuffer - Index Buffer
  */
 class FRHIIndexBuffer : public FRHIBuffer {
 public:
@@ -224,11 +224,11 @@ public:
     bool Is32Bit() const { return b32Bit; }
 
 private:
-    bool b32Bit;  // true = 32位索引，false = 16位索引
+    bool b32Bit;  // true = 32-bit index, false = 16-bit index
 };
 
 /**
- * FRHIUniformBuffer - Uniform 缓冲区
+ * FRHIUniformBuffer - Uniform Buffer
  */
 class FRHIUniformBuffer : public FRHIBuffer {
 public:
@@ -238,34 +238,34 @@ public:
 };
 
 /**
- * FRHITexture2D - 2D 纹理
+ * FRHITexture2D - 2D Texture
  */
 class FRHITexture2D : public FRHITexture {
 public:
     FRHITexture2D(const TextureDesc& InDesc)
         : FRHITexture(InDesc)
     {
-        // 确保是 2D 纹理
+        // Ensure 2D texture
         Desc.depth = 1;
         Desc.arraySize = std::max(Desc.arraySize, 1u);
     }
 };
 
 /**
- * FRHITextureCube - Cube 纹理
+ * FRHITextureCube - Cube Texture
  */
 class FRHITextureCube : public FRHITexture {
 public:
     FRHITextureCube(const TextureDesc& InDesc)
         : FRHITexture(InDesc)
     {
-        // Cube 纹理固定为 6 个面
+        // Cube texture has 6 faces
         Desc.arraySize = 6;
     }
 };
 
 // ============================================================================
-// RHI 资源引用类型定义（方便使用）
+// RHI Resource reference types (for convenience)
 // ============================================================================
 
 using FRHIResourceRef = TRefCountPtr<FRHIResource>;

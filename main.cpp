@@ -21,9 +21,6 @@ namespace MonsterRender {
         void RunScenarioTests();  // Forward declaration
         void RunAllTests();  // Forward declaration
     }
-    namespace VulkanGPUMemorySystemTest {
-        void RunAllTests();  // Forward declaration
-    }
 }
 
 // Entry point following UE5's application architecture
@@ -40,7 +37,6 @@ int main(int argc, char** argv) {
     bool runTextureTests = false;
     bool runVirtualTextureTests = false;
     bool runVulkanMemoryTests = true;
-    bool runGPUMemorySystemTests = false;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -56,9 +52,6 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-vulkan-memory") == 0 || strcmp(argv[i], "-tvm") == 0) {
             runVulkanMemoryTests = true;
         }
-        else if (strcmp(argv[i], "--test-gpu-memory") == 0 || strcmp(argv[i], "-tgm") == 0) {
-            runGPUMemorySystemTests = true;
-        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -66,13 +59,13 @@ int main(int argc, char** argv) {
     
     // Default behavior: run all tests
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
-        !runVulkanMemoryTests && !runGPUMemorySystemTests && !runAllTests) {
+        !runVulkanMemoryTests && !runAllTests) {
         runAllTests = true;
     }
     
     // Run tests if requested
     if (runMemoryTests || runTextureTests || runVirtualTextureTests || 
-        runVulkanMemoryTests || runGPUMemorySystemTests || runAllTests) {
+        runVulkanMemoryTests || runAllTests) {
         MR_LOG_INFO("\n");
         MR_LOG_INFO("==========================================");
         MR_LOG_INFO("  MonsterEngine Test Suite");
@@ -134,18 +127,6 @@ int main(int argc, char** argv) {
             
             // Run all Vulkan memory tests
             VulkanMemoryManagerTest::RunAllTests();
-        }
-        
-        // Run GPU Memory System Tests (Four-Layer Architecture)
-        if (runGPUMemorySystemTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("  Vulkan GPU Memory System Tests (Four-Layer Architecture)");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("");
-            
-            // Run comprehensive GPU memory system tests
-            VulkanGPUMemorySystemTest::RunAllTests();
         }
         
         MR_LOG_INFO("\n");
