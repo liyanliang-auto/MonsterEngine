@@ -21,6 +21,11 @@ namespace MonsterRender {
         void RunScenarioTests();  // Forward declaration
         void RunAllTests();  // Forward declaration
     }
+    namespace VulkanResourceManagerTest {
+        void RunBasicTests();  // Forward declaration
+        void RunScenarioTests();  // Forward declaration
+        void RunAllTests();  // Forward declaration
+    }
 }
 
 // Entry point following UE5's application architecture
@@ -37,6 +42,7 @@ int main(int argc, char** argv) {
     bool runTextureTests = false;
     bool runVirtualTextureTests = false;
     bool runVulkanMemoryTests = true;
+    bool runVulkanResourceTests = true;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -52,6 +58,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-vulkan-memory") == 0 || strcmp(argv[i], "-tvm") == 0) {
             runVulkanMemoryTests = true;
         }
+        else if (strcmp(argv[i], "--test-vulkan-resource") == 0 || strcmp(argv[i], "-tvr") == 0) {
+            runVulkanResourceTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -59,13 +68,13 @@ int main(int argc, char** argv) {
     
     // Default behavior: run all tests
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
-        !runVulkanMemoryTests && !runAllTests) {
+        !runVulkanMemoryTests && !runVulkanResourceTests && !runAllTests) {
         runAllTests = true;
     }
     
     // Run tests if requested
     if (runMemoryTests || runTextureTests || runVirtualTextureTests || 
-        runVulkanMemoryTests || runAllTests) {
+        runVulkanMemoryTests || runVulkanResourceTests || runAllTests) {
         MR_LOG_INFO("\n");
         MR_LOG_INFO("==========================================");
         MR_LOG_INFO("  MonsterEngine Test Suite");
@@ -127,6 +136,18 @@ int main(int argc, char** argv) {
             
             // Run all Vulkan memory tests
             VulkanMemoryManagerTest::RunAllTests();
+        }
+        
+        // Run Vulkan resource manager tests
+        if (runVulkanResourceTests || runAllTests) {
+            MR_LOG_INFO("\n\n");
+            MR_LOG_INFO("==========================================");
+            MR_LOG_INFO("  Vulkan Resource Manager Tests");
+            MR_LOG_INFO("==========================================");
+            MR_LOG_INFO("");
+            
+            // Run all Vulkan resource management tests
+            VulkanResourceManagerTest::RunAllTests();
         }
         
         MR_LOG_INFO("\n");
