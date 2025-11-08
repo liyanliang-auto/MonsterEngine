@@ -149,6 +149,15 @@
     <ClInclude Include="Include\Core\Log.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Include\Core\LogCategory.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Core\LogMacros.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Core\LogVerbosity.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Include\Engine.h">
       <Filter>头文件</Filter>
     </ClInclude>
