@@ -1,6 +1,7 @@
 #include "Core/Log.h"
 #include <mutex>
 #include <ctime>
+#include <iostream>
 
 #ifdef _WIN32
     #include <Windows.h>
@@ -29,6 +30,38 @@ DEFINE_LOG_CATEGORY_WITH_VERBOSITY(Input, Log);
 // =============================================================================
 
 static std::mutex g_LogMutex; // 保护多线程日志输出
+static bool g_ConsoleInitialized = false; // 控制台是否已初始化
+
+/**
+ * 初始化控制台以支持UTF-8输出（Windows平台）
+ * Initialize console for UTF-8 output (Windows platform)
+ */
+static void InitializeConsoleForUTF8() {
+#ifdef _WIN32
+    if (!g_ConsoleInitialized) {
+        // 设置控制台输出代码页为UTF-8
+        SetConsoleOutputCP(CP_UTF8);
+        // 设置控制台输入代码页为UTF-8
+        SetConsoleCP(CP_UTF8);
+        
+        // 启用虚拟终端处理（支持ANSI转义序列）
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (hOut != INVALID_HANDLE_VALUE) {
+            DWORD dwMode = 0;
+            if (GetConsoleMode(hOut, &dwMode)) {
+                dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+                SetConsoleMode(hOut, dwMode);
+            }
+        }
+        
+        // 设置C++流的locale为UTF-8
+        std::locale::global(std::locale(""));
+        std::cout.imbue(std::locale());
+        
+        g_ConsoleInitialized = true;
+    }
+#endif
+}
 
 void FOutputDevice::Serialize(ELogVerbosity::Type Verbosity,
                               const FLogCategory& Category,
@@ -36,6 +69,12 @@ void FOutputDevice::Serialize(ELogVerbosity::Type Verbosity,
                               const char* File,
                               int Line) {
     std::lock_guard<std::mutex> lock(g_LogMutex);
+    
+    // 首次调用时初始化控制台（支持UTF-8和中文）
+    // Initialize console on first call (support UTF-8 and Chinese characters)
+    if (!g_ConsoleInitialized) {
+        InitializeConsoleForUTF8();
+    }
     
     // 获取当前时间
     auto now = std::chrono::system_clock::now();

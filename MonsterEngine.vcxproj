@@ -175,6 +175,7 @@
     <ClCompile Include="Source\Renderer\FTextureStreamingManager.cpp" />
     <ClCompile Include="Source\Renderer\FVirtualTexturePhysicalSpace.cpp" />
     <ClCompile Include="Source\Renderer\FVirtualTextureSystem.cpp" />
+    <ClCompile Include="Source\Tests\ChineseLogTest.cpp" />
     <ClCompile Include="Source\Tests\FMemorySystemTest.cpp" />
     <ClCompile Include="Source\Tests\LogSystemTest.cpp" />
     <ClCompile Include="Source\Tests\TextureStreamingSystemTest.cpp" />

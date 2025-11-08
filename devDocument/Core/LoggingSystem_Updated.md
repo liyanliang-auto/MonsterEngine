@@ -299,6 +299,57 @@ MR_LOG_ERROR("Error message");
 [14:23:45.201][Memory][ERROR] Allocation failed: size=1048576 (FMemory.cpp:156)
 ```
 
+## 中文支持
+
+✅ **完全支持中文日志输出！**
+
+日志系统已针对Windows平台进行优化，自动设置控制台为UTF-8模式，支持：
+
+- **简体中文**：你好，世界！
+- **繁体中文**：繁體中文測試
+- **日文**：モンスターエンジン
+- **韩文**：몬스터 엔진
+- **特殊符号**：【】《》±×÷≈≠
+- **Emoji**：✅ ❌ ⚠️（部分终端）
+
+**使用示例：**
+
+```cpp
+// 基本中文日志
+MR_LOG(Core, Display, TEXT("MonsterRender 引擎启动中..."));
+MR_LOG(Temp, Warning, TEXT("警告：配置文件缺少某些选项"));
+
+// 格式化中文
+const char* playerName = "张三";
+int level = 42;
+MR_LOG(Temp, Display, TEXT("玩家：%s，等级：%d"), playerName, level);
+
+// 中文错误消息
+const char* fileName = "数据/角色.mesh";
+MR_LOG(Texture, Error, TEXT("加载失败：找不到文件 %s"), fileName);
+
+// 中文条件日志
+bool debugMode = true;
+MR_CLOG(debugMode, Core, Display, TEXT("调试模式已启用"));
+
+// 中文断言消息
+MR_ENSURE_MSG(ptr != nullptr, TEXT("指针不能为空！"));
+```
+
+**技术细节：**
+
+1. Windows平台自动设置控制台代码页为UTF-8（CP_UTF8）
+2. 启用虚拟终端处理支持ANSI转义序列
+3. 首次日志输出时自动初始化，无需手动配置
+4. Linux/macOS平台默认支持UTF-8
+
+**注意事项：**
+
+- 源代码文件应保存为UTF-8编码（Visual Studio默认）
+- 使用TEXT宏包裹字符串字面量
+- 某些旧版Windows终端可能不支持所有Unicode字符
+- Windows Terminal和PowerShell支持完整的Unicode显示
+
 ## 编译配置
 
 ### Debug版本

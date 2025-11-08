@@ -108,6 +108,9 @@
     <ClCompile Include="Source\Renderer\FVirtualTextureSystem.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Tests\ChineseLogTest.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Tests\VirtualTextureSystemTest.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
