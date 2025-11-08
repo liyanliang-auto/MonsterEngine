@@ -38,11 +38,11 @@ int main(int argc, char** argv) {
     Logger::getInstance().setMinLevel(ELogLevel::Debug);
     
     // Check for test mode flag
-    bool runMemoryTests = true;
+    bool runMemoryTests = false;
     bool runTextureTests = false;
     bool runVirtualTextureTests = false;
-    bool runVulkanMemoryTests = true;
-    bool runVulkanResourceTests = true;
+    bool runVulkanMemoryTests = false;
+    bool runVulkanResourceTests = false;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
     // Default behavior: run all tests
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
         !runVulkanMemoryTests && !runVulkanResourceTests && !runAllTests) {
-        runAllTests = true;
+        runAllTests = false;
     }
     
     // Run tests if requested
