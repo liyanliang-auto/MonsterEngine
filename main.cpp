@@ -32,10 +32,11 @@ namespace MonsterRender {
 int main(int argc, char** argv) {
     using namespace MonsterRender;
     
-    MR_LOG_INFO("Starting MonsterRender Engine");
+    MR_LOG(Core, Display, TEXT("Starting MonsterRender Engine"));
     
-    // Set log level for detailed output
-    Logger::getInstance().setMinLevel(ELogLevel::Debug);
+    // 设置日志级别以获得详细输出
+    // Set log level for detailed output - Verbose级别会显示更多调试信息
+    LogCategoryCore.SetVerbosity(ELogVerbosity::Verbose);
     
     // Check for test mode flag
     bool runMemoryTests = false;
@@ -75,64 +76,67 @@ int main(int argc, char** argv) {
     // Run tests if requested
     if (runMemoryTests || runTextureTests || runVirtualTextureTests || 
         runVulkanMemoryTests || runVulkanResourceTests || runAllTests) {
-        MR_LOG_INFO("\n");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("  MonsterEngine Test Suite");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("\n");
+        MR_LOG(Core, Display, TEXT(""));
+        MR_LOG(Core, Display, TEXT("=========================================="));
+        MR_LOG(Core, Display, TEXT("  MonsterEngine Test Suite"));
+        MR_LOG(Core, Display, TEXT("=========================================="));
+        MR_LOG(Core, Display, TEXT(""));
         
         // Run memory system tests
         if (runMemoryTests || runAllTests) {
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("  Memory System Tests");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("");
+            MR_LOG(Memory, Display, TEXT("======================================"));
+            MR_LOG(Memory, Display, TEXT("  Memory System Tests"));
+            MR_LOG(Memory, Display, TEXT("======================================"));
+            MR_LOG(Memory, Display, TEXT(""));
             
             MemorySystemTest::runAllTests();
             
-            MR_LOG_INFO("\n");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("  FMemory System Tests");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("");
+            MR_LOG(Memory, Display, TEXT(""));
+            MR_LOG(Memory, Display, TEXT("======================================"));
+            MR_LOG(Memory, Display, TEXT("  FMemory System Tests"));
+            MR_LOG(Memory, Display, TEXT("======================================"));
+            MR_LOG(Memory, Display, TEXT(""));
             
             FMemorySystemTest::runFMemoryTests();
         }
         
         // Run texture streaming tests
         if (runTextureTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("  Texture Streaming System Tests");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("");
+            MR_LOG(Texture, Display, TEXT(""));
+            MR_LOG(Texture, Display, TEXT(""));
+            MR_LOG(Texture, Display, TEXT("======================================"));
+            MR_LOG(Texture, Display, TEXT("  Texture Streaming System Tests"));
+            MR_LOG(Texture, Display, TEXT("======================================"));
+            MR_LOG(Texture, Display, TEXT(""));
             
             TextureStreamingSystemTest::runTextureStreamingTests();
         }
         
         // Run virtual texture system tests
         if (runVirtualTextureTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("  Virtual Texture System Tests");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("");
+            MR_LOG(Texture, Display, TEXT(""));
+            MR_LOG(Texture, Display, TEXT(""));
+            MR_LOG(Texture, Display, TEXT("=========================================="));
+            MR_LOG(Texture, Display, TEXT("  Virtual Texture System Tests"));
+            MR_LOG(Texture, Display, TEXT("=========================================="));
+            MR_LOG(Texture, Display, TEXT(""));
             
             // Run basic tests
             VirtualTextureSystemTest::RunAllTests();
             
             // Run real-world scenario tests
-            MR_LOG_INFO("\n");
+            MR_LOG(Texture, Display, TEXT(""));
             VirtualTextureSystemTest::RunRealWorldScenarioTests();
         }
         
         // Run Vulkan memory manager tests
         if (runVulkanMemoryTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("  Vulkan Memory Manager Tests");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("");
+            MR_LOG(Vulkan, Display, TEXT(""));
+            MR_LOG(Vulkan, Display, TEXT(""));
+            MR_LOG(Vulkan, Display, TEXT("=========================================="));
+            MR_LOG(Vulkan, Display, TEXT("  Vulkan Memory Manager Tests"));
+            MR_LOG(Vulkan, Display, TEXT("=========================================="));
+            MR_LOG(Vulkan, Display, TEXT(""));
             
             // Run all Vulkan memory tests
             VulkanMemoryManagerTest::RunAllTests();
@@ -140,21 +144,22 @@ int main(int argc, char** argv) {
         
         // Run Vulkan resource manager tests
         if (runVulkanResourceTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("  Vulkan Resource Manager Tests");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("");
+            MR_LOG(Vulkan, Display, TEXT(""));
+            MR_LOG(Vulkan, Display, TEXT(""));
+            MR_LOG(Vulkan, Display, TEXT("=========================================="));
+            MR_LOG(Vulkan, Display, TEXT("  Vulkan Resource Manager Tests"));
+            MR_LOG(Vulkan, Display, TEXT("=========================================="));
+            MR_LOG(Vulkan, Display, TEXT(""));
             
             // Run all Vulkan resource management tests
             VulkanResourceManagerTest::RunAllTests();
         }
         
-        MR_LOG_INFO("\n");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("  All Tests Completed");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("\n");
+        MR_LOG(Core, Display, TEXT(""));
+        MR_LOG(Core, Display, TEXT("=========================================="));
+        MR_LOG(Core, Display, TEXT("  All Tests Completed"));
+        MR_LOG(Core, Display, TEXT("=========================================="));
+        MR_LOG(Core, Display, TEXT(""));
         
         // Exit after tests
         return 0;
@@ -163,7 +168,7 @@ int main(int argc, char** argv) {
     // Create application instance
     auto app = createApplication();
     if (!app) {
-        MR_LOG_ERROR("Failed to create application");
+        MR_LOG(Core, Error, TEXT("Failed to create application"));
         return -1;
     }
     
@@ -173,6 +178,6 @@ int main(int argc, char** argv) {
     // Cleanup is handled by RAII
     app.reset();
     
-    MR_LOG_INFO("MonsterRender Engine shutting down with exit code: " + std::to_string(exitCode));
+    MR_LOG(Core, Display, TEXT("MonsterRender Engine shutting down with exit code: %d"), exitCode);
     return exitCode;
 }

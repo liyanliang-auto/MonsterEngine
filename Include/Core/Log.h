@@ -1,81 +1,53 @@
 #pragma once
 
-#include <iostream>
-#include <string>
-#include <string_view>
-#include <sstream>
-#include <chrono>
-#include <iomanip>
-#include <time.h>
+/**
+ * MonsterRender 日志系统
+ * MonsterRender Logging System
+ * 
+ * 参考UE5的日志架构设计
+ * Based on UE5's logging architecture
+ * 
+ * 主要组件 Main Components:
+ * - LogVerbosity.h: 定义日志详细级别
+ * - LogCategory.h: 日志类别系统
+ * - LogMacros.h: 日志宏定义
+ * 
+ * 基本用法 Basic Usage:
+ * 
+ * 1. 使用预定义的日志类别：
+ *    MR_LOG(Temp, Warning, TEXT("Warning message: %s"), "details");
+ *    MR_LOG(RHI, Error, TEXT("Error code: %d"), errorCode);
+ * 
+ * 2. 声明自定义日志类别：
+ *    在头文件中：
+ *      DECLARE_LOG_CATEGORY_EXTERN(MySystem, Log, All);
+ *    
+ *    在cpp文件中：
+ *      DEFINE_LOG_CATEGORY(MySystem);
+ *    
+ *    使用：
+ *      MR_LOG(MySystem, Display, TEXT("My system initialized"));
+ * 
+ * 3. 支持的日志级别（从高到低）：
+ *    - Fatal: 致命错误，会导致程序崩溃
+ *    - Error: 错误
+ *    - Warning: 警告
+ *    - Display: 显示级别的信息
+ *    - Log: 一般日志
+ *    - Verbose: 详细日志
+ *    - VeryVerbose: 非常详细的日志
+ * 
+ * 4. 格式化支持：
+ *    - 整数: %d
+ *    - 浮点数: %f
+ *    - 字符串: %s
+ *    - 指针: %p
+ *    - 十六进制: %x, %X
+ */
 
-namespace MonsterRender {
-    
-    enum class ELogLevel : uint8_t {
-        Trace = 0,
-        Debug = 1,
-        Info = 2,
-        Warning = 3,
-        Error = 4,
-        Fatal = 5
-    };
-    
-    class Logger {
-    public:
-        static Logger& getInstance() {
-            static Logger instance;
-            return instance;
-        }
-        
-        template<typename... Args>
-        void log(ELogLevel level, std::string_view format, Args&&... args) {
-            if (level < m_minLevel) {
-                return;
-            }
-            
-            auto now = std::chrono::system_clock::now();
-            auto time_t = std::chrono::system_clock::to_time_t(now);
-            
-            std::ostringstream oss;
-            //oss << "[" << std::put_time(localtime_s(&time_t), "%H:%M:%S") << "] ";
-            oss << "[" << getLevelString(level) << "] ";
-            
-            // Simple format string replacement (basic implementation)
-            std::string message(format);
-            oss << message;
-            
-            std::cout << oss.str() << std::endl;
-            
-            if (level == ELogLevel::Fatal) {
-                std::abort();
-            }
-        }
-        
-        void setMinLevel(ELogLevel level) {
-            m_minLevel = level;
-        }
-        
-    private:
-        Logger() = default;
-        ELogLevel m_minLevel = ELogLevel::Info;
-        
-        const char* getLevelString(ELogLevel level) {
-            switch (level) {
-                case ELogLevel::Trace: return "TRACE";
-                case ELogLevel::Debug: return "DEBUG";
-                case ELogLevel::Info: return "INFO";
-                case ELogLevel::Warning: return "WARN";
-                case ELogLevel::Error: return "ERROR";
-                case ELogLevel::Fatal: return "FATAL";
-                default: return "UNKNOWN";
-            }
-        }
-    };
-}
+#include "LogVerbosity.h"
+#include "LogCategory.h"
+#include "LogMacros.h"
 
-// Logging macros
-#define MR_LOG_TRACE(message)   MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Trace, message)
-#define MR_LOG_DEBUG(message)   MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Debug, message)
-#define MR_LOG_INFO(message)    MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Info, message)
-#define MR_LOG_WARNING(message) MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Warning, message)
-#define MR_LOG_ERROR(message)   MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Error, message)
-#define MR_LOG_FATAL(message)   MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Fatal, message)
+// 这个头文件作为日志系统的统一入口点
+// This header serves as the unified entry point for the logging system

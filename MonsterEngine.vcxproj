@@ -176,6 +176,7 @@
     <ClCompile Include="Source\Renderer\FVirtualTexturePhysicalSpace.cpp" />
     <ClCompile Include="Source\Renderer\FVirtualTextureSystem.cpp" />
     <ClCompile Include="Source\Tests\FMemorySystemTest.cpp" />
+    <ClCompile Include="Source\Tests\LogSystemTest.cpp" />
     <ClCompile Include="Source\Tests\TextureStreamingSystemTest.cpp" />
     <ClCompile Include="Source\Tests\TextureStreamingTest.cpp" />
     <ClCompile Include="Source\Tests\VirtualTextureSystemTest.cpp" />
@@ -207,9 +208,13 @@
     <ClInclude Include="Include\Core\HAL\FMemory.h" />
     <ClInclude Include="Include\Core\HAL\FMemoryManager.h" />
     <ClInclude Include="Include\Core\IO\FAsyncFileIO.h" />
+    <ClInclude Include="Include\Core\LogUsageExamples.h" />
     <ClInclude Include="Include\Core\Memory.h" />
     <ClInclude Include="Include\Core\Input.h" />
     <ClInclude Include="Include\Core\Log.h" />
+    <ClInclude Include="Include\Core\LogCategory.h" />
+    <ClInclude Include="Include\Core\LogMacros.h" />
+    <ClInclude Include="Include\Core\LogVerbosity.h" />
     <ClInclude Include="Include\Core\Window.h" />
     <ClInclude Include="Include\Engine.h" />
     <ClInclude Include="Include\Platform\GLFW\GLFWWindow.h" />
