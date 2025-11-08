@@ -5,6 +5,7 @@
 #include "Platform/Vulkan/VulkanShader.h"
 #include "Core/Log.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
+#include "Core/LogMacros.h"
 
 namespace MonsterRender::RHI::Vulkan {
     
