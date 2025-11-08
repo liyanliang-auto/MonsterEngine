@@ -224,6 +224,66 @@
    使用MR_ENSURE或MR_VERIFY检查关键资源
 
 ================================================================================
+中文日志支持 Chinese Log Support
+================================================================================
+
+MonsterRender日志系统完全支持中文及其他Unicode字符！
+MonsterRender logging system fully supports Chinese and other Unicode characters!
+
+1. Windows平台自动配置：
+   Windows platform auto-configuration:
+   
+   - 首次日志输出时自动设置控制台为UTF-8模式
+   - 支持简体中文、繁体中文、日文、韩文等
+   - 支持特殊符号和Emoji（部分终端）
+
+2. 中文日志示例：
+   Chinese log examples:
+   
+   MR_LOG(Core, Display, TEXT("MonsterRender 引擎启动中..."));
+   MR_LOG(Temp, Warning, TEXT("警告：配置文件缺少某些选项"));
+   MR_LOG(RHI, Error, TEXT("错误：无法创建渲染设备"));
+
+3. 格式化中文输出：
+   Formatted Chinese output:
+   
+   const char* playerName = "张三";
+   int level = 42;
+   float health = 85.5f;
+   MR_LOG(Temp, Display, TEXT("玩家：%s，等级：%d，生命值：%.1f%%"), 
+          playerName, level, health);
+
+4. 中文错误消息：
+   Chinese error messages:
+   
+   const char* fileName = "数据/角色/勇者.mesh";
+   MR_LOG(Texture, Error, TEXT("加载失败：找不到文件 %s"), fileName);
+
+5. 中文断言：
+   Chinese assertions:
+   
+   MR_ENSURE_MSG(ptr != nullptr, TEXT("指针不能为空！"));
+   MR_CHECK_MSG(count > 0, TEXT("数量必须大于0，当前值=%d"), count);
+
+6. 支持的字符集：
+   Supported character sets:
+   
+   - 简体中文：你好，世界！
+   - 繁体中文：繁體中文測試
+   - 日文：モンスターエンジン
+   - 韩文：몬스터 엔진
+   - 特殊符号：【】《》""''±×÷≈≠
+   - Emoji：✅ ❌ ⚠️ 🎮 🖥️
+
+7. 注意事项：
+   Notes:
+   
+   - 源代码文件应保存为UTF-8编码
+   - 使用TEXT宏包裹所有字符串字面量
+   - Windows Terminal和PowerShell支持最好
+   - 旧版cmd.exe可能显示不完整
+
+================================================================================
 兼容性说明 Compatibility Notes
 ================================================================================
 

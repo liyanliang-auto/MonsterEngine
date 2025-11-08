@@ -26,13 +26,19 @@ namespace MonsterRender {
         void RunScenarioTests();  // Forward declaration
         void RunAllTests();  // Forward declaration
     }
+    
+    // 中文日志测试
+    void RunChineseLogTests();  // Forward declaration
 }
 
 // Entry point following UE5's application architecture
 int main(int argc, char** argv) {
     using namespace MonsterRender;
     
+    // 首先测试中文日志是否正常工作
+    // First test if Chinese log works properly
     MR_LOG(Core, Display, TEXT("Starting MonsterRender Engine"));
+    MR_LOG(Core, Display, TEXT("正在启动 MonsterRender 引擎..."));
     
     // 设置日志级别以获得详细输出
     // Set log level for detailed output - Verbose级别会显示更多调试信息
@@ -44,6 +50,7 @@ int main(int argc, char** argv) {
     bool runVirtualTextureTests = false;
     bool runVulkanMemoryTests = false;
     bool runVulkanResourceTests = false;
+    bool runChineseLogTests = false;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -62,6 +69,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-vulkan-resource") == 0 || strcmp(argv[i], "-tvr") == 0) {
             runVulkanResourceTests = true;
         }
+        else if (strcmp(argv[i], "--test-chinese-log") == 0 || strcmp(argv[i], "-tcl") == 0) {
+            runChineseLogTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -69,13 +79,13 @@ int main(int argc, char** argv) {
     
     // Default behavior: run all tests
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
-        !runVulkanMemoryTests && !runVulkanResourceTests && !runAllTests) {
+        !runVulkanMemoryTests && !runVulkanResourceTests && !runChineseLogTests && !runAllTests) {
         runAllTests = false;
     }
     
     // Run tests if requested
     if (runMemoryTests || runTextureTests || runVirtualTextureTests || 
-        runVulkanMemoryTests || runVulkanResourceTests || runAllTests) {
+        runVulkanMemoryTests || runVulkanResourceTests || runChineseLogTests || runAllTests) {
         MR_LOG(Core, Display, TEXT(""));
         MR_LOG(Core, Display, TEXT("=========================================="));
         MR_LOG(Core, Display, TEXT("  MonsterEngine Test Suite"));
@@ -155,9 +165,22 @@ int main(int argc, char** argv) {
             VulkanResourceManagerTest::RunAllTests();
         }
         
+        // Run Chinese log tests
+        if (runChineseLogTests || runAllTests) {
+            MR_LOG(Core, Display, TEXT(""));
+            MR_LOG(Core, Display, TEXT(""));
+            MR_LOG(Core, Display, TEXT("=========================================="));
+            MR_LOG(Core, Display, TEXT("  Chinese Log Tests / 中文日志测试"));
+            MR_LOG(Core, Display, TEXT("=========================================="));
+            MR_LOG(Core, Display, TEXT(""));
+            
+            // Run all Chinese log tests
+            RunChineseLogTests();
+        }
+        
         MR_LOG(Core, Display, TEXT(""));
         MR_LOG(Core, Display, TEXT("=========================================="));
-        MR_LOG(Core, Display, TEXT("  All Tests Completed"));
+        MR_LOG(Core, Display, TEXT("  All Tests Completed / 所有测试完成"));
         MR_LOG(Core, Display, TEXT("=========================================="));
         MR_LOG(Core, Display, TEXT(""));
         
