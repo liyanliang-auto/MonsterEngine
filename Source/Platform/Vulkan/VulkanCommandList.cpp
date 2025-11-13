@@ -20,6 +20,12 @@ namespace MonsterRender::RHI::Vulkan {
     VulkanCommandList::~VulkanCommandList() {
         MR_LOG_INFO("Destroying Vulkan command list...");
         
+        // Don't free external command buffers - they're managed elsewhere
+        if (m_externalCommandBuffer) {
+            m_commandBuffer = VK_NULL_HANDLE;
+            return;
+        }
+        
         // Free command buffer back to command pool
         // Note: If the command pool has already been destroyed, the command buffer
         // will be implicitly freed, so we only need to free it if the pool still exists
@@ -90,6 +96,13 @@ namespace MonsterRender::RHI::Vulkan {
         return true;
     }
     
+    void VulkanCommandList::bindExternalCommandBuffer(VkCommandBuffer cmdBuffer, bool externallyManaged) {
+        MR_LOG_DEBUG("Binding external command buffer to VulkanCommandList");
+        m_commandBuffer = cmdBuffer;
+        m_externalCommandBuffer = externallyManaged;
+        // Don't set m_isRecording - it should be managed by caller
+    }
+    
     void VulkanCommandList::begin() {
         ensureNotRecording("begin");
         
@@ -99,6 +112,13 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         MR_LOG_DEBUG("Beginning command list recording");
+        
+        // When using external command buffer, don't actually call vkBeginCommandBuffer
+        // (it's already being recorded by the external context)
+        if (m_externalCommandBuffer) {
+            MR_LOG_DEBUG("External command buffer - skipping vkBeginCommandBuffer");
+            return;
+        }
         
         // Begin command buffer recording
         const auto& functions = VulkanAPI::getFunctions();
@@ -126,6 +146,12 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         MR_LOG_DEBUG("Ending command list recording");
+        
+        // When using external command buffer, don't call vkEndCommandBuffer
+        if (m_externalCommandBuffer) {
+            MR_LOG_DEBUG("External command buffer - skipping vkEndCommandBuffer");
+            return;
+        }
         
         // End render pass if still active
         if (m_inRenderPass) {
@@ -222,6 +248,20 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_DEBUG("Render pass began successfully");
     }
     
+    void VulkanCommandList::endRenderPass() {
+        ensureRecording("endRenderPass");
+        
+        if (!m_inRenderPass) {
+            MR_LOG_WARNING("No active render pass to end");
+            return;
+        }
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdEndRenderPass(m_commandBuffer);
+        m_inRenderPass = false;
+        MR_LOG_DEBUG("Render pass ended successfully");
+    }
+    
     void VulkanCommandList::setViewport(const Viewport& viewport) {
         ensureRecording("setViewport");
         
@@ -249,20 +289,30 @@ namespace MonsterRender::RHI::Vulkan {
     void VulkanCommandList::setScissorRect(const ScissorRect& scissorRect) {
         ensureRecording("setScissorRect");
         
-        // TODO: Set Vulkan scissor rect
-        // VkRect2D scissor{};
-        // scissor.offset.x = scissorRect.left;
-        // scissor.offset.y = scissorRect.top;
-        // scissor.extent.width = scissorRect.right - scissorRect.left;
-        // scissor.extent.height = scissorRect.bottom - scissorRect.top;
-        // vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
+        if (m_commandBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Command buffer is null, cannot set scissor rect");
+            return;
+        }
+        
+        // Set Vulkan scissor rect
+        VkRect2D scissor{};
+        scissor.offset.x = scissorRect.left;
+        scissor.offset.y = scissorRect.top;
+        scissor.extent.width = scissorRect.right - scissorRect.left;
+        scissor.extent.height = scissorRect.bottom - scissorRect.top;
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
+        
+        MR_LOG_DEBUG("Scissor rect set: " + std::to_string(scissor.extent.width) + "x" + std::to_string(scissor.extent.height) + 
+                    " at (" + std::to_string(scissor.offset.x) + "," + std::to_string(scissor.offset.y) + ")");
     }
     
     void VulkanCommandList::setPipelineState(TSharedPtr<IRHIPipelineState> pipelineState) {
         ensureRecording("setPipelineState");
         
         if (!pipelineState) {
-            MR_LOG_WARNING("Attempting to set null pipeline state");
+            MR_LOG_ERROR("Attempting to set null pipeline state");
             return;
         }
         
@@ -275,15 +325,27 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Cast to VulkanPipelineState and bind the pipeline
         auto* vulkanPipeline = static_cast<VulkanPipelineState*>(pipelineState.get());
-        if (!vulkanPipeline || !vulkanPipeline->isValid()) {
-            MR_LOG_ERROR("Invalid Vulkan pipeline state");
+        if (!vulkanPipeline) {
+            MR_LOG_ERROR("Failed to cast pipeline state to VulkanPipelineState");
+            return;
+        }
+        
+        if (!vulkanPipeline->isValid()) {
+            MR_LOG_ERROR("Pipeline state is not valid - initialization may have failed");
+            MR_LOG_ERROR("Pipeline: " + pipelineState->getDebugName());
             return;
         }
         
         VkPipeline vkPipeline = vulkanPipeline->getPipeline();
         if (vkPipeline == VK_NULL_HANDLE) {
-            MR_LOG_ERROR("Vulkan pipeline is null");
+            MR_LOG_ERROR("Vulkan pipeline handle is null");
+            MR_LOG_ERROR("Pipeline: " + pipelineState->getDebugName());
             return;
+        }
+        
+        VkPipelineLayout pipelineLayout = vulkanPipeline->getPipelineLayout();
+        if (pipelineLayout == VK_NULL_HANDLE) {
+            MR_LOG_WARNING("Pipeline layout is null - this may cause issues with resource binding");
         }
         
         const auto& functions = VulkanAPI::getFunctions();
@@ -320,7 +382,14 @@ namespace MonsterRender::RHI::Vulkan {
             
             // Cast to VulkanBuffer and get the native handle
             auto* vulkanBuffer = static_cast<VulkanBuffer*>(buffer.get());
-            vkBuffers.push_back(vulkanBuffer->getBuffer());
+            VkBuffer vkBuffer = vulkanBuffer->getBuffer();
+            
+            if (vkBuffer == VK_NULL_HANDLE) {
+                MR_LOG_ERROR("Vertex buffer has null Vulkan handle");
+                continue;
+            }
+            
+            vkBuffers.push_back(vkBuffer);
             vkOffsets.push_back(0); // Start at beginning of buffer
         }
         
@@ -331,6 +400,8 @@ namespace MonsterRender::RHI::Vulkan {
                                            vkBuffers.data(), vkOffsets.data());
             
             MR_LOG_DEBUG("Bound " + std::to_string(vkBuffers.size()) + " vertex buffer(s) starting at slot " + std::to_string(startSlot));
+        } else {
+            MR_LOG_ERROR("No valid vertex buffers to bind");
         }
     }
     
@@ -373,6 +444,25 @@ namespace MonsterRender::RHI::Vulkan {
         
         if (vertexCount == 0) {
             MR_LOG_WARNING("Draw called with 0 vertices");
+            return;
+        }
+        
+        // Validate pipeline state is bound (UE5 validation pattern)
+        if (!m_currentPipelineState) {
+            MR_LOG_ERROR("No pipeline state bound. Call setPipelineState before drawing.");
+            return;
+        }
+        
+        // Verify pipeline state is valid
+        auto* vulkanPipeline = static_cast<VulkanPipelineState*>(m_currentPipelineState.get());
+        if (!vulkanPipeline || !vulkanPipeline->isValid()) {
+            MR_LOG_ERROR("Pipeline state is invalid or not properly initialized");
+            return;
+        }
+        
+        VkPipeline vkPipeline = vulkanPipeline->getPipeline();
+        if (vkPipeline == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Vulkan pipeline handle is null - pipeline not created properly");
             return;
         }
         
@@ -577,6 +667,11 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void VulkanCommandList::ensureRecording(const char* operation) const {
+        // When using external command buffer, skip recording check - it's managed externally
+        if (m_externalCommandBuffer) {
+            return;
+        }
+        
         if (!m_isRecording) {
             MR_LOG_ERROR(String("Cannot call ") + operation + " while command list is not recording");
         }

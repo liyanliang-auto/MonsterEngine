@@ -53,11 +53,11 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Load global functions
-        // ´´½¨VulkanÊµÀý
+        // ï¿½ï¿½ï¿½ï¿½VulkanÊµï¿½ï¿½
         s_functions.vkCreateInstance = (PFN_vkCreateInstance)vkGetInstanceProcAddr(nullptr, "vkCreateInstance");
-        // Ã¶¾ÙÊµÀýÀ©Õ¹
+        // Ã¶ï¿½ï¿½Êµï¿½ï¿½ï¿½ï¿½Õ¹
         s_functions.vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceExtensionProperties");
-        // Ã¶¾ÙÑéÖ¤²ã
+        // Ã¶ï¿½ï¿½ï¿½ï¿½Ö¤ï¿½ï¿½
         s_functions.vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceLayerProperties");
         
         if (!s_functions.vkCreateInstance || 
@@ -172,6 +172,7 @@ namespace MonsterRender::RHI::Vulkan {
         s_functions.vkDestroyFence = (PFN_vkDestroyFence)vkGetDeviceProcAddr(device, "vkDestroyFence");
         s_functions.vkWaitForFences = (PFN_vkWaitForFences)vkGetDeviceProcAddr(device, "vkWaitForFences");
         s_functions.vkResetFences = (PFN_vkResetFences)vkGetDeviceProcAddr(device, "vkResetFences");
+        s_functions.vkGetFenceStatus = (PFN_vkGetFenceStatus)vkGetDeviceProcAddr(device, "vkGetFenceStatus");
         s_functions.vkAllocateMemory = (PFN_vkAllocateMemory)vkGetDeviceProcAddr(device, "vkAllocateMemory");
         s_functions.vkFreeMemory = (PFN_vkFreeMemory)vkGetDeviceProcAddr(device, "vkFreeMemory");
         s_functions.vkMapMemory = (PFN_vkMapMemory)vkGetDeviceProcAddr(device, "vkMapMemory");

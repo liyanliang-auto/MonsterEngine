@@ -14,34 +14,36 @@ namespace MonsterRender {
     
     void TriangleRenderer::render(RHI::IRHICommandList* cmdList) {
         if (!cmdList || !m_pipelineState) {
+            MR_LOG_ERROR("Cannot render: cmdList invalid or pipelineState invalid");
             return;
         }
         
-        // Hot-reload: recompile shaders if sources changed
-        static uint64 s_vsTime = 0, s_psTime = 0;
-        const String vsPath = "Shaders/Triangle.vert";
-        const String psPath = "Shaders/Triangle.frag";
-        uint64 vsTime = ShaderCompiler::getLastWriteTime(vsPath);
-        uint64 psTime = ShaderCompiler::getLastWriteTime(psPath);
-        if ((vsTime && vsTime != s_vsTime) || (psTime && psTime != s_psTime)) {
-            s_vsTime = vsTime; s_psTime = psTime;
-            MR_LOG_INFO("Shader sources changed. Recompiling...");
-            if (createShaders()) {
-                createPipelineState();
-            }
-        }
+        MR_LOG_DEBUG("TriangleRenderer::render() called");
 
         // Set up rendering state
+        MR_LOG_DEBUG("Setting pipeline state");
         cmdList->setPipelineState(m_pipelineState);
+        
+        MR_LOG_DEBUG("Setting vertex buffers");
         TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers = {m_vertexBuffer};
         cmdList->setVertexBuffers(0, TSpan<TSharedPtr<RHI::IRHIBuffer>>(vertexBuffers));
         
-        // Set viewport (matching window size)
+        // Set viewport and scissor (matching window size)
+        MR_LOG_DEBUG("Setting viewport to 1280x720");
         RHI::Viewport viewport(1280.0f, 720.0f);
         cmdList->setViewport(viewport);
         
+        RHI::ScissorRect scissor;
+        scissor.left = 0;
+        scissor.top = 0;
+        scissor.right = 1280;
+        scissor.bottom = 720;
+        cmdList->setScissorRect(scissor);
+        
         // Draw the triangle
+        MR_LOG_DEBUG("Drawing 3 vertices");
         cmdList->draw(3); // 3 vertices
+        MR_LOG_DEBUG("TriangleRenderer::render() completed");
     }
     
     bool TriangleRenderer::createVertexBuffer() {
@@ -80,21 +82,21 @@ namespace MonsterRender {
     }
     
     bool TriangleRenderer::createShaders() {
-        // Compile GLSL from Shaders directory
-        ShaderCompileOptions vsOpt; vsOpt.language = EShaderLanguage::GLSL; vsOpt.stage = EShaderStageKind::Vertex; vsOpt.entryPoint = "main";
-        ShaderCompileOptions psOpt = vsOpt; psOpt.stage = EShaderStageKind::Fragment;
+        // Load pre-compiled SPV files
+        String vsPath = "Shaders/Triangle.vert.spv";
+        String psPath = "Shaders/Triangle.frag.spv";
 
-        String vsPath = "Shaders/Triangle.vert";
-        String psPath = "Shaders/Triangle.frag";
-
-        auto vsSpv = ShaderCompiler::compileFromFile(vsPath, vsOpt);
+        // Read vertex shader SPV
+        TArray<uint8> vsSpv = ShaderCompiler::readFileBytes(vsPath);
         if (vsSpv.empty()) {
-            MR_LOG_ERROR("Failed to compile vertex shader: " + vsPath);
+            MR_LOG_ERROR("Failed to load vertex shader: " + vsPath);
             return false;
         }
-        auto psSpv = ShaderCompiler::compileFromFile(psPath, psOpt);
+        
+        // Read fragment shader SPV
+        TArray<uint8> psSpv = ShaderCompiler::readFileBytes(psPath);
         if (psSpv.empty()) {
-            MR_LOG_ERROR("Failed to compile fragment shader: " + psPath);
+            MR_LOG_ERROR("Failed to load fragment shader: " + psPath);
             return false;
         }
 
@@ -103,7 +105,7 @@ namespace MonsterRender {
         m_pixelShader = m_device->createPixelShader(TSpan<const uint8>(psSpv.data(), psSpv.size()));
         if (!m_pixelShader) return false;
 
-        MR_LOG_INFO("Triangle shaders compiled and created successfully");
+        MR_LOG_INFO("Triangle shaders loaded successfully");
         return true;
     }
     

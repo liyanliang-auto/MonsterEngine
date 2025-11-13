@@ -120,6 +120,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <DisableSpecificWarnings>4819</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -143,6 +144,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <DisableSpecificWarnings>4819</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -189,6 +191,10 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanAPI.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanBuffer.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandList.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanRHICommandList.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanCommandBuffer.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanCommandListContext.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanPendingState.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDevice.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanShader.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanTexture.cpp" />
@@ -225,6 +231,10 @@
     <ClInclude Include="Include\RHI\RHIDefinitions.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanBuffer.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanCommandList.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanRHICommandList.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanCommandBuffer.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanCommandListContext.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanPendingState.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanDevice.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanRHI.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanShader.h" />

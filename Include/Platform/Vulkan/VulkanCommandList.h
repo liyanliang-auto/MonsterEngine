@@ -26,6 +26,19 @@ namespace MonsterRender::RHI::Vulkan {
         // Initialization
         bool initialize();
         
+        /**
+         * Bind external command buffer (for use with per-frame command buffer system)
+         * This allows VulkanCommandList to use an external VkCommandBuffer
+         * @param cmdBuffer External command buffer to use
+         * @param externallyManaged If true, VulkanCommandList won't free this buffer on destroy
+         */
+        void bindExternalCommandBuffer(VkCommandBuffer cmdBuffer, bool externallyManaged = true);
+        
+        /**
+         * Check if using external command buffer
+         */
+        bool isUsingExternalCommandBuffer() const { return m_externalCommandBuffer; }
+        
         // IRHICommandList interface implementation
         void begin() override;
         void end() override;
@@ -40,6 +53,11 @@ namespace MonsterRender::RHI::Vulkan {
         void setScissorRect(const ScissorRect& scissorRect) override;
         void setRenderTargets(TSpan<TSharedPtr<IRHITexture>> renderTargets, 
                             TSharedPtr<IRHITexture> depthStencil = nullptr) override;
+        
+        /**
+         * End the active render pass (must call after setRenderTargets and before next render pass)
+         */
+        void endRenderPass();
         
         void draw(uint32 vertexCount, uint32 startVertexLocation = 0) override;
         void drawIndexed(uint32 indexCount, uint32 startIndexLocation = 0, 
@@ -104,6 +122,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         bool m_isRecording = false;
         bool m_inRenderPass = false;
+        bool m_externalCommandBuffer = false;  // Track if using external command buffer
         
         // State tracking
         TSharedPtr<IRHIPipelineState> m_currentPipelineState;

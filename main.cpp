@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
         }
     }
     
-    // Default behavior: run all tests
+    // Default behavior: don't run tests, run application
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
         !runVulkanMemoryTests && !runVulkanResourceTests && !runAllTests) {
         runAllTests = false;
