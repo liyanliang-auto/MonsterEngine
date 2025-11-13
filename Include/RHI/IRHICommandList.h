@@ -69,10 +69,15 @@ namespace MonsterRender::RHI {
         virtual void setScissorRect(const ScissorRect& scissorRect) = 0;
         
         /**
-         * Set render targets
+         * Set render targets and begin render pass
          */
         virtual void setRenderTargets(TSpan<TSharedPtr<IRHITexture>> renderTargets, 
                                     TSharedPtr<IRHITexture> depthStencil = nullptr) = 0;
+        
+        /**
+         * End the active render pass
+         */
+        virtual void endRenderPass() = 0;
         
         // Draw commands
         /**

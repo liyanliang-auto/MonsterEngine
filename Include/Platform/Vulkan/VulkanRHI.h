@@ -53,6 +53,7 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkDestroyFence vkDestroyFence = nullptr;
         PFN_vkWaitForFences vkWaitForFences = nullptr;
         PFN_vkResetFences vkResetFences = nullptr;
+        PFN_vkGetFenceStatus vkGetFenceStatus = nullptr;
         
         // Memory functions
         PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties = nullptr;

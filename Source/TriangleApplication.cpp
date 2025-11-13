@@ -1,6 +1,8 @@
 #include "Core/Application.h"
 #include "TriangleRenderer.h"
 #include "Core/Log.h"
+#include "Platform/Vulkan/VulkanDevice.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
 
 using namespace MonsterRender;
 
@@ -62,32 +64,50 @@ private:
     }
     
     void onRender() override {
+        MR_LOG_INFO("===== onRender() STARTED =====");
+        
         auto* device = getEngine()->getRHIDevice();
-        if (!device || !m_triangleRenderer) {
-            return;
-        }
+        MR_LOG_INFO("Device: " + std::string(device ? "VALID" : "NULL"));
+        if (!device) return;
         
-        // Get immediate command list
+        MR_LOG_INFO("TriangleRenderer: " + std::string(m_triangleRenderer ? "VALID" : "NULL"));
+        if (!m_triangleRenderer) return;
+        
+        auto* vulkanDevice = static_cast<MonsterRender::RHI::Vulkan::VulkanDevice*>(device);
+        auto* context = vulkanDevice->getCommandListContext();
+        MR_LOG_INFO("Context: " + std::string(context ? "VALID" : "NULL"));
+        if (!context) return;
+        
+        MR_LOG_INFO("Step 1: prepareForNewFrame");
+        context->prepareForNewFrame();
+        
+        MR_LOG_INFO("Step 2: beginRecording");
+        context->beginRecording();
+        
         auto* cmdList = device->getImmediateCommandList();
+        MR_LOG_INFO("CmdList: " + std::string(cmdList ? "VALID" : "NULL"));
         if (!cmdList) {
+            context->endRecording();
             return;
         }
         
-        // Begin frame rendering
-        cmdList->begin();
-        
-        // Set render targets (begins render pass and clears to black)
-        TArray<TSharedPtr<RHI::IRHITexture>> renderTargets; // Empty = use default swapchain
+        MR_LOG_INFO("Step 3: setRenderTargets");
+        TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
         cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
         
-        // Render the triangle
+        MR_LOG_INFO("Step 4: render");
         m_triangleRenderer->render(cmdList);
         
-        // End command recording
-        cmdList->end();
+        MR_LOG_INFO("Step 5: endRenderPass");
+        cmdList->endRenderPass();
         
-        // Present frame
+        MR_LOG_INFO("Step 6: endRecording");
+        context->endRecording();
+        
+        MR_LOG_INFO("Step 7: present");
         device->present();
+        
+        MR_LOG_INFO("===== onRender() COMPLETED =====");
     }
     
     void onWindowResize(uint32 width, uint32 height) override {

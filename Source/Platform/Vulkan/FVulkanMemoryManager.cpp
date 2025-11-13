@@ -1,7 +1,7 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 // MonsterEngine - Vulkan Memory Manager Implementation
 //
-// 参考 UE5: Engine/Source/Runtime/VulkanRHI/Private/VulkanMemory.cpp
+// Reference: UE5 Engine/Source/Runtime/VulkanRHI/Private/VulkanMemory.cpp
 
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 #include "Platform/Vulkan/VulkanRHI.h"
@@ -14,7 +14,7 @@ namespace RHI {
 using namespace Vulkan;
 
 // ============================================================================
-// FVulkanMemoryPool Implementation (内存池实现)
+// FVulkanMemoryPool Implementation
 // ============================================================================
 
 FVulkanMemoryPool::FVulkanMemoryPool(VkDevice InDevice, VkDeviceSize InPoolSize, 
@@ -30,7 +30,7 @@ FVulkanMemoryPool::FVulkanMemoryPool(VkDevice InDevice, VkDeviceSize InPoolSize,
 {
     const auto& functions = VulkanAPI::getFunctions();
     
-    // 从 Vulkan 分配大块内存
+    // Allocate large block from Vulkan
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = PoolSize;
@@ -38,34 +38,35 @@ FVulkanMemoryPool::FVulkanMemoryPool(VkDevice InDevice, VkDeviceSize InPoolSize,
     
     VkResult result = functions.vkAllocateMemory(Device, &allocInfo, nullptr, &DeviceMemory);
     if (result != VK_SUCCESS) {
-        MR_LOG_ERROR("FVulkanMemoryPool: 分配 " + std::to_string(PoolSize / (1024 * 1024)) + 
-                     "MB 池失败，VkResult: " + std::to_string(result));
+        MR_LOG_ERROR("FVulkanMemoryPool: Failed to allocate " + std::to_string(PoolSize / (1024 * 1024)) + 
+                     "MB VkResult: " + std::to_string(result));
         return;
     }
     
-    // 如果是 Host Visible 内存，进行持久映射
+    // For Host Visible memory, perform persistent mapping
     if (bHostVisible) {
         result = functions.vkMapMemory(Device, DeviceMemory, 0, PoolSize, 0, &PersistentMappedPtr);
         if (result != VK_SUCCESS) {
-            MR_LOG_WARNING("FVulkanMemoryPool: 持久映射失败，将使用按需映射");
+            MR_LOG_WARNING("FVulkanMemoryPool: Failed to map memory");
             PersistentMappedPtr = nullptr;
         }
     }
     
-    // 初始化 Free-List：整个池作为一个大空闲块
+    // Initialize Free-List: entire pool as one large free block
+
     FreeList = new FMemoryBlock(0, PoolSize, true);
     
-    MR_LOG_INFO("FVulkanMemoryPool: 创建 " + std::to_string(PoolSize / (1024 * 1024)) + 
-                "MB 池 (类型: " + std::to_string(MemoryTypeIndex) + 
-                (bHostVisible ? ", Host可见" : ", Device专用") + ")");
+    MR_LOG_INFO("FVulkanMemoryPool: Created " + std::to_string(PoolSize / (1024 * 1024)) + 
+                "MB pool (Type Index: " + std::to_string(MemoryTypeIndex) + 
+                (bHostVisible ? ", Host" : ", Device") + ")");
 }
 
 FVulkanMemoryPool::~FVulkanMemoryPool()
 {
     const auto& functions = VulkanAPI::getFunctions();
     
-    // 释放所有块节点
-    FMemoryBlock* current = FreeList;
+    // Free all block nodes
+FMemoryBlock* current = FreeList;
     while (current) {
         FMemoryBlock* next = current->Next;
         delete current;
@@ -73,13 +74,13 @@ FVulkanMemoryPool::~FVulkanMemoryPool()
     }
     FreeList = nullptr;
     
-    // 取消映射
-    if (PersistentMappedPtr) {
+    // Unmap memory
+if (PersistentMappedPtr) {
         functions.vkUnmapMemory(Device, DeviceMemory);
         PersistentMappedPtr = nullptr;
     }
     
-    // 释放 Vulkan 内存
+    // Free Vulkan memory
     if (DeviceMemory != VK_NULL_HANDLE) {
         functions.vkFreeMemory(Device, DeviceMemory, nullptr);
         DeviceMemory = VK_NULL_HANDLE;
@@ -92,21 +93,21 @@ bool FVulkanMemoryPool::Allocate(VkDeviceSize Size, VkDeviceSize Alignment, FVul
 {
     std::lock_guard<std::mutex> lock(PoolMutex);
     
-    // 使用 First-Fit 算法查找合适的空闲块
+    // Use First-Fit algorithm to find suitable free block
     FMemoryBlock* current = FreeList;
     FMemoryBlock* prev = nullptr;
     
     while (current) {
         if (current->bFree) {
-            // 计算对齐后的偏移
-            VkDeviceSize alignedOffset = (current->Offset + Alignment - 1) & ~(Alignment - 1);
+            // Calculate aligned offset
+VkDeviceSize alignedOffset = (current->Offset + Alignment - 1) & ~(Alignment - 1);
             VkDeviceSize padding = alignedOffset - current->Offset;
             VkDeviceSize requiredSize = padding + Size;
             
             if (requiredSize <= current->Size) {
-                // 找到合适的块！
+                // Found suitable block, split it if necessary
                 
-                // 步骤1: 如果需要，创建 padding 块
+                // Step 1: Create padding block if needed
                 if (padding > 0) {
                     FMemoryBlock* paddingBlock = new FMemoryBlock(current->Offset, padding, true);
                     paddingBlock->Next = current;
@@ -123,7 +124,7 @@ bool FVulkanMemoryPool::Allocate(VkDeviceSize Size, VkDeviceSize Alignment, FVul
                     prev = paddingBlock;
                 }
                 
-                // 步骤2: 如果剩余空间足够大，分割块
+                // Step 2: Split remainder block if allocated size is smaller than free block
                 if (current->Size > Size) {
                     FMemoryBlock* remainder = new FMemoryBlock(
                         current->Offset + Size,
@@ -141,11 +142,11 @@ bool FVulkanMemoryPool::Allocate(VkDeviceSize Size, VkDeviceSize Alignment, FVul
                     current->Size = Size;
                 }
                 
-                // 步骤3: 标记为已分配
+                // Step 3: Mark block as used
                 current->bFree = false;
                 UsedSize.fetch_add(current->Size);
                 
-                // 步骤4: 填充输出结果
+                // Step 4: Fill allocation structure
                 OutAllocation.DeviceMemory = DeviceMemory;
                 OutAllocation.Offset = current->Offset;
                 OutAllocation.Size = current->Size;
@@ -156,7 +157,7 @@ bool FVulkanMemoryPool::Allocate(VkDeviceSize Size, VkDeviceSize Alignment, FVul
                 OutAllocation.Pool = this;
                 OutAllocation.AllocationHandle = current;
                 
-                // 如果有持久映射，设置映射指针
+                // Set mapped pointer for host visible memory
                 if (PersistentMappedPtr) {
                     OutAllocation.MappedPointer = static_cast<uint8*>(PersistentMappedPtr) + current->Offset;
                     OutAllocation.bMapped = true;
@@ -194,14 +195,14 @@ void FVulkanMemoryPool::Free(const FVulkanAllocation& Allocation)
         return;
     }
     
-    // 标记为空闲
+    // Mark block as free
     block->bFree = true;
     UsedSize.fetch_sub(block->Size);
     
     MR_LOG_DEBUG("FVulkanMemoryPool: Freed " + std::to_string(block->Size / 1024) + 
                  "KB (utilization: " + std::to_string(UsedSize.load() * 100 / PoolSize) + "%)");
     
-    // 合并相邻的空闲块
+    // Merge adjacent free blocks to reduce fragmentation
     MergeFreeBlocks();
 }
 
@@ -212,7 +213,7 @@ bool FVulkanMemoryPool::Map(FVulkanAllocation& Allocation, void** OutMappedPtr)
         return false;
     }
     
-    // 如果有持久映射，直接返回
+    // Use persistent mapping if available
     if (PersistentMappedPtr) {
         *OutMappedPtr = static_cast<uint8*>(PersistentMappedPtr) + Allocation.Offset;
         Allocation.MappedPointer = *OutMappedPtr;
@@ -220,7 +221,7 @@ bool FVulkanMemoryPool::Map(FVulkanAllocation& Allocation, void** OutMappedPtr)
         return true;
     }
     
-    // 按需映射
+    // Fallback to one-time mapping
     const auto& functions = VulkanAPI::getFunctions();
     void* mappedPtr = nullptr;
     VkResult result = functions.vkMapMemory(Device, DeviceMemory, Allocation.Offset, Allocation.Size, 0, &mappedPtr);
@@ -242,14 +243,14 @@ void FVulkanMemoryPool::Unmap(FVulkanAllocation& Allocation)
         return;
     }
     
-    // 如果是持久映射，不需要 unmap
+    // Persistent mapping: don't actually unmap
     if (PersistentMappedPtr) {
         Allocation.MappedPointer = nullptr;
         Allocation.bMapped = false;
         return;
     }
     
-    // 取消按需映射
+    // One-time mapping: actually unmap from Vulkan
     const auto& functions = VulkanAPI::getFunctions();
     functions.vkUnmapMemory(Device, DeviceMemory);
     Allocation.MappedPointer = nullptr;
@@ -264,12 +265,12 @@ void FVulkanMemoryPool::Defragment()
 
 void FVulkanMemoryPool::MergeFreeBlocks()
 {
-    // 合并相邻的空闲块，减少碎片
+    // Iterate through free list and merge adjacent free blocks
     FMemoryBlock* current = FreeList;
     
     while (current && current->Next) {
         if (current->bFree && current->Next->bFree) {
-            // 合并 current 和 Next
+            // Merge current and Next blocks
             FMemoryBlock* next = current->Next;
             current->Size += next->Size;
             current->Next = next->Next;
@@ -279,7 +280,7 @@ void FVulkanMemoryPool::MergeFreeBlocks()
             }
             
             delete next;
-            // 继续从 current 检查 (可能连续合并多个块)
+            // Continue from current block (don't advance)
         } else {
             current = current->Next;
         }
@@ -307,7 +308,7 @@ FVulkanMemoryPool::FMemoryBlock* FVulkanMemoryPool::FindFirstFit(VkDeviceSize Si
 }
 
 // ============================================================================
-// FVulkanMemoryManager Implementation (内存管理器实现)
+// FVulkanMemoryManager Implementation (Main Manager)
 // ============================================================================
 
 FVulkanMemoryManager::FVulkanMemoryManager(VkDevice InDevice, VkPhysicalDevice InPhysicalDevice)
@@ -319,7 +320,7 @@ FVulkanMemoryManager::FVulkanMemoryManager(VkDevice InDevice, VkPhysicalDevice I
 {
     const auto& functions = VulkanAPI::getFunctions();
     
-    // 查询物理设备内存属性
+    // Query physical device memory properties
     functions.vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &MemoryProperties);
     
     MR_LOG_INFO("=====================================");
@@ -328,7 +329,7 @@ FVulkanMemoryManager::FVulkanMemoryManager(VkDevice InDevice, VkPhysicalDevice I
     MR_LOG_INFO("  Memory heaps: " + std::to_string(MemoryProperties.memoryHeapCount));
     MR_LOG_INFO("-------------------------------------");
     
-    // 打印所有内存堆信息
+    // 
     for (uint32 i = 0; i < MemoryProperties.memoryHeapCount; ++i) {
         const auto& heap = MemoryProperties.memoryHeaps[i];
         String heapType = (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) ? "DeviceLocal" : "HostVisible";
@@ -338,7 +339,7 @@ FVulkanMemoryManager::FVulkanMemoryManager(VkDevice InDevice, VkPhysicalDevice I
     
     MR_LOG_INFO("-------------------------------------");
     
-    // 打印所有内存类型
+    // 
     for (uint32 i = 0; i < MemoryProperties.memoryTypeCount; ++i) {
         const auto& memType = MemoryProperties.memoryTypes[i];
         String properties;
@@ -361,7 +362,7 @@ FVulkanMemoryManager::FVulkanMemoryManager(VkDevice InDevice, VkPhysicalDevice I
 
 FVulkanMemoryManager::~FVulkanMemoryManager()
 {
-    // 释放所有池
+    // 
     for (uint32 i = 0; i < VK_MAX_MEMORY_TYPES; ++i) {
         std::lock_guard<std::mutex> lock(PoolsMutex[i]);
         Pools[i].clear();
@@ -375,11 +376,11 @@ FVulkanMemoryManager::~FVulkanMemoryManager()
 
 bool FVulkanMemoryManager::Allocate(const FAllocationRequest& Request, FVulkanAllocation& OutAllocation)
 {
-    // 查找合适的内存类型
+    // Find suitable memory type index
     uint32 memoryTypeIndex = FindMemoryType(Request.MemoryTypeBits, Request.RequiredFlags);
     
-    // 决定是否Using dedicated allocation
-    // 条件: 1. 显式请求  2. 大分配 (>= 16MB)  3. 需要可映射但该类型不支持
+    // Using dedicated allocation
+    // : 1.   2.  (>= 16MB)  3. 
     bool bUseDedicated = Request.bDedicated || (Request.Size >= LARGE_ALLOCATION_THRESHOLD);
     
     if (bUseDedicated) {
@@ -394,7 +395,7 @@ bool FVulkanMemoryManager::Allocate(const FAllocationRequest& Request, FVulkanAl
         return result;
     }
     
-    // 尝试从现有池子分配
+    // Try to allocate from existing pools
     {
         std::lock_guard<std::mutex> lock(PoolsMutex[memoryTypeIndex]);
         
@@ -410,7 +411,7 @@ bool FVulkanMemoryManager::Allocate(const FAllocationRequest& Request, FVulkanAl
         }
     }
     
-    // 创建新池
+    // No existing pool can accommodate: create new pool
     VkDeviceSize poolSize = std::max<VkDeviceSize>(DEFAULT_POOL_SIZE, Request.Size * 2);
     FVulkanMemoryPool* newPool = FindOrCreatePool(memoryTypeIndex, poolSize);
     
@@ -452,7 +453,7 @@ void FVulkanMemoryManager::Free(FVulkanAllocation& Allocation)
         }
     }
     
-    // 清空分配
+    // Clear allocation structure
     Allocation = FVulkanAllocation{};
 }
 
@@ -469,7 +470,7 @@ bool FVulkanMemoryManager::MapMemory(FVulkanAllocation& Allocation, void** OutMa
     }
     
     if (Allocation.bDedicated) {
-        // 独立分配的映射
+        // 
         const auto& functions = VulkanAPI::getFunctions();
         VkResult result = functions.vkMapMemory(Device, Allocation.DeviceMemory, 
                                                 Allocation.Offset, Allocation.Size, 0, OutMappedPtr);
@@ -483,7 +484,7 @@ bool FVulkanMemoryManager::MapMemory(FVulkanAllocation& Allocation, void** OutMa
         Allocation.bMapped = true;
         return true;
     } else {
-        // 池子分配的映射
+        // Delegate to pool for pooled allocations
         if (Allocation.Pool) {
             return Allocation.Pool->Map(Allocation, OutMappedPtr);
         }
@@ -531,7 +532,7 @@ void FVulkanMemoryManager::GetMemoryStats(FMemoryStats& OutStats)
     OutStats.DedicatedAllocationCount = DedicatedAllocationCount.load();
     OutStats.TotalAllocated = TotalAllocatedMemory.load();
     
-    // 遍历所有池统计
+    // Calculate pool statistics
     for (uint32 i = 0; i < VK_MAX_MEMORY_TYPES; ++i) {
         std::lock_guard<std::mutex> lock(PoolsMutex[i]);
         
@@ -544,7 +545,7 @@ void FVulkanMemoryManager::GetMemoryStats(FMemoryStats& OutStats)
                 OutStats.LargestFreeBlock = freeSize;
             }
             
-            // 分类统计
+            // Categorize by memory type
             if (pool->IsHostVisible()) {
                 OutStats.HostVisibleAllocated += pool->GetUsedSize();
             } else {
@@ -606,14 +607,14 @@ FVulkanMemoryPool* FVulkanMemoryManager::FindOrCreatePool(uint32 MemoryTypeIndex
 {
     std::lock_guard<std::mutex> lock(PoolsMutex[MemoryTypeIndex]);
     
-    // 检查是否达到池数量上限
+    // Check if pool count exceeds limit
     if (Pools[MemoryTypeIndex].size() >= MAX_POOLS_PER_TYPE) {
         MR_LOG_WARNING("FVulkanMemoryManager: Memory type " + std::to_string(MemoryTypeIndex) + 
                        " pool count reached limit (" + std::to_string(MAX_POOLS_PER_TYPE) + ")");
         return nullptr;
     }
     
-    // 创建新池
+    // Create new pool
     return CreatePool(MemoryTypeIndex, RequiredSize);
 }
 

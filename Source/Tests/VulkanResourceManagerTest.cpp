@@ -1,7 +1,5 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 // MonsterEngine - Vulkan Resource Manager Test Suite
-// 参考 UE5 资源管理测试设计
-// 简化版本 - 使用现有 Device API
 
 #include "Core/CoreMinimal.h"
 #include "Core/Log.h"
@@ -22,11 +20,10 @@ using namespace RHI;
 using namespace RHI::Vulkan;
 
 // ================================
-// 辅助函数 (Helper Functions)
+//  (Helper Functions)
 // ================================
 
 /**
- * 创建测试用 RHI 设备
  */
 static TUniquePtr<IRHIDevice> CreateTestDevice() {
     RHICreateInfo createInfo;
@@ -39,7 +36,6 @@ static TUniquePtr<IRHIDevice> CreateTestDevice() {
 }
 
 /**
- * 格式化内存大小显示
  */
 static String FormatMemorySize(VkDeviceSize size) {
     if (size >= 1024 * 1024 * 1024) {
@@ -53,11 +49,9 @@ static String FormatMemorySize(VkDeviceSize size) {
 }
 
 // ================================
-// 基础功能测试 (Basic Tests)
 // ================================
 
 /**
- * 测试 1: FVulkanMemoryManager 初始化
  * Test MemoryManager initialization
  */
 static void Test_MemoryManagerInit() {
@@ -75,7 +69,6 @@ static void Test_MemoryManagerInit() {
     if (memoryManager) {
         MR_LOG_INFO("  [OK] MemoryManager initialized successfully");
         
-        // 获取统计信息
         FVulkanMemoryManager::FMemoryStats stats;
         memoryManager->GetMemoryStats(stats);
         
@@ -90,7 +83,7 @@ static void Test_MemoryManagerInit() {
 }
 
 /**
- * 测试 2: Buffer 创建和使用
+ *  2: Buffer ?
  * Test Buffer creation and usage
  */
 static void Test_BufferCreation() {
@@ -102,7 +95,6 @@ static void Test_BufferCreation() {
         return;
     }
     
-    // 创建 Uniform Buffer (参考 UE5 的 Scene Constants Buffer)
     BufferDesc bufferDesc{};
     bufferDesc.size = 256; // 256 bytes
     bufferDesc.usage = EResourceUsage::UniformBuffer;
@@ -118,7 +110,6 @@ static void Test_BufferCreation() {
     
     MR_LOG_INFO("  [OK] Created uniform buffer (256 bytes)");
     
-    // 模拟数据写入
     struct TestUniformData {
         float ViewMatrix[16];
         float ProjMatrix[16];
@@ -135,7 +126,7 @@ static void Test_BufferCreation() {
             continue;
         }
         
-        // 写入数据
+        // 
         TestUniformData data{};
         for (int i = 0; i < 16; ++i) {
             data.ViewMatrix[i] = static_cast<float>(frame * 16 + i);
@@ -151,7 +142,7 @@ static void Test_BufferCreation() {
 }
 
 /**
- * 测试 3: Texture 创建和使用
+ *  3: Texture ?
  * Test Texture creation and usage
  */
 static void Test_TextureCreation() {
@@ -163,7 +154,6 @@ static void Test_TextureCreation() {
         return;
     }
     
-    // 创建 2K 纹理 (参考 UE5 的 BaseColor Texture)
     TextureDesc desc{};
     desc.width = 2048;
     desc.height = 2048;
@@ -190,7 +180,6 @@ static void Test_TextureCreation() {
 }
 
 /**
- * 测试 4: 内存管理器统计
  * Test memory manager statistics
  */
 static void Test_MemoryStats() {
@@ -205,7 +194,6 @@ static void Test_MemoryStats() {
     auto* vulkanDevice = static_cast<VulkanDevice*>(device.get());
     auto* memoryManager = vulkanDevice->getMemoryManager();
     
-    // 获取初始状态
     FVulkanMemoryManager::FMemoryStats statsBefore;
     memoryManager->GetMemoryStats(statsBefore);
     
@@ -213,7 +201,6 @@ static void Test_MemoryStats() {
     MR_LOG_INFO("    Total allocated: " + FormatMemorySize(statsBefore.TotalAllocated));
     MR_LOG_INFO("    Pool count: " + std::to_string(statsBefore.PoolCount));
     
-    // 创建一些资源
     TArray<TSharedPtr<IRHIBuffer>> buffers;
     for (uint32 i = 0; i < 10; ++i) {
         BufferDesc desc{};
@@ -227,7 +214,6 @@ static void Test_MemoryStats() {
     
     MR_LOG_INFO("  Created 10 buffers (64KB each)");
     
-    // 获取更新后的状态
     FVulkanMemoryManager::FMemoryStats statsAfter;
     memoryManager->GetMemoryStats(statsAfter);
     
@@ -240,13 +226,11 @@ static void Test_MemoryStats() {
 }
 
 // ================================
-// 实际应用场景测试 (Real-world Scenario Tests)
-// 简化版本 - 使用现有 Device API
+//  (Real-world Scenario Tests)
 // ================================
 
 /**
- * 场景测试 1: 游戏角色渲染 (Character Rendering)
- * 模拟 UE5 中一个角色的完整资源创建流程
+ *  1:  (Character Rendering)
  */
 static void Test_CharacterRendering() {
     MR_LOG_INFO("\n[Scenario 1] Character Rendering Resource Setup");
@@ -303,12 +287,11 @@ static void Test_CharacterRendering() {
     auto rmTex = device->createTexture(rmDesc);
     MR_LOG_INFO("    [OK] Roughness/Metallic Texture created (2048x2048, 11 mips)");
     
-    // 模拟渲染循环 (3 帧)
     MR_LOG_INFO("  Simulating 3 frames of rendering:");
     for (uint32 frame = 0; frame < 3; ++frame) {
         MR_LOG_DEBUG("    Frame " + std::to_string(frame) + ":");
         
-        // 更新 Scene UBO
+        //  Scene UBO
         void* sceneData = sceneUBO->map();
         if (sceneData) {
             memset(sceneData, frame, 256);
@@ -316,7 +299,7 @@ static void Test_CharacterRendering() {
             MR_LOG_DEBUG("      Updated Scene UBO");
         }
         
-        // 更新 Character UBO
+        //  Character UBO
         void* charData = characterUBO->map();
         if (charData) {
             memset(charData, frame, 128);
@@ -329,11 +312,10 @@ static void Test_CharacterRendering() {
 }
 
 // ================================
-// 主测试入口 (Main Test Entry)
+// ?(Main Test Entry)
 // ================================
 
 /**
- * 运行所有基础测试
  */
 void RunBasicTests() {
     MR_LOG_INFO("========================================");
@@ -351,7 +333,6 @@ void RunBasicTests() {
 }
 
 /**
- * 运行所有实际应用场景测试
  */
 void RunScenarioTests() {
     MR_LOG_INFO("========================================");
@@ -367,7 +348,6 @@ void RunScenarioTests() {
 }
 
 /**
- * 运行所有测试
  */
 void RunAllTests() {
     RunBasicTests();

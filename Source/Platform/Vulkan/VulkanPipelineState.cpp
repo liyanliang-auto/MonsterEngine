@@ -55,11 +55,15 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Create render pass
-        if (!createRenderPass()) {
-            MR_LOG_ERROR("Failed to create render pass");
+        // Use device's render pass instead of creating our own (UE5 pattern)
+        // Pipeline's render pass must match the render pass used in command buffer
+        m_renderPass = m_device->getRenderPass();
+        if (m_renderPass == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Device render pass is null");
             return false;
         }
+        
+        MR_LOG_DEBUG("Using device render pass for pipeline compatibility");
         
         // Create graphics pipeline
         if (!createGraphicsPipeline()) {
@@ -323,9 +327,32 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
+        MR_LOG_DEBUG("Creating graphics pipeline: " + m_debugName);
+        
+        // Validate prerequisites
+        if (m_shaderStages.empty()) {
+            MR_LOG_ERROR("No shader stages available for pipeline creation");
+            return false;
+        }
+        
+        if (m_pipelineLayout == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Pipeline layout is null - cannot create pipeline");
+            return false;
+        }
+        
+        if (m_renderPass == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Render pass is null - cannot create pipeline");
+            return false;
+        }
+        
+        MR_LOG_DEBUG("Pipeline has " + std::to_string(m_shaderStages.size()) + " shader stage(s)");
+        
         // Vertex input state
         VkVertexInputBindingDescription bindingDescription = createVertexInputBinding();
         TArray<VkVertexInputAttributeDescription> attributeDescriptions = createVertexInputAttributes();
+        
+        MR_LOG_DEBUG("Vertex input: " + std::to_string(attributeDescriptions.size()) + 
+                    " attribute(s), stride = " + std::to_string(bindingDescription.stride));
         
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -369,6 +396,8 @@ namespace MonsterRender::RHI::Vulkan {
         colorBlending.attachmentCount = static_cast<uint32>(colorBlendAttachments.size());
         colorBlending.pAttachments = colorBlendAttachments.data();
         
+        MR_LOG_DEBUG("Color blend: " + std::to_string(colorBlendAttachments.size()) + " attachment(s)");
+        
         // Depth stencil state
         VkPipelineDepthStencilStateCreateInfo depthStencil = createDepthStencilState();
         
@@ -402,13 +431,21 @@ namespace MonsterRender::RHI::Vulkan {
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
         pipelineInfo.basePipelineIndex = -1;
         
+        MR_LOG_DEBUG("Calling vkCreateGraphicsPipelines...");
         VkResult result = functions.vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline);
         if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to create graphics pipeline: " + std::to_string(result));
+            MR_LOG_ERROR("Failed to create graphics pipeline: VkResult = " + std::to_string(result));
+            MR_LOG_ERROR("Pipeline name: " + m_debugName);
             return false;
         }
         
-        MR_LOG_DEBUG("Graphics pipeline created successfully");
+        if (m_pipeline == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("vkCreateGraphicsPipelines succeeded but returned null handle");
+            return false;
+        }
+        
+        MR_LOG_INFO("Graphics pipeline created successfully: " + m_debugName + 
+                   " (handle: " + std::to_string(reinterpret_cast<uint64>(m_pipeline)) + ")");
         return true;
     }
     
@@ -435,10 +472,9 @@ namespace MonsterRender::RHI::Vulkan {
             }
             m_descriptorSetLayouts.clear();
             
-            if (m_renderPass != VK_NULL_HANDLE) {
-                functions.vkDestroyRenderPass(device, m_renderPass, nullptr);
-                m_renderPass = VK_NULL_HANDLE;
-            }
+            // Note: Do NOT destroy render pass - it's owned by VulkanDevice
+            // Pipeline only holds a reference to device's render pass
+            m_renderPass = VK_NULL_HANDLE;
         }
         
         m_isValid = false;

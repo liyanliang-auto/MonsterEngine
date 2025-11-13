@@ -16,6 +16,9 @@ namespace MonsterRender::RHI::Vulkan {
     class VulkanPipelineState;
     class VulkanPipelineCache;
     class VulkanDescriptorSetAllocator;
+    class FVulkanCommandBufferManager;
+    class FVulkanCommandListContext;
+    class FVulkanRHICommandListImmediate;
     
     /**
      * Queue family information
@@ -79,6 +82,11 @@ namespace MonsterRender::RHI::Vulkan {
         VkCommandPool getCommandPool() const { return m_commandPool; }
         VkSurfaceKHR getSurface() const { return m_surface; }
         VkSwapchainKHR getSwapchain() const { return m_swapchain; }
+        uint32 getGraphicsQueueFamilyIndex() const { return m_graphicsQueueFamily.familyIndex; }
+        
+        // UE5-style per-frame command buffer management
+        FVulkanCommandBufferManager* getCommandBufferManager() const { return m_commandBufferManager.get(); }
+        FVulkanCommandListContext* getCommandListContext() const { return m_commandListContext.get(); }
         
         const QueueFamily& getGraphicsQueueFamily() const { return m_graphicsQueueFamily; }
         const QueueFamily& getPresentQueueFamily() const { return m_presentQueueFamily; }
@@ -141,9 +149,15 @@ namespace MonsterRender::RHI::Vulkan {
         VkRenderPass m_renderPass = VK_NULL_HANDLE;
         TArray<VkFramebuffer> m_swapchainFramebuffers;
         
-        // Command handling
+        // Command handling (Legacy, kept for backward compatibility if needed)
         VkCommandPool m_commandPool = VK_NULL_HANDLE;
-        TUniquePtr<VulkanCommandList> m_immediateCommandList;
+        
+        // UE5-style Immediate Command List (replaces legacy VulkanCommandList)
+        TUniquePtr<FVulkanRHICommandListImmediate> m_immediateCommandList;
+        
+        // Per-frame command buffer management (UE5 pattern)
+        TUniquePtr<FVulkanCommandBufferManager> m_commandBufferManager;
+        TUniquePtr<FVulkanCommandListContext> m_commandListContext;
         
         // Pipeline cache
         TUniquePtr<VulkanPipelineCache> m_pipelineCache;

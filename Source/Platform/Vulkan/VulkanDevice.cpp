@@ -1,5 +1,6 @@
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandList.h"
+#include "Platform/Vulkan/VulkanRHICommandList.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanShader.h"
@@ -7,6 +8,8 @@
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/VulkanUtils.h"
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
 #include "Core/Log.h"
 
 #include <set>
@@ -140,7 +143,23 @@ namespace MonsterRender::RHI::Vulkan {
         }
         MR_LOG_INFO("FVulkanMemoryManager initialized (UE5-style sub-allocation enabled)");
         
-        // Step 14: Query device capabilities
+        // Step 14: Create per-frame command buffer manager (UE5 pattern)
+        m_commandBufferManager = MakeUnique<FVulkanCommandBufferManager>(this);
+        if (!m_commandBufferManager || !m_commandBufferManager->initialize()) {
+            MR_LOG_ERROR("Failed to create command buffer manager");
+            return false;
+        }
+        MR_LOG_INFO("Per-frame command buffer manager initialized (3 buffers)");
+        
+        // Step 15: Create command list context (UE5 pattern)
+        m_commandListContext = MakeUnique<FVulkanCommandListContext>(this, m_commandBufferManager.get());
+        if (!m_commandListContext || !m_commandListContext->initialize()) {
+            MR_LOG_ERROR("Failed to create command list context");
+            return false;
+        }
+        MR_LOG_INFO("Command list context initialized");
+        
+        // Step 16: Query device capabilities
         queryCapabilities();
         
         MR_LOG_INFO("Vulkan device initialized successfully");
@@ -165,8 +184,10 @@ namespace MonsterRender::RHI::Vulkan {
                 }
             }
             
-            // Clean up command lists BEFORE destroying command pool
+            // Clean up command lists and managers BEFORE destroying command pool
             // (command buffers must be freed before the pool is destroyed)
+            m_commandListContext.reset();
+            m_commandBufferManager.reset();
             m_immediateCommandList.reset();
             
             // Destroy command pool
@@ -339,6 +360,8 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     IRHICommandList* VulkanDevice::getImmediateCommandList() {
+        // In UE5 pattern, we return the immediate command list which automatically delegates
+        // to the current per-frame command buffer context. No manual binding needed.
         return m_immediateCommandList.get();
     }
     
@@ -362,17 +385,18 @@ namespace MonsterRender::RHI::Vulkan {
             m_descriptorSetAllocator->beginFrame(m_currentFrame);
         }
         
-        // Wait for previous frame
-        functions.vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
-        functions.vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
-        
         // Acquire next image
         uint32 imageIndex;
-        VkResult result = functions.vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX,
-                                                          m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
+        VkResult result = functions.vkAcquireNextImageKHR(
+            m_device, 
+            m_swapchain, 
+            UINT64_MAX,
+            m_imageAvailableSemaphores[m_currentFrame], 
+            VK_NULL_HANDLE, 
+            &imageIndex
+        );
         
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            // Recreate swapchain - for now just return
             MR_LOG_WARNING("Swapchain out of date, should recreate");
             return;
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -381,6 +405,17 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         m_currentImageIndex = imageIndex;
+        
+        // Submit command buffer using new per-frame system (UE5 pattern)
+        if (m_commandListContext) {
+            VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
+            VkSemaphore signalSemaphores[] = {m_renderFinishedSemaphores[m_currentFrame]};
+            
+            m_commandListContext->submitCommands(
+                waitSemaphores, 1,
+                signalSemaphores, 1
+            );
+        }
         
         // Present
         VkPresentInfoKHR presentInfo{};
@@ -597,7 +632,7 @@ namespace MonsterRender::RHI::Vulkan {
         // Find queue families
         m_graphicsQueueFamily = findQueueFamilies(m_physicalDevice, m_surface, VK_QUEUE_GRAPHICS_BIT); // 
         if (m_surface != VK_NULL_HANDLE) {
-            // 这里参数使用了 VK_QUEUE_GRAPHICS_BIT，可能是个笔误，通常呈现队列有专门的查询方式，例如使用 vkGetPhysicalDeviceSurfaceSupportKHR
+            // 鏉╂瑩鍣烽崣鍌涙殶娴ｈ法鏁ゆ禍?VK_QUEUE_GRAPHICS_BIT閿涘苯褰查懗鑺ユЦ娑擃亞鐟拠顖ょ礉闁艾鐖堕崨鍫㈠箛闂冪喎鍨張澶夌瑩闂傘劎娈戦弻銉嚄閺傜懓绱￠敍灞肩伐婵″倷濞囬悽?vkGetPhysicalDeviceSurfaceSupportKHR
             m_presentQueueFamily = findQueueFamilies(m_physicalDevice, m_surface, VK_QUEUE_GRAPHICS_BIT);
         } else {
             m_presentQueueFamily = m_graphicsQueueFamily; // Use graphics queue for present when no surface
@@ -937,13 +972,10 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Create immediate command list
-        m_immediateCommandList = MakeUnique<VulkanCommandList>(this);
-        if (!m_immediateCommandList->initialize()) {
-            MR_LOG_ERROR("Failed to initialize immediate command list");
-            return false;
-        }
+        m_immediateCommandList = MakeUnique<FVulkanRHICommandListImmediate>(this);
+        // FVulkanRHICommandListImmediate doesn't need initialization - it just wraps the context
         
-        MR_LOG_INFO("Command pool created successfully");
+        MR_LOG_INFO("Immediate command list created successfully (UE5 style)");
         return true;
     }
     
