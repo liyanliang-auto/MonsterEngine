@@ -74,7 +74,18 @@ namespace MonsterRender::RHI::Vulkan {
         return true;
     }
     
+    void FVulkanCmdBuffer::markAsReadyForBegin() {
+        MR_LOG_INFO("FVulkanCmdBuffer::markAsReadyForBegin() - Setting state to ReadyForBegin");
+        MR_LOG_INFO("  Previous state: " + std::to_string(static_cast<int>(m_state)));
+        m_state = EState::ReadyForBegin;
+        MR_LOG_INFO("  New state: " + std::to_string(static_cast<int>(m_state)));
+    }
+    
     void FVulkanCmdBuffer::begin() {
+        MR_LOG_INFO("FVulkanCmdBuffer::begin() called");
+        MR_LOG_INFO("  Current state: " + std::to_string(static_cast<int>(m_state)));
+        MR_LOG_INFO("  Expected state: " + std::to_string(static_cast<int>(EState::ReadyForBegin)));
+        
         if (m_state != EState::ReadyForBegin) {
             MR_LOG_ERROR("Command buffer not in ReadyForBegin state, current state: " + std::to_string(static_cast<int>(m_state)));
             MR_LOG_ERROR("  Expected: ReadyForBegin (" + std::to_string(static_cast<int>(EState::ReadyForBegin)) + ")");

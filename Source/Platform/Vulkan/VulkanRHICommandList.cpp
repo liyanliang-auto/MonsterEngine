@@ -42,19 +42,28 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
     
     void FVulkanRHICommandListImmediate::begin() {
-        // Get the command list context from device
+        MR_LOG_INFO("===== FVulkanRHICommandListImmediate::begin() START =====");
+        
+        // Get or reuse the command list context from device
         // UE5 Pattern: Device manages context lifecycle
-        m_context = m_device->getCommandListContext();
         if (!m_context) {
-            MR_LOG_ERROR("FVulkanRHICommandListImmediate::begin: Failed to get command list context");
-            return;
+            m_context = m_device->getCommandListContext();
+            if (!m_context) {
+                MR_LOG_ERROR("FVulkanRHICommandListImmediate::begin: Failed to get command list context");
+                return;
+            }
+            MR_LOG_INFO("  Got new context: " + std::to_string(reinterpret_cast<uint64>(m_context)));
+        } else {
+            MR_LOG_INFO("  Using existing context: " + std::to_string(reinterpret_cast<uint64>(m_context)));
         }
         
         // Begin recording into the current frame's command buffer
         // UE5: VulkanRHI::BeginDrawingViewport() -> GetCommandContext()->Begin()
+        MR_LOG_INFO("  Calling context->beginRecording()...");
         m_context->beginRecording();
         
-        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::begin: Command buffer recording started");
+        MR_LOG_INFO("FVulkanRHICommandListImmediate::begin: Command buffer recording started");
+        MR_LOG_INFO("===== FVulkanRHICommandListImmediate::begin() END =====");
     }
     
     void FVulkanRHICommandListImmediate::end() {

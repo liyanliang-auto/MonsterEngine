@@ -66,7 +66,7 @@ namespace MonsterRender::RHI::Vulkan {
         /**
          * Mark as ready for begin (called after vkResetCommandBuffer)
          */
-        void markAsReadyForBegin() { m_state = EState::ReadyForBegin; }
+        void markAsReadyForBegin();
         
         /**
          * Refresh the fence state (UE5: RefreshFenceStatus())
