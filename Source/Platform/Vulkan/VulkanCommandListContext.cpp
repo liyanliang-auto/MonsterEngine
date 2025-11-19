@@ -42,9 +42,22 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanCommandListContext::prepareForNewFrame() {
+        MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() START =====");
+        
         // Get next command buffer from ring buffer
+        MR_LOG_INFO("  Calling prepareForNewActiveCommandBuffer()...");
         m_manager->prepareForNewActiveCommandBuffer();
+        
+        MR_LOG_INFO("  Getting active cmd buffer...");
         m_cmdBuffer = m_manager->getActiveCmdBuffer();
+        
+        MR_LOG_INFO("  m_cmdBuffer: " + std::string(m_cmdBuffer ? "VALID" : "NULL"));
+        if (m_cmdBuffer) {
+            MR_LOG_INFO("    Handle: " + std::to_string(reinterpret_cast<uint64>(m_cmdBuffer->getHandle())));
+            MR_LOG_INFO("    hasBegun: " + std::string(m_cmdBuffer->hasBegun() ? "YES" : "NO"));
+            MR_LOG_INFO("    hasEnded: " + std::string(m_cmdBuffer->hasEnded() ? "YES" : "NO"));
+            MR_LOG_INFO("    isSubmitted: " + std::string(m_cmdBuffer->isSubmitted() ? "YES" : "NO"));
+        }
         
         // Reset pending state
         if (m_pendingState) {
@@ -56,12 +69,19 @@ namespace MonsterRender::RHI::Vulkan {
             m_descriptorPool->reset();
         }
         
-        MR_LOG_DEBUG("Prepared for new frame");
+        MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() END =====");
     }
     
     void FVulkanCommandListContext::beginRecording() {
+        MR_LOG_INFO("  FVulkanCommandListContext::beginRecording() called");
+        MR_LOG_INFO("    m_cmdBuffer: " + std::string(m_cmdBuffer ? "VALID" : "NULL"));
+        
         if (m_cmdBuffer) {
+            MR_LOG_INFO("    Calling m_cmdBuffer->begin()...");
             m_cmdBuffer->begin();
+            MR_LOG_INFO("    m_cmdBuffer->begin() returned");
+        } else {
+            MR_LOG_ERROR("    m_cmdBuffer is NULL!");
         }
     }
     

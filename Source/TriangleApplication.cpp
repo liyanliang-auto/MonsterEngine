@@ -78,14 +78,14 @@ private:
         MR_LOG_INFO("Context: " + std::string(context ? "VALID" : "NULL"));
         if (!context) return;
         
-        MR_LOG_INFO("Step 1: prepareForNewFrame");
-        context->prepareForNewFrame();
-        
         auto* cmdList = device->getImmediateCommandList();
         MR_LOG_INFO("CmdList: " + std::string(cmdList ? "VALID" : "NULL"));
         if (!cmdList) {
             return;
         }
+        
+        MR_LOG_INFO("Step 1: prepareForNewFrame");
+        context->prepareForNewFrame();
         
         MR_LOG_INFO("Step 2: cmdList->begin()");
         cmdList->begin();
