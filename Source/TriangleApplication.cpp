@@ -81,15 +81,14 @@ private:
         MR_LOG_INFO("Step 1: prepareForNewFrame");
         context->prepareForNewFrame();
         
-        MR_LOG_INFO("Step 2: beginRecording");
-        context->beginRecording();
-        
         auto* cmdList = device->getImmediateCommandList();
         MR_LOG_INFO("CmdList: " + std::string(cmdList ? "VALID" : "NULL"));
         if (!cmdList) {
-            context->endRecording();
             return;
         }
+        
+        MR_LOG_INFO("Step 2: cmdList->begin()");
+        cmdList->begin();
         
         MR_LOG_INFO("Step 3: setRenderTargets");
         TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
@@ -101,8 +100,8 @@ private:
         MR_LOG_INFO("Step 5: endRenderPass");
         cmdList->endRenderPass();
         
-        MR_LOG_INFO("Step 6: endRecording");
-        context->endRecording();
+        MR_LOG_INFO("Step 6: cmdList->end()");
+        cmdList->end();
         
         MR_LOG_INFO("Step 7: present");
         device->present();
