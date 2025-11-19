@@ -50,8 +50,21 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanPendingState::setGraphicsPipeline(VulkanPipelineState* pipeline) {
+        if (!pipeline) {
+            MR_LOG_ERROR("FVulkanPendingState::setGraphicsPipeline: Null pipeline");
+            return;
+        }
+        
+        VkPipeline vkPipeline = pipeline->getPipeline();
+        if (vkPipeline == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("FVulkanPendingState::setGraphicsPipeline: Pipeline handle is NULL");
+            return;
+        }
+        
         if (m_pendingPipeline != pipeline) {
             m_pendingPipeline = pipeline;
+            MR_LOG_DEBUG("FVulkanPendingState::setGraphicsPipeline: Set pipeline (handle: " + 
+                        std::to_string(reinterpret_cast<uint64>(vkPipeline)) + ")");
         }
     }
     
@@ -87,20 +100,34 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanPendingState::prepareForDraw() {
         if (!m_cmdBuffer) {
-            MR_LOG_ERROR("No command buffer for pending state");
+            MR_LOG_ERROR("prepareForDraw: No command buffer");
             return;
         }
         
         VkCommandBuffer cmdBuffer = m_cmdBuffer->getHandle();
+        if (cmdBuffer == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("prepareForDraw: Command buffer handle is NULL");
+            return;
+        }
+        
         const auto& functions = VulkanAPI::getFunctions();
         
         // Apply pipeline state if changed
         if (m_pendingPipeline && m_pendingPipeline != m_currentPipeline) {
             VkPipeline pipeline = m_pendingPipeline->getPipeline();
             if (pipeline != VK_NULL_HANDLE) {
+                MR_LOG_DEBUG("prepareForDraw: Binding pipeline");
                 functions.vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                 m_currentPipeline = m_pendingPipeline;
+            } else {
+                MR_LOG_ERROR("prepareForDraw: Pipeline handle is NULL!");
+                return; // Cannot draw without valid pipeline
             }
+        } else if (!m_pendingPipeline) {
+            MR_LOG_ERROR("prepareForDraw: No pending pipeline set!");
+            return; // Cannot draw without pipeline
+        } else if (m_currentPipeline) {
+            MR_LOG_DEBUG("prepareForDraw: Using cached pipeline (no change)");
         }
         
         // Apply viewport if dirty

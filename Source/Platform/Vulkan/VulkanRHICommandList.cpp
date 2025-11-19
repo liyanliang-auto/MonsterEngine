@@ -106,11 +106,20 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        // Validate pipeline handle
+        VkPipeline pipeline = vulkanPipeline->getPipeline();
+        if (pipeline == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("FVulkanRHICommandListImmediate::setPipelineState: Pipeline handle is NULL!");
+            MR_LOG_ERROR("  Pipeline name: " + vulkanPipeline->getDesc().debugName);
+            return;
+        }
+        
         // Set the graphics pipeline in pending state
         // UE5: FVulkanPendingState::SetGraphicsPipeline()
         if (m_context->getPendingState()) {
             m_context->getPendingState()->setGraphicsPipeline(vulkanPipeline);
-            MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setPipelineState: Pipeline state set");
+            MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setPipelineState: Pipeline state set (handle: " + 
+                        std::to_string(reinterpret_cast<uint64>(pipeline)) + ")");
         } else {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::setPipelineState: No pending state available");
         }
