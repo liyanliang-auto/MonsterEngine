@@ -26,6 +26,20 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Initialize vertex buffer bindings
         m_vertexBuffers.resize(8); // Support up to 8 vertex buffer bindings
+        
+        // Initialize viewport with default values (will be overwritten when set)
+        m_pendingViewport.x = 0.0f;
+        m_pendingViewport.y = 0.0f;
+        m_pendingViewport.width = 0.0f; // Will be set by setViewport()
+        m_pendingViewport.height = 0.0f;
+        m_pendingViewport.minDepth = 0.0f;
+        m_pendingViewport.maxDepth = 1.0f;
+        
+        // Initialize scissor with default values (will be overwritten when set)
+        m_pendingScissor.left = 0;
+        m_pendingScissor.top = 0;
+        m_pendingScissor.right = 0; // Will be set by setScissor()
+        m_pendingScissor.bottom = 0;
     }
     
     FVulkanPendingState::~FVulkanPendingState() {
@@ -99,6 +113,8 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     bool FVulkanPendingState::prepareForDraw() {
+        MR_LOG_INFO("===== prepareForDraw() START =====");
+        
         if (!m_cmdBuffer) {
             MR_LOG_ERROR("prepareForDraw: No command buffer");
             return false;
@@ -110,28 +126,42 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
+        MR_LOG_INFO("  CmdBuffer: " + std::to_string(reinterpret_cast<uint64>(cmdBuffer)));
+        MR_LOG_INFO("  Inside render pass: " + std::string(m_insideRenderPass ? "YES" : "NO"));
+        
         const auto& functions = VulkanAPI::getFunctions();
+        
+        MR_LOG_DEBUG("prepareForDraw: Starting state preparation");
         
         // Apply pipeline state if changed
         if (m_pendingPipeline && m_pendingPipeline != m_currentPipeline) {
             VkPipeline pipeline = m_pendingPipeline->getPipeline();
             if (pipeline != VK_NULL_HANDLE) {
-                MR_LOG_DEBUG("prepareForDraw: Binding pipeline");
+                MR_LOG_DEBUG("prepareForDraw: Binding pipeline (handle: " + 
+                            std::to_string(reinterpret_cast<uint64>(pipeline)) + ")");
                 functions.vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                 m_currentPipeline = m_pendingPipeline;
             } else {
                 MR_LOG_ERROR("prepareForDraw: Pipeline handle is NULL!");
                 return false; // Cannot draw without valid pipeline
             }
-        } else if (!m_pendingPipeline) {
-            MR_LOG_ERROR("prepareForDraw: No pending pipeline set!");
+        } else if (!m_pendingPipeline && !m_currentPipeline) {
+            MR_LOG_ERROR("prepareForDraw: No pipeline set at all!");
             return false; // Cannot draw without pipeline
         } else if (m_currentPipeline) {
-            MR_LOG_DEBUG("prepareForDraw: Using cached pipeline (no change)");
+            MR_LOG_DEBUG("prepareForDraw: Using cached pipeline");
         }
         
-        // Apply viewport if dirty
-        if (m_viewportDirty) {
+        // CRITICAL: Viewport and Scissor are REQUIRED for drawing
+        // Apply viewport (force set if not already set, even if not dirty)
+        if (m_viewportDirty || m_pendingViewport.width == 0) {
+            if (m_pendingViewport.width == 0 || m_pendingViewport.height == 0) {
+                MR_LOG_ERROR("prepareForDraw: Invalid viewport dimensions (" + 
+                            std::to_string(m_pendingViewport.width) + "x" + 
+                            std::to_string(m_pendingViewport.height) + ")");
+                return false;
+            }
+            
             VkViewport vkViewport{};
             vkViewport.x = m_pendingViewport.x;
             vkViewport.y = m_pendingViewport.y;
@@ -140,18 +170,28 @@ namespace MonsterRender::RHI::Vulkan {
             vkViewport.minDepth = m_pendingViewport.minDepth;
             vkViewport.maxDepth = m_pendingViewport.maxDepth;
             
+            MR_LOG_DEBUG("prepareForDraw: Setting viewport (" + 
+                        std::to_string(m_pendingViewport.width) + "x" + 
+                        std::to_string(m_pendingViewport.height) + ")");
             functions.vkCmdSetViewport(cmdBuffer, 0, 1, &vkViewport);
             m_viewportDirty = false;
         }
         
-        // Apply scissor if dirty
-        if (m_scissorDirty) {
+        // Apply scissor (force set if not already set, even if not dirty)
+        if (m_scissorDirty || m_pendingScissor.right == 0) {
+            if (m_pendingScissor.right <= m_pendingScissor.left || 
+                m_pendingScissor.bottom <= m_pendingScissor.top) {
+                MR_LOG_ERROR("prepareForDraw: Invalid scissor rect");
+                return false;
+            }
+            
             VkRect2D scissor{};
             scissor.offset.x = m_pendingScissor.left;
             scissor.offset.y = m_pendingScissor.top;
             scissor.extent.width = m_pendingScissor.right - m_pendingScissor.left;
             scissor.extent.height = m_pendingScissor.bottom - m_pendingScissor.top;
             
+            MR_LOG_DEBUG("prepareForDraw: Setting scissor rect");
             functions.vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
             m_scissorDirty = false;
         }
@@ -169,19 +209,25 @@ namespace MonsterRender::RHI::Vulkan {
             }
             
             if (!buffers.empty()) {
+                MR_LOG_DEBUG("prepareForDraw: Binding " + std::to_string(buffers.size()) + " vertex buffer(s)");
                 functions.vkCmdBindVertexBuffers(cmdBuffer, 0, 
                                                 static_cast<uint32>(buffers.size()),
                                                 buffers.data(), offsets.data());
+                m_vertexBuffersDirty = false;
+            } else {
+                MR_LOG_WARNING("prepareForDraw: Vertex buffers marked dirty but no valid buffers found");
             }
-            m_vertexBuffersDirty = false;
         }
         
         // Apply index buffer if dirty
         if (m_indexBufferDirty && m_indexBuffer != VK_NULL_HANDLE) {
+            MR_LOG_DEBUG("prepareForDraw: Binding index buffer");
             functions.vkCmdBindIndexBuffer(cmdBuffer, m_indexBuffer, m_indexBufferOffset, m_indexType);
             m_indexBufferDirty = false;
         }
         
+        MR_LOG_INFO("prepareForDraw: State preparation completed successfully");
+        MR_LOG_INFO("===== prepareForDraw() END =====");
         return true; // Successfully prepared for draw
     }
     
