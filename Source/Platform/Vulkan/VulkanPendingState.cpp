@@ -98,16 +98,16 @@ namespace MonsterRender::RHI::Vulkan {
         }
     }
     
-    void FVulkanPendingState::prepareForDraw() {
+    bool FVulkanPendingState::prepareForDraw() {
         if (!m_cmdBuffer) {
             MR_LOG_ERROR("prepareForDraw: No command buffer");
-            return;
+            return false;
         }
         
         VkCommandBuffer cmdBuffer = m_cmdBuffer->getHandle();
         if (cmdBuffer == VK_NULL_HANDLE) {
             MR_LOG_ERROR("prepareForDraw: Command buffer handle is NULL");
-            return;
+            return false;
         }
         
         const auto& functions = VulkanAPI::getFunctions();
@@ -121,11 +121,11 @@ namespace MonsterRender::RHI::Vulkan {
                 m_currentPipeline = m_pendingPipeline;
             } else {
                 MR_LOG_ERROR("prepareForDraw: Pipeline handle is NULL!");
-                return; // Cannot draw without valid pipeline
+                return false; // Cannot draw without valid pipeline
             }
         } else if (!m_pendingPipeline) {
             MR_LOG_ERROR("prepareForDraw: No pending pipeline set!");
-            return; // Cannot draw without pipeline
+            return false; // Cannot draw without pipeline
         } else if (m_currentPipeline) {
             MR_LOG_DEBUG("prepareForDraw: Using cached pipeline (no change)");
         }
@@ -181,6 +181,8 @@ namespace MonsterRender::RHI::Vulkan {
             functions.vkCmdBindIndexBuffer(cmdBuffer, m_indexBuffer, m_indexBufferOffset, m_indexType);
             m_indexBufferDirty = false;
         }
+        
+        return true; // Successfully prepared for draw
     }
     
     // ========================================================================

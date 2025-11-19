@@ -1,6 +1,8 @@
 #include "TriangleRenderer.h"
 #include "Core/Log.h"
 #include "Core/ShaderCompiler.h"
+#include "Platform/Vulkan/VulkanPipelineState.h"
+#include "Platform/Vulkan/VulkanDevice.h"
 
 namespace MonsterRender {
 
@@ -115,6 +117,32 @@ namespace MonsterRender {
             return false;
         }
         
+        MR_LOG_INFO("=== Creating Pipeline State ===");
+        
+        // Get swapchain format from device
+        auto* vulkanDevice = dynamic_cast<MonsterRender::RHI::Vulkan::VulkanDevice*>(m_device);
+        if (!vulkanDevice) {
+            MR_LOG_ERROR("Device is not a VulkanDevice!");
+            return false;
+        }
+        
+        VkFormat swapchainFormat = vulkanDevice->getSwapchainFormat();
+        MR_LOG_INFO("Using swapchain format: " + std::to_string(swapchainFormat));
+        
+        // Convert VkFormat to EPixelFormat
+        RHI::EPixelFormat renderTargetFormat = RHI::EPixelFormat::R8G8B8A8_SRGB; // Default
+        if (swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB) {
+            renderTargetFormat = RHI::EPixelFormat::B8G8R8A8_SRGB;
+        } else if (swapchainFormat == VK_FORMAT_B8G8R8A8_UNORM) {
+            renderTargetFormat = RHI::EPixelFormat::B8G8R8A8_UNORM;
+        } else if (swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB) {
+            renderTargetFormat = RHI::EPixelFormat::R8G8B8A8_SRGB;
+        } else if (swapchainFormat == VK_FORMAT_R8G8B8A8_UNORM) {
+            renderTargetFormat = RHI::EPixelFormat::R8G8B8A8_UNORM;
+        }
+        
+        MR_LOG_INFO("Converted to EPixelFormat: " + std::to_string(static_cast<int>(renderTargetFormat)));
+        
         RHI::PipelineStateDesc pipelineDesc;
         pipelineDesc.vertexShader = m_vertexShader;
         pipelineDesc.pixelShader = m_pixelShader;
@@ -132,18 +160,35 @@ namespace MonsterRender {
         // Disable blending
         pipelineDesc.blendState.blendEnable = false;
         
-        // Set up render target format (assuming RGBA8 SRGB)
-        pipelineDesc.renderTargetFormats.push_back(RHI::EPixelFormat::R8G8B8A8_SRGB);
+        // Set up render target format - MUST match swapchain format
+        pipelineDesc.renderTargetFormats.push_back(renderTargetFormat);
         
         pipelineDesc.debugName = "Triangle Pipeline State";
         
+        MR_LOG_INFO("Calling device->createPipelineState()...");
         m_pipelineState = m_device->createPipelineState(pipelineDesc);
         if (!m_pipelineState) {
-            MR_LOG_ERROR("Failed to create pipeline state");
+            MR_LOG_ERROR("Failed to create pipeline state - device returned nullptr");
+            return false;
+        }
+        
+        MR_LOG_INFO("Pipeline state object created, verifying...");
+        
+        // Verify the pipeline is valid
+        auto* vulkanPipeline = dynamic_cast<MonsterRender::RHI::Vulkan::VulkanPipelineState*>(m_pipelineState.get());
+        if (!vulkanPipeline) {
+            MR_LOG_ERROR("Pipeline state is not a VulkanPipelineState!");
+            return false;
+        }
+        
+        VkPipeline vkPipeline = vulkanPipeline->getPipeline();
+        if (vkPipeline == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Pipeline handle is NULL after creation!");
             return false;
         }
         
         MR_LOG_INFO("Triangle pipeline state created successfully");
+        MR_LOG_INFO("  Pipeline handle: " + std::to_string(reinterpret_cast<uint64>(vkPipeline)));
         return true;
     }
 
