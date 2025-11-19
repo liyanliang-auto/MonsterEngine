@@ -75,26 +75,30 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanCmdBuffer::markAsReadyForBegin() {
-        MR_LOG_INFO("FVulkanCmdBuffer::markAsReadyForBegin() - Setting state to ReadyForBegin");
+        MR_LOG_INFO("FVulkanCmdBuffer::markAsReadyForBegin() called");
+        MR_LOG_INFO("  CmdBuffer handle: " + std::to_string(reinterpret_cast<uint64>(m_commandBuffer)));
         MR_LOG_INFO("  Previous state: " + std::to_string(static_cast<int>(m_state)));
         m_state = EState::ReadyForBegin;
-        MR_LOG_INFO("  New state: " + std::to_string(static_cast<int>(m_state)));
+        MR_LOG_INFO("  New state: ReadyForBegin (" + std::to_string(static_cast<int>(m_state)) + ")");
     }
     
     void FVulkanCmdBuffer::begin() {
-        MR_LOG_INFO("FVulkanCmdBuffer::begin() called");
+        MR_LOG_INFO("===== FVulkanCmdBuffer::begin() START =====");
+        MR_LOG_INFO("  CmdBuffer handle: " + std::to_string(reinterpret_cast<uint64>(m_commandBuffer)));
         MR_LOG_INFO("  Current state: " + std::to_string(static_cast<int>(m_state)));
-        MR_LOG_INFO("  Expected state: " + std::to_string(static_cast<int>(EState::ReadyForBegin)));
+        MR_LOG_INFO("  Expected state (ReadyForBegin): " + std::to_string(static_cast<int>(EState::ReadyForBegin)));
         
         if (m_state != EState::ReadyForBegin) {
-            MR_LOG_ERROR("Command buffer not in ReadyForBegin state, current state: " + std::to_string(static_cast<int>(m_state)));
-            MR_LOG_ERROR("  Expected: ReadyForBegin (" + std::to_string(static_cast<int>(EState::ReadyForBegin)) + ")");
+            MR_LOG_ERROR("CRITICAL: Command buffer not in ReadyForBegin state!");
+            MR_LOG_ERROR("  Current state value: " + std::to_string(static_cast<int>(m_state)));
+            MR_LOG_ERROR("  State meanings: 0=ReadyForBegin, 1=Recording, 2=Ended, 3=Submitted, 4=NotAllocated");
+            MR_LOG_ERROR("  This will cause vkBeginCommandBuffer to NOT be called!");
             return;
         }
         
         const auto& functions = VulkanAPI::getFunctions();
         
-        MR_LOG_DEBUG("FVulkanCmdBuffer::begin() - Starting vkBeginCommandBuffer");
+        MR_LOG_INFO("  State check passed, calling vkBeginCommandBuffer...");
         
         // Begin command buffer recording
         VkCommandBufferBeginInfo beginInfo{};
@@ -104,14 +108,16 @@ namespace MonsterRender::RHI::Vulkan {
         
         VkResult result = functions.vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
         if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to begin command buffer: " + std::to_string(result));
+            MR_LOG_ERROR("vkBeginCommandBuffer FAILED with result: " + std::to_string(result));
             return;
         }
         
         m_state = EState::Recording;
         m_insideRenderPass = false;
         
-        MR_LOG_DEBUG("Command buffer began recording successfully");
+        MR_LOG_INFO("  vkBeginCommandBuffer succeeded!");
+        MR_LOG_INFO("  State changed to Recording (" + std::to_string(static_cast<int>(m_state)) + ")");
+        MR_LOG_INFO("===== FVulkanCmdBuffer::begin() END =====");
     }
     
     void FVulkanCmdBuffer::end() {
@@ -312,15 +318,18 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanCommandBufferManager::prepareForNewActiveCommandBuffer() {
+        MR_LOG_INFO("===== prepareForNewActiveCommandBuffer() START =====");
+        
         // Advance to next frame in ring buffer
         m_currentBufferIndex = (m_currentBufferIndex + 1) % NUM_FRAMES_IN_FLIGHT;
         m_activeCmdBuffer = m_cmdBuffers[m_currentBufferIndex].get();
         
-        MR_LOG_DEBUG("prepareForNewActiveCommandBuffer: Switching to buffer index " + std::to_string(m_currentBufferIndex));
+        MR_LOG_INFO("  Switching to buffer index: " + std::to_string(m_currentBufferIndex));
+        MR_LOG_INFO("  CmdBuffer handle: " + std::to_string(reinterpret_cast<uint64>(m_activeCmdBuffer->getHandle())));
         
         // Wait for this command buffer to finish if still executing
         if (m_activeCmdBuffer->isSubmitted()) {
-            MR_LOG_DEBUG("  Buffer is still submitted, waiting for fence...");
+            MR_LOG_INFO("  Buffer is still submitted, waiting for fence...");
             waitForCmdBuffer(m_activeCmdBuffer, 1.0f);
         }
         
@@ -331,17 +340,19 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkCommandBuffer cmdBuffer = m_activeCmdBuffer->getHandle();
         
-        MR_LOG_DEBUG("  Calling vkResetCommandBuffer...");
+        MR_LOG_INFO("  Calling vkResetCommandBuffer...");
         VkResult result = functions.vkResetCommandBuffer(cmdBuffer, 0);
         if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to reset command buffer: " + std::to_string(result));
+            MR_LOG_ERROR("vkResetCommandBuffer FAILED with result: " + std::to_string(result));
             return;
         }
+        MR_LOG_INFO("  vkResetCommandBuffer succeeded");
         
         // CRITICAL: Update internal state to ReadyForBegin after reset
+        MR_LOG_INFO("  Calling markAsReadyForBegin()...");
         m_activeCmdBuffer->markAsReadyForBegin();
         
-        MR_LOG_DEBUG("Prepared command buffer for frame " + std::to_string(m_currentBufferIndex));
+        MR_LOG_INFO("===== prepareForNewActiveCommandBuffer() END =====");
     }
     
     VkQueue FVulkanCommandBufferManager::getQueue() const {
