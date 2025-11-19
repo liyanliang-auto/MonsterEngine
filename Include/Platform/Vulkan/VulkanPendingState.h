@@ -34,6 +34,11 @@ namespace MonsterRender::RHI::Vulkan {
         void reset();
         
         /**
+         * Update command buffer reference (when switching buffers in ring buffer)
+         */
+        void updateCommandBuffer(FVulkanCmdBuffer* cmdBuffer);
+        
+        /**
          * Set graphics pipeline state (UE5: SetGraphicsPipeline())
          */
         void setGraphicsPipeline(VulkanPipelineState* pipeline);

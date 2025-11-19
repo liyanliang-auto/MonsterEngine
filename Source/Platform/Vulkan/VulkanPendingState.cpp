@@ -45,6 +45,10 @@ namespace MonsterRender::RHI::Vulkan {
     FVulkanPendingState::~FVulkanPendingState() {
     }
     
+    void FVulkanPendingState::updateCommandBuffer(FVulkanCmdBuffer* cmdBuffer) {
+        m_cmdBuffer = cmdBuffer;
+    }
+    
     void FVulkanPendingState::reset() {
         m_currentPipeline = nullptr;
         m_pendingPipeline = nullptr;
