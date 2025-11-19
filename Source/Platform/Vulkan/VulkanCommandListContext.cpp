@@ -59,6 +59,11 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_INFO("    isSubmitted: " + std::string(m_cmdBuffer->isSubmitted() ? "YES" : "NO"));
         }
         
+        // Update pending state's command buffer reference
+        if (m_pendingState && m_cmdBuffer) {
+            m_pendingState->updateCommandBuffer(m_cmdBuffer);
+        }
+        
         // Reset pending state
         if (m_pendingState) {
             m_pendingState->reset();
