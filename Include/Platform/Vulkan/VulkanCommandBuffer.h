@@ -64,6 +64,11 @@ namespace MonsterRender::RHI::Vulkan {
         void markSubmitted() { m_state = EState::Submitted; }
         
         /**
+         * Mark as ready for begin (called after vkResetCommandBuffer)
+         */
+        void markAsReadyForBegin() { m_state = EState::ReadyForBegin; }
+        
+        /**
          * Refresh the fence state (UE5: RefreshFenceStatus())
          * Checks if the GPU has finished executing this command buffer
          */

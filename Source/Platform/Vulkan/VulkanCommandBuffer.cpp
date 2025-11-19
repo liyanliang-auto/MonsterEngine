@@ -76,11 +76,14 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanCmdBuffer::begin() {
         if (m_state != EState::ReadyForBegin) {
-            MR_LOG_ERROR("Command buffer not in ReadyForBegin state");
+            MR_LOG_ERROR("Command buffer not in ReadyForBegin state, current state: " + std::to_string(static_cast<int>(m_state)));
+            MR_LOG_ERROR("  Expected: ReadyForBegin (" + std::to_string(static_cast<int>(EState::ReadyForBegin)) + ")");
             return;
         }
         
         const auto& functions = VulkanAPI::getFunctions();
+        
+        MR_LOG_DEBUG("FVulkanCmdBuffer::begin() - Starting vkBeginCommandBuffer");
         
         // Begin command buffer recording
         VkCommandBufferBeginInfo beginInfo{};
@@ -97,7 +100,7 @@ namespace MonsterRender::RHI::Vulkan {
         m_state = EState::Recording;
         m_insideRenderPass = false;
         
-        MR_LOG_DEBUG("Command buffer began recording");
+        MR_LOG_DEBUG("Command buffer began recording successfully");
     }
     
     void FVulkanCmdBuffer::end() {
@@ -302,8 +305,11 @@ namespace MonsterRender::RHI::Vulkan {
         m_currentBufferIndex = (m_currentBufferIndex + 1) % NUM_FRAMES_IN_FLIGHT;
         m_activeCmdBuffer = m_cmdBuffers[m_currentBufferIndex].get();
         
+        MR_LOG_DEBUG("prepareForNewActiveCommandBuffer: Switching to buffer index " + std::to_string(m_currentBufferIndex));
+        
         // Wait for this command buffer to finish if still executing
         if (m_activeCmdBuffer->isSubmitted()) {
+            MR_LOG_DEBUG("  Buffer is still submitted, waiting for fence...");
             waitForCmdBuffer(m_activeCmdBuffer, 1.0f);
         }
         
@@ -313,7 +319,16 @@ namespace MonsterRender::RHI::Vulkan {
         // Reset command buffer for reuse
         const auto& functions = VulkanAPI::getFunctions();
         VkCommandBuffer cmdBuffer = m_activeCmdBuffer->getHandle();
-        functions.vkResetCommandBuffer(cmdBuffer, 0);
+        
+        MR_LOG_DEBUG("  Calling vkResetCommandBuffer...");
+        VkResult result = functions.vkResetCommandBuffer(cmdBuffer, 0);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to reset command buffer: " + std::to_string(result));
+            return;
+        }
+        
+        // CRITICAL: Update internal state to ReadyForBegin after reset
+        m_activeCmdBuffer->markAsReadyForBegin();
         
         MR_LOG_DEBUG("Prepared command buffer for frame " + std::to_string(m_currentBufferIndex));
     }
