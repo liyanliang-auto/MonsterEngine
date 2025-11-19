@@ -121,6 +121,11 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanCommandListContext::draw(uint32 vertexCount, uint32 startVertexLocation) {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
+            // UE5 Pattern: Prepare pending state before draw
+            if (m_pendingState) {
+                m_pendingState->prepareForDraw();
+            }
+            
             const auto& functions = VulkanAPI::getFunctions();
             functions.vkCmdDraw(m_cmdBuffer->getHandle(), vertexCount, 1,
                               startVertexLocation, 0);
@@ -130,6 +135,11 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanCommandListContext::drawIndexed(uint32 indexCount, uint32 startIndexLocation,
                                                int32 baseVertexLocation) {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
+            // UE5 Pattern: Prepare pending state before draw
+            if (m_pendingState) {
+                m_pendingState->prepareForDraw();
+            }
+            
             const auto& functions = VulkanAPI::getFunctions();
             functions.vkCmdDrawIndexed(m_cmdBuffer->getHandle(), indexCount, 1,
                                      startIndexLocation, baseVertexLocation, 0);
@@ -139,6 +149,11 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanCommandListContext::drawInstanced(uint32 vertexCountPerInstance, uint32 instanceCount,
                                                  uint32 startVertexLocation, uint32 startInstanceLocation) {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
+            // UE5 Pattern: Prepare pending state before draw
+            if (m_pendingState) {
+                m_pendingState->prepareForDraw();
+            }
+            
             const auto& functions = VulkanAPI::getFunctions();
             functions.vkCmdDraw(m_cmdBuffer->getHandle(), vertexCountPerInstance, instanceCount,
                               startVertexLocation, startInstanceLocation);
@@ -149,6 +164,11 @@ namespace MonsterRender::RHI::Vulkan {
                                                         uint32 startIndexLocation, int32 baseVertexLocation,
                                                         uint32 startInstanceLocation) {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
+            // UE5 Pattern: Prepare pending state before draw
+            if (m_pendingState) {
+                m_pendingState->prepareForDraw();
+            }
+            
             const auto& functions = VulkanAPI::getFunctions();
             functions.vkCmdDrawIndexed(m_cmdBuffer->getHandle(), indexCountPerInstance, instanceCount,
                                      startIndexLocation, baseVertexLocation, startInstanceLocation);
