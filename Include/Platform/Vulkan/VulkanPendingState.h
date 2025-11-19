@@ -60,8 +60,9 @@ namespace MonsterRender::RHI::Vulkan {
         
         /**
          * Prepare for draw call - ensure all pending state is applied (UE5: PrepareForDraw())
+         * @return true if ready to draw, false if critical state is missing
          */
-        void prepareForDraw();
+        bool prepareForDraw();
         
         /**
          * Get current pipeline state

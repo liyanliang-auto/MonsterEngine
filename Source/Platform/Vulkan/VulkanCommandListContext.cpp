@@ -122,8 +122,14 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanCommandListContext::draw(uint32 vertexCount, uint32 startVertexLocation) {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
             // UE5 Pattern: Prepare pending state before draw
-            if (m_pendingState) {
-                m_pendingState->prepareForDraw();
+            if (!m_pendingState) {
+                MR_LOG_ERROR("draw: No pending state");
+                return;
+            }
+            
+            if (!m_pendingState->prepareForDraw()) {
+                MR_LOG_ERROR("draw: Failed to prepare for draw - aborting draw call");
+                return;
             }
             
             const auto& functions = VulkanAPI::getFunctions();
@@ -136,8 +142,14 @@ namespace MonsterRender::RHI::Vulkan {
                                                int32 baseVertexLocation) {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
             // UE5 Pattern: Prepare pending state before draw
-            if (m_pendingState) {
-                m_pendingState->prepareForDraw();
+            if (!m_pendingState) {
+                MR_LOG_ERROR("drawIndexed: No pending state");
+                return;
+            }
+            
+            if (!m_pendingState->prepareForDraw()) {
+                MR_LOG_ERROR("drawIndexed: Failed to prepare for draw - aborting draw call");
+                return;
             }
             
             const auto& functions = VulkanAPI::getFunctions();
@@ -150,8 +162,14 @@ namespace MonsterRender::RHI::Vulkan {
                                                  uint32 startVertexLocation, uint32 startInstanceLocation) {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
             // UE5 Pattern: Prepare pending state before draw
-            if (m_pendingState) {
-                m_pendingState->prepareForDraw();
+            if (!m_pendingState) {
+                MR_LOG_ERROR("drawInstanced: No pending state");
+                return;
+            }
+            
+            if (!m_pendingState->prepareForDraw()) {
+                MR_LOG_ERROR("drawInstanced: Failed to prepare for draw - aborting draw call");
+                return;
             }
             
             const auto& functions = VulkanAPI::getFunctions();
@@ -165,8 +183,14 @@ namespace MonsterRender::RHI::Vulkan {
                                                         uint32 startInstanceLocation) {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
             // UE5 Pattern: Prepare pending state before draw
-            if (m_pendingState) {
-                m_pendingState->prepareForDraw();
+            if (!m_pendingState) {
+                MR_LOG_ERROR("drawIndexedInstanced: No pending state");
+                return;
+            }
+            
+            if (!m_pendingState->prepareForDraw()) {
+                MR_LOG_ERROR("drawIndexedInstanced: Failed to prepare for draw - aborting draw call");
+                return;
             }
             
             const auto& functions = VulkanAPI::getFunctions();
