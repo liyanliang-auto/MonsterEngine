@@ -120,22 +120,48 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanCommandListContext::draw(uint32 vertexCount, uint32 startVertexLocation) {
-        if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
-            // UE5 Pattern: Prepare pending state before draw
-            if (!m_pendingState) {
-                MR_LOG_ERROR("draw: No pending state");
-                return;
-            }
-            
-            if (!m_pendingState->prepareForDraw()) {
-                MR_LOG_ERROR("draw: Failed to prepare for draw - aborting draw call");
-                return;
-            }
-            
-            const auto& functions = VulkanAPI::getFunctions();
-            functions.vkCmdDraw(m_cmdBuffer->getHandle(), vertexCount, 1,
-                              startVertexLocation, 0);
+        MR_LOG_INFO("===== FVulkanCommandListContext::draw() START =====");
+        MR_LOG_INFO("  vertexCount: " + std::to_string(vertexCount));
+        MR_LOG_INFO("  startVertexLocation: " + std::to_string(startVertexLocation));
+        
+        if (!m_cmdBuffer) {
+            MR_LOG_ERROR("draw: m_cmdBuffer is nullptr!");
+            return;
         }
+        
+        VkCommandBuffer cmdBufferHandle = m_cmdBuffer->getHandle();
+        if (cmdBufferHandle == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("draw: Command buffer handle is VK_NULL_HANDLE!");
+            return;
+        }
+        
+        MR_LOG_INFO("  CommandBuffer handle: " + std::to_string(reinterpret_cast<uint64>(cmdBufferHandle)));
+        
+        if (!m_pendingState) {
+            MR_LOG_ERROR("draw: m_pendingState is nullptr!");
+            return;
+        }
+        
+        MR_LOG_INFO("  Calling prepareForDraw()...");
+        if (!m_pendingState->prepareForDraw()) {
+            MR_LOG_ERROR("draw: prepareForDraw() returned false - ABORTING");
+            return;
+        }
+        
+        MR_LOG_INFO("  prepareForDraw() succeeded");
+        MR_LOG_INFO("  About to call vkCmdDraw...");
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        // Log function pointer
+        MR_LOG_INFO("  vkCmdDraw function pointer: " + 
+                   std::to_string(reinterpret_cast<uint64>(functions.vkCmdDraw)));
+        
+        // Call vkCmdDraw
+        functions.vkCmdDraw(cmdBufferHandle, vertexCount, 1, startVertexLocation, 0);
+        
+        MR_LOG_INFO("  vkCmdDraw completed");
+        MR_LOG_INFO("===== FVulkanCommandListContext::draw() END =====");
     }
     
     void FVulkanCommandListContext::drawIndexed(uint32 indexCount, uint32 startIndexLocation,
