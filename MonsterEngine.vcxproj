@@ -186,6 +186,8 @@
     <ClCompile Include="Source\Tests\VulkanResourceManagerTest.cpp" />
     <ClCompile Include="Source\TriangleApplication.cpp" />
     <ClCompile Include="Source\TriangleRenderer.cpp" />
+    <ClCompile Include="Source\CubeApplication.cpp" />
+    <ClCompile Include="Source\CubeRenderer.cpp" />
     <ClCompile Include="Source\RHI\IRHIResource.cpp" />
     <ClCompile Include="Source\RHI\RHI.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanAPI.cpp" />
@@ -224,6 +226,7 @@
     <ClInclude Include="Include\Renderer\FTextureStreamingManager.h" />
     <ClInclude Include="Include\Renderer\FVirtualTextureSystem.h" />
     <ClInclude Include="Include\TriangleRenderer.h" />
+    <ClInclude Include="Include\CubeRenderer.h" />
     <ClInclude Include="Include\RHI\IRHICommandList.h" />
     <ClInclude Include="Include\RHI\IRHIDevice.h" />
     <ClInclude Include="Include\RHI\IRHIResource.h" />
