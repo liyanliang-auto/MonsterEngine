@@ -55,6 +55,13 @@ private:
     
     void onShutdown() override {
         MR_LOG_INFO("Shutting down Triangle Demo Application");
+        
+        // Wait for GPU to finish all work before destroying resources
+        auto* device = getEngine()->getRHIDevice();
+        if (device) {
+            device->waitForIdle();
+        }
+        
         m_triangleRenderer.reset();
     }
     
