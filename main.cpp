@@ -170,6 +170,9 @@ int main(int argc, char** argv) {
     // Run the application
     int32 exitCode = app->run();
     
+    // Shutdown before destroying to ensure proper cleanup order
+    app->shutdown();
+    
     // Cleanup is handled by RAII
     app.reset();
     
