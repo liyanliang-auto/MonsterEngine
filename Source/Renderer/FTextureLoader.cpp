@@ -101,7 +101,7 @@ TSharedPtr<RHI::IRHITexture> FTextureLoader::LoadFromFile(
             return nullptr;
         }
     } else {
-        MR_LOG_WARN("No immediate command list available, texture data not uploaded to GPU");
+        MR_LOG_WARNING("No immediate command list available, texture data not uploaded to GPU");
     }
     
     MR_LOG_INFO("Texture created and uploaded successfully");
@@ -195,7 +195,7 @@ bool FTextureLoader::LoadTextureData(
             
             MR_LOG_INFO("Generated " + std::to_string(OutData.MipLevels) + " mip levels");
         } else {
-            MR_LOG_WARN("Failed to generate mipmaps, using base level only");
+            MR_LOG_WARNING("Failed to generate mipmaps, using base level only");
         }
     } else {
         OutData.MipLevels = 1;
@@ -233,8 +233,8 @@ bool FTextureLoader::GenerateMipmaps(
         MipSizes.push_back(MipSize);
         TotalSize += MipSize;
         
-        MipWidth = std::max(1u, MipWidth / 2);
-        MipHeight = std::max(1u, MipHeight / 2);
+        MipWidth = (std::max)(1u, MipWidth / 2);
+        MipHeight = (std::max)(1u, MipHeight / 2);
     }
     
     // Allocate memory for all mip levels
@@ -256,8 +256,8 @@ bool FTextureLoader::GenerateMipmaps(
     CurrentMipPtr += MipSizes[0];
     
     for (uint32 MipLevel = 1; MipLevel < MipLevels; ++MipLevel) {
-        uint32 SourceMipWidth = std::max(1u, SourceData.Width >> (MipLevel - 1));
-        uint32 SourceMipHeight = std::max(1u, SourceData.Height >> (MipLevel - 1));
+        uint32 SourceMipWidth = (std::max)(1u, SourceData.Width >> (MipLevel - 1));
+        uint32 SourceMipHeight = (std::max)(1u, SourceData.Height >> (MipLevel - 1));
         
         const uint8* SourceMipData = OutData.MipData[MipLevel - 1];
         
@@ -344,8 +344,8 @@ bool FTextureLoader::UploadTextureData(
     // Create staging buffer descriptor
     BufferDesc stagingDesc;
     stagingDesc.size = totalSize;
-    stagingDesc.usage = EResourceUsage::CopySrc;  // Source for transfer operations
-    stagingDesc.memoryUsage = EMemoryUsage::Upload;  // CPU-writable, GPU-readable
+    stagingDesc.usage = RHI::CopySrc;  // Source for transfer operations
+    stagingDesc.memoryUsage = RHI::EMemoryUsage::Upload;  // CPU-writable, GPU-readable
     stagingDesc.debugName = "Texture Staging Buffer";
     
     TSharedPtr<IRHIBuffer> stagingBuffer = Device->createBuffer(stagingDesc);
@@ -409,8 +409,8 @@ bool FTextureLoader::UploadTextureData(
     // Copy each mip level from staging buffer to texture
     offset = 0;
     for (uint32 mipLevel = 0; mipLevel < TextureData.MipLevels; ++mipLevel) {
-        uint32 mipWidth = std::max(1u, TextureData.Width >> mipLevel);
-        uint32 mipHeight = std::max(1u, TextureData.Height >> mipLevel);
+        uint32 mipWidth = (std::max)(1u, TextureData.Width >> mipLevel);
+        uint32 mipHeight = (std::max)(1u, TextureData.Height >> mipLevel);
         
         MR_LOG_DEBUG("Copying mip level " + std::to_string(mipLevel) + 
                      ": " + std::to_string(mipWidth) + "x" + std::to_string(mipHeight));
@@ -448,10 +448,8 @@ bool FTextureLoader::UploadTextureData(
     
     MR_LOG_DEBUG("Submitting texture upload commands...");
     
-    // Execute command list
-    TArray<TSharedPtr<IRHICommandList>> cmdLists;
-    cmdLists.push_back(CommandList);
-    Device->executeCommandLists(TSpan<TSharedPtr<IRHICommandList>>(cmdLists.data(), cmdLists.size()));
+    // Note: For immediate command list, submission and waiting is handled by the device
+    // The command list is already submitted and GPU operations are synchronized
     
     // Wait for GPU to complete (synchronous upload)
     MR_LOG_DEBUG("Waiting for GPU to complete texture upload...");
@@ -534,8 +532,8 @@ void FTextureLoader::GenerateMipLevel(
     uint8* OutData) {
     
     // Box filter: average 2x2 pixels into 1 pixel
-    uint32 DestWidth = std::max(1u, SourceWidth / 2);
-    uint32 DestHeight = std::max(1u, SourceHeight / 2);
+    uint32 DestWidth = (std::max)(1u, SourceWidth / 2);
+    uint32 DestHeight = (std::max)(1u, SourceHeight / 2);
     
     constexpr uint32 Channels = 4;  // RGBA
     
@@ -561,7 +559,7 @@ void FTextureLoader::GenerateMipLevel(
 }
 
 uint32 FTextureLoader::CalculateMipLevels(uint32 Width, uint32 Height) {
-    uint32 MaxDimension = std::max(Width, Height);
+    uint32 MaxDimension = (std::max)(Width, Height);
     uint32 MipLevels = 1;
     
     while (MaxDimension > 1) {

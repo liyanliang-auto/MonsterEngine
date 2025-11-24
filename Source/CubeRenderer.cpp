@@ -226,7 +226,7 @@ namespace MonsterRender {
         m_texture1 = FTextureLoader::LoadFromFile(m_device, loadInfo1);
         if (!m_texture1) {
             MR_LOG_ERROR("Failed to load container texture from: " + texture1Path);
-            MR_LOG_WARN("Creating placeholder texture 1");
+            MR_LOG_WARNING("Creating placeholder texture 1");
             
             // Fallback to placeholder
             RHI::TextureDesc desc;
@@ -258,7 +258,7 @@ namespace MonsterRender {
         m_texture2 = FTextureLoader::LoadFromFile(m_device, loadInfo2);
         if (!m_texture2) {
             MR_LOG_ERROR("Failed to load awesomeface texture from: " + texture2Path);
-            MR_LOG_WARN("Creating placeholder texture 2");
+            MR_LOG_WARNING("Creating placeholder texture 2");
             
             // Fallback to placeholder
             RHI::TextureDesc desc;
