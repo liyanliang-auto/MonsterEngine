@@ -105,6 +105,69 @@ namespace MonsterRender::RHI::Vulkan {
          */
         void setShaderSampler(uint32 slot, TSharedPtr<IRHITexture> texture);
         
+        // ============================================================================
+        // Texture Upload Operations (UE5-style RHI texture transfer)
+        // ============================================================================
+        
+        /**
+         * Copy buffer data to texture (UE5: CopyToTexture)
+         * Used for uploading texture data from staging buffer to GPU texture
+         * 
+         * @param srcBuffer Source buffer containing texture data
+         * @param srcOffset Offset in source buffer
+         * @param dstTexture Destination texture
+         * @param mipLevel Target mip level
+         * @param arrayLayer Target array layer
+         * @param width Width of region to copy
+         * @param height Height of region to copy
+         * @param depth Depth of region to copy
+         */
+        void copyBufferToTexture(
+            TSharedPtr<IRHIBuffer> srcBuffer,
+            uint64 srcOffset,
+            TSharedPtr<IRHITexture> dstTexture,
+            uint32 mipLevel,
+            uint32 arrayLayer,
+            uint32 width,
+            uint32 height,
+            uint32 depth = 1
+        );
+        
+        /**
+         * Transition texture layout (UE5: TransitionTexture)
+         * Changes image layout and inserts necessary pipeline barriers
+         * 
+         * @param texture Texture to transition
+         * @param oldLayout Old layout
+         * @param newLayout New layout
+         * @param srcAccessMask Source access mask
+         * @param dstAccessMask Destination access mask
+         * @param srcStageMask Source pipeline stage
+         * @param dstStageMask Destination pipeline stage
+         */
+        void transitionTextureLayout(
+            TSharedPtr<IRHITexture> texture,
+            VkImageLayout oldLayout,
+            VkImageLayout newLayout,
+            VkAccessFlags srcAccessMask,
+            VkAccessFlags dstAccessMask,
+            VkPipelineStageFlags srcStageMask,
+            VkPipelineStageFlags dstStageMask
+        );
+        
+        /**
+         * Simplified texture layout transition with common defaults
+         * 
+         * @param texture Texture to transition
+         * @param oldLayout Old layout
+         * @param newLayout New layout
+         */
+        void transitionTextureLayoutSimple(
+            TSharedPtr<IRHITexture> texture,
+            VkImageLayout oldLayout,
+            VkImageLayout newLayout
+        );
+        
         // Vulkan-specific getters
         VkCommandBuffer getCommandBuffer() const { return m_commandBuffer; }
         VkCommandBuffer getVulkanCommandBuffer() const { return m_commandBuffer; }
