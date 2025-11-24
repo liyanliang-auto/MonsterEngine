@@ -62,10 +62,23 @@ namespace MonsterRender::RHI {
         return (usage & flag) != EResourceUsage::None;
     }
     
+    // Memory usage hint (UE5-style)
+    enum class EMemoryUsage : uint32 {
+        Default,     // Device-local memory (GPU only)
+        Upload,      // Host-visible, device-readable (CPU → GPU staging)
+        Readback,    // Host-visible, device-writable (GPU → CPU readback)
+        Dynamic      // Frequently updated by CPU
+    };
+    
+    // Resource usage aliases for backward compatibility
+    constexpr EResourceUsage CopySrc = EResourceUsage::TransferSrc;
+    constexpr EResourceUsage CopyDst = EResourceUsage::TransferDst;
+    
     // Buffer description
     struct BufferDesc {
         uint32 size = 0;
         EResourceUsage usage = EResourceUsage::None;
+        EMemoryUsage memoryUsage = EMemoryUsage::Default;
         bool cpuAccessible = false;
         String debugName;
         
@@ -77,16 +90,24 @@ namespace MonsterRender::RHI {
     // Texture formats
     enum class EPixelFormat : uint32 {
         Unknown = 0,
+        // 8-bit formats
+        R8_UNORM,
+        R8_SRGB,
+        R8G8_UNORM,
+        R8G8_SRGB,
         R8G8B8A8_UNORM,
         B8G8R8A8_UNORM,
         R8G8B8A8_SRGB,
         B8G8R8A8_SRGB,
+        // Float formats
         R32G32B32A32_FLOAT,
         R32G32B32_FLOAT,
         R32G32_FLOAT,
         R32_FLOAT,
+        // Depth formats
         D32_FLOAT,
         D24_UNORM_S8_UINT,
+        // Compressed formats
         BC1_UNORM,
         BC1_SRGB,
         BC3_UNORM,
@@ -182,10 +203,14 @@ namespace MonsterRender::RHI {
         Always
     };
     
+    // Alias for compatibility
+    using ECompareOp = EComparisonFunc;
+    
     struct DepthStencilState {
         bool depthEnable = true;
         bool depthWriteEnable = true;
         EComparisonFunc depthFunc = EComparisonFunc::Less;
+        EComparisonFunc depthCompareOp = EComparisonFunc::Less;  // Alias for compatibility
         bool stencilEnable = false;
     };
     
