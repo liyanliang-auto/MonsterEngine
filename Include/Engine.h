@@ -38,6 +38,16 @@ namespace MonsterRender {
          */
         bool isInitialized() const { return m_initialized; }
         
+        /**
+         * Get window width
+         */
+        uint32 getWindowWidth() const { return m_windowWidth; }
+        
+        /**
+         * Get window height
+         */
+        uint32 getWindowHeight() const { return m_windowHeight; }
+        
     private:
         // RHI system
         TUniquePtr<RHI::IRHIDevice> m_rhiDevice;
@@ -45,6 +55,10 @@ namespace MonsterRender {
         // Engine state
         bool m_initialized = false;
         bool m_shouldRun = true;
+        
+        // Window dimensions
+        uint32 m_windowWidth = 800;
+        uint32 m_windowHeight = 600;
         
         // Update the engine
         void update();

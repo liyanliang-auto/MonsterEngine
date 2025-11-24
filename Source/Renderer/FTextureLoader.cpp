@@ -544,9 +544,9 @@ void FTextureLoader::GenerateMipLevel(
             
             // Sample 4 source pixels
             const uint8* P00 = &SourceData[(sy * SourceWidth + sx) * Channels];
-            const uint8* P10 = &SourceData[(sy * SourceWidth + std::min(sx + 1, SourceWidth - 1)) * Channels];
-            const uint8* P01 = &SourceData[(std::min(sy + 1, SourceHeight - 1) * SourceWidth + sx) * Channels];
-            const uint8* P11 = &SourceData[(std::min(sy + 1, SourceHeight - 1) * SourceWidth + std::min(sx + 1, SourceWidth - 1)) * Channels];
+            const uint8* P10 = &SourceData[(sy * SourceWidth + (std::min)(sx + 1, SourceWidth - 1)) * Channels];
+            const uint8* P01 = &SourceData[((std::min)(sy + 1, SourceHeight - 1) * SourceWidth + sx) * Channels];
+            const uint8* P11 = &SourceData[((std::min)(sy + 1, SourceHeight - 1) * SourceWidth + (std::min)(sx + 1, SourceWidth - 1)) * Channels];
             
             // Average all channels
             uint8* Dest = &OutData[(y * DestWidth + x) * Channels];

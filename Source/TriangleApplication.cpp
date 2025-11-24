@@ -154,6 +154,10 @@ private:
 };
 
 // Application creation function - required by the application framework
+// NOTE: Commented out to use CubeApplication instead
+// To use TriangleApplication, uncomment this and comment out createApplication in CubeApplication.cpp
+/*
 TUniquePtr<Application> MonsterRender::createApplication() {
     return MakeUnique<TriangleApplication>();
 }
+*/
