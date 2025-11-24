@@ -1,5 +1,6 @@
 #include "Core/Application.h"
 #include "Core/Log.h"
+#include "Core/HAL/FMemoryManager.h"
 #include "RHI/RHI.h"
 
 #include <chrono>
@@ -23,6 +24,13 @@ namespace MonsterRender {
         }
         
         MR_LOG_INFO("Initializing application...");
+        
+        // Initialize memory system FIRST - required by all other systems
+        if (!FMemoryManager::Get().Initialize()) {
+            MR_LOG_ERROR("Failed to initialize memory system");
+            return false;
+        }
+        MR_LOG_INFO("Memory system initialized successfully");
         
         // Initialize window factory
         WindowFactory::initialize();
@@ -102,6 +110,10 @@ namespace MonsterRender {
         
         // Shutdown window factory
         WindowFactory::shutdown();
+        
+        // Shutdown memory system LAST - after all other systems are destroyed
+        FMemoryManager::Get().Shutdown();
+        MR_LOG_INFO("Memory system shut down");
         
         m_initialized = false;
         MR_LOG_INFO("Application shut down successfully");
