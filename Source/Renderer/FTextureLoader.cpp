@@ -28,6 +28,9 @@ namespace MonsterRender {
 // ============================================================================
 
 void FTextureData::Release() {
+    // Save the Pixels pointer before freeing, to avoid double-free
+    uint8* OriginalPixels = Pixels;
+    
     if (Pixels) {
         // Free main pixel data using engine memory system
         FMemory::Free(Pixels);
@@ -36,7 +39,7 @@ void FTextureData::Release() {
     
     // Free mipmap data
     for (uint8* MipPtr : MipData) {
-        if (MipPtr && MipPtr != Pixels) {  // Don't double-free base level
+        if (MipPtr && MipPtr != OriginalPixels) {  // Don't double-free base level
             FMemory::Free(MipPtr);
         }
     }
