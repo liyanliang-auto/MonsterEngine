@@ -3,7 +3,7 @@
 
 #include "Renderer/FTextureLoader.h"
 #include "Core/Log.h"
-#include "Core/HAL/FMemoryManager.h"
+#include "Core/HAL/FMemory.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanCommandList.h"
@@ -14,9 +14,9 @@
 
 // STB Image library integration
 #define STB_IMAGE_IMPLEMENTATION
-#define STBI_MALLOC(sz)           MonsterRender::FMemoryManager::Malloc(sz, 16)
-#define STBI_REALLOC(p,newsz)     MonsterRender::FMemoryManager::Realloc(p, newsz, 16)
-#define STBI_FREE(p)              MonsterRender::FMemoryManager::Free(p)
+#define STBI_MALLOC(sz)           MonsterRender::FMemory::Malloc(sz, 16)
+#define STBI_REALLOC(p,newsz)     MonsterRender::FMemory::Realloc(p, newsz, 16)
+#define STBI_FREE(p)              MonsterRender::FMemory::Free(p)
 #define STBI_ASSERT(x)            // Disable assert, use our own error handling
 #define STB_IMAGE_STATIC
 #include "../../3rd-party/stb/stb_image.h"
@@ -29,15 +29,15 @@ namespace MonsterRender {
 
 void FTextureData::Release() {
     if (Pixels) {
-        // Free main pixel data using engine memory manager
-        FMemoryManager::Free(Pixels);
+        // Free main pixel data using engine memory system
+        FMemory::Free(Pixels);
         Pixels = nullptr;
     }
     
     // Free mipmap data
     for (uint8* MipPtr : MipData) {
         if (MipPtr && MipPtr != Pixels) {  // Don't double-free base level
-            FMemoryManager::Free(MipPtr);
+            FMemory::Free(MipPtr);
         }
     }
     
@@ -238,7 +238,7 @@ bool FTextureLoader::GenerateMipmaps(
     }
     
     // Allocate memory for all mip levels
-    uint8* AllMipsData = static_cast<uint8*>(FMemoryManager::Malloc(TotalSize, 16));
+    uint8* AllMipsData = static_cast<uint8*>(FMemory::Malloc(TotalSize, 16));
     if (!AllMipsData) {
         MR_LOG_ERROR("Failed to allocate memory for mipmaps");
         return false;
