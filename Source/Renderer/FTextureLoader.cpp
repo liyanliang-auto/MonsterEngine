@@ -6,6 +6,7 @@
 #include "Core/HAL/FMemoryManager.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanCommandList.h"
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 #include "Renderer/FTextureStreamingManager.h"
 #include <algorithm>
@@ -91,7 +92,19 @@ TSharedPtr<RHI::IRHITexture> FTextureLoader::LoadFromFile(
         return nullptr;
     }
     
-    MR_LOG_INFO("Texture created successfully");
+    // Upload texture data to GPU using immediate command list
+    MR_LOG_INFO("Uploading texture to GPU...");
+    RHI::IRHICommandList* cmdList = Device->getImmediateCommandList();
+    if (cmdList) {
+        if (!UploadTextureData(Device, cmdList, Texture, TextureData)) {
+            MR_LOG_ERROR("Failed to upload texture data to GPU");
+            return nullptr;
+        }
+    } else {
+        MR_LOG_WARN("No immediate command list available, texture data not uploaded to GPU");
+    }
+    
+    MR_LOG_INFO("Texture created and uploaded successfully");
     return Texture;
 }
 
@@ -303,16 +316,155 @@ bool FTextureLoader::UploadTextureData(
     TSharedPtr<RHI::IRHITexture> Texture,
     const FTextureData& TextureData) {
     
-    // TODO: Implement GPU upload using staging buffer and command list
-    // This requires:
-    // 1. Create staging buffer
-    // 2. Copy texture data to staging buffer
-    // 3. Record copy command from staging buffer to texture
-    // 4. Submit command list
-    // 5. Wait for completion
-    // 6. Clean up staging buffer
+    using namespace RHI;
+    using namespace RHI::Vulkan;
     
-    MR_LOG_WARN("Texture GPU upload not yet implemented - using placeholder");
+    if (!Device || !CommandList || !Texture || !TextureData.Pixels) {
+        MR_LOG_ERROR("Invalid parameters in UploadTextureData");
+        return false;
+    }
+    
+    MR_LOG_INFO("Uploading texture data to GPU: " + 
+                std::to_string(TextureData.Width) + "x" + 
+                std::to_string(TextureData.Height) + 
+                " with " + std::to_string(TextureData.MipLevels) + " mip levels");
+    
+    // ============================================================================
+    // Step 1: Create staging buffer (CPU-accessible, GPU-visible)
+    // ============================================================================
+    
+    SIZE_T totalSize = TextureData.GetTotalSize();
+    if (totalSize == 0) {
+        MR_LOG_ERROR("Texture data size is zero");
+        return false;
+    }
+    
+    MR_LOG_DEBUG("Creating staging buffer: " + std::to_string(totalSize) + " bytes");
+    
+    // Create staging buffer descriptor
+    BufferDesc stagingDesc;
+    stagingDesc.size = totalSize;
+    stagingDesc.usage = EResourceUsage::CopySrc;  // Source for transfer operations
+    stagingDesc.memoryUsage = EMemoryUsage::Upload;  // CPU-writable, GPU-readable
+    stagingDesc.debugName = "Texture Staging Buffer";
+    
+    TSharedPtr<IRHIBuffer> stagingBuffer = Device->createBuffer(stagingDesc);
+    if (!stagingBuffer) {
+        MR_LOG_ERROR("Failed to create staging buffer");
+        return false;
+    }
+    
+    // ============================================================================
+    // Step 2: Copy texture data to staging buffer
+    // ============================================================================
+    
+    MR_LOG_DEBUG("Copying texture data to staging buffer...");
+    
+    void* mappedData = stagingBuffer->map();
+    if (!mappedData) {
+        MR_LOG_ERROR("Failed to map staging buffer");
+        return false;
+    }
+    
+    // Copy all mip levels to staging buffer
+    uint8* destPtr = static_cast<uint8*>(mappedData);
+    SIZE_T offset = 0;
+    
+    for (uint32 mipLevel = 0; mipLevel < TextureData.MipLevels; ++mipLevel) {
+        const uint8* srcData = TextureData.MipData[mipLevel];
+        SIZE_T mipSize = TextureData.MipSizes[mipLevel];
+        
+        std::memcpy(destPtr + offset, srcData, mipSize);
+        offset += mipSize;
+        
+        MR_LOG_DEBUG("Copied mip level " + std::to_string(mipLevel) + 
+                     ": " + std::to_string(mipSize) + " bytes");
+    }
+    
+    stagingBuffer->unmap();
+    
+    // ============================================================================
+    // Step 3: Record texture upload commands
+    // ============================================================================
+    
+    MR_LOG_DEBUG("Recording texture upload commands...");
+    
+    // Cast to Vulkan command list for texture-specific operations
+    auto* vulkanCmdList = static_cast<VulkanCommandList*>(CommandList);
+    
+    // Begin command recording if not already recording
+    bool wasRecording = vulkanCmdList->isRecording();
+    if (!wasRecording) {
+        vulkanCmdList->begin();
+    }
+    
+    // Transition texture from UNDEFINED to TRANSFER_DST_OPTIMAL
+    MR_LOG_DEBUG("Transitioning texture layout: UNDEFINED -> TRANSFER_DST_OPTIMAL");
+    vulkanCmdList->transitionTextureLayoutSimple(
+        Texture,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    );
+    
+    // Copy each mip level from staging buffer to texture
+    offset = 0;
+    for (uint32 mipLevel = 0; mipLevel < TextureData.MipLevels; ++mipLevel) {
+        uint32 mipWidth = std::max(1u, TextureData.Width >> mipLevel);
+        uint32 mipHeight = std::max(1u, TextureData.Height >> mipLevel);
+        
+        MR_LOG_DEBUG("Copying mip level " + std::to_string(mipLevel) + 
+                     ": " + std::to_string(mipWidth) + "x" + std::to_string(mipHeight));
+        
+        vulkanCmdList->copyBufferToTexture(
+            stagingBuffer,
+            offset,
+            Texture,
+            mipLevel,
+            0, // array layer
+            mipWidth,
+            mipHeight,
+            1  // depth
+        );
+        
+        offset += TextureData.MipSizes[mipLevel];
+    }
+    
+    // Transition texture from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
+    MR_LOG_DEBUG("Transitioning texture layout: TRANSFER_DST_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL");
+    vulkanCmdList->transitionTextureLayoutSimple(
+        Texture,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+    
+    // End command recording if we started it
+    if (!wasRecording) {
+        vulkanCmdList->end();
+    }
+    
+    // ============================================================================
+    // Step 4: Submit command list and wait for completion
+    // ============================================================================
+    
+    MR_LOG_DEBUG("Submitting texture upload commands...");
+    
+    // Execute command list
+    TArray<TSharedPtr<IRHICommandList>> cmdLists;
+    cmdLists.push_back(CommandList);
+    Device->executeCommandLists(TSpan<TSharedPtr<IRHICommandList>>(cmdLists.data(), cmdLists.size()));
+    
+    // Wait for GPU to complete (synchronous upload)
+    MR_LOG_DEBUG("Waiting for GPU to complete texture upload...");
+    Device->waitForIdle();
+    
+    // ============================================================================
+    // Step 5: Clean up staging buffer
+    // ============================================================================
+    
+    MR_LOG_DEBUG("Cleaning up staging buffer...");
+    // Staging buffer will be automatically destroyed when shared_ptr goes out of scope
+    
+    MR_LOG_INFO("Texture uploaded successfully to GPU");
     return true;
 }
 
