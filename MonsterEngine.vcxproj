@@ -175,6 +175,7 @@
     <ClCompile Include="Source\Platform\Vulkan\FVulkanResourceManager.cpp" />
     <ClCompile Include="Source\Renderer\FTexturePool.cpp" />
     <ClCompile Include="Source\Renderer\FTextureStreamingManager.cpp" />
+    <ClCompile Include="Source\Renderer\FTextureLoader.cpp" />
     <ClCompile Include="Source\Renderer\FVirtualTexturePhysicalSpace.cpp" />
     <ClCompile Include="Source\Renderer\FVirtualTextureSystem.cpp" />
     <ClCompile Include="Source\Tests\FMemorySystemTest.cpp" />
@@ -224,6 +225,7 @@
     <ClInclude Include="Include\Platform\Vulkan\FVulkanMemoryManager.h" />
     <ClInclude Include="Include\Platform\Vulkan\FVulkanResourceManager.h" />
     <ClInclude Include="Include\Renderer\FTextureStreamingManager.h" />
+    <ClInclude Include="Include\Renderer\FTextureLoader.h" />
     <ClInclude Include="Include\Renderer\FVirtualTextureSystem.h" />
     <ClInclude Include="Include\TriangleRenderer.h" />
     <ClInclude Include="Include\CubeRenderer.h" />

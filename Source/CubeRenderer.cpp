@@ -3,6 +3,7 @@
 #include "Core/ShaderCompiler.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDevice.h"
+#include "Renderer/FTextureLoader.h"
 #include <cmath>
 #include <cstring>
 
@@ -207,53 +208,77 @@ namespace MonsterRender {
     }
     
     bool CubeRenderer::loadTextures() {
-        MR_LOG_INFO("Loading textures...");
+        MR_LOG_INFO("Loading textures from disk...");
         
-        // TODO: Implement texture loading from files
-        // For now, create placeholder textures
-        // Texture loading will be implemented in the next step
+        // Texture paths (LearnOpenGL tutorial style)
+        String texture1Path = "resources/textures/container.jpg";
+        String texture2Path = "resources/textures/awesomeface.png";
         
-        // Texture paths:
-        // E:\MonsterEngine\resources\textures\container.jpg
-        // E:\MonsterEngine\resources\textures\awesomeface.png
+        // Load texture 1 (container.jpg)
+        MR_LOG_INFO("Loading container texture: " + texture1Path);
+        FTextureLoadInfo loadInfo1;
+        loadInfo1.FilePath = texture1Path;
+        loadInfo1.bGenerateMips = true;
+        loadInfo1.bSRGB = true;
+        loadInfo1.bFlipVertical = true;
+        loadInfo1.DesiredChannels = 4;  // Force RGBA
         
-        MR_LOG_WARN("Texture loading not yet implemented - using placeholder textures");
-        
-        // Create placeholder texture 1 (container.jpg)
-        RHI::TextureDesc texture1Desc;
-        texture1Desc.width = 512;
-        texture1Desc.height = 512;
-        texture1Desc.depth = 1;
-        texture1Desc.mipLevels = 1;
-        texture1Desc.arraySize = 1;
-        texture1Desc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
-        texture1Desc.usage = RHI::EResourceUsage::ShaderResource;
-        texture1Desc.debugName = "Container Texture";
-        
-        m_texture1 = m_device->createTexture(texture1Desc);
+        m_texture1 = FTextureLoader::LoadFromFile(m_device, loadInfo1);
         if (!m_texture1) {
-            MR_LOG_ERROR("Failed to create texture 1");
-            return false;
+            MR_LOG_ERROR("Failed to load container texture from: " + texture1Path);
+            MR_LOG_WARN("Creating placeholder texture 1");
+            
+            // Fallback to placeholder
+            RHI::TextureDesc desc;
+            desc.width = 512;
+            desc.height = 512;
+            desc.depth = 1;
+            desc.mipLevels = 1;
+            desc.arraySize = 1;
+            desc.format = RHI::EPixelFormat::R8G8B8A8_SRGB;
+            desc.usage = RHI::EResourceUsage::ShaderResource;
+            desc.debugName = "Container Texture (Placeholder)";
+            
+            m_texture1 = m_device->createTexture(desc);
+            if (!m_texture1) {
+                MR_LOG_ERROR("Failed to create placeholder texture 1");
+                return false;
+            }
         }
         
-        // Create placeholder texture 2 (awesomeface.png)
-        RHI::TextureDesc texture2Desc;
-        texture2Desc.width = 512;
-        texture2Desc.height = 512;
-        texture2Desc.depth = 1;
-        texture2Desc.mipLevels = 1;
-        texture2Desc.arraySize = 1;
-        texture2Desc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
-        texture2Desc.usage = RHI::EResourceUsage::ShaderResource;
-        texture2Desc.debugName = "Awesomeface Texture";
+        // Load texture 2 (awesomeface.png)
+        MR_LOG_INFO("Loading awesomeface texture: " + texture2Path);
+        FTextureLoadInfo loadInfo2;
+        loadInfo2.FilePath = texture2Path;
+        loadInfo2.bGenerateMips = true;
+        loadInfo2.bSRGB = true;
+        loadInfo2.bFlipVertical = true;
+        loadInfo2.DesiredChannels = 4;  // Force RGBA
         
-        m_texture2 = m_device->createTexture(texture2Desc);
+        m_texture2 = FTextureLoader::LoadFromFile(m_device, loadInfo2);
         if (!m_texture2) {
-            MR_LOG_ERROR("Failed to create texture 2");
-            return false;
+            MR_LOG_ERROR("Failed to load awesomeface texture from: " + texture2Path);
+            MR_LOG_WARN("Creating placeholder texture 2");
+            
+            // Fallback to placeholder
+            RHI::TextureDesc desc;
+            desc.width = 512;
+            desc.height = 512;
+            desc.depth = 1;
+            desc.mipLevels = 1;
+            desc.arraySize = 1;
+            desc.format = RHI::EPixelFormat::R8G8B8A8_SRGB;
+            desc.usage = RHI::EResourceUsage::ShaderResource;
+            desc.debugName = "Awesomeface Texture (Placeholder)";
+            
+            m_texture2 = m_device->createTexture(desc);
+            if (!m_texture2) {
+                MR_LOG_ERROR("Failed to create placeholder texture 2");
+                return false;
+            }
         }
         
-        MR_LOG_INFO("Placeholder textures created successfully");
+        MR_LOG_INFO("Textures loaded successfully");
         return true;
     }
     
