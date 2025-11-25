@@ -74,7 +74,53 @@ namespace MonsterRender::RHI::Vulkan {
             m_descriptorPool->reset();
         }
         
+        // Acquire next swapchain image BEFORE any rendering begins
+        // This ensures getCurrentFramebuffer() returns the correct framebuffer
+        if (m_device) {
+            acquireNextSwapchainImage();
+        }
+        
         MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() END =====");
+    }
+    
+    bool FVulkanCommandListContext::acquireNextSwapchainImage() {
+        // Reference: UE5 FVulkanDynamicRHI::RHIBeginDrawingViewport
+        // Acquire swapchain image at the beginning of frame, not during present
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        VkDevice device = m_device->getLogicalDevice();
+        VkSwapchainKHR swapchain = m_device->getSwapchain();
+        
+        if (swapchain == VK_NULL_HANDLE) {
+            MR_LOG_WARNING("acquireNextSwapchainImage: No swapchain");
+            return false;
+        }
+        
+        // Use frame-specific semaphore for synchronization
+        uint32 currentFrame = m_device->getCurrentFrame();
+        VkSemaphore imageAvailableSemaphore = m_device->getImageAvailableSemaphore(currentFrame);
+        
+        uint32 imageIndex = 0;
+        VkResult result = functions.vkAcquireNextImageKHR(
+            device,
+            swapchain,
+            UINT64_MAX,
+            imageAvailableSemaphore,
+            VK_NULL_HANDLE,
+            &imageIndex
+        );
+        
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            MR_LOG_WARNING("acquireNextSwapchainImage: Swapchain out of date");
+            return false;
+        } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            MR_LOG_ERROR("acquireNextSwapchainImage: Failed to acquire image: " + std::to_string(result));
+            return false;
+        }
+        
+        m_device->setCurrentImageIndex(imageIndex);
+        MR_LOG_DEBUG("acquireNextSwapchainImage: Acquired image index " + std::to_string(imageIndex));
+        return true;
     }
     
     void FVulkanCommandListContext::beginRecording() {
@@ -112,13 +158,20 @@ namespace MonsterRender::RHI::Vulkan {
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
             const auto& functions = VulkanAPI::getFunctions();
             functions.vkCmdEndRenderPass(m_cmdBuffer->getHandle());
+            
+            // Mark that we are no longer inside a render pass
+            if (m_pendingState) {
+                m_pendingState->setInsideRenderPass(false);
+            }
+            
+            MR_LOG_DEBUG("FVulkanCommandListContext::endRenderPass: Render pass ended");
         }
     }
     
     void FVulkanCommandListContext::setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>> renderTargets,
                                                      TSharedPtr<RHI::IRHITexture> depthStencil) {
         // This would start a render pass and set up framebuffer
-        // For now, simplified implementation
+        // Reference: UE5 FVulkanCommandListContext::RHISetRenderTargets
         if (m_device) {
             VkRenderPass renderPass = m_device->getRenderPass();
             VkFramebuffer framebuffer = m_device->getCurrentFramebuffer();
@@ -132,7 +185,7 @@ namespace MonsterRender::RHI::Vulkan {
                 renderPassBeginInfo.renderArea.extent = m_device->getSwapchainExtent();
                 
                 VkClearValue clearValues[2]{};
-                clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+                clearValues[0].color = {{0.2f, 0.3f, 0.3f, 1.0f}}; // LearnOpenGL-style background color
                 clearValues[1].depthStencil = {1.0f, 0};
                 renderPassBeginInfo.clearValueCount = 2;
                 renderPassBeginInfo.pClearValues = clearValues;
@@ -140,6 +193,17 @@ namespace MonsterRender::RHI::Vulkan {
                 const auto& functions = VulkanAPI::getFunctions();
                 functions.vkCmdBeginRenderPass(m_cmdBuffer->getHandle(), &renderPassBeginInfo,
                                              VK_SUBPASS_CONTENTS_INLINE);
+                
+                // CRITICAL: Mark that we are now inside a render pass
+                if (m_pendingState) {
+                    m_pendingState->setInsideRenderPass(true);
+                }
+                
+                MR_LOG_DEBUG("FVulkanCommandListContext::setRenderTargets: Render pass started");
+            } else {
+                MR_LOG_WARNING("setRenderTargets: Invalid render pass or framebuffer - renderPass=" +
+                              std::to_string(reinterpret_cast<uint64>(renderPass)) + 
+                              ", framebuffer=" + std::to_string(reinterpret_cast<uint64>(framebuffer)));
             }
         }
     }

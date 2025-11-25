@@ -403,6 +403,9 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void VulkanDevice::present() {
+        // Reference: UE5 FVulkanDynamicRHI::RHIEndDrawingViewport
+        // Image acquisition is now done in FVulkanCommandListContext::prepareForNewFrame()
+        
         if (m_swapchain == VK_NULL_HANDLE) {
             MR_LOG_WARNING("Cannot present: no swapchain available");
             return;
@@ -425,26 +428,8 @@ namespace MonsterRender::RHI::Vulkan {
             m_descriptorSetLayoutCache->GarbageCollect(m_currentFrame, 120);
         }
         
-        // Acquire next image
-        uint32 imageIndex;
-        VkResult result = functions.vkAcquireNextImageKHR(
-            m_device, 
-            m_swapchain, 
-            UINT64_MAX,
-            m_imageAvailableSemaphores[m_currentFrame], 
-            VK_NULL_HANDLE, 
-            &imageIndex
-        );
-        
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            MR_LOG_WARNING("Swapchain out of date, should recreate");
-            return;
-        } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            MR_LOG_ERROR("Failed to acquire swapchain image! Result: " + std::to_string(result));
-            return;
-        }
-        
-        m_currentImageIndex = imageIndex;
+        // NOTE: vkAcquireNextImageKHR is now called in FVulkanCommandListContext::prepareForNewFrame()
+        // to ensure the correct framebuffer is used when setRenderTargets is called
         
         // Submit command buffer using new per-frame system (UE5 pattern)
         if (m_commandListContext) {
@@ -457,7 +442,7 @@ namespace MonsterRender::RHI::Vulkan {
             );
         }
         
-        // Present
+        // Present using the image index that was acquired in prepareForNewFrame
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         
@@ -468,10 +453,10 @@ namespace MonsterRender::RHI::Vulkan {
         VkSwapchainKHR swapChains[] = {m_swapchain};
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = swapChains;
-        presentInfo.pImageIndices = &imageIndex;
+        presentInfo.pImageIndices = &m_currentImageIndex;
         presentInfo.pResults = nullptr;
         
-        result = functions.vkQueuePresentKHR(m_presentQueue, &presentInfo);
+        VkResult result = functions.vkQueuePresentKHR(m_presentQueue, &presentInfo);
         
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
             // Should recreate swapchain

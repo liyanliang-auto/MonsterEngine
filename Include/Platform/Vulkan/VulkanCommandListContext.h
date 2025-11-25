@@ -93,6 +93,14 @@ namespace MonsterRender::RHI::Vulkan {
                              float32 depth = 1.0f, uint8 stencil = 0);
         
     private:
+        /**
+         * Acquire next swapchain image for rendering
+         * Called at the beginning of each frame to ensure correct framebuffer is used
+         * Reference: UE5 FVulkanDynamicRHI::RHIBeginDrawingViewport
+         */
+        bool acquireNextSwapchainImage();
+        
+    private:
         VulkanDevice* m_device;
         FVulkanCommandBufferManager* m_manager;
         
