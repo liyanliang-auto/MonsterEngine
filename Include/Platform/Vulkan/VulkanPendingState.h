@@ -10,6 +10,7 @@ namespace MonsterRender::RHI::Vulkan {
     class VulkanDevice;
     class VulkanPipelineState;
     class FVulkanCmdBuffer;
+    struct FVulkanDescriptorSetKey;
     
     /**
      * FVulkanPendingState - Manages pending state for command buffer (UE5 pattern)
@@ -93,6 +94,23 @@ namespace MonsterRender::RHI::Vulkan {
          * Mark render pass state
          */
         void setInsideRenderPass(bool inside) { m_insideRenderPass = inside; }
+        
+    private:
+        /**
+         * Update and bind descriptor sets using cache
+         * Reference: UE5 FVulkanPendingGfxState descriptor set handling
+         * @param CmdBuffer Command buffer to bind descriptors to
+         * @param Functions Vulkan function pointers
+         * @return Bound descriptor set handle
+         */
+        VkDescriptorSet updateAndBindDescriptorSets(VkCommandBuffer CmdBuffer, 
+                                                     const VulkanFunctions& Functions);
+        
+        /**
+         * Build descriptor set key from current bindings
+         * Used for cache lookup
+         */
+        FVulkanDescriptorSetKey buildDescriptorSetKey() const;
         
     private:
         VulkanDevice* m_device;
