@@ -187,8 +187,13 @@ bool FTextureLoader::LoadTextureData(
         FTextureData MippedData;
         if (GenerateMipmaps(OutData, MippedData)) {
             // Replace data with mipped version
+            // Note: GenerateMipmaps already copies Width/Height/Channels/Format
             OutData.Release();
             OutData.Pixels = MippedData.Pixels;
+            OutData.Width = MippedData.Width;
+            OutData.Height = MippedData.Height;
+            OutData.Channels = MippedData.Channels;
+            OutData.Format = MippedData.Format;
             OutData.MipLevels = MippedData.MipLevels;
             OutData.MipData = std::move(MippedData.MipData);
             OutData.MipSizes = std::move(MippedData.MipSizes);
@@ -288,6 +293,13 @@ TSharedPtr<RHI::IRHITexture> FTextureLoader::CreateTexture(
     const FTextureData& TextureData,
     bool bGenerateMips) {
     
+    MR_LOG_DEBUG("CreateTexture - TextureData: " + 
+                 std::to_string(TextureData.Width) + "x" + 
+                 std::to_string(TextureData.Height) + 
+                 ", Channels=" + std::to_string(TextureData.Channels) +
+                 ", MipLevels=" + std::to_string(TextureData.MipLevels) +
+                 ", Format=" + std::to_string(static_cast<uint32>(TextureData.Format)));
+    
     // Create texture descriptor
     RHI::TextureDesc Desc;
     Desc.width = TextureData.Width;
@@ -298,6 +310,13 @@ TSharedPtr<RHI::IRHITexture> FTextureLoader::CreateTexture(
     Desc.format = TextureData.Format;
     Desc.usage = RHI::EResourceUsage::ShaderResource;
     Desc.debugName = "Loaded Texture";
+    
+    MR_LOG_DEBUG("TextureDesc: " + 
+                 std::to_string(Desc.width) + "x" + 
+                 std::to_string(Desc.height) + "x" + 
+                 std::to_string(Desc.depth) +
+                 ", MipLevels=" + std::to_string(Desc.mipLevels) +
+                 ", Format=" + std::to_string(static_cast<uint32>(Desc.format)));
     
     // Create RHI texture
     TSharedPtr<RHI::IRHITexture> Texture = Device->createTexture(Desc);
