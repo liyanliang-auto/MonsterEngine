@@ -45,6 +45,11 @@ namespace MonsterRender::RHI::Vulkan {
         void setVertexBuffers(uint32 startSlot, TSpan<TSharedPtr<IRHIBuffer>> vertexBuffers) override;
         void setIndexBuffer(TSharedPtr<IRHIBuffer> indexBuffer, bool is32Bit = true) override;
         
+        // Resource binding methods
+        void setConstantBuffer(uint32 slot, TSharedPtr<IRHIBuffer> buffer) override;
+        void setShaderResource(uint32 slot, TSharedPtr<IRHITexture> texture) override;
+        void setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) override;
+        
         void setViewport(const Viewport& viewport) override;
         void setScissorRect(const ScissorRect& scissorRect) override;
         void setRenderTargets(TSpan<TSharedPtr<IRHITexture>> renderTargets, 
@@ -81,6 +86,16 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Helper to get the current context
         FVulkanCommandListContext* getCurrentContext() const;
+        
+        // Resource binding state (for descriptor sets)
+        struct BoundResource {
+            TSharedPtr<IRHIBuffer> buffer;
+            TSharedPtr<IRHITexture> texture;
+            TSharedPtr<IRHISampler> sampler;
+            bool isDirty = true;
+        };
+        TMap<uint32, BoundResource> m_boundResources; // slot -> resource
+        bool m_descriptorsDirty = true;
     };
 }
 

@@ -209,4 +209,33 @@ namespace MonsterRender::RHI {
     protected:
         PipelineStateDesc m_desc;
     };
+    
+    // Forward declare sampler enums for SamplerDesc
+    enum class ESamplerFilter : uint8;
+    enum class ESamplerAddressMode : uint8;
+    
+    /**
+     * Sampler descriptor (forward declaration - full definition in RHIResources.h)
+     */
+    struct SamplerDesc;
+    
+    /**
+     * Sampler state interface
+     * Reference UE5: FRHISamplerState
+     */
+    class IRHISampler : public IRHIResource {
+    public:
+        IRHISampler() = default;
+        virtual ~IRHISampler() = default;
+        
+        /**
+         * Get the size in bytes
+         */
+        uint32 getSize() const override { return 0; } // Sampler has no GPU memory footprint
+        
+        /**
+         * Get the resource usage
+         */
+        EResourceUsage getUsage() const override { return EResourceUsage::None; }
+    };
 }

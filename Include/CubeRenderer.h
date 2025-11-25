@@ -149,6 +149,7 @@ namespace MonsterRender {
         TSharedPtr<RHI::IRHIBuffer> m_uniformBuffer;
         TSharedPtr<RHI::IRHITexture> m_texture1;        // container.jpg
         TSharedPtr<RHI::IRHITexture> m_texture2;        // awesomeface.png
+        TSharedPtr<RHI::IRHISampler> m_sampler;         // Default texture sampler
         TSharedPtr<RHI::IRHIVertexShader> m_vertexShader;
         TSharedPtr<RHI::IRHIPixelShader> m_pixelShader;
         TSharedPtr<RHI::IRHIPipelineState> m_pipelineState;

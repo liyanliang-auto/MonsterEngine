@@ -264,6 +264,64 @@ public:
     }
 };
 
+/**
+ * Sampler filter mode
+ * Reference UE5: ESamplerFilter
+ */
+enum class ESamplerFilter : uint8 {
+    Point,      // Nearest neighbor
+    Bilinear,   // Linear filtering
+    Trilinear,  // Linear with mipmaps
+    Anisotropic // Anisotropic filtering
+};
+
+/**
+ * Sampler address mode  
+ * Reference UE5: ESamplerAddressMode
+ */
+enum class ESamplerAddressMode : uint8 {
+    Wrap,       // Repeat texture
+    Clamp,      // Clamp to edge
+    Mirror,     // Mirror repeat
+    Border      // Use border color
+};
+
+/**
+ * Sampler descriptor
+ * Reference UE5: FSamplerStateInitializerRHI
+ */
+struct SamplerDesc {
+    ESamplerFilter filter = ESamplerFilter::Bilinear;
+    ESamplerAddressMode addressU = ESamplerAddressMode::Wrap;
+    ESamplerAddressMode addressV = ESamplerAddressMode::Wrap;
+    ESamplerAddressMode addressW = ESamplerAddressMode::Wrap;
+    float32 mipLODBias = 0.0f;
+    uint32 maxAnisotropy = 1;
+    EComparisonFunc comparisonFunc = EComparisonFunc::Never;
+    float32 borderColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float32 minLOD = 0.0f;
+    float32 maxLOD = 1000.0f;
+    String debugName;
+};
+
+/**
+ * FRHISampler - Sampler State
+ * Reference UE5: FRHISamplerState
+ */
+class FRHISampler : public FRHIResource {
+public:
+    FRHISampler(const SamplerDesc& InDesc)
+        : Desc(InDesc)
+    {}
+    
+    virtual ~FRHISampler() = default;
+    
+    const SamplerDesc& GetDesc() const { return Desc; }
+    
+protected:
+    SamplerDesc Desc;
+};
+
 // ============================================================================
 // RHI Resource reference types (for convenience)
 // ============================================================================

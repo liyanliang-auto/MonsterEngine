@@ -173,6 +173,10 @@ private:
 };
 
 // Application creation function - required by the application framework
+// CubeRenderer uses:
+//   - binding 0: uniform buffer (MVP matrices)
+//   - binding 1: sampler2D texture1 (container.jpg)
+//   - binding 2: sampler2D texture2 (awesomeface.png)
 TUniquePtr<Application> MonsterRender::createApplication() {
     return MakeUnique<CubeApplication>();
 }
