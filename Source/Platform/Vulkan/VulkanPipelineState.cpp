@@ -159,9 +159,12 @@ namespace MonsterRender::RHI::Vulkan {
         if (m_desc.vertexShader) {
             auto* vulkanVS = static_cast<VulkanVertexShader*>(m_desc.vertexShader.get());
             const auto& bindings = vulkanVS->getDescriptorBindings();
+            MR_LOG_DEBUG("createPipelineLayout: Vertex shader has " + std::to_string(bindings.size()) + " descriptor bindings");
             for (const auto& binding : bindings) {
                 // Assume set=0 for now; enhance later for multi-set support
                 setBindings[0].push_back(binding);
+                MR_LOG_DEBUG("  - VS binding " + std::to_string(binding.binding) + 
+                            " type=" + std::to_string(binding.descriptorType));
             }
         }
         
@@ -169,7 +172,10 @@ namespace MonsterRender::RHI::Vulkan {
         if (m_desc.pixelShader) {
             auto* vulkanPS = static_cast<VulkanPixelShader*>(m_desc.pixelShader.get());
             const auto& bindings = vulkanPS->getDescriptorBindings();
+            MR_LOG_DEBUG("createPipelineLayout: Pixel shader has " + std::to_string(bindings.size()) + " descriptor bindings");
             for (const auto& binding : bindings) {
+                MR_LOG_DEBUG("  - PS binding " + std::to_string(binding.binding) + 
+                            " type=" + std::to_string(binding.descriptorType));
                 // Merge with existing bindings, combining stage flags if binding already exists
                 bool found = false;
                 for (auto& existing : setBindings[0]) {
@@ -183,6 +189,43 @@ namespace MonsterRender::RHI::Vulkan {
                     setBindings[0].push_back(binding);
                 }
             }
+        }
+        
+        // Fallback: If no bindings were found from reflection, create default layout
+        // This handles cases where SPIR-V reflection fails or shaders don't have explicit bindings
+        if (setBindings.empty() || setBindings[0].empty()) {
+            MR_LOG_WARNING("createPipelineLayout: No descriptor bindings from reflection, creating default layout");
+            
+            // Create default bindings for typical rendering setup:
+            // binding 0: Uniform buffer (MVP matrices) - Vertex stage
+            // binding 1: Combined image sampler (texture1) - Fragment stage
+            // binding 2: Combined image sampler (texture2) - Fragment stage
+            
+            VkDescriptorSetLayoutBinding uboBinding{};
+            uboBinding.binding = 0;
+            uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            uboBinding.descriptorCount = 1;
+            uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+            uboBinding.pImmutableSamplers = nullptr;
+            setBindings[0].push_back(uboBinding);
+            
+            VkDescriptorSetLayoutBinding sampler1Binding{};
+            sampler1Binding.binding = 1;
+            sampler1Binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            sampler1Binding.descriptorCount = 1;
+            sampler1Binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            sampler1Binding.pImmutableSamplers = nullptr;
+            setBindings[0].push_back(sampler1Binding);
+            
+            VkDescriptorSetLayoutBinding sampler2Binding{};
+            sampler2Binding.binding = 2;
+            sampler2Binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            sampler2Binding.descriptorCount = 1;
+            sampler2Binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            sampler2Binding.pImmutableSamplers = nullptr;
+            setBindings[0].push_back(sampler2Binding);
+            
+            MR_LOG_DEBUG("createPipelineLayout: Created default layout with 3 bindings (UBO + 2 samplers)");
         }
         
         // Create VkDescriptorSetLayouts for each set
