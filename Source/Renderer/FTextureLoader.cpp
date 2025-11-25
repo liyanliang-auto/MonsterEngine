@@ -28,22 +28,19 @@ namespace MonsterRender {
 // ============================================================================
 
 void FTextureData::Release() {
-    // Save the Pixels pointer before freeing, to avoid double-free
-    uint8* OriginalPixels = Pixels;
+    // Only free the main Pixels buffer
+    // Note: MipData contains pointers into the same Pixels buffer (at different offsets)
+    // They are NOT separately allocated, so we must NOT free them individually!
+    // GenerateMipmaps allocates one contiguous block and MipData just points into it.
     
     if (Pixels) {
         // Free main pixel data using engine memory system
+        // This covers all mip levels since they're in contiguous memory
         FMemory::Free(Pixels);
         Pixels = nullptr;
     }
     
-    // Free mipmap data
-    for (uint8* MipPtr : MipData) {
-        if (MipPtr && MipPtr != OriginalPixels) {  // Don't double-free base level
-            FMemory::Free(MipPtr);
-        }
-    }
-    
+    // Just clear the arrays, don't free the pointers (they're all part of Pixels)
     MipData.clear();
     MipSizes.clear();
     Width = 0;
