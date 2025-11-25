@@ -247,7 +247,8 @@ public:
     {
         // Ensure 2D texture
         Desc.depth = 1;
-        Desc.arraySize = std::max(Desc.arraySize, 1u);
+        // Use parentheses to avoid Windows max macro conflict
+        Desc.arraySize = (std::max)(Desc.arraySize, 1u);
     }
 };
 
