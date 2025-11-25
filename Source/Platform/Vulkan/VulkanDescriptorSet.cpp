@@ -140,6 +140,12 @@ namespace MonsterRender::RHI::Vulkan {
         return descriptorSet;
     }
     
+    VkDescriptorSet VulkanDescriptorSetAllocator::allocate(VkDescriptorSetLayout layout) {
+        // Simplified allocate without bindings - delegates to full version with empty bindings
+        TArray<VkDescriptorSetLayoutBinding> emptyBindings;
+        return allocate(layout, emptyBindings);
+    }
+    
     void VulkanDescriptorSetAllocator::updateDescriptorSet(VkDescriptorSet descriptorSet,
                                                            const TArray<VkDescriptorSetLayoutBinding>& bindings,
                                                            const TMap<uint32, TSharedPtr<IRHIBuffer>>& buffers,

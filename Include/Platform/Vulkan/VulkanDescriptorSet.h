@@ -87,6 +87,13 @@ namespace MonsterRender::RHI::Vulkan {
         VkDescriptorSet allocate(VkDescriptorSetLayout layout, const TArray<VkDescriptorSetLayoutBinding>& bindings);
         
         /**
+         * Allocate a descriptor set (simplified version without bindings)
+         * @param layout Descriptor set layout
+         * @return Allocated descriptor set handle
+         */
+        VkDescriptorSet allocate(VkDescriptorSetLayout layout);
+        
+        /**
          * Update descriptor set with buffers and textures
          */
         void updateDescriptorSet(VkDescriptorSet descriptorSet, 

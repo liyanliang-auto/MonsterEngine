@@ -231,6 +231,19 @@ namespace MonsterRender::RHI::Vulkan {
         resource.isDirty = true;
         m_descriptorsDirty = true;
         
+        // Pass to pending state for descriptor set binding
+        if (m_context && m_context->getPendingState()) {
+            VulkanBuffer* vulkanBuffer = dynamic_cast<VulkanBuffer*>(buffer.get());
+            if (vulkanBuffer) {
+                m_context->getPendingState()->setUniformBuffer(
+                    slot, 
+                    vulkanBuffer->getBuffer(), 
+                    vulkanBuffer->getOffset(), 
+                    vulkanBuffer->getSize()
+                );
+            }
+        }
+        
         MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setConstantBuffer: Bound to slot " + 
                     std::to_string(slot));
     }
@@ -248,6 +261,18 @@ namespace MonsterRender::RHI::Vulkan {
         resource.buffer.reset();
         resource.isDirty = true;
         m_descriptorsDirty = true;
+        
+        // Pass to pending state for descriptor set binding
+        if (m_context && m_context->getPendingState()) {
+            VulkanTexture* vulkanTexture = dynamic_cast<VulkanTexture*>(texture.get());
+            if (vulkanTexture) {
+                // Get image view and default sampler from texture
+                VkImageView imageView = vulkanTexture->getImageView();
+                VkSampler sampler = vulkanTexture->getDefaultSampler();
+                
+                m_context->getPendingState()->setTexture(slot, imageView, sampler);
+            }
+        }
         
         MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setShaderResource: Bound to slot " + 
                     std::to_string(slot));

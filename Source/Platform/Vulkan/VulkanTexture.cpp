@@ -117,6 +117,12 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
+        // Create default sampler for this texture
+        if (!createDefaultSampler()) {
+            MR_LOG_WARNING("Failed to create default sampler for texture: " + m_desc.debugName);
+            // Not fatal - sampler can be provided externally
+        }
+        
         MR_LOG_DEBUG("Successfully created Vulkan texture: " + m_desc.debugName);
         return true;
     }
@@ -125,6 +131,12 @@ namespace MonsterRender::RHI::Vulkan {
         if (m_device) {
             const auto& functions = VulkanAPI::getFunctions();
             VkDevice device = m_device->getDevice();
+            
+            // Destroy default sampler
+            if (m_defaultSampler != VK_NULL_HANDLE) {
+                functions.vkDestroySampler(device, m_defaultSampler, nullptr);
+                m_defaultSampler = VK_NULL_HANDLE;
+            }
             
             // Destroy image view
             if (m_imageView != VK_NULL_HANDLE) {
@@ -215,5 +227,38 @@ namespace MonsterRender::RHI::Vulkan {
     
     uint32 VulkanTexture::findMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties) {
         return VulkanUtils::findMemoryType(m_device->getMemoryProperties(), typeFilter, properties);
+    }
+    
+    bool VulkanTexture::createDefaultSampler() {
+        const auto& functions = VulkanAPI::getFunctions();
+        VkDevice device = m_device->getDevice();
+        
+        // Create default sampler with trilinear filtering
+        VkSamplerCreateInfo samplerInfo = {};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.mipLodBias = 0.0f;
+        samplerInfo.anisotropyEnable = VK_TRUE;
+        samplerInfo.maxAnisotropy = 16.0f;
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.compareOp = VK_COMPARE_OP_NEVER;
+        samplerInfo.minLod = 0.0f;
+        samplerInfo.maxLod = static_cast<float>(m_desc.mipLevels);
+        samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+        samplerInfo.unnormalizedCoordinates = VK_FALSE;
+        
+        VkResult result = functions.vkCreateSampler(device, &samplerInfo, nullptr, &m_defaultSampler);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create default sampler: " + std::to_string(result));
+            return false;
+        }
+        
+        MR_LOG_DEBUG("Created default sampler for texture: " + m_desc.debugName);
+        return true;
     }
 }
