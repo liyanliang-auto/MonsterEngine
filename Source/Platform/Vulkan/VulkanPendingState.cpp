@@ -289,8 +289,16 @@ namespace MonsterRender::RHI::Vulkan {
         auto& DescriptorLayouts = m_currentPipeline->getDescriptorSetLayouts();
         VkPipelineLayout PipelineLayout = m_currentPipeline->getPipelineLayout();
         
+        MR_LOG_DEBUG("updateAndBindDescriptorSets: DescriptorLayouts.size()=" + 
+                    std::to_string(DescriptorLayouts.size()) + 
+                    ", PipelineLayout=" + std::to_string(reinterpret_cast<uint64>(PipelineLayout)) +
+                    ", UniformBuffers=" + std::to_string(m_uniformBuffers.size()) +
+                    ", Textures=" + std::to_string(m_textures.size()));
+        
         if (DescriptorLayouts.empty() || PipelineLayout == VK_NULL_HANDLE) {
-            MR_LOG_DEBUG("updateAndBindDescriptorSets: No descriptor layouts or invalid pipeline layout");
+            MR_LOG_WARNING("updateAndBindDescriptorSets: No descriptor layouts (size=" + 
+                          std::to_string(DescriptorLayouts.size()) + 
+                          ") or invalid pipeline layout - SKIPPING descriptor binding!");
             return VK_NULL_HANDLE;
         }
         
