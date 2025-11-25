@@ -6,6 +6,7 @@
 #include "Platform/Vulkan/VulkanShader.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
+#include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/Vulkan/VulkanSampler.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/VulkanUtils.h"
@@ -135,6 +136,22 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_ERROR("Failed to create descriptor set allocator");
             return false;
         }
+        
+        // Step 12b: Create descriptor set layout cache (UE5-style)
+        m_descriptorSetLayoutCache = MakeUnique<FVulkanDescriptorSetLayoutCache>(this);
+        if (!m_descriptorSetLayoutCache) {
+            MR_LOG_ERROR("Failed to create descriptor set layout cache");
+            return false;
+        }
+        MR_LOG_INFO("Descriptor set layout cache initialized (UE5-style caching)");
+        
+        // Step 12c: Create descriptor set cache for frame-local reuse
+        m_descriptorSetCache = MakeUnique<FVulkanDescriptorSetCache>(this);
+        if (!m_descriptorSetCache) {
+            MR_LOG_ERROR("Failed to create descriptor set cache");
+            return false;
+        }
+        MR_LOG_INFO("Descriptor set cache initialized (frame-local reuse)");
         
         // Step 13: Create memory manager (UE5-style sub-allocation)
         m_memoryManager = MakeUnique<FVulkanMemoryManager>(m_device, m_physicalDevice);
@@ -396,6 +413,16 @@ namespace MonsterRender::RHI::Vulkan {
         // Begin new frame for descriptor set allocator
         if (m_descriptorSetAllocator) {
             m_descriptorSetAllocator->beginFrame(m_currentFrame);
+        }
+        
+        // Reset descriptor set cache for new frame (UE5-style frame-local caching)
+        if (m_descriptorSetCache) {
+            m_descriptorSetCache->Reset(m_currentFrame);
+        }
+        
+        // Garbage collect stale descriptor set layouts
+        if (m_descriptorSetLayoutCache) {
+            m_descriptorSetLayoutCache->GarbageCollect(m_currentFrame, 120);
         }
         
         // Acquire next image

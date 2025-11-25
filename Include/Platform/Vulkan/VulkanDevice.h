@@ -16,6 +16,8 @@ namespace MonsterRender::RHI::Vulkan {
     class VulkanPipelineState;
     class VulkanPipelineCache;
     class VulkanDescriptorSetAllocator;
+    class FVulkanDescriptorSetLayoutCache;
+    class FVulkanDescriptorSetCache;
     class FVulkanCommandBufferManager;
     class FVulkanCommandListContext;
     class FVulkanRHICommandListImmediate;
@@ -95,6 +97,10 @@ namespace MonsterRender::RHI::Vulkan {
         
         VulkanDescriptorSetAllocator* getDescriptorSetAllocator() const { return m_descriptorSetAllocator.get(); }
         
+        // Descriptor set layout and cache (UE5-style)
+        FVulkanDescriptorSetLayoutCache* GetDescriptorSetLayoutCache() const { return m_descriptorSetLayoutCache.get(); }
+        FVulkanDescriptorSetCache* GetDescriptorSetCache() const { return m_descriptorSetCache.get(); }
+        
         // Memory manager (UE5-style)
         FVulkanMemoryManager* getMemoryManager() const { return m_memoryManager.get(); }
         FVulkanMemoryManager* GetMemoryManager() const { return m_memoryManager.get(); } // UE5 naming style
@@ -165,6 +171,12 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Descriptor set allocator
         TUniquePtr<VulkanDescriptorSetAllocator> m_descriptorSetAllocator;
+        
+        // Descriptor set layout cache (UE5-style)
+        TUniquePtr<FVulkanDescriptorSetLayoutCache> m_descriptorSetLayoutCache;
+        
+        // Descriptor set cache for frame-local reuse (UE5-style)
+        TUniquePtr<FVulkanDescriptorSetCache> m_descriptorSetCache;
         
         // Memory manager (UE5-style sub-allocation)
         TUniquePtr<FVulkanMemoryManager> m_memoryManager;
