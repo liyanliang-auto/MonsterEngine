@@ -56,6 +56,7 @@ namespace MonsterRender::RHI::Vulkan {
         TSharedPtr<IRHIVertexShader> createVertexShader(TSpan<const uint8> bytecode) override;
         TSharedPtr<IRHIPixelShader> createPixelShader(TSpan<const uint8> bytecode) override;
         TSharedPtr<IRHIPipelineState> createPipelineState(const PipelineStateDesc& desc) override;
+        TSharedPtr<IRHISampler> createSampler(const SamplerDesc& desc) override;
         
         TSharedPtr<IRHICommandList> createCommandList() override;
         void executeCommandLists(TSpan<TSharedPtr<IRHICommandList>> commandLists) override;

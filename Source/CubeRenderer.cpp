@@ -1,6 +1,7 @@
 #include "CubeRenderer.h"
 #include "Core/Log.h"
 #include "Core/ShaderCompiler.h"
+#include "RHI/RHIResources.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Renderer/FTextureLoader.h"
@@ -37,6 +38,21 @@ namespace MonsterRender {
             return false;
         }
         
+        // Create default sampler for textures
+        RHI::SamplerDesc samplerDesc;
+        samplerDesc.filter = RHI::ESamplerFilter::Trilinear;
+        samplerDesc.addressU = RHI::ESamplerAddressMode::Wrap;
+        samplerDesc.addressV = RHI::ESamplerAddressMode::Wrap;
+        samplerDesc.addressW = RHI::ESamplerAddressMode::Wrap;
+        samplerDesc.maxAnisotropy = 16;
+        samplerDesc.debugName = "Cube Texture Sampler";
+        m_sampler = m_device->createSampler(samplerDesc);
+        if (!m_sampler) {
+            MR_LOG_ERROR("Failed to create texture sampler");
+            return false;
+        }
+        MR_LOG_INFO("Created default texture sampler");
+        
         if (!createShaders()) {
             MR_LOG_ERROR("Failed to create shaders");
             return false;
@@ -65,6 +81,18 @@ namespace MonsterRender {
         
         // Set pipeline state
         cmdList->setPipelineState(m_pipelineState);
+        
+        // Bind uniform buffer at slot 0 (layout(binding = 0) in shader)
+        cmdList->setConstantBuffer(0, m_uniformBuffer);
+        
+        // Bind textures at slots 1 and 2 (layout(binding = 1/2) in shader)
+        // These are combined image samplers in Vulkan
+        if (m_texture1) {
+            cmdList->setShaderResource(1, m_texture1);
+        }
+        if (m_texture2) {
+            cmdList->setShaderResource(2, m_texture2);
+        }
         
         // Bind vertex buffer
         TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers = {m_vertexBuffer};

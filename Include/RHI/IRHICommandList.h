@@ -57,6 +57,29 @@ namespace MonsterRender::RHI {
          */
         virtual void setIndexBuffer(TSharedPtr<IRHIBuffer> indexBuffer, bool is32Bit = true) = 0;
         
+        /**
+         * Set constant buffer (uniform buffer) at specified slot
+         * Similar to D3D12's SetGraphicsRootConstantBufferView
+         * @param slot Binding slot matching shader layout(binding = N)
+         * @param buffer Constant buffer containing uniform data
+         */
+        virtual void setConstantBuffer(uint32 slot, TSharedPtr<IRHIBuffer> buffer) = 0;
+        
+        /**
+         * Set shader resource (texture) at specified slot
+         * Similar to D3D12's SetGraphicsRootDescriptorTable for SRVs
+         * @param slot Binding slot matching shader layout(binding = N)
+         * @param texture Texture resource to bind
+         */
+        virtual void setShaderResource(uint32 slot, TSharedPtr<IRHITexture> texture) = 0;
+        
+        /**
+         * Set sampler at specified slot
+         * @param slot Binding slot matching shader layout(binding = N)  
+         * @param sampler Sampler state to bind (or nullptr for default sampler)
+         */
+        virtual void setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) = 0;
+        
         // Render state
         /**
          * Set viewport

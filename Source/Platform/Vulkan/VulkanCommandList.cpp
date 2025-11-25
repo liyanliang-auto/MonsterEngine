@@ -661,6 +661,67 @@ namespace MonsterRender::RHI::Vulkan {
         setShaderTexture(slot, texture);
     }
     
+    // ============================================================================
+    // IRHICommandList interface implementations for resource binding
+    // ============================================================================
+    
+    void VulkanCommandList::setConstantBuffer(uint32 slot, TSharedPtr<IRHIBuffer> buffer) {
+        // Implementation delegates to UE5-style method
+        // setConstantBuffer is the D3D12-style name, setShaderUniformBuffer is UE5-style
+        ensureRecording("setConstantBuffer");
+        
+        if (!buffer) {
+            MR_LOG_WARNING("Attempting to bind null constant buffer to slot " + std::to_string(slot));
+            return;
+        }
+        
+        // Track bound resource
+        auto& resource = m_boundResources[slot];
+        resource.buffer = buffer;
+        resource.texture.reset();
+        resource.sampler.reset();
+        resource.isDirty = true;
+        m_descriptorsDirty = true;
+        
+        MR_LOG_DEBUG("Constant buffer bound to slot " + std::to_string(slot));
+    }
+    
+    void VulkanCommandList::setShaderResource(uint32 slot, TSharedPtr<IRHITexture> texture) {
+        // setShaderResource binds texture as shader resource view (SRV)
+        ensureRecording("setShaderResource");
+        
+        if (!texture) {
+            MR_LOG_WARNING("Attempting to bind null shader resource to slot " + std::to_string(slot));
+            return;
+        }
+        
+        // Track bound resource
+        auto& resource = m_boundResources[slot];
+        resource.texture = texture;
+        resource.buffer.reset();
+        resource.isDirty = true;
+        m_descriptorsDirty = true;
+        
+        MR_LOG_DEBUG("Shader resource (texture) bound to slot " + std::to_string(slot));
+    }
+    
+    void VulkanCommandList::setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) {
+        // setSampler binds a sampler state object
+        ensureRecording("setSampler");
+        
+        // Track bound sampler (samplers are stored separately in Vulkan)
+        m_boundSamplers[slot] = sampler;
+        
+        // Also update the resource entry if it exists
+        if (m_boundResources.find(slot) != m_boundResources.end()) {
+            m_boundResources[slot].sampler = sampler;
+            m_boundResources[slot].isDirty = true;
+        }
+        m_descriptorsDirty = true;
+        
+        MR_LOG_DEBUG("Sampler bound to slot " + std::to_string(slot));
+    }
+    
     void VulkanCommandList::ensureNotRecording(const char* operation) const {
         if (m_isRecording) {
             MR_LOG_ERROR(String("Cannot call ") + operation + " while command list is recording");

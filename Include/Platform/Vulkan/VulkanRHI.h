@@ -76,6 +76,10 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkCreateImageView vkCreateImageView = nullptr;
         PFN_vkDestroyImageView vkDestroyImageView = nullptr;
         
+        // Sampler functions
+        PFN_vkCreateSampler vkCreateSampler = nullptr;
+        PFN_vkDestroySampler vkDestroySampler = nullptr;
+        
         // Shader module functions
         PFN_vkCreateShaderModule vkCreateShaderModule = nullptr;
         PFN_vkDestroyShaderModule vkDestroyShaderModule = nullptr;

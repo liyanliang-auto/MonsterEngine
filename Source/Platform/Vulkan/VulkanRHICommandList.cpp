@@ -212,6 +212,62 @@ namespace MonsterRender::RHI::Vulkan {
                     String(is32Bit ? "32-bit" : "16-bit") + ")");
     }
     
+    // ============================================================================
+    // Resource Binding (UE5: RHISetShaderUniformBuffer, RHISetShaderTexture)
+    // ============================================================================
+    
+    void FVulkanRHICommandListImmediate::setConstantBuffer(uint32 slot, TSharedPtr<IRHIBuffer> buffer) {
+        if (!buffer) {
+            MR_LOG_WARNING("FVulkanRHICommandListImmediate::setConstantBuffer: Null buffer for slot " + 
+                          std::to_string(slot));
+            return;
+        }
+        
+        // Track bound resource for descriptor set management
+        auto& resource = m_boundResources[slot];
+        resource.buffer = buffer;
+        resource.texture.reset();
+        resource.sampler.reset();
+        resource.isDirty = true;
+        m_descriptorsDirty = true;
+        
+        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setConstantBuffer: Bound to slot " + 
+                    std::to_string(slot));
+    }
+    
+    void FVulkanRHICommandListImmediate::setShaderResource(uint32 slot, TSharedPtr<IRHITexture> texture) {
+        if (!texture) {
+            MR_LOG_WARNING("FVulkanRHICommandListImmediate::setShaderResource: Null texture for slot " + 
+                          std::to_string(slot));
+            return;
+        }
+        
+        // Track bound resource for descriptor set management
+        auto& resource = m_boundResources[slot];
+        resource.texture = texture;
+        resource.buffer.reset();
+        resource.isDirty = true;
+        m_descriptorsDirty = true;
+        
+        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setShaderResource: Bound to slot " + 
+                    std::to_string(slot));
+    }
+    
+    void FVulkanRHICommandListImmediate::setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) {
+        // Track bound sampler
+        if (m_boundResources.find(slot) != m_boundResources.end()) {
+            m_boundResources[slot].sampler = sampler;
+            m_boundResources[slot].isDirty = true;
+        } else {
+            auto& resource = m_boundResources[slot];
+            resource.sampler = sampler;
+            resource.isDirty = true;
+        }
+        m_descriptorsDirty = true;
+        
+        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setSampler: Bound to slot " + 
+                    std::to_string(slot));
+    }
     
     // ============================================================================
     // Viewport and Scissor State (UE5: RHISetViewport, RHISetScissorRect)

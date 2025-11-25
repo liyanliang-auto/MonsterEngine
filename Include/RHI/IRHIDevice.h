@@ -79,6 +79,12 @@ namespace MonsterRender::RHI {
          */
         virtual TSharedPtr<IRHIPipelineState> createPipelineState(const PipelineStateDesc& desc) = 0;
         
+        /**
+         * Create a sampler state
+         * Reference UE5: RHICreateSamplerState
+         */
+        virtual TSharedPtr<IRHISampler> createSampler(const SamplerDesc& desc) = 0;
+        
         // Command list management
         /**
          * Create a command list

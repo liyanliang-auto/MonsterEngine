@@ -6,6 +6,7 @@
 #include "Platform/Vulkan/VulkanShader.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
+#include "Platform/Vulkan/VulkanSampler.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
@@ -313,6 +314,18 @@ namespace MonsterRender::RHI::Vulkan {
         
         MR_LOG_INFO("Pipeline state created successfully: " + desc.debugName);
         return pipelineState;
+    }
+    
+    TSharedPtr<IRHISampler> VulkanDevice::createSampler(const SamplerDesc& desc) {
+        MR_LOG_DEBUG("Creating Vulkan sampler: " + desc.debugName);
+        
+        auto sampler = MakeShared<VulkanSampler>(this, desc);
+        if (!sampler->isValid()) {
+            MR_LOG_ERROR("Failed to create sampler: " + desc.debugName);
+            return nullptr;
+        }
+        
+        return sampler;
     }
     
     TSharedPtr<IRHICommandList> VulkanDevice::createCommandList() {
