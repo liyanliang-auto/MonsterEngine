@@ -107,6 +107,17 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Render pass and framebuffer accessors
         VkRenderPass getRenderPass() const { return m_renderPass; }
+        
+        // Frame management for swapchain image acquisition
+        uint32 getCurrentFrame() const { return m_currentFrame; }
+        uint32 getCurrentImageIndex() const { return m_currentImageIndex; }
+        void setCurrentImageIndex(uint32 index) { m_currentImageIndex = index; }
+        VkSemaphore getImageAvailableSemaphore(uint32 frame) const { 
+            return frame < m_imageAvailableSemaphores.size() ? m_imageAvailableSemaphores[frame] : VK_NULL_HANDLE; 
+        }
+        VkSemaphore getRenderFinishedSemaphore(uint32 frame) const {
+            return frame < m_renderFinishedSemaphores.size() ? m_renderFinishedSemaphores[frame] : VK_NULL_HANDLE;
+        }
         VkFramebuffer getCurrentFramebuffer() const;
         const VkExtent2D& getSwapchainExtent() const { return m_swapchainExtent; }
         VkFormat getSwapchainFormat() const { return m_swapchainImageFormat; }
