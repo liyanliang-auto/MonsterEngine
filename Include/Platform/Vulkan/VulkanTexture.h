@@ -30,6 +30,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkDeviceMemory getDeviceMemory() const { return m_deviceMemory; }
         VkFormat getVulkanFormat() const { return m_format; }
         VkImageLayout getCurrentLayout() const { return m_currentLayout; }
+        VkSampler getDefaultSampler() const { return m_defaultSampler; }
         
         // Layout management
         void setCurrentLayout(VkImageLayout layout) { m_currentLayout = layout; }
@@ -42,12 +43,14 @@ namespace MonsterRender::RHI::Vulkan {
         void destroy();
         uint32 findMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties);
         bool createImageView();
+        bool createDefaultSampler();
         
     private:
         VulkanDevice* m_device;
         VkImage m_image = VK_NULL_HANDLE;
         VkImageView m_imageView = VK_NULL_HANDLE;
         VkDeviceMemory m_deviceMemory = VK_NULL_HANDLE;
+        VkSampler m_defaultSampler = VK_NULL_HANDLE;
         VkFormat m_format = VK_FORMAT_UNDEFINED;
         VkImageLayout m_currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         

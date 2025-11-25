@@ -2,6 +2,7 @@
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
+#include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Core/Log.h"
 
 namespace MonsterRender::RHI::Vulkan {
@@ -65,6 +66,12 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         m_indexBuffer = VK_NULL_HANDLE;
+        
+        // Clear resource bindings
+        m_uniformBuffers.clear();
+        m_textures.clear();
+        m_descriptorsDirty = true;
+        m_currentDescriptorSet = VK_NULL_HANDLE;
     }
     
     void FVulkanPendingState::setGraphicsPipeline(VulkanPipelineState* pipeline) {
@@ -113,6 +120,27 @@ namespace MonsterRender::RHI::Vulkan {
             m_indexBufferOffset = offset;
             m_indexType = indexType;
             m_indexBufferDirty = true;
+        }
+    }
+    
+    void FVulkanPendingState::setUniformBuffer(uint32 slot, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range) {
+        auto& binding = m_uniformBuffers[slot];
+        if (binding.buffer != buffer || binding.offset != offset || binding.range != range) {
+            binding.buffer = buffer;
+            binding.offset = offset;
+            binding.range = range;
+            m_descriptorsDirty = true;
+            MR_LOG_DEBUG("FVulkanPendingState::setUniformBuffer: slot=" + std::to_string(slot));
+        }
+    }
+    
+    void FVulkanPendingState::setTexture(uint32 slot, VkImageView imageView, VkSampler sampler) {
+        auto& binding = m_textures[slot];
+        if (binding.imageView != imageView || binding.sampler != sampler) {
+            binding.imageView = imageView;
+            binding.sampler = sampler;
+            m_descriptorsDirty = true;
+            MR_LOG_DEBUG("FVulkanPendingState::setTexture: slot=" + std::to_string(slot));
         }
     }
     
@@ -228,6 +256,96 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_DEBUG("prepareForDraw: Binding index buffer");
             functions.vkCmdBindIndexBuffer(cmdBuffer, m_indexBuffer, m_indexBufferOffset, m_indexType);
             m_indexBufferDirty = false;
+        }
+        
+        // Bind descriptor sets if we have bound resources and a valid pipeline
+        if (m_descriptorsDirty && m_currentPipeline) {
+            // Get descriptor set layout from pipeline
+            auto& descriptorLayouts = m_currentPipeline->getDescriptorSetLayouts();
+            VkPipelineLayout pipelineLayout = m_currentPipeline->getPipelineLayout();
+            
+            if (!descriptorLayouts.empty() && pipelineLayout != VK_NULL_HANDLE) {
+                // Get descriptor allocator from device
+                auto* allocator = m_device->getDescriptorSetAllocator();
+                if (allocator) {
+                    // Allocate descriptor set
+                    VkDescriptorSet descriptorSet = allocator->allocate(descriptorLayouts[0]);
+                    
+                    if (descriptorSet != VK_NULL_HANDLE) {
+                        // Update descriptor set with bound resources
+                        TArray<VkWriteDescriptorSet> writes;
+                        TArray<VkDescriptorBufferInfo> bufferInfos;
+                        TArray<VkDescriptorImageInfo> imageInfos;
+                        
+                        // Reserve space to prevent reallocation invalidating pointers
+                        bufferInfos.reserve(m_uniformBuffers.size());
+                        imageInfos.reserve(m_textures.size());
+                        
+                        // Add uniform buffers
+                        for (const auto& [slot, binding] : m_uniformBuffers) {
+                            if (binding.buffer != VK_NULL_HANDLE) {
+                                VkDescriptorBufferInfo& bufferInfo = bufferInfos.emplace_back();
+                                bufferInfo.buffer = binding.buffer;
+                                bufferInfo.offset = binding.offset;
+                                bufferInfo.range = binding.range > 0 ? binding.range : VK_WHOLE_SIZE;
+                                
+                                VkWriteDescriptorSet write = {};
+                                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                                write.dstSet = descriptorSet;
+                                write.dstBinding = slot;
+                                write.dstArrayElement = 0;
+                                write.descriptorCount = 1;
+                                write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                                write.pBufferInfo = &bufferInfos.back();
+                                writes.push_back(write);
+                            }
+                        }
+                        
+                        // Add textures (combined image samplers)
+                        for (const auto& [slot, binding] : m_textures) {
+                            if (binding.imageView != VK_NULL_HANDLE) {
+                                VkDescriptorImageInfo& imageInfo = imageInfos.emplace_back();
+                                imageInfo.imageView = binding.imageView;
+                                imageInfo.sampler = binding.sampler;
+                                imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                                
+                                VkWriteDescriptorSet write = {};
+                                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                                write.dstSet = descriptorSet;
+                                write.dstBinding = slot;
+                                write.dstArrayElement = 0;
+                                write.descriptorCount = 1;
+                                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                                write.pImageInfo = &imageInfos.back();
+                                writes.push_back(write);
+                            }
+                        }
+                        
+                        // Update descriptor set
+                        if (!writes.empty()) {
+                            functions.vkUpdateDescriptorSets(m_device->getLogicalDevice(), 
+                                static_cast<uint32>(writes.size()), writes.data(), 0, nullptr);
+                            
+                            // Bind descriptor set
+                            functions.vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+                            
+                            MR_LOG_DEBUG("prepareForDraw: Bound descriptor set with " + 
+                                std::to_string(writes.size()) + " bindings");
+                        }
+                        
+                        m_currentDescriptorSet = descriptorSet;
+                    }
+                }
+            }
+            m_descriptorsDirty = false;
+        } else if (m_currentDescriptorSet != VK_NULL_HANDLE && m_currentPipeline) {
+            // Re-bind existing descriptor set if pipeline changed but resources didn't
+            VkPipelineLayout pipelineLayout = m_currentPipeline->getPipelineLayout();
+            if (pipelineLayout != VK_NULL_HANDLE) {
+                functions.vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    pipelineLayout, 0, 1, &m_currentDescriptorSet, 0, nullptr);
+            }
         }
         
         MR_LOG_INFO("prepareForDraw: State preparation completed successfully");

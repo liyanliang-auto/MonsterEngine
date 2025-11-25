@@ -64,6 +64,16 @@ namespace MonsterRender::RHI::Vulkan {
         void setIndexBuffer(VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType);
         
         /**
+         * Set uniform buffer at binding slot (UE5: SetShaderUniformBuffer())
+         */
+        void setUniformBuffer(uint32 slot, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range);
+        
+        /**
+         * Set texture at binding slot (UE5: SetShaderTexture())
+         */
+        void setTexture(uint32 slot, VkImageView imageView, VkSampler sampler);
+        
+        /**
          * Prepare for draw call - ensure all pending state is applied (UE5: PrepareForDraw())
          * @return true if ready to draw, false if critical state is missing
          */
@@ -111,6 +121,23 @@ namespace MonsterRender::RHI::Vulkan {
         VkDeviceSize m_indexBufferOffset;
         VkIndexType m_indexType;
         bool m_indexBufferDirty;
+        
+        // Resource bindings for descriptor sets
+        struct UniformBufferBinding {
+            VkBuffer buffer = VK_NULL_HANDLE;
+            VkDeviceSize offset = 0;
+            VkDeviceSize range = 0;
+        };
+        TMap<uint32, UniformBufferBinding> m_uniformBuffers;
+        
+        struct TextureBinding {
+            VkImageView imageView = VK_NULL_HANDLE;
+            VkSampler sampler = VK_NULL_HANDLE;
+        };
+        TMap<uint32, TextureBinding> m_textures;
+        
+        bool m_descriptorsDirty = true;
+        VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
         
         // Render pass state
         bool m_insideRenderPass;
