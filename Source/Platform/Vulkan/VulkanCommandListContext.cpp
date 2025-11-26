@@ -2,6 +2,8 @@
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include "Platform/Vulkan/VulkanPendingState.h"
+#include "Platform/Vulkan/VulkanRenderTargetCache.h"
+#include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Core/Log.h"
 
@@ -170,41 +172,143 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanCommandListContext::setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>> renderTargets,
                                                      TSharedPtr<RHI::IRHITexture> depthStencil) {
-        // This would start a render pass and set up framebuffer
+        // ============================================================================
+        // setRenderTargets - Begin render pass with specified render targets
         // Reference: UE5 FVulkanCommandListContext::RHISetRenderTargets
-        if (m_device) {
-            VkRenderPass renderPass = m_device->getRenderPass();
-            VkFramebuffer framebuffer = m_device->getCurrentFramebuffer();
+        // 
+        // Supports two modes:
+        // 1. Swapchain rendering (empty renderTargets array) - uses device's swapchain framebuffer
+        // 2. Render-to-texture (RTT) - uses provided textures with cached render pass/framebuffer
+        // ============================================================================
+        
+        if (!m_device || !m_cmdBuffer) {
+            MR_LOG_WARNING("setRenderTargets: Invalid device or command buffer");
+            return;
+        }
+        
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+        VkExtent2D renderExtent = m_device->getSwapchainExtent();
+        uint32 numClearValues = 2; // color + depth
+        
+        // Determine if this is swapchain rendering or RTT
+        bool bIsSwapchain = renderTargets.empty();
+        
+        if (bIsSwapchain) {
+            // ================================================================
+            // Swapchain rendering mode - use device's default render pass/framebuffer
+            // ================================================================
+            renderPass = m_device->getRenderPass();
+            framebuffer = m_device->getCurrentFramebuffer();
             
-            if (renderPass != VK_NULL_HANDLE && framebuffer != VK_NULL_HANDLE && m_cmdBuffer) {
-                VkRenderPassBeginInfo renderPassBeginInfo{};
-                renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassBeginInfo.renderPass = renderPass;
-                renderPassBeginInfo.framebuffer = framebuffer;
-                renderPassBeginInfo.renderArea.offset = {0, 0};
-                renderPassBeginInfo.renderArea.extent = m_device->getSwapchainExtent();
-                
-                VkClearValue clearValues[2]{};
-                clearValues[0].color = {{0.2f, 0.3f, 0.3f, 1.0f}}; // LearnOpenGL-style background color
-                clearValues[1].depthStencil = {1.0f, 0};
-                renderPassBeginInfo.clearValueCount = 2;
-                renderPassBeginInfo.pClearValues = clearValues;
-                
-                const auto& functions = VulkanAPI::getFunctions();
-                functions.vkCmdBeginRenderPass(m_cmdBuffer->getHandle(), &renderPassBeginInfo,
-                                             VK_SUBPASS_CONTENTS_INLINE);
-                
-                // CRITICAL: Mark that we are now inside a render pass
-                if (m_pendingState) {
-                    m_pendingState->setInsideRenderPass(true);
+            MR_LOG_DEBUG("setRenderTargets: Using swapchain rendering");
+        } else {
+            // ================================================================
+            // RTT mode - use cached render pass and framebuffer
+            // Reference: UE5 FVulkanDynamicRHI::RHISetRenderTargets for custom targets
+            // ================================================================
+            
+            FVulkanRenderTargetInfo rtInfo;
+            rtInfo.bIsSwapchain = false;
+            rtInfo.bClearDepth = true;
+            rtInfo.bClearStencil = false;
+            
+            // Build color targets from provided textures
+            for (uint32 i = 0; i < renderTargets.size() && i < FVulkanRenderTargetInfo::MaxColorTargets; ++i) {
+                if (renderTargets[i]) {
+                    rtInfo.ColorTargets[i] = std::static_pointer_cast<VulkanTexture>(renderTargets[i]);
+                    rtInfo.bClearColor[i] = true;
+                    rtInfo.ClearColors[i] = {{0.0f, 0.0f, 0.0f, 1.0f}};
+                    rtInfo.NumColorTargets++;
                 }
-                
-                MR_LOG_DEBUG("FVulkanCommandListContext::setRenderTargets: Render pass started");
-            } else {
-                MR_LOG_WARNING("setRenderTargets: Invalid render pass or framebuffer - renderPass=" +
-                              std::to_string(reinterpret_cast<uint64>(renderPass)) + 
-                              ", framebuffer=" + std::to_string(reinterpret_cast<uint64>(framebuffer)));
             }
+            
+            // Add depth target if provided, or use device's depth buffer
+            if (depthStencil) {
+                rtInfo.DepthStencilTarget = std::static_pointer_cast<VulkanTexture>(depthStencil);
+            }
+            
+            // Set render area from first color target
+            if (rtInfo.NumColorTargets > 0 && rtInfo.ColorTargets[0]) {
+                auto& desc = rtInfo.ColorTargets[0]->getDesc();
+                renderExtent.width = desc.width;
+                renderExtent.height = desc.height;
+                rtInfo.RenderAreaWidth = desc.width;
+                rtInfo.RenderAreaHeight = desc.height;
+            }
+            
+            // Get or create render pass from cache
+            FVulkanRenderTargetLayout layout = rtInfo.BuildLayout();
+            
+            // Add depth format if using device depth buffer without custom depth target
+            if (!rtInfo.DepthStencilTarget && m_device->hasDepthBuffer()) {
+                layout.bHasDepthStencil = true;
+                layout.DepthStencilFormat = m_device->getDepthFormat();
+            }
+            
+            auto* renderPassCache = m_device->GetRenderPassCache();
+            if (renderPassCache) {
+                renderPass = renderPassCache->GetOrCreateRenderPass(layout);
+            }
+            
+            // Get or create framebuffer from cache
+            if (renderPass != VK_NULL_HANDLE) {
+                VkImageView depthView = rtInfo.DepthStencilTarget ? 
+                    rtInfo.DepthStencilTarget->getImageView() : 
+                    m_device->getDepthImageView();
+                    
+                FVulkanFramebufferKey fbKey = rtInfo.BuildFramebufferKey(renderPass, depthView);
+                fbKey.Width = renderExtent.width;
+                fbKey.Height = renderExtent.height;
+                
+                auto* fbCache = m_device->GetFramebufferCache();
+                if (fbCache) {
+                    framebuffer = fbCache->GetOrCreateFramebuffer(fbKey);
+                }
+            }
+            
+            numClearValues = rtInfo.NumColorTargets + (layout.bHasDepthStencil ? 1 : 0);
+            
+            MR_LOG_DEBUG("setRenderTargets: RTT mode with " + std::to_string(rtInfo.NumColorTargets) + 
+                        " color target(s), extent=" + std::to_string(renderExtent.width) + "x" + 
+                        std::to_string(renderExtent.height));
+        }
+        
+        // ================================================================
+        // Begin render pass
+        // ================================================================
+        
+        if (renderPass != VK_NULL_HANDLE && framebuffer != VK_NULL_HANDLE) {
+            VkRenderPassBeginInfo renderPassBeginInfo{};
+            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassBeginInfo.renderPass = renderPass;
+            renderPassBeginInfo.framebuffer = framebuffer;
+            renderPassBeginInfo.renderArea.offset = {0, 0};
+            renderPassBeginInfo.renderArea.extent = renderExtent;
+            
+            // Clear values: color + depth
+            TArray<VkClearValue> clearValues(numClearValues);
+            clearValues[0].color = {{0.2f, 0.3f, 0.3f, 1.0f}}; // Background color
+            if (numClearValues > 1) {
+                clearValues[1].depthStencil = {1.0f, 0}; // Clear depth to 1.0 (far)
+            }
+            renderPassBeginInfo.clearValueCount = static_cast<uint32>(clearValues.size());
+            renderPassBeginInfo.pClearValues = clearValues.data();
+            
+            const auto& functions = VulkanAPI::getFunctions();
+            functions.vkCmdBeginRenderPass(m_cmdBuffer->getHandle(), &renderPassBeginInfo,
+                                         VK_SUBPASS_CONTENTS_INLINE);
+            
+            // CRITICAL: Mark that we are now inside a render pass
+            if (m_pendingState) {
+                m_pendingState->setInsideRenderPass(true);
+            }
+            
+            MR_LOG_DEBUG("setRenderTargets: Render pass started successfully");
+        } else {
+            MR_LOG_WARNING("setRenderTargets: Invalid render pass or framebuffer - renderPass=" +
+                          std::to_string(reinterpret_cast<uint64>(renderPass)) + 
+                          ", framebuffer=" + std::to_string(reinterpret_cast<uint64>(framebuffer)));
         }
     }
     

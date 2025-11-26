@@ -21,6 +21,8 @@ namespace MonsterRender::RHI::Vulkan {
     class FVulkanCommandBufferManager;
     class FVulkanCommandListContext;
     class FVulkanRHICommandListImmediate;
+    class FVulkanRenderPassCache;
+    class FVulkanFramebufferCache;
     
     /**
      * Queue family information
@@ -108,6 +110,15 @@ namespace MonsterRender::RHI::Vulkan {
         // Render pass and framebuffer accessors
         VkRenderPass getRenderPass() const { return m_renderPass; }
         
+        // Depth buffer accessors (UE5-style)
+        VkFormat getDepthFormat() const { return m_depthFormat; }
+        VkImageView getDepthImageView() const { return m_depthImageView; }
+        bool hasDepthBuffer() const { return m_depthImage != VK_NULL_HANDLE; }
+        
+        // Render target caches (UE5-style RTT support)
+        FVulkanRenderPassCache* GetRenderPassCache() const { return m_renderPassCache.get(); }
+        FVulkanFramebufferCache* GetFramebufferCache() const { return m_framebufferCache.get(); }
+        
         // Frame management for swapchain image acquisition
         uint32 getCurrentFrame() const { return m_currentFrame; }
         uint32 getCurrentImageIndex() const { return m_currentImageIndex; }
@@ -134,6 +145,15 @@ namespace MonsterRender::RHI::Vulkan {
         bool createFramebuffers();
         bool createCommandPool();
         bool createSyncObjects();
+        
+        // Depth buffer creation (UE5-style)
+        bool createDepthResources();
+        void destroyDepthResources();
+        VkFormat findDepthFormat();
+        VkFormat findSupportedFormat(const TArray<VkFormat>& candidates, 
+                                     VkImageTiling tiling, 
+                                     VkFormatFeatureFlags features);
+        bool hasStencilComponent(VkFormat format);
         
         // Helper functions
         bool checkValidationLayerSupport();
@@ -167,6 +187,12 @@ namespace MonsterRender::RHI::Vulkan {
         VkRenderPass m_renderPass = VK_NULL_HANDLE;
         TArray<VkFramebuffer> m_swapchainFramebuffers;
         
+        // Depth buffer resources (UE5-style)
+        VkImage m_depthImage = VK_NULL_HANDLE;
+        VkDeviceMemory m_depthImageMemory = VK_NULL_HANDLE;
+        VkImageView m_depthImageView = VK_NULL_HANDLE;
+        VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
+        
         // Command handling (Legacy, kept for backward compatibility if needed)
         VkCommandPool m_commandPool = VK_NULL_HANDLE;
         
@@ -188,6 +214,10 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Descriptor set cache for frame-local reuse (UE5-style)
         TUniquePtr<FVulkanDescriptorSetCache> m_descriptorSetCache;
+        
+        // Render target caches for RTT support (UE5-style)
+        TUniquePtr<FVulkanRenderPassCache> m_renderPassCache;
+        TUniquePtr<FVulkanFramebufferCache> m_framebufferCache;
         
         // Memory manager (UE5-style sub-allocation)
         TUniquePtr<FVulkanMemoryManager> m_memoryManager;
