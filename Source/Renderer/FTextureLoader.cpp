@@ -6,7 +6,8 @@
 #include "Core/HAL/FMemory.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanTexture.h"
-#include "Platform/Vulkan/VulkanCommandList.h"
+#include "Platform/Vulkan/VulkanBuffer.h"
+#include "Platform/Vulkan/VulkanRHICommandList.h"  // UE5-style immediate command list
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 #include "Renderer/FTextureStreamingManager.h"
 #include <algorithm>
@@ -20,6 +21,9 @@
 #define STBI_ASSERT(x)            // Disable assert, use our own error handling
 #define STB_IMAGE_STATIC
 #include "../../3rd-party/stb/stb_image.h"
+
+// Use Vulkan RHI types
+using namespace MonsterRender::RHI::Vulkan;
 
 namespace MonsterRender {
 
@@ -408,8 +412,9 @@ bool FTextureLoader::UploadTextureData(
     
     MR_LOG_DEBUG("Recording texture upload commands...");
     
-    // Cast to Vulkan command list for texture-specific operations
-    auto* vulkanCmdList = static_cast<VulkanCommandList*>(CommandList);
+    // Cast to Vulkan RHI command list (UE5-style immediate command list)
+    // Note: We use FVulkanRHICommandListImmediate, NOT the old VulkanCommandList
+    auto* vulkanCmdList = static_cast<FVulkanRHICommandListImmediate*>(CommandList);
     
     // Begin command recording if not already recording
     bool wasRecording = vulkanCmdList->isRecording();

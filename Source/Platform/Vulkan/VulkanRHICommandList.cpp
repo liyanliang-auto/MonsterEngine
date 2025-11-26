@@ -7,6 +7,7 @@
 #include "Platform/Vulkan/VulkanRHICommandList.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include "Platform/Vulkan/VulkanPendingState.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
@@ -579,5 +580,222 @@ namespace MonsterRender::RHI::Vulkan {
         #else
             (void)name; // Suppress unused warning
         #endif
+    }
+    
+    // ============================================================================
+    // Texture Operations Implementation
+    // Reference: UE5 FVulkanDynamicRHI texture operations
+    // ============================================================================
+    
+    bool FVulkanRHICommandListImmediate::isRecording() const {
+        if (!m_context) return false;
+        auto* cmdBuffer = m_context->getCmdBuffer();
+        return cmdBuffer && cmdBuffer->hasBegun() && !cmdBuffer->hasEnded();
+    }
+    
+    void FVulkanRHICommandListImmediate::transitionTextureLayoutSimple(
+        TSharedPtr<IRHITexture> texture,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout) {
+        
+        // Determine access masks and pipeline stages based on layouts
+        // Reference: UE5 VulkanRHI::GetVkStageFlagsForLayout
+        VkAccessFlags srcAccessMask = 0;
+        VkAccessFlags dstAccessMask = 0;
+        VkPipelineStageFlags srcStageMask = 0;
+        VkPipelineStageFlags dstStageMask = 0;
+        
+        // Source layout -> access mask and stage
+        switch (oldLayout) {
+            case VK_IMAGE_LAYOUT_UNDEFINED:
+                srcAccessMask = 0;
+                srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+                break;
+            case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+                srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+                break;
+            case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+                srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+                break;
+            case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+                srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                break;
+            case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+                srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                break;
+            default:
+                srcAccessMask = 0;
+                srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+                break;
+        }
+        
+        // Destination layout -> access mask and stage
+        switch (newLayout) {
+            case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+                dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+                break;
+            case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+                dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+                break;
+            case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+                dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                break;
+            case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+                dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                break;
+            case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+                dstAccessMask = 0;
+                dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+                break;
+            default:
+                dstAccessMask = 0;
+                dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+                break;
+        }
+        
+        transitionTextureLayout(texture, oldLayout, newLayout, 
+                               srcAccessMask, dstAccessMask, srcStageMask, dstStageMask);
+    }
+    
+    void FVulkanRHICommandListImmediate::transitionTextureLayout(
+        TSharedPtr<IRHITexture> texture,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout,
+        VkAccessFlags srcAccessMask,
+        VkAccessFlags dstAccessMask,
+        VkPipelineStageFlags srcStageMask,
+        VkPipelineStageFlags dstStageMask) {
+        
+        if (!texture) {
+            MR_LOG_ERROR("transitionTextureLayout: texture is null");
+            return;
+        }
+        
+        if (!m_context) {
+            MR_LOG_ERROR("transitionTextureLayout: No active context");
+            return;
+        }
+        
+        auto* cmdBuffer = m_context->getCmdBuffer();
+        if (!cmdBuffer || cmdBuffer->getHandle() == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("transitionTextureLayout: No valid command buffer");
+            return;
+        }
+        
+        // Get Vulkan texture
+        auto* vulkanTexture = static_cast<VulkanTexture*>(texture.get());
+        VkImage image = vulkanTexture->getImage();
+        
+        if (image == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("transitionTextureLayout: Invalid VkImage");
+            return;
+        }
+        
+        // Setup image memory barrier
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = oldLayout;
+        barrier.newLayout = newLayout;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = texture->getDesc().mipLevels;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = texture->getDesc().arraySize;
+        barrier.srcAccessMask = srcAccessMask;
+        barrier.dstAccessMask = dstAccessMask;
+        
+        // Insert pipeline barrier
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdPipelineBarrier(
+            cmdBuffer->getHandle(),
+            srcStageMask,
+            dstStageMask,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier
+        );
+        
+        // Update texture's current layout
+        vulkanTexture->setCurrentLayout(newLayout);
+        
+        MR_LOG_DEBUG("Transitioned texture layout: " + 
+                    std::to_string(oldLayout) + " -> " + std::to_string(newLayout));
+    }
+    
+    void FVulkanRHICommandListImmediate::copyBufferToTexture(
+        TSharedPtr<IRHIBuffer> srcBuffer,
+        SIZE_T srcOffset,
+        TSharedPtr<IRHITexture> dstTexture,
+        uint32 mipLevel,
+        uint32 arrayLayer,
+        uint32 width,
+        uint32 height,
+        uint32 depth) {
+        
+        if (!srcBuffer || !dstTexture) {
+            MR_LOG_ERROR("copyBufferToTexture: Invalid buffer or texture");
+            return;
+        }
+        
+        if (!m_context) {
+            MR_LOG_ERROR("copyBufferToTexture: No active context");
+            return;
+        }
+        
+        auto* cmdBuffer = m_context->getCmdBuffer();
+        if (!cmdBuffer || cmdBuffer->getHandle() == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("copyBufferToTexture: No valid command buffer");
+            return;
+        }
+        
+        // Get Vulkan handles
+        auto* vulkanBuffer = static_cast<VulkanBuffer*>(srcBuffer.get());
+        auto* vulkanTexture = static_cast<VulkanTexture*>(dstTexture.get());
+        
+        VkBuffer buffer = vulkanBuffer->getBuffer();
+        VkImage image = vulkanTexture->getImage();
+        
+        if (buffer == VK_NULL_HANDLE || image == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("copyBufferToTexture: Invalid Vulkan handles");
+            return;
+        }
+        
+        // Setup buffer image copy region
+        VkBufferImageCopy region{};
+        region.bufferOffset = srcOffset;
+        region.bufferRowLength = 0;   // Tightly packed
+        region.bufferImageHeight = 0; // Tightly packed
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = mipLevel;
+        region.imageSubresource.baseArrayLayer = arrayLayer;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {width, height, depth};
+        
+        // Execute copy
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdCopyBufferToImage(
+            cmdBuffer->getHandle(),
+            buffer,
+            image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &region
+        );
+        
+        MR_LOG_DEBUG("Copied buffer to texture mip " + std::to_string(mipLevel) + 
+                    ": " + std::to_string(width) + "x" + std::to_string(height));
     }
 }

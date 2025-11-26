@@ -2,6 +2,7 @@
 
 #include "Core/CoreMinimal.h"
 #include "RHI/IRHICommandList.h"
+#include "Platform/Vulkan/VulkanRHI.h"  // For Vulkan types (VkImageLayout, etc.)
 
 namespace MonsterRender::RHI::Vulkan {
     
@@ -79,6 +80,46 @@ namespace MonsterRender::RHI::Vulkan {
         void beginEvent(const String& name) override;
         void endEvent() override;
         void setMarker(const String& name) override;
+        
+        // ============================================================================
+        // Texture operations (for texture upload, UE5-style)
+        // Reference: UE5 FVulkanDynamicRHI::RHICopyTextureRegion
+        // ============================================================================
+        
+        /**
+         * Transition texture layout with automatic pipeline stage detection
+         */
+        void transitionTextureLayoutSimple(TSharedPtr<IRHITexture> texture,
+                                          VkImageLayout oldLayout,
+                                          VkImageLayout newLayout);
+        
+        /**
+         * Transition texture layout with explicit parameters
+         */
+        void transitionTextureLayout(TSharedPtr<IRHITexture> texture,
+                                    VkImageLayout oldLayout,
+                                    VkImageLayout newLayout,
+                                    VkAccessFlags srcAccessMask,
+                                    VkAccessFlags dstAccessMask,
+                                    VkPipelineStageFlags srcStageMask,
+                                    VkPipelineStageFlags dstStageMask);
+        
+        /**
+         * Copy buffer data to texture (for staging buffer uploads)
+         */
+        void copyBufferToTexture(TSharedPtr<IRHIBuffer> srcBuffer,
+                                SIZE_T srcOffset,
+                                TSharedPtr<IRHITexture> dstTexture,
+                                uint32 mipLevel,
+                                uint32 arrayLayer,
+                                uint32 width,
+                                uint32 height,
+                                uint32 depth);
+        
+        /**
+         * Check if command list is currently recording
+         */
+        bool isRecording() const;
         
     private:
         VulkanDevice* m_device;
