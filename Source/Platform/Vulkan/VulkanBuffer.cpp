@@ -45,11 +45,48 @@ namespace MonsterRender::RHI::Vulkan {
         VkMemoryRequirements memRequirements;
         functions.vkGetBufferMemoryRequirements(device, m_buffer, &memRequirements);
         
-        // Determine memory properties
+        // Determine memory properties based on memory usage (UE5-style)
+        // Reference: UE5 FVulkanResourceMultiBuffer::CreateBuffer
+        // EMemoryUsage defines the intended memory access pattern:
+        //   - Default: GPU-only, fastest for GPU access
+        //   - Upload:  CPU-write, GPU-read (staging buffers, dynamic uniforms)
+        //   - Readback: GPU-write, CPU-read (query results, screenshots)
+        
         m_memoryProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        if (m_desc.cpuAccessible) {
-            m_memoryProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        bool needsCpuAccess = m_desc.cpuAccessible;
+        
+        // Infer CPU accessibility from memory usage
+        switch (m_desc.memoryUsage) {
+            case RHI::EMemoryUsage::Upload:
+                // Upload buffers need HOST_VISIBLE for CPU writes
+                m_memoryProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                needsCpuAccess = true;
+                MR_LOG_DEBUG("Buffer using Upload memory: " + m_desc.debugName);
+                break;
+                
+            case RHI::EMemoryUsage::Readback:
+                // Readback buffers need HOST_VISIBLE and cached for efficient CPU reads
+                m_memoryProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | 
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+                needsCpuAccess = true;
+                MR_LOG_DEBUG("Buffer using Readback memory: " + m_desc.debugName);
+                break;
+                
+            case RHI::EMemoryUsage::Default:
+            default:
+                // Default is GPU-only unless cpuAccessible is explicitly set
+                if (m_desc.cpuAccessible) {
+                    m_memoryProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                } else {
+                    m_memoryProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+                }
+                break;
         }
+        
+        // Update descriptor to reflect actual CPU accessibility
+        // This ensures map() will work correctly
+        m_desc.cpuAccessible = needsCpuAccess;
         
         // Use FVulkanMemoryManager for allocation (UE5-style sub-allocation)
         auto* memoryManager = m_device->getMemoryManager();
