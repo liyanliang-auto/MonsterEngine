@@ -5,6 +5,7 @@
 #include "Platform/Vulkan/VulkanRenderTargetCache.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanUtils.h"
 #include "Core/Log.h"
 
 namespace MonsterRender::RHI::Vulkan {
@@ -368,14 +369,16 @@ namespace MonsterRender::RHI::Vulkan {
         layout.NumColorAttachments = NumColorTargets;
         for (uint32 i = 0; i < NumColorTargets; ++i) {
             if (ColorTargets[i]) {
-                layout.ColorFormats[i] = ColorTargets[i]->getFormat();
+                // Use VulkanTexture's native Vulkan format
+                layout.ColorFormats[i] = ColorTargets[i]->getVulkanFormat();
             }
         }
         
         // Depth attachment
         if (DepthStencilTarget) {
             layout.bHasDepthStencil = true;
-            layout.DepthStencilFormat = DepthStencilTarget->getFormat();
+            // Use VulkanTexture's native Vulkan format
+            layout.DepthStencilFormat = DepthStencilTarget->getVulkanFormat();
         }
         
         // Load/store ops based on clear flags
