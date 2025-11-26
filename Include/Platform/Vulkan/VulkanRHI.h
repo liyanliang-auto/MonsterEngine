@@ -57,6 +57,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Memory functions
         PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties = nullptr;
+        PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties = nullptr;
         PFN_vkAllocateMemory vkAllocateMemory = nullptr;
         PFN_vkFreeMemory vkFreeMemory = nullptr;
         PFN_vkMapMemory vkMapMemory = nullptr;
