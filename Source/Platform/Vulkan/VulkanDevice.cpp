@@ -7,6 +7,7 @@
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
+#include "Platform/Vulkan/VulkanRenderTargetCache.h"
 #include "Platform/Vulkan/VulkanSampler.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/VulkanUtils.h"
@@ -99,13 +100,20 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Step 7: Create render pass
+        // Step 6b: Create depth resources (UE5-style)
+        // Reference: UE5 FVulkanDynamicRHI::CreateSwapChain creates depth buffer with swapchain
+        if (!createDepthResources()) {
+            MR_LOG_ERROR("Failed to create depth resources");
+            return false;
+        }
+        
+        // Step 7: Create render pass (now includes depth attachment)
         if (!createRenderPass()) {
             MR_LOG_ERROR("Failed to create render pass");
             return false;
         }
         
-        // Step 8: Create framebuffers
+        // Step 8: Create framebuffers (now includes depth view)
         if (!createFramebuffers()) {
             MR_LOG_ERROR("Failed to create framebuffers");
             return false;
@@ -152,6 +160,22 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         MR_LOG_INFO("Descriptor set cache initialized (frame-local reuse)");
+        
+        // Step 12d: Create render pass cache for RTT support (UE5-style)
+        m_renderPassCache = MakeUnique<FVulkanRenderPassCache>(this);
+        if (!m_renderPassCache) {
+            MR_LOG_ERROR("Failed to create render pass cache");
+            return false;
+        }
+        MR_LOG_INFO("Render pass cache initialized (RTT support)");
+        
+        // Step 12e: Create framebuffer cache for RTT support (UE5-style)
+        m_framebufferCache = MakeUnique<FVulkanFramebufferCache>(this);
+        if (!m_framebufferCache) {
+            MR_LOG_ERROR("Failed to create framebuffer cache");
+            return false;
+        }
+        MR_LOG_INFO("Framebuffer cache initialized (RTT support)");
         
         // Step 13: Create memory manager (UE5-style sub-allocation)
         m_memoryManager = MakeUnique<FVulkanMemoryManager>(m_device, m_physicalDevice);
@@ -221,6 +245,9 @@ namespace MonsterRender::RHI::Vulkan {
             }
             m_swapchainFramebuffers.clear();
             
+            // Destroy depth resources (must be after framebuffers)
+            destroyDepthResources();
+            
             // Destroy render pass
             if (m_renderPass != VK_NULL_HANDLE) {
                 functions.vkDestroyRenderPass(m_device, m_renderPass, nullptr);
@@ -241,6 +268,12 @@ namespace MonsterRender::RHI::Vulkan {
             // (m_immediateCommandList already reset before command pool destruction)
             m_pipelineCache.reset();
             m_descriptorSetAllocator.reset();
+            
+            // Clean up render target caches
+            m_framebufferCache.reset();
+            m_renderPassCache.reset();
+            m_descriptorSetLayoutCache.reset();
+            m_descriptorSetCache.reset();
             
             // Destroy memory manager (must be before device destruction)
             if (m_memoryManager) {
@@ -883,46 +916,90 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     bool VulkanDevice::createRenderPass() {
-        MR_LOG_INFO("Creating render pass...");
+        MR_LOG_INFO("Creating render pass with depth attachment...");
         
         const auto& functions = VulkanAPI::getFunctions();
         
-        // Color attachment (swapchain image)
+        // ============================================================================
+        // Attachment Descriptions (UE5-style)
+        // Reference: UE5 FVulkanRenderPass::Create
+        // ============================================================================
+        
+        TArray<VkAttachmentDescription> attachments;
+        
+        // Attachment 0: Color attachment (swapchain image)
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = m_swapchainImageFormat;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear before rendering
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store result to memory
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Don't care about initial layout
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Ready for presentation
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        attachments.push_back(colorAttachment);
         
-        // Attachment reference for subpass
+        // Attachment 1: Depth attachment
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format = m_depthFormat;
+        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't need to store depth after rendering
+        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        attachments.push_back(depthAttachment);
+        
+        // ============================================================================
+        // Attachment References
+        // ============================================================================
+        
+        // Color attachment reference
         VkAttachmentReference colorAttachmentRef{};
-        colorAttachmentRef.attachment = 0; // Index in attachment descriptions array
+        colorAttachmentRef.attachment = 0;
         colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         
-        // Subpass description
+        // Depth attachment reference
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 1;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        
+        // ============================================================================
+        // Subpass Description
+        // ============================================================================
+        
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
         
-        // Subpass dependency (for automatic layout transitions)
+        // ============================================================================
+        // Subpass Dependencies (UE5-style synchronization)
+        // Reference: UE5 FVulkanRenderPass handles implicit synchronization
+        // ============================================================================
+        
         VkSubpassDependency dependency{};
-        dependency.srcSubpass = VK_SUBPASS_EXTERNAL; // Implicit subpass before render pass
-        dependency.dstSubpass = 0; // Our first (and only) subpass
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        // Wait for color attachment output and early fragment tests (for depth)
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | 
+                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.srcAccessMask = 0;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | 
+                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | 
+                                   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         
-        // Create render pass
+        // ============================================================================
+        // Create Render Pass
+        // ============================================================================
+        
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = 1;
-        renderPassInfo.pAttachments = &colorAttachment;
+        renderPassInfo.attachmentCount = static_cast<uint32>(attachments.size());
+        renderPassInfo.pAttachments = attachments.data();
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
         renderPassInfo.dependencyCount = 1;
@@ -934,28 +1011,35 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        MR_LOG_INFO("Render pass created successfully");
+        MR_LOG_INFO("Render pass created successfully with depth attachment");
+        MR_LOG_INFO("  Color format: " + std::to_string(m_swapchainImageFormat));
+        MR_LOG_INFO("  Depth format: " + std::to_string(m_depthFormat));
         return true;
     }
     
     bool VulkanDevice::createFramebuffers() {
-        MR_LOG_INFO("Creating framebuffers...");
+        MR_LOG_INFO("Creating framebuffers with depth attachment...");
         
         const auto& functions = VulkanAPI::getFunctions();
         
         // Create one framebuffer for each swapchain image view
+        // Each framebuffer has: [0] color attachment, [1] depth attachment
+        // Reference: UE5 FVulkanFramebuffer::Create
         m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
         
         for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
-            VkImageView attachments[] = {
-                m_swapchainImageViews[i]
+            // Attachment array: color view (per-swapchain) + depth view (shared)
+            // The depth view is shared because we only render to one framebuffer at a time
+            TArray<VkImageView> attachments = {
+                m_swapchainImageViews[i],  // Attachment 0: Color
+                m_depthImageView           // Attachment 1: Depth
             };
             
             VkFramebufferCreateInfo framebufferInfo{};
             framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             framebufferInfo.renderPass = m_renderPass;
-            framebufferInfo.attachmentCount = 1;
-            framebufferInfo.pAttachments = attachments;
+            framebufferInfo.attachmentCount = static_cast<uint32>(attachments.size());
+            framebufferInfo.pAttachments = attachments.data();
             framebufferInfo.width = m_swapchainExtent.width;
             framebufferInfo.height = m_swapchainExtent.height;
             framebufferInfo.layers = 1;
@@ -967,7 +1051,8 @@ namespace MonsterRender::RHI::Vulkan {
             }
         }
         
-        MR_LOG_INFO("Created " + std::to_string(m_swapchainFramebuffers.size()) + " framebuffers successfully");
+        MR_LOG_INFO("Created " + std::to_string(m_swapchainFramebuffers.size()) + 
+                   " framebuffers successfully (with depth attachment)");
         return true;
     }
     
@@ -1251,5 +1336,203 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("  Geometry Shader: " + String(m_capabilities.supportsGeometryShader ? "Yes" : "No"));
         MR_LOG_INFO("  Tessellation: " + String(m_capabilities.supportsTessellation ? "Yes" : "No"));
         MR_LOG_INFO("  Compute Shader: " + String(m_capabilities.supportsComputeShader ? "Yes" : "No"));
+    }
+    
+    // ============================================================================
+    // Depth Buffer Creation (UE5-style)
+    // Reference: UE5 FVulkanDynamicRHI::CreateDepthStencilSurface
+    // ============================================================================
+    
+    bool VulkanDevice::createDepthResources() {
+        MR_LOG_INFO("Creating depth resources...");
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        // Find a suitable depth format
+        m_depthFormat = findDepthFormat();
+        if (m_depthFormat == VK_FORMAT_UNDEFINED) {
+            MR_LOG_ERROR("Failed to find suitable depth format");
+            return false;
+        }
+        
+        MR_LOG_INFO("Using depth format: " + std::to_string(m_depthFormat));
+        
+        // ============================================================================
+        // Step 1: Create depth image
+        // Reference: UE5 FVulkanSurface::CreateVkImage
+        // ============================================================================
+        
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.extent.width = m_swapchainExtent.width;
+        imageInfo.extent.height = m_swapchainExtent.height;
+        imageInfo.extent.depth = 1;
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.format = m_depthFormat;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        
+        VkResult result = functions.vkCreateImage(m_device, &imageInfo, nullptr, &m_depthImage);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create depth image: " + std::to_string(result));
+            return false;
+        }
+        
+        // ============================================================================
+        // Step 2: Allocate memory for depth image
+        // Reference: UE5 FVulkanMemoryManager::Alloc for GPU-only memory
+        // ============================================================================
+        
+        VkMemoryRequirements memRequirements;
+        functions.vkGetImageMemoryRequirements(m_device, m_depthImage, &memRequirements);
+        
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        
+        // Find memory type that is device local (GPU-only, fastest)
+        uint32 memoryTypeIndex = UINT32_MAX;
+        VkMemoryPropertyFlags desiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        
+        for (uint32 i = 0; i < m_memoryProperties.memoryTypeCount; i++) {
+            if ((memRequirements.memoryTypeBits & (1 << i)) &&
+                (m_memoryProperties.memoryTypes[i].propertyFlags & desiredFlags) == desiredFlags) {
+                memoryTypeIndex = i;
+                break;
+            }
+        }
+        
+        if (memoryTypeIndex == UINT32_MAX) {
+            MR_LOG_ERROR("Failed to find suitable memory type for depth buffer");
+            functions.vkDestroyImage(m_device, m_depthImage, nullptr);
+            m_depthImage = VK_NULL_HANDLE;
+            return false;
+        }
+        
+        allocInfo.memoryTypeIndex = memoryTypeIndex;
+        
+        result = functions.vkAllocateMemory(m_device, &allocInfo, nullptr, &m_depthImageMemory);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to allocate depth image memory: " + std::to_string(result));
+            functions.vkDestroyImage(m_device, m_depthImage, nullptr);
+            m_depthImage = VK_NULL_HANDLE;
+            return false;
+        }
+        
+        // Bind image to memory
+        result = functions.vkBindImageMemory(m_device, m_depthImage, m_depthImageMemory, 0);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to bind depth image memory: " + std::to_string(result));
+            functions.vkFreeMemory(m_device, m_depthImageMemory, nullptr);
+            functions.vkDestroyImage(m_device, m_depthImage, nullptr);
+            m_depthImage = VK_NULL_HANDLE;
+            m_depthImageMemory = VK_NULL_HANDLE;
+            return false;
+        }
+        
+        // ============================================================================
+        // Step 3: Create depth image view
+        // Reference: UE5 FVulkanSurface::CreateViewAlias
+        // ============================================================================
+        
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_depthImage;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = m_depthFormat;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        
+        // If format has stencil component, include it in aspect mask
+        if (hasStencilComponent(m_depthFormat)) {
+            viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+        
+        result = functions.vkCreateImageView(m_device, &viewInfo, nullptr, &m_depthImageView);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create depth image view: " + std::to_string(result));
+            destroyDepthResources();
+            return false;
+        }
+        
+        MR_LOG_INFO("Depth resources created successfully");
+        MR_LOG_INFO("  Size: " + std::to_string(m_swapchainExtent.width) + "x" + 
+                   std::to_string(m_swapchainExtent.height));
+        MR_LOG_INFO("  Format: " + std::to_string(m_depthFormat));
+        MR_LOG_INFO("  Memory: " + std::to_string(memRequirements.size / 1024) + " KB");
+        
+        return true;
+    }
+    
+    void VulkanDevice::destroyDepthResources() {
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        if (m_depthImageView != VK_NULL_HANDLE) {
+            functions.vkDestroyImageView(m_device, m_depthImageView, nullptr);
+            m_depthImageView = VK_NULL_HANDLE;
+        }
+        
+        if (m_depthImage != VK_NULL_HANDLE) {
+            functions.vkDestroyImage(m_device, m_depthImage, nullptr);
+            m_depthImage = VK_NULL_HANDLE;
+        }
+        
+        if (m_depthImageMemory != VK_NULL_HANDLE) {
+            functions.vkFreeMemory(m_device, m_depthImageMemory, nullptr);
+            m_depthImageMemory = VK_NULL_HANDLE;
+        }
+        
+        MR_LOG_DEBUG("Depth resources destroyed");
+    }
+    
+    VkFormat VulkanDevice::findDepthFormat() {
+        // Preferred depth formats in order of preference
+        // Reference: UE5 uses D24S8 or D32_FLOAT depending on platform
+        TArray<VkFormat> candidates = {
+            VK_FORMAT_D32_SFLOAT,           // 32-bit float depth, no stencil
+            VK_FORMAT_D32_SFLOAT_S8_UINT,   // 32-bit float depth, 8-bit stencil
+            VK_FORMAT_D24_UNORM_S8_UINT     // 24-bit depth, 8-bit stencil (most common)
+        };
+        
+        return findSupportedFormat(
+            candidates,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+        );
+    }
+    
+    VkFormat VulkanDevice::findSupportedFormat(const TArray<VkFormat>& candidates,
+                                               VkImageTiling tiling,
+                                               VkFormatFeatureFlags features) {
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        for (VkFormat format : candidates) {
+            VkFormatProperties props;
+            functions.vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format, &props);
+            
+            if (tiling == VK_IMAGE_TILING_LINEAR && 
+                (props.linearTilingFeatures & features) == features) {
+                return format;
+            } else if (tiling == VK_IMAGE_TILING_OPTIMAL && 
+                       (props.optimalTilingFeatures & features) == features) {
+                return format;
+            }
+        }
+        
+        return VK_FORMAT_UNDEFINED;
+    }
+    
+    bool VulkanDevice::hasStencilComponent(VkFormat format) {
+        return format == VK_FORMAT_D32_SFLOAT_S8_UINT || 
+               format == VK_FORMAT_D24_UNORM_S8_UINT;
     }
 }

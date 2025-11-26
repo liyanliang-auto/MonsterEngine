@@ -207,6 +207,7 @@
     <ClCompile Include="Source\Core\ShaderCompiler.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDescriptorSet.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDescriptorSetLayoutCache.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanRenderTargetCache.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -252,6 +253,7 @@
     <ClInclude Include="Include\Core\ShaderCompiler.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanDescriptorSet.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanDescriptorSetLayoutCache.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanRenderTargetCache.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
