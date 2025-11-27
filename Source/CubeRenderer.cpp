@@ -453,6 +453,24 @@ namespace MonsterRender {
         pipelineDesc.pixelShader = m_pixelShader;
         pipelineDesc.primitiveTopology = RHI::EPrimitiveTopology::TriangleList;
         
+        // Vertex input layout: CubeVertex = { vec3 position, vec2 texCoord }
+        // Total stride = 3*4 + 2*4 = 20 bytes
+        RHI::VertexAttribute posAttr;
+        posAttr.location = 0;
+        posAttr.format = RHI::EVertexFormat::Float3;  // vec3 position
+        posAttr.offset = 0;
+        posAttr.semanticName = "POSITION";
+        
+        RHI::VertexAttribute texCoordAttr;
+        texCoordAttr.location = 1;
+        texCoordAttr.format = RHI::EVertexFormat::Float2;  // vec2 texCoord
+        texCoordAttr.offset = sizeof(float) * 3;  // After position (12 bytes)
+        texCoordAttr.semanticName = "TEXCOORD";
+        
+        pipelineDesc.vertexLayout.attributes.push_back(posAttr);
+        pipelineDesc.vertexLayout.attributes.push_back(texCoordAttr);
+        pipelineDesc.vertexLayout.stride = sizeof(CubeVertex);  // 20 bytes
+        
         // Rasterizer state
         pipelineDesc.rasterizerState.fillMode = RHI::EFillMode::Solid;
         pipelineDesc.rasterizerState.cullMode = RHI::ECullMode::Back;  // Enable back-face culling

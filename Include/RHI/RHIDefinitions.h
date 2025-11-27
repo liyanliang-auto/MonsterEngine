@@ -229,6 +229,52 @@ namespace MonsterRender::RHI {
         TessellationEvaluation = 1 << 5
     };
     
+    // Vertex attribute format
+    enum class EVertexFormat : uint32 {
+        Float1,     // R32_SFLOAT
+        Float2,     // R32G32_SFLOAT
+        Float3,     // R32G32B32_SFLOAT
+        Float4,     // R32G32B32A32_SFLOAT
+        Int1,       // R32_SINT
+        Int2,       // R32G32_SINT
+        Int3,       // R32G32B32_SINT
+        Int4,       // R32G32B32A32_SINT
+        UInt1,      // R32_UINT
+        UInt2,      // R32G32_UINT
+        UInt3,      // R32G32B32_UINT
+        UInt4       // R32G32B32A32_UINT
+    };
+    
+    // Vertex attribute description
+    struct VertexAttribute {
+        uint32 location = 0;          // Shader location
+        EVertexFormat format = EVertexFormat::Float3;
+        uint32 offset = 0;            // Offset in bytes from start of vertex
+        String semanticName;          // Optional semantic name (e.g., "POSITION", "TEXCOORD")
+    };
+    
+    // Vertex input layout description
+    struct VertexInputLayout {
+        uint32 stride = 0;            // Size of one vertex in bytes
+        TArray<VertexAttribute> attributes;
+        
+        // Helper to calculate stride from attributes
+        static uint32 calculateStride(const TArray<VertexAttribute>& attrs) {
+            uint32 maxEnd = 0;
+            for (const auto& attr : attrs) {
+                uint32 size = 0;
+                switch (attr.format) {
+                    case EVertexFormat::Float1: case EVertexFormat::Int1: case EVertexFormat::UInt1: size = 4; break;
+                    case EVertexFormat::Float2: case EVertexFormat::Int2: case EVertexFormat::UInt2: size = 8; break;
+                    case EVertexFormat::Float3: case EVertexFormat::Int3: case EVertexFormat::UInt3: size = 12; break;
+                    case EVertexFormat::Float4: case EVertexFormat::Int4: case EVertexFormat::UInt4: size = 16; break;
+                }
+                maxEnd = (std::max)(maxEnd, attr.offset + size);
+            }
+            return maxEnd;
+        }
+    };
+    
     // Pipeline state description
     struct PipelineStateDesc {
         TSharedPtr<class IRHIVertexShader> vertexShader;
@@ -239,6 +285,7 @@ namespace MonsterRender::RHI {
         DepthStencilState depthStencilState;
         TArray<EPixelFormat> renderTargetFormats;
         EPixelFormat depthStencilFormat = EPixelFormat::Unknown;
+        VertexInputLayout vertexLayout;  // Vertex input layout description
         String debugName;
     };
     

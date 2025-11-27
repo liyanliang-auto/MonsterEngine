@@ -88,6 +88,21 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("  Current state: " + std::to_string(static_cast<int>(m_state)));
         MR_LOG_INFO("  Expected state (ReadyForBegin): " + std::to_string(static_cast<int>(EState::ReadyForBegin)));
         
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        // If command buffer was previously used (Ended state), reset it automatically
+        // This enables reuse of the same command buffer for multiple operations
+        if (m_state == EState::Ended) {
+            MR_LOG_INFO("  Command buffer in Ended state, resetting for reuse...");
+            VkResult resetResult = functions.vkResetCommandBuffer(m_commandBuffer, 0);
+            if (resetResult != VK_SUCCESS) {
+                MR_LOG_ERROR("  vkResetCommandBuffer FAILED with result: " + std::to_string(resetResult));
+                return;
+            }
+            m_state = EState::ReadyForBegin;
+            MR_LOG_INFO("  Command buffer reset successfully, now in ReadyForBegin state");
+        }
+        
         if (m_state != EState::ReadyForBegin) {
             MR_LOG_ERROR("CRITICAL: Command buffer not in ReadyForBegin state!");
             MR_LOG_ERROR("  Current state value: " + std::to_string(static_cast<int>(m_state)));
@@ -95,8 +110,6 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_ERROR("  This will cause vkBeginCommandBuffer to NOT be called!");
             return;
         }
-        
-        const auto& functions = VulkanAPI::getFunctions();
         
         MR_LOG_INFO("  State check passed, calling vkBeginCommandBuffer...");
         

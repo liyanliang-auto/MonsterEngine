@@ -598,19 +598,61 @@ namespace MonsterRender::RHI::Vulkan {
         m_cacheEntry = PipelineCacheEntry(m_pipeline, m_pipelineLayout, m_renderPass, calculatePipelineHash());
     }
     
+    // Helper to convert RHI vertex format to Vulkan format
+    static VkFormat getVulkanVertexFormat(EVertexFormat format) {
+        switch (format) {
+            case EVertexFormat::Float1: return VK_FORMAT_R32_SFLOAT;
+            case EVertexFormat::Float2: return VK_FORMAT_R32G32_SFLOAT;
+            case EVertexFormat::Float3: return VK_FORMAT_R32G32B32_SFLOAT;
+            case EVertexFormat::Float4: return VK_FORMAT_R32G32B32A32_SFLOAT;
+            case EVertexFormat::Int1:   return VK_FORMAT_R32_SINT;
+            case EVertexFormat::Int2:   return VK_FORMAT_R32G32_SINT;
+            case EVertexFormat::Int3:   return VK_FORMAT_R32G32B32_SINT;
+            case EVertexFormat::Int4:   return VK_FORMAT_R32G32B32A32_SINT;
+            case EVertexFormat::UInt1:  return VK_FORMAT_R32_UINT;
+            case EVertexFormat::UInt2:  return VK_FORMAT_R32G32_UINT;
+            case EVertexFormat::UInt3:  return VK_FORMAT_R32G32B32_UINT;
+            case EVertexFormat::UInt4:  return VK_FORMAT_R32G32B32A32_UINT;
+            default: return VK_FORMAT_R32G32B32_SFLOAT;
+        }
+    }
+    
     // Helper methods for creating Vulkan pipeline states
     VkVertexInputBindingDescription VulkanPipelineState::createVertexInputBinding() const {
         VkVertexInputBindingDescription bindingDescription{};
         bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(float) * 6;  // Position (3) + Color (3)
         bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        
+        // Use custom vertex layout if provided, otherwise use default (Position + Color)
+        if (m_desc.vertexLayout.stride > 0) {
+            bindingDescription.stride = m_desc.vertexLayout.stride;
+        } else if (!m_desc.vertexLayout.attributes.empty()) {
+            bindingDescription.stride = VertexInputLayout::calculateStride(m_desc.vertexLayout.attributes);
+        } else {
+            // Default: Position (vec3) + Color (vec3) = 24 bytes (legacy triangle demo)
+            bindingDescription.stride = sizeof(float) * 6;
+        }
+        
         return bindingDescription;
     }
     
     TArray<VkVertexInputAttributeDescription> VulkanPipelineState::createVertexInputAttributes() const {
         TArray<VkVertexInputAttributeDescription> attributes;
         
-        // Position attribute
+        // Use custom vertex layout if provided
+        if (!m_desc.vertexLayout.attributes.empty()) {
+            for (const auto& attr : m_desc.vertexLayout.attributes) {
+                VkVertexInputAttributeDescription vkAttr{};
+                vkAttr.binding = 0;
+                vkAttr.location = attr.location;
+                vkAttr.format = getVulkanVertexFormat(attr.format);
+                vkAttr.offset = attr.offset;
+                attributes.push_back(vkAttr);
+            }
+            return attributes;
+        }
+        
+        // Default: Position (vec3) + Color (vec3) for legacy triangle demo
         VkVertexInputAttributeDescription posAttribute{};
         posAttribute.binding = 0;
         posAttribute.location = 0;
@@ -618,7 +660,6 @@ namespace MonsterRender::RHI::Vulkan {
         posAttribute.offset = 0;
         attributes.push_back(posAttribute);
         
-        // Color attribute
         VkVertexInputAttributeDescription colorAttribute{};
         colorAttribute.binding = 0;
         colorAttribute.location = 1;
