@@ -125,6 +125,11 @@ namespace MonsterRender::RHI {
         EResourceUsage usage = EResourceUsage::ShaderResource;
         String debugName;
         
+        // Initial data for texture upload (optional)
+        // If provided, texture will be initialized with this data
+        const void* initialData = nullptr;
+        uint32 initialDataSize = 0;
+        
         TextureDesc() = default;
         TextureDesc(uint32 w, uint32 h, EPixelFormat fmt, EResourceUsage usg)
             : width(w), height(h), format(fmt), usage(usg) {}

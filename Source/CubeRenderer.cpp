@@ -254,12 +254,29 @@ namespace MonsterRender {
         m_texture1 = FTextureLoader::LoadFromFile(m_device, loadInfo1);
         if (!m_texture1) {
             MR_LOG_ERROR("Failed to load container texture from: " + texture1Path);
-            MR_LOG_WARNING("Creating placeholder texture 1");
+            MR_LOG_WARNING("Creating placeholder texture 1 with checkerboard pattern");
             
-            // Fallback to placeholder
+            // Generate checkerboard pattern for placeholder texture
+            const uint32 texSize = 256;
+            const uint32 tileSize = 32;
+            TArray<uint8> checkerboardData(texSize * texSize * 4);
+            
+            for (uint32 y = 0; y < texSize; ++y) {
+                for (uint32 x = 0; x < texSize; ++x) {
+                    uint32 idx = (y * texSize + x) * 4;
+                    bool isWhite = ((x / tileSize) + (y / tileSize)) % 2 == 0;
+                    uint8 color = isWhite ? 255 : 100;
+                    checkerboardData[idx + 0] = color;       // R
+                    checkerboardData[idx + 1] = color;       // G
+                    checkerboardData[idx + 2] = color;       // B
+                    checkerboardData[idx + 3] = 255;         // A
+                }
+            }
+            
+            // Create placeholder texture
             RHI::TextureDesc desc;
-            desc.width = 512;
-            desc.height = 512;
+            desc.width = texSize;
+            desc.height = texSize;
             desc.depth = 1;
             desc.mipLevels = 1;
             desc.arraySize = 1;
@@ -272,6 +289,25 @@ namespace MonsterRender {
                 MR_LOG_ERROR("Failed to create placeholder texture 1");
                 return false;
             }
+            
+            // Upload checkerboard data to texture
+            FTextureData placeholderData;
+            placeholderData.Width = texSize;
+            placeholderData.Height = texSize;
+            placeholderData.Channels = 4;
+            placeholderData.MipLevels = 1;
+            placeholderData.Pixels = checkerboardData.data();
+            placeholderData.MipData.push_back(checkerboardData.data());
+            placeholderData.MipSizes.push_back(texSize * texSize * 4);
+            
+            RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
+            if (cmdList) {
+                FTextureLoader::UploadTextureData(m_device, cmdList, m_texture1, placeholderData);
+            }
+            
+            // Prevent FTextureData from freeing our stack-allocated data
+            placeholderData.Pixels = nullptr;
+            placeholderData.MipData.clear();
         }
         
         // Load texture 2 (awesomeface.png)
@@ -286,12 +322,27 @@ namespace MonsterRender {
         m_texture2 = FTextureLoader::LoadFromFile(m_device, loadInfo2);
         if (!m_texture2) {
             MR_LOG_ERROR("Failed to load awesomeface texture from: " + texture2Path);
-            MR_LOG_WARNING("Creating placeholder texture 2");
+            MR_LOG_WARNING("Creating placeholder texture 2 with gradient pattern");
             
-            // Fallback to placeholder
+            // Generate gradient pattern for placeholder texture 2
+            const uint32 texSize = 256;
+            TArray<uint8> gradientData(texSize * texSize * 4);
+            
+            for (uint32 y = 0; y < texSize; ++y) {
+                for (uint32 x = 0; x < texSize; ++x) {
+                    uint32 idx = (y * texSize + x) * 4;
+                    // Create a colorful gradient pattern
+                    gradientData[idx + 0] = static_cast<uint8>((x * 255) / texSize);  // R: left-right
+                    gradientData[idx + 1] = static_cast<uint8>((y * 255) / texSize);  // G: top-bottom
+                    gradientData[idx + 2] = 128;                                       // B: constant
+                    gradientData[idx + 3] = 255;                                       // A: opaque
+                }
+            }
+            
+            // Create placeholder texture
             RHI::TextureDesc desc;
-            desc.width = 512;
-            desc.height = 512;
+            desc.width = texSize;
+            desc.height = texSize;
             desc.depth = 1;
             desc.mipLevels = 1;
             desc.arraySize = 1;
@@ -304,6 +355,25 @@ namespace MonsterRender {
                 MR_LOG_ERROR("Failed to create placeholder texture 2");
                 return false;
             }
+            
+            // Upload gradient data to texture
+            FTextureData placeholderData;
+            placeholderData.Width = texSize;
+            placeholderData.Height = texSize;
+            placeholderData.Channels = 4;
+            placeholderData.MipLevels = 1;
+            placeholderData.Pixels = gradientData.data();
+            placeholderData.MipData.push_back(gradientData.data());
+            placeholderData.MipSizes.push_back(texSize * texSize * 4);
+            
+            RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
+            if (cmdList) {
+                FTextureLoader::UploadTextureData(m_device, cmdList, m_texture2, placeholderData);
+            }
+            
+            // Prevent FTextureData from freeing our stack-allocated data
+            placeholderData.Pixels = nullptr;
+            placeholderData.MipData.clear();
         }
         
         MR_LOG_INFO("Textures loaded successfully");
@@ -526,15 +596,28 @@ namespace MonsterRender {
     }
     
     void CubeRenderer::matrixPerspective(float* matrix, float fovRadians, float aspect, float nearPlane, float farPlane) {
+        // Vulkan-compatible perspective projection matrix
+        // Reference: GLM's perspectiveRH_ZO (Right-Handed, Zero-to-One depth)
+        // 
+        // Key differences from OpenGL:
+        // 1. Y-axis is flipped (Vulkan Y points down in NDC)
+        // 2. Z depth range is [0, 1] instead of [-1, 1]
+        
         std::memset(matrix, 0, 16 * sizeof(float));
         
         float tanHalfFov = std::tan(fovRadians / 2.0f);
         
         matrix[0] = 1.0f / (aspect * tanHalfFov);
-        matrix[5] = 1.0f / tanHalfFov;
-        matrix[10] = -(farPlane + nearPlane) / (farPlane - nearPlane);
+        
+        // CRITICAL: Negate Y to flip for Vulkan's coordinate system
+        // Vulkan NDC has Y pointing downward, opposite to OpenGL
+        matrix[5] = -1.0f / tanHalfFov;
+        
+        // Vulkan uses [0, 1] depth range instead of OpenGL's [-1, 1]
+        // This maps near plane to 0 and far plane to 1
+        matrix[10] = farPlane / (nearPlane - farPlane);
         matrix[11] = -1.0f;
-        matrix[14] = -(2.0f * farPlane * nearPlane) / (farPlane - nearPlane);
+        matrix[14] = -(farPlane * nearPlane) / (farPlane - nearPlane);
     }
     
 } // namespace MonsterRender

@@ -277,6 +277,23 @@ Windows
 Linux
 Android
 
+
+
+其他：
+3. 系统内存分配使用：FMemoryManage，GPU内存分配使用：FVulkanMemoryManager，纹理管理使用：FTextureStreamingManager
+4. 文件命名和函数命名均参考UE5；
+5. 添加详细的代码注释和代码说明，尽量使用英文文注释；注释中的专业词汇和关键词使用英文；MR_LOG_DEBUG中的字符串使用英文；
+6. 新增文件添加到VS2022项目，并保证工程编译通过，工程文件为E:\MonsterEngine\MonsterEngine.sln；
+7. 所有代码实现参考UE5，UE5风格架构 - 严格参考UE5设计，UE5源码github链接：@https://github.com/EpicGames/UnrealEngine ；
+8. UE5完整的源码本地路径：E:\UnrealEngine，此文件夹包含UE5所有的源码；
+9. 当前引擎的现有实现见开发文档：开发文档路径：E:\MonsterEngine\devDocument\引擎的架构和设计.md
+10. 保证在visual studio2022中可以编译和链接通过；
+11. 引擎的开发文档见：E:\MonsterEngine\devDocument\引擎的架构和设计.md：，我的终极目标是实现一个像UE5一样的现代渲染引擎。
+12. 文件结构参照UE5;
+13. 使用英文注释和英文日志log；
+14. 提出下一步开发计划；
+15. 分析过程使用中文；
+
 引擎的所有设计、架构、代码实现均参考UE5.
 所有代码实现参考UE5,UE5源码github链接：@https://github.com/EpicGames/UnrealEngine 
 本文档作为使用UE5启发的架构和现代C++最佳实践开发MonsterRender引擎的基础指南。
