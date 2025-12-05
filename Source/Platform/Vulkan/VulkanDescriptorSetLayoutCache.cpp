@@ -426,6 +426,9 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& Functions = VulkanAPI::getFunctions();
         VkDevice VkDev = Device->getLogicalDevice();
         
+        MR_LOG_INFO("UpdateDescriptorSet: BufferBindings=" + std::to_string(Key.BufferBindings.size()) +
+                   ", ImageBindings=" + std::to_string(Key.ImageBindings.size()));
+        
         TArray<VkWriteDescriptorSet> Writes;
         TArray<VkDescriptorBufferInfo> BufferInfos;
         TArray<VkDescriptorImageInfo> ImageInfos;
@@ -456,7 +459,15 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Add image writes
         for (const auto& [Slot, Binding] : Key.ImageBindings) {
-            if (Binding.ImageView == VK_NULL_HANDLE) continue;
+            if (Binding.ImageView == VK_NULL_HANDLE) {
+                MR_LOG_WARNING("UpdateDescriptorSet: Skipping slot " + std::to_string(Slot) + " - ImageView is NULL");
+                continue;
+            }
+            
+            MR_LOG_INFO("UpdateDescriptorSet: Adding image at slot " + std::to_string(Slot) +
+                       ", imageView=" + std::to_string(reinterpret_cast<uint64>(Binding.ImageView)) +
+                       ", sampler=" + std::to_string(reinterpret_cast<uint64>(Binding.Sampler)) +
+                       ", layout=" + std::to_string(static_cast<int>(Binding.ImageLayout)));
             
             VkDescriptorImageInfo& ImageInfo = ImageInfos.emplace_back();
             ImageInfo.imageView = Binding.ImageView;
@@ -476,8 +487,11 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Execute updates
         if (!Writes.empty()) {
+            MR_LOG_INFO("UpdateDescriptorSet: Executing " + std::to_string(Writes.size()) + " descriptor writes");
             Functions.vkUpdateDescriptorSets(VkDev, static_cast<uint32>(Writes.size()), 
                                              Writes.data(), 0, nullptr);
+        } else {
+            MR_LOG_WARNING("UpdateDescriptorSet: No descriptor writes to execute!");
         }
     }
 

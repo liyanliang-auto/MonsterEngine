@@ -9,8 +9,8 @@ layout(location = 1) in vec2 inTexCoord;    // Texture coordinates
 // Output to fragment shader
 layout(location = 0) out vec2 fragTexCoord;
 
-// Uniform buffer object (MVP matrices)
-layout(binding = 0) uniform UniformBufferObject {
+// Uniform buffer object (MVP matrices) - explicitly use set=0
+layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 model;         // Model matrix (object -> world)
     mat4 view;          // View matrix (world -> camera)
     mat4 projection;    // Projection matrix (camera -> clip space)

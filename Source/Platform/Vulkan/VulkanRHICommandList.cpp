@@ -271,7 +271,29 @@ namespace MonsterRender::RHI::Vulkan {
                 VkImageView imageView = vulkanTexture->getImageView();
                 VkSampler sampler = vulkanTexture->getDefaultSampler();
                 
+                // Validate handles before binding
+                if (imageView == VK_NULL_HANDLE) {
+                    MR_LOG_ERROR("setShaderResource: ImageView is VK_NULL_HANDLE for slot " + std::to_string(slot));
+                }
+                if (sampler == VK_NULL_HANDLE) {
+                    MR_LOG_ERROR("setShaderResource: Sampler is VK_NULL_HANDLE for slot " + std::to_string(slot));
+                }
+                
+                VkImageLayout currentLayout = vulkanTexture->getCurrentLayout();
+                MR_LOG_DEBUG("setShaderResource: slot=" + std::to_string(slot) + 
+                            ", imageView=" + std::to_string(reinterpret_cast<uint64>(imageView)) +
+                            ", sampler=" + std::to_string(reinterpret_cast<uint64>(sampler)) +
+                            ", currentLayout=" + std::to_string(static_cast<int>(currentLayout)));
+                
+                // Verify texture is in correct layout for shader read
+                if (currentLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+                    MR_LOG_WARNING("setShaderResource: Texture layout is " + std::to_string(static_cast<int>(currentLayout)) +
+                                  ", expected SHADER_READ_ONLY_OPTIMAL (5)");
+                }
+                
                 m_context->getPendingState()->setTexture(slot, imageView, sampler);
+            } else {
+                MR_LOG_ERROR("setShaderResource: Failed to cast texture to VulkanTexture for slot " + std::to_string(slot));
             }
         }
         

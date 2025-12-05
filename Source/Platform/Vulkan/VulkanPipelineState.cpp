@@ -7,88 +7,98 @@
 #include <mutex>
 #include <functional>
 
-namespace MonsterRender::RHI::Vulkan {
-    
-    VulkanPipelineState::VulkanPipelineState(VulkanDevice* device, const PipelineStateDesc& desc)
-        : IRHIPipelineState(desc)
-        , m_device(device)
-        , m_isValid(false)
-        , m_pipeline(VK_NULL_HANDLE)
-        , m_pipelineLayout(VK_NULL_HANDLE)
-        , m_renderPass(VK_NULL_HANDLE) {
-        
+namespace MonsterRender::RHI::Vulkan
+{
+
+    VulkanPipelineState::VulkanPipelineState(VulkanDevice *device, const PipelineStateDesc &desc)
+        : IRHIPipelineState(desc), m_device(device), m_isValid(false), m_pipeline(VK_NULL_HANDLE), m_pipelineLayout(VK_NULL_HANDLE), m_renderPass(VK_NULL_HANDLE)
+    {
+
         MR_LOG_INFO("Creating Vulkan pipeline state: " + desc.debugName);
     }
-    
-    VulkanPipelineState::~VulkanPipelineState() {
+
+    VulkanPipelineState::~VulkanPipelineState()
+    {
         MR_LOG_INFO("Destroying Vulkan pipeline state: " + m_debugName);
         destroyVulkanObjects();
     }
-    
-    bool VulkanPipelineState::initialize() {
-        if (m_isValid) {
+
+    bool VulkanPipelineState::initialize()
+    {
+        if (m_isValid)
+        {
             return true;
         }
-        
+
         MR_LOG_INFO("Initializing Vulkan pipeline state: " + m_debugName);
-        
+
         // Check if we can load from cache first
-        if (loadFromCache()) {
+        if (loadFromCache())
+        {
             MR_LOG_INFO("Pipeline state loaded from cache");
             return true;
         }
-        
+
         // Create shader modules
-        if (!createShaderModules()) {
+        if (!createShaderModules())
+        {
             MR_LOG_ERROR("Failed to create shader modules");
             return false;
         }
-        
+
         // Reflect shaders for automatic resource binding
-        if (!reflectShaders()) {
+        if (!reflectShaders())
+        {
             MR_LOG_WARNING("Shader reflection failed, continuing without reflection data");
         }
-        
+
         // Create pipeline layout
-        if (!createPipelineLayout()) {
+        if (!createPipelineLayout())
+        {
             MR_LOG_ERROR("Failed to create pipeline layout");
             return false;
         }
-        
+
         // Use device's render pass instead of creating our own (UE5 pattern)
         // Pipeline's render pass must match the render pass used in command buffer
         m_renderPass = m_device->getRenderPass();
-        if (m_renderPass == VK_NULL_HANDLE) {
+        if (m_renderPass == VK_NULL_HANDLE)
+        {
             MR_LOG_ERROR("Device render pass is null");
             return false;
         }
-        
+
         MR_LOG_DEBUG("Using device render pass for pipeline compatibility");
-        
+
         // Create graphics pipeline
-        if (!createGraphicsPipeline()) {
+        if (!createGraphicsPipeline())
+        {
             MR_LOG_ERROR("Failed to create graphics pipeline");
             return false;
         }
-        
+
         // Save to cache for future reuse
         saveToCache();
-        
+
         m_isValid = true;
         MR_LOG_INFO("Vulkan pipeline state initialized successfully");
         return true;
     }
-    
-    const ShaderReflectionData* VulkanPipelineState::getShaderReflection(EShaderStage stage) const {
-        for (const auto& reflection : m_reflectionData) {
-            if (reflection.stage == stage) {
+
+    const ShaderReflectionData *VulkanPipelineState::getShaderReflection(EShaderStage stage) const
+    {
+        for (const auto &reflection : m_reflectionData)
+        {
+            if (reflection.stage == stage)
+            {
                 return &reflection;
             }
         }
         return nullptr;
     }
-    
-    uint32 VulkanPipelineState::getSize() const {
+
+    uint32 VulkanPipelineState::getSize() const
+    {
         // Estimate pipeline size based on shader modules and state
         uint32 size = 0;
         size += static_cast<uint32>(m_shaderModules.size()) * sizeof(VkShaderModule);
@@ -96,22 +106,25 @@ namespace MonsterRender::RHI::Vulkan {
         size += sizeof(VkPipeline) + sizeof(VkPipelineLayout) + sizeof(VkRenderPass);
         return size;
     }
-    
-    bool VulkanPipelineState::createShaderModules() {
-        const auto& functions = VulkanAPI::getFunctions();
+
+    bool VulkanPipelineState::createShaderModules()
+    {
+        const auto &functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
-        
+
         m_shaderModules.clear();
         m_shaderStages.clear();
-        
+
         // Create vertex shader module
-        if (m_desc.vertexShader) {
-            auto* vulkanVertexShader = static_cast<VulkanVertexShader*>(m_desc.vertexShader.get());
+        if (m_desc.vertexShader)
+        {
+            auto *vulkanVertexShader = static_cast<VulkanVertexShader *>(m_desc.vertexShader.get());
             VkShaderModule vertexModule = vulkanVertexShader->getShaderModule();
-            
-            if (vertexModule != VK_NULL_HANDLE) {
+
+            if (vertexModule != VK_NULL_HANDLE)
+            {
                 m_shaderModules.push_back(vertexModule);
-                
+
                 VkPipelineShaderStageCreateInfo stageInfo{};
                 stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
                 stageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -120,15 +133,17 @@ namespace MonsterRender::RHI::Vulkan {
                 m_shaderStages.push_back(stageInfo);
             }
         }
-        
+
         // Create pixel shader module
-        if (m_desc.pixelShader) {
-            auto* vulkanPixelShader = static_cast<VulkanPixelShader*>(m_desc.pixelShader.get());
+        if (m_desc.pixelShader)
+        {
+            auto *vulkanPixelShader = static_cast<VulkanPixelShader *>(m_desc.pixelShader.get());
             VkShaderModule pixelModule = vulkanPixelShader->getShaderModule();
-            
-            if (pixelModule != VK_NULL_HANDLE) {
+
+            if (pixelModule != VK_NULL_HANDLE)
+            {
                 m_shaderModules.push_back(pixelModule);
-                
+
                 VkPipelineShaderStageCreateInfo stageInfo{};
                 stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
                 stageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -137,70 +152,80 @@ namespace MonsterRender::RHI::Vulkan {
                 m_shaderStages.push_back(stageInfo);
             }
         }
-        
-        if (m_shaderStages.empty()) {
+
+        if (m_shaderStages.empty())
+        {
             MR_LOG_ERROR("No valid shader stages found");
             return false;
         }
-        
+
         MR_LOG_DEBUG("Created " + std::to_string(m_shaderStages.size()) + " shader stages");
         return true;
     }
-    
-    bool VulkanPipelineState::createPipelineLayout() {
-        const auto& functions = VulkanAPI::getFunctions();
+
+    bool VulkanPipelineState::createPipelineLayout()
+    {
+        const auto &functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
-        
+
         // Aggregate descriptor bindings from all shader stages
         // Maps (set, binding) -> VkDescriptorSetLayoutBinding
         TMap<uint32, TArray<VkDescriptorSetLayoutBinding>> setBindings;
-        
+
         // Collect bindings from vertex shader
-        if (m_desc.vertexShader) {
-            auto* vulkanVS = static_cast<VulkanVertexShader*>(m_desc.vertexShader.get());
-            const auto& bindings = vulkanVS->getDescriptorBindings();
+        if (m_desc.vertexShader)
+        {
+            auto *vulkanVS = static_cast<VulkanVertexShader *>(m_desc.vertexShader.get());
+            const auto &bindings = vulkanVS->getDescriptorBindings();
             MR_LOG_DEBUG("createPipelineLayout: Vertex shader has " + std::to_string(bindings.size()) + " descriptor bindings");
-            for (const auto& binding : bindings) {
+            for (const auto &binding : bindings)
+            {
                 // Assume set=0 for now; enhance later for multi-set support
                 setBindings[0].push_back(binding);
-                MR_LOG_DEBUG("  - VS binding " + std::to_string(binding.binding) + 
-                            " type=" + std::to_string(binding.descriptorType));
+                MR_LOG_DEBUG("  - VS binding " + std::to_string(binding.binding) +
+                             " type=" + std::to_string(binding.descriptorType));
             }
         }
-        
+
         // Collect bindings from pixel shader
-        if (m_desc.pixelShader) {
-            auto* vulkanPS = static_cast<VulkanPixelShader*>(m_desc.pixelShader.get());
-            const auto& bindings = vulkanPS->getDescriptorBindings();
+        if (m_desc.pixelShader)
+        {
+            auto *vulkanPS = static_cast<VulkanPixelShader *>(m_desc.pixelShader.get());
+            const auto &bindings = vulkanPS->getDescriptorBindings();
             MR_LOG_DEBUG("createPipelineLayout: Pixel shader has " + std::to_string(bindings.size()) + " descriptor bindings");
-            for (const auto& binding : bindings) {
-                MR_LOG_DEBUG("  - PS binding " + std::to_string(binding.binding) + 
-                            " type=" + std::to_string(binding.descriptorType));
+            for (const auto &binding : bindings)
+            {
+                MR_LOG_DEBUG("  - PS binding " + std::to_string(binding.binding) +
+                             " type=" + std::to_string(binding.descriptorType));
                 // Merge with existing bindings, combining stage flags if binding already exists
                 bool found = false;
-                for (auto& existing : setBindings[0]) {
-                    if (existing.binding == binding.binding) {
+                for (auto &existing : setBindings[0])
+                {
+                    if (existing.binding == binding.binding)
+                    {
                         existing.stageFlags |= binding.stageFlags;
                         found = true;
                         break;
                     }
                 }
-                if (!found) {
+                if (!found)
+                {
                     setBindings[0].push_back(binding);
                 }
             }
         }
-        
+
         // Fallback: If no bindings were found from reflection, create default layout
         // This handles cases where SPIR-V reflection fails or shaders don't have explicit bindings
-        if (setBindings.empty() || setBindings[0].empty()) {
+        if (setBindings.empty() || setBindings[0].empty())
+        {
             MR_LOG_WARNING("createPipelineLayout: No descriptor bindings from reflection, creating default layout");
-            
+
             // Create default bindings for typical rendering setup:
             // binding 0: Uniform buffer (MVP matrices) - Vertex stage
             // binding 1: Combined image sampler (texture1) - Fragment stage
             // binding 2: Combined image sampler (texture2) - Fragment stage
-            
+
             VkDescriptorSetLayoutBinding uboBinding{};
             uboBinding.binding = 0;
             uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -208,7 +233,7 @@ namespace MonsterRender::RHI::Vulkan {
             uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
             uboBinding.pImmutableSamplers = nullptr;
             setBindings[0].push_back(uboBinding);
-            
+
             VkDescriptorSetLayoutBinding sampler1Binding{};
             sampler1Binding.binding = 1;
             sampler1Binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -216,7 +241,7 @@ namespace MonsterRender::RHI::Vulkan {
             sampler1Binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
             sampler1Binding.pImmutableSamplers = nullptr;
             setBindings[0].push_back(sampler1Binding);
-            
+
             VkDescriptorSetLayoutBinding sampler2Binding{};
             sampler2Binding.binding = 2;
             sampler2Binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -224,38 +249,42 @@ namespace MonsterRender::RHI::Vulkan {
             sampler2Binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
             sampler2Binding.pImmutableSamplers = nullptr;
             setBindings[0].push_back(sampler2Binding);
-            
+
             MR_LOG_DEBUG("createPipelineLayout: Created default layout with 3 bindings (UBO + 2 samplers)");
         }
-        
+
         // Create VkDescriptorSetLayouts for each set
         TArray<VkDescriptorSetLayout> descriptorSetLayouts;
-        for (const auto& [setIndex, bindings] : setBindings) {
-            if (bindings.empty()) continue;
-            
+        for (const auto &[setIndex, bindings] : setBindings)
+        {
+            if (bindings.empty())
+                continue;
+
             VkDescriptorSetLayoutCreateInfo layoutInfo{};
             layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
             layoutInfo.bindingCount = static_cast<uint32>(bindings.size());
             layoutInfo.pBindings = bindings.data();
-            
+
             VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
             VkResult result = functions.vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &setLayout);
-            if (result != VK_SUCCESS) {
+            if (result != VK_SUCCESS)
+            {
                 MR_LOG_ERROR("Failed to create descriptor set layout for set " + std::to_string(setIndex) + ": " + std::to_string(result));
                 // Clean up previously created layouts
-                for (auto layout : descriptorSetLayouts) {
+                for (auto layout : descriptorSetLayouts)
+                {
                     functions.vkDestroyDescriptorSetLayout(device, layout, nullptr);
                 }
                 return false;
             }
-            
+
             descriptorSetLayouts.push_back(setLayout);
             MR_LOG_DEBUG("Created descriptor set layout for set " + std::to_string(setIndex) + " with " + std::to_string(bindings.size()) + " bindings");
         }
-        
+
         // Store descriptor set layouts for later cleanup
         m_descriptorSetLayouts = descriptorSetLayouts;
-        
+
         // Create pipeline layout with descriptor set layouts
         VkPipelineLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -263,34 +292,38 @@ namespace MonsterRender::RHI::Vulkan {
         layoutInfo.pSetLayouts = descriptorSetLayouts.empty() ? nullptr : descriptorSetLayouts.data();
         layoutInfo.pushConstantRangeCount = 0;
         layoutInfo.pPushConstantRanges = nullptr;
-        
+
         VkResult result = functions.vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_pipelineLayout);
-        if (result != VK_SUCCESS) {
+        if (result != VK_SUCCESS)
+        {
             MR_LOG_ERROR("Failed to create pipeline layout: " + std::to_string(result));
             // Clean up descriptor set layouts
-            for (auto layout : m_descriptorSetLayouts) {
+            for (auto layout : m_descriptorSetLayouts)
+            {
                 functions.vkDestroyDescriptorSetLayout(device, layout, nullptr);
             }
             m_descriptorSetLayouts.clear();
             return false;
         }
-        
+
         MR_LOG_DEBUG("Pipeline layout created successfully with " + std::to_string(descriptorSetLayouts.size()) + " descriptor sets");
         return true;
     }
-    
-    bool VulkanPipelineState::createRenderPass() {
-        const auto& functions = VulkanAPI::getFunctions();
+
+    bool VulkanPipelineState::createRenderPass()
+    {
+        const auto &functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
-        
+
         // Create render pass based on render target formats
         TArray<VkAttachmentDescription> attachments;
         TArray<VkAttachmentReference> colorReferences;
         VkAttachmentReference depthReference{};
         bool hasDepth = false;
-        
+
         // Color attachments
-        for (uint32 i = 0; i < m_desc.renderTargetFormats.size(); ++i) {
+        for (uint32 i = 0; i < m_desc.renderTargetFormats.size(); ++i)
+        {
             VkAttachmentDescription colorAttachment{};
             colorAttachment.format = VulkanUtils::getRHIFormatToVulkan(m_desc.renderTargetFormats[i]);
             colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -300,17 +333,18 @@ namespace MonsterRender::RHI::Vulkan {
             colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
             colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            
+
             attachments.push_back(colorAttachment);
-            
+
             VkAttachmentReference colorRef{};
             colorRef.attachment = i;
             colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             colorReferences.push_back(colorRef);
         }
-        
+
         // Depth attachment
-        if (m_desc.depthStencilFormat != EPixelFormat::Unknown) {
+        if (m_desc.depthStencilFormat != EPixelFormat::Unknown)
+        {
             VkAttachmentDescription depthAttachment{};
             depthAttachment.format = VulkanUtils::getRHIFormatToVulkan(m_desc.depthStencilFormat);
             depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -320,23 +354,24 @@ namespace MonsterRender::RHI::Vulkan {
             depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
             depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            
+
             attachments.push_back(depthAttachment);
-            
+
             depthReference.attachment = static_cast<uint32>(attachments.size() - 1);
             depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             hasDepth = true;
         }
-        
+
         // Subpass
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = static_cast<uint32>(colorReferences.size());
         subpass.pColorAttachments = colorReferences.data();
-        if (hasDepth) {
+        if (hasDepth)
+        {
             subpass.pDepthStencilAttachment = &depthReference;
         }
-        
+
         // Subpass dependencies
         VkSubpassDependency dependency{};
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -345,7 +380,7 @@ namespace MonsterRender::RHI::Vulkan {
         dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         dependency.srcAccessMask = 0;
         dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        
+
         // Create render pass
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -355,106 +390,110 @@ namespace MonsterRender::RHI::Vulkan {
         renderPassInfo.pSubpasses = &subpass;
         renderPassInfo.dependencyCount = 1;
         renderPassInfo.pDependencies = &dependency;
-        
+
         VkResult result = functions.vkCreateRenderPass(device, &renderPassInfo, nullptr, &m_renderPass);
-        if (result != VK_SUCCESS) {
+        if (result != VK_SUCCESS)
+        {
             MR_LOG_ERROR("Failed to create render pass: " + std::to_string(result));
             return false;
         }
-        
+
         MR_LOG_DEBUG("Render pass created with " + std::to_string(attachments.size()) + " attachments");
         return true;
     }
-    
-    bool VulkanPipelineState::createGraphicsPipeline() {
-        const auto& functions = VulkanAPI::getFunctions();
+
+    bool VulkanPipelineState::createGraphicsPipeline()
+    {
+        const auto &functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
-        
+
         MR_LOG_DEBUG("Creating graphics pipeline: " + m_debugName);
-        
+
         // Validate prerequisites
-        if (m_shaderStages.empty()) {
+        if (m_shaderStages.empty())
+        {
             MR_LOG_ERROR("No shader stages available for pipeline creation");
             return false;
         }
-        
-        if (m_pipelineLayout == VK_NULL_HANDLE) {
+
+        if (m_pipelineLayout == VK_NULL_HANDLE)
+        {
             MR_LOG_ERROR("Pipeline layout is null - cannot create pipeline");
             return false;
         }
-        
-        if (m_renderPass == VK_NULL_HANDLE) {
+
+        if (m_renderPass == VK_NULL_HANDLE)
+        {
             MR_LOG_ERROR("Render pass is null - cannot create pipeline");
             return false;
         }
-        
+
         MR_LOG_DEBUG("Pipeline has " + std::to_string(m_shaderStages.size()) + " shader stage(s)");
-        
+
         // Vertex input state
         VkVertexInputBindingDescription bindingDescription = createVertexInputBinding();
         TArray<VkVertexInputAttributeDescription> attributeDescriptions = createVertexInputAttributes();
-        
-        MR_LOG_DEBUG("Vertex input: " + std::to_string(attributeDescriptions.size()) + 
-                    " attribute(s), stride = " + std::to_string(bindingDescription.stride));
-        
+
+        MR_LOG_DEBUG("Vertex input: " + std::to_string(attributeDescriptions.size()) +
+                     " attribute(s), stride = " + std::to_string(bindingDescription.stride));
+
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32>(attributeDescriptions.size());
         vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-        
+
         // Input assembly state
         VkPipelineInputAssemblyStateCreateInfo inputAssembly = createInputAssemblyState();
-        
+
         // Viewport state
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = 800.0f;  // TODO: Get from render target
+        viewport.width = 800.0f; // TODO: Get from render target
         viewport.height = 600.0f;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
-        
+
         VkRect2D scissor{};
         scissor.offset = {0, 0};
-        scissor.extent = {800, 600};  // TODO: Get from render target
-        
+        scissor.extent = {800, 600}; // TODO: Get from render target
+
         VkPipelineViewportStateCreateInfo viewportState{};
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         viewportState.viewportCount = 1;
         viewportState.pViewports = &viewport;
         viewportState.scissorCount = 1;
         viewportState.pScissors = &scissor;
-        
+
         // Rasterization state
         VkPipelineRasterizationStateCreateInfo rasterizer = createRasterizationState();
-        
+
         // Multisample state
         VkPipelineMultisampleStateCreateInfo multisampling = createMultisampleState();
-        
+
         // Color blend state
         TArray<VkPipelineColorBlendAttachmentState> colorBlendAttachments = createColorBlendAttachments();
         VkPipelineColorBlendStateCreateInfo colorBlending = createColorBlendState();
         colorBlending.attachmentCount = static_cast<uint32>(colorBlendAttachments.size());
         colorBlending.pAttachments = colorBlendAttachments.data();
-        
+
         MR_LOG_DEBUG("Color blend: " + std::to_string(colorBlendAttachments.size()) + " attachment(s)");
-        
+
         // Depth stencil state
         VkPipelineDepthStencilStateCreateInfo depthStencil = createDepthStencilState();
-        
+
         // Dynamic state
         TArray<VkDynamicState> dynamicStates = {
             VK_DYNAMIC_STATE_VIEWPORT,
-            VK_DYNAMIC_STATE_SCISSOR
-        };
-        
+            VK_DYNAMIC_STATE_SCISSOR};
+
         VkPipelineDynamicStateCreateInfo dynamicState{};
         dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
         dynamicState.dynamicStateCount = static_cast<uint32>(dynamicStates.size());
         dynamicState.pDynamicStates = dynamicStates.data();
-        
+
         // Create graphics pipeline
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -473,175 +512,220 @@ namespace MonsterRender::RHI::Vulkan {
         pipelineInfo.subpass = 0;
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
         pipelineInfo.basePipelineIndex = -1;
-        
+
         MR_LOG_DEBUG("Calling vkCreateGraphicsPipelines...");
         VkResult result = functions.vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline);
-        if (result != VK_SUCCESS) {
+        if (result != VK_SUCCESS)
+        {
             MR_LOG_ERROR("Failed to create graphics pipeline: VkResult = " + std::to_string(result));
             MR_LOG_ERROR("Pipeline name: " + m_debugName);
             return false;
         }
-        
-        if (m_pipeline == VK_NULL_HANDLE) {
+
+        if (m_pipeline == VK_NULL_HANDLE)
+        {
             MR_LOG_ERROR("vkCreateGraphicsPipelines succeeded but returned null handle");
             return false;
         }
-        
-        MR_LOG_INFO("Graphics pipeline created successfully: " + m_debugName + 
-                   " (handle: " + std::to_string(reinterpret_cast<uint64>(m_pipeline)) + ")");
+
+        MR_LOG_INFO("Graphics pipeline created successfully: " + m_debugName +
+                    " (handle: " + std::to_string(reinterpret_cast<uint64>(m_pipeline)) + ")");
         return true;
     }
-    
-    void VulkanPipelineState::destroyVulkanObjects() {
-        const auto& functions = VulkanAPI::getFunctions();
+
+    void VulkanPipelineState::destroyVulkanObjects()
+    {
+        const auto &functions = VulkanAPI::getFunctions();
         VkDevice device = m_device ? m_device->getLogicalDevice() : VK_NULL_HANDLE;
-        
-        if (device != VK_NULL_HANDLE) {
-            if (m_pipeline != VK_NULL_HANDLE) {
+
+        if (device != VK_NULL_HANDLE)
+        {
+            if (m_pipeline != VK_NULL_HANDLE)
+            {
                 functions.vkDestroyPipeline(device, m_pipeline, nullptr);
                 m_pipeline = VK_NULL_HANDLE;
             }
-            
-            if (m_pipelineLayout != VK_NULL_HANDLE) {
+
+            if (m_pipelineLayout != VK_NULL_HANDLE)
+            {
                 functions.vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
                 m_pipelineLayout = VK_NULL_HANDLE;
             }
-            
+
             // Cleanup descriptor set layouts
-            for (auto layout : m_descriptorSetLayouts) {
-                if (layout != VK_NULL_HANDLE) {
+            for (auto layout : m_descriptorSetLayouts)
+            {
+                if (layout != VK_NULL_HANDLE)
+                {
                     functions.vkDestroyDescriptorSetLayout(device, layout, nullptr);
                 }
             }
             m_descriptorSetLayouts.clear();
-            
+
             // Note: Do NOT destroy render pass - it's owned by VulkanDevice
             // Pipeline only holds a reference to device's render pass
             m_renderPass = VK_NULL_HANDLE;
         }
-        
+
         m_isValid = false;
     }
-    
-    bool VulkanPipelineState::reflectShaders() {
+
+    bool VulkanPipelineState::reflectShaders()
+    {
         m_reflectionData.clear();
-        
+
         // Reflect vertex shader
-        if (m_desc.vertexShader) {
-            auto* vulkanVertexShader = static_cast<VulkanVertexShader*>(m_desc.vertexShader.get());
+        if (m_desc.vertexShader)
+        {
+            auto *vulkanVertexShader = static_cast<VulkanVertexShader *>(m_desc.vertexShader.get());
             ShaderReflectionData vertexReflection = reflectShader(vulkanVertexShader);
             m_reflectionData.push_back(vertexReflection);
         }
-        
+
         // Reflect pixel shader
-        if (m_desc.pixelShader) {
-            auto* vulkanPixelShader = static_cast<VulkanPixelShader*>(m_desc.pixelShader.get());
+        if (m_desc.pixelShader)
+        {
+            auto *vulkanPixelShader = static_cast<VulkanPixelShader *>(m_desc.pixelShader.get());
             ShaderReflectionData pixelReflection = reflectShader(vulkanPixelShader);
             m_reflectionData.push_back(pixelReflection);
         }
-        
+
         MR_LOG_DEBUG("Reflected " + std::to_string(m_reflectionData.size()) + " shaders");
         return true;
     }
-    
-    ShaderReflectionData VulkanPipelineState::reflectShader(const VulkanShader* shader) {
+
+    ShaderReflectionData VulkanPipelineState::reflectShader(const VulkanShader *shader)
+    {
         ShaderReflectionData reflection;
         reflection.stage = shader->getStage();
-        reflection.entryPoint = "main";  // Default entry point
-        
+        reflection.entryPoint = "main"; // Default entry point
+
         // TODO: Implement actual shader reflection using SPIR-V reflection
         // For now, provide basic reflection data
-        if (reflection.stage == EShaderStage::Vertex) {
+        if (reflection.stage == EShaderStage::Vertex)
+        {
             reflection.vertexAttributes = {"Position", "Color", "TexCoord"};
             reflection.outputVariables = {"gl_Position", "outColor", "outTexCoord"};
-        } else if (reflection.stage == EShaderStage::Fragment) {
+        }
+        else if (reflection.stage == EShaderStage::Fragment)
+        {
             reflection.inputVariables = {"inColor", "inTexCoord"};
             reflection.outputVariables = {"outColor"};
         }
-        
+
         return reflection;
     }
-    
-    uint64 VulkanPipelineState::calculatePipelineHash() const {
+
+    uint64 VulkanPipelineState::calculatePipelineHash() const
+    {
         // Simple hash based on pipeline state description
         // TODO: Implement more sophisticated hashing
         uint64 hash = 0;
-        
+
         // Hash shader pointers
-        if (m_desc.vertexShader) {
-            hash ^= std::hash<void*>{}(m_desc.vertexShader.get());
+        if (m_desc.vertexShader)
+        {
+            hash ^= std::hash<void *>{}(m_desc.vertexShader.get());
         }
-        if (m_desc.pixelShader) {
-            hash ^= std::hash<void*>{}(m_desc.pixelShader.get());
+        if (m_desc.pixelShader)
+        {
+            hash ^= std::hash<void *>{}(m_desc.pixelShader.get());
         }
-        
+
         // Hash primitive topology
         hash ^= std::hash<uint32>{}(static_cast<uint32>(m_desc.primitiveTopology));
-        
+
         // Hash render target formats
-        for (auto format : m_desc.renderTargetFormats) {
+        for (auto format : m_desc.renderTargetFormats)
+        {
             hash ^= std::hash<uint32>{}(static_cast<uint32>(format));
         }
-        
+
         return hash;
     }
-    
-    bool VulkanPipelineState::loadFromCache() {
+
+    bool VulkanPipelineState::loadFromCache()
+    {
         // TODO: Implement pipeline cache loading
         // For now, always create new pipeline
         return false;
     }
-    
-    void VulkanPipelineState::saveToCache() {
+
+    void VulkanPipelineState::saveToCache()
+    {
         // TODO: Implement pipeline cache saving
         // Update cache entry
         m_cacheEntry = PipelineCacheEntry(m_pipeline, m_pipelineLayout, m_renderPass, calculatePipelineHash());
     }
-    
+
     // Helper to convert RHI vertex format to Vulkan format
-    static VkFormat getVulkanVertexFormat(EVertexFormat format) {
-        switch (format) {
-            case EVertexFormat::Float1: return VK_FORMAT_R32_SFLOAT;
-            case EVertexFormat::Float2: return VK_FORMAT_R32G32_SFLOAT;
-            case EVertexFormat::Float3: return VK_FORMAT_R32G32B32_SFLOAT;
-            case EVertexFormat::Float4: return VK_FORMAT_R32G32B32A32_SFLOAT;
-            case EVertexFormat::Int1:   return VK_FORMAT_R32_SINT;
-            case EVertexFormat::Int2:   return VK_FORMAT_R32G32_SINT;
-            case EVertexFormat::Int3:   return VK_FORMAT_R32G32B32_SINT;
-            case EVertexFormat::Int4:   return VK_FORMAT_R32G32B32A32_SINT;
-            case EVertexFormat::UInt1:  return VK_FORMAT_R32_UINT;
-            case EVertexFormat::UInt2:  return VK_FORMAT_R32G32_UINT;
-            case EVertexFormat::UInt3:  return VK_FORMAT_R32G32B32_UINT;
-            case EVertexFormat::UInt4:  return VK_FORMAT_R32G32B32A32_UINT;
-            default: return VK_FORMAT_R32G32B32_SFLOAT;
+    static VkFormat getVulkanVertexFormat(EVertexFormat format)
+    {
+        switch (format)
+        {
+        case EVertexFormat::Float1:
+            return VK_FORMAT_R32_SFLOAT;
+        case EVertexFormat::Float2:
+            return VK_FORMAT_R32G32_SFLOAT;
+        case EVertexFormat::Float3:
+            return VK_FORMAT_R32G32B32_SFLOAT;
+        case EVertexFormat::Float4:
+            return VK_FORMAT_R32G32B32A32_SFLOAT;
+        case EVertexFormat::Int1:
+            return VK_FORMAT_R32_SINT;
+        case EVertexFormat::Int2:
+            return VK_FORMAT_R32G32_SINT;
+        case EVertexFormat::Int3:
+            return VK_FORMAT_R32G32B32_SINT;
+        case EVertexFormat::Int4:
+            return VK_FORMAT_R32G32B32A32_SINT;
+        case EVertexFormat::UInt1:
+            return VK_FORMAT_R32_UINT;
+        case EVertexFormat::UInt2:
+            return VK_FORMAT_R32G32_UINT;
+        case EVertexFormat::UInt3:
+            return VK_FORMAT_R32G32B32_UINT;
+        case EVertexFormat::UInt4:
+            return VK_FORMAT_R32G32B32A32_UINT;
+        default:
+            return VK_FORMAT_R32G32B32_SFLOAT;
         }
     }
-    
+
     // Helper methods for creating Vulkan pipeline states
-    VkVertexInputBindingDescription VulkanPipelineState::createVertexInputBinding() const {
+    VkVertexInputBindingDescription VulkanPipelineState::createVertexInputBinding() const
+    {
         VkVertexInputBindingDescription bindingDescription{};
         bindingDescription.binding = 0;
         bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        
+
         // Use custom vertex layout if provided, otherwise use default (Position + Color)
-        if (m_desc.vertexLayout.stride > 0) {
+        if (m_desc.vertexLayout.stride > 0)
+        {
             bindingDescription.stride = m_desc.vertexLayout.stride;
-        } else if (!m_desc.vertexLayout.attributes.empty()) {
+        }
+        else if (!m_desc.vertexLayout.attributes.empty())
+        {
             bindingDescription.stride = VertexInputLayout::calculateStride(m_desc.vertexLayout.attributes);
-        } else {
+        }
+        else
+        {
             // Default: Position (vec3) + Color (vec3) = 24 bytes (legacy triangle demo)
             bindingDescription.stride = sizeof(float) * 6;
         }
-        
+
         return bindingDescription;
     }
-    
-    TArray<VkVertexInputAttributeDescription> VulkanPipelineState::createVertexInputAttributes() const {
+
+    TArray<VkVertexInputAttributeDescription> VulkanPipelineState::createVertexInputAttributes() const
+    {
         TArray<VkVertexInputAttributeDescription> attributes;
-        
+
         // Use custom vertex layout if provided
-        if (!m_desc.vertexLayout.attributes.empty()) {
-            for (const auto& attr : m_desc.vertexLayout.attributes) {
+        if (!m_desc.vertexLayout.attributes.empty())
+        {
+            for (const auto &attr : m_desc.vertexLayout.attributes)
+            {
                 VkVertexInputAttributeDescription vkAttr{};
                 vkAttr.binding = 0;
                 vkAttr.location = attr.location;
@@ -651,7 +735,7 @@ namespace MonsterRender::RHI::Vulkan {
             }
             return attributes;
         }
-        
+
         // Default: Position (vec3) + Color (vec3) for legacy triangle demo
         VkVertexInputAttributeDescription posAttribute{};
         posAttribute.binding = 0;
@@ -659,50 +743,48 @@ namespace MonsterRender::RHI::Vulkan {
         posAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
         posAttribute.offset = 0;
         attributes.push_back(posAttribute);
-        
+
         VkVertexInputAttributeDescription colorAttribute{};
         colorAttribute.binding = 0;
         colorAttribute.location = 1;
         colorAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
         colorAttribute.offset = sizeof(float) * 3;
         attributes.push_back(colorAttribute);
-        
+
         return attributes;
     }
-    
-    VkPipelineInputAssemblyStateCreateInfo VulkanPipelineState::createInputAssemblyState() const {
+
+    VkPipelineInputAssemblyStateCreateInfo VulkanPipelineState::createInputAssemblyState() const
+    {
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         inputAssembly.topology = VulkanUtils::getPrimitiveTopology(m_desc.primitiveTopology);
         inputAssembly.primitiveRestartEnable = VK_FALSE;
         return inputAssembly;
     }
-    
-    VkPipelineRasterizationStateCreateInfo VulkanPipelineState::createRasterizationState() const {
+
+    VkPipelineRasterizationStateCreateInfo VulkanPipelineState::createRasterizationState() const
+    {
         VkPipelineRasterizationStateCreateInfo rasterizer{};
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.depthClampEnable = VK_FALSE;
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
-        rasterizer.polygonMode = m_desc.rasterizerState.fillMode == EFillMode::Wireframe ? 
-                                VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+        rasterizer.polygonMode = m_desc.rasterizerState.fillMode == EFillMode::Wireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = m_desc.rasterizerState.cullMode == ECullMode::None ? 
-                             VK_CULL_MODE_NONE : 
-                             (m_desc.rasterizerState.cullMode == ECullMode::Front ? 
-                              VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT);
-        rasterizer.frontFace = m_desc.rasterizerState.frontCounterClockwise ? 
-                              VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.cullMode = m_desc.rasterizerState.cullMode == ECullMode::None ? VK_CULL_MODE_NONE : (m_desc.rasterizerState.cullMode == ECullMode::Front ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT);
+        rasterizer.frontFace = m_desc.rasterizerState.frontCounterClockwise ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
         return rasterizer;
     }
-    
-    VkPipelineColorBlendStateCreateInfo VulkanPipelineState::createColorBlendState() const {
+
+    VkPipelineColorBlendStateCreateInfo VulkanPipelineState::createColorBlendState() const
+    {
         // Note: This function should be called within createGraphicsPipeline where the attachments array is managed
         VkPipelineColorBlendStateCreateInfo colorBlending{};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlending.logicOpEnable = VK_FALSE;
         colorBlending.logicOp = VK_LOGIC_OP_COPY;
-        colorBlending.attachmentCount = 0; // Will be set by caller
+        colorBlending.attachmentCount = 0;    // Will be set by caller
         colorBlending.pAttachments = nullptr; // Will be set by caller
         colorBlending.blendConstants[0] = 0.0f;
         colorBlending.blendConstants[1] = 0.0f;
@@ -710,13 +792,14 @@ namespace MonsterRender::RHI::Vulkan {
         colorBlending.blendConstants[3] = 0.0f;
         return colorBlending;
     }
-    
-    VkPipelineDepthStencilStateCreateInfo VulkanPipelineState::createDepthStencilState() const {
+
+    VkPipelineDepthStencilStateCreateInfo VulkanPipelineState::createDepthStencilState() const
+    {
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable = m_desc.depthStencilState.depthEnable ? VK_TRUE : VK_FALSE;
         depthStencil.depthWriteEnable = m_desc.depthStencilState.depthWriteEnable ? VK_TRUE : VK_FALSE;
-        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;  // TODO: Convert from EComparisonFunc
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS; // TODO: Convert from EComparisonFunc
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.minDepthBounds = 0.0f;
         depthStencil.maxDepthBounds = 1.0f;
@@ -725,8 +808,9 @@ namespace MonsterRender::RHI::Vulkan {
         depthStencil.back = {};
         return depthStencil;
     }
-    
-    VkPipelineMultisampleStateCreateInfo VulkanPipelineState::createMultisampleState() const {
+
+    VkPipelineMultisampleStateCreateInfo VulkanPipelineState::createMultisampleState() const
+    {
         VkPipelineMultisampleStateCreateInfo multisampling{};
         multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisampling.sampleShadingEnable = VK_FALSE;
@@ -737,98 +821,113 @@ namespace MonsterRender::RHI::Vulkan {
         multisampling.alphaToOneEnable = VK_FALSE;
         return multisampling;
     }
-    
-    TArray<VkPipelineColorBlendAttachmentState> VulkanPipelineState::createColorBlendAttachments() const {
+
+    TArray<VkPipelineColorBlendAttachmentState> VulkanPipelineState::createColorBlendAttachments() const
+    {
         TArray<VkPipelineColorBlendAttachmentState> attachments;
-        
-        for (uint32 i = 0; i < m_desc.renderTargetFormats.size(); ++i) {
+
+        for (uint32 i = 0; i < m_desc.renderTargetFormats.size(); ++i)
+        {
             VkPipelineColorBlendAttachmentState attachment{};
-            attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | 
-                                  VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
             attachment.blendEnable = m_desc.blendState.blendEnable ? VK_TRUE : VK_FALSE;
-            attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // TODO: Convert from EBlendFactor
+            attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // TODO: Convert from EBlendFactor
             attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-            attachment.colorBlendOp = VK_BLEND_OP_ADD;  // TODO: Convert from EBlendOp
+            attachment.colorBlendOp = VK_BLEND_OP_ADD; // TODO: Convert from EBlendOp
             attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
             attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
             attachment.alphaBlendOp = VK_BLEND_OP_ADD;
             attachments.push_back(attachment);
         }
-        
+
         return attachments;
     }
-    
+
     // VulkanPipelineCache implementation
-    VulkanPipelineCache::VulkanPipelineCache(VulkanDevice* device)
-        : m_device(device) {
+    VulkanPipelineCache::VulkanPipelineCache(VulkanDevice *device)
+        : m_device(device)
+    {
         MR_LOG_INFO("Creating Vulkan pipeline cache");
     }
-    
-    VulkanPipelineCache::~VulkanPipelineCache() {
+
+    VulkanPipelineCache::~VulkanPipelineCache()
+    {
         MR_LOG_INFO("Destroying Vulkan pipeline cache");
         clear();
     }
-    
-    TSharedPtr<VulkanPipelineState> VulkanPipelineCache::getOrCreatePipelineState(const PipelineStateDesc& desc) {
+
+    TSharedPtr<VulkanPipelineState> VulkanPipelineCache::getOrCreatePipelineState(const PipelineStateDesc &desc)
+    {
         std::lock_guard<std::mutex> lock(m_cacheMutex);
-        
+
         uint64 hash = calculateDescHash(desc);
-        
+
         // Check if pipeline already exists in cache
         auto it = m_pipelineCache.find(hash);
-        if (it != m_pipelineCache.end()) {
+        if (it != m_pipelineCache.end())
+        {
             updateStats(true);
             MR_LOG_DEBUG("Pipeline cache hit for: " + desc.debugName);
             return it->second;
         }
-        
+
         // Create new pipeline state
         auto pipelineState = MakeShared<VulkanPipelineState>(m_device, desc);
-        if (!pipelineState->initialize()) {
+        if (!pipelineState->initialize())
+        {
             MR_LOG_ERROR("Failed to initialize pipeline state: " + desc.debugName);
             updateStats(false);
             return nullptr;
         }
-        
+
         // Add to cache
         m_pipelineCache[hash] = pipelineState;
         updateStats(false);
-        
+
         MR_LOG_DEBUG("Pipeline cache miss, created new pipeline: " + desc.debugName);
         return pipelineState;
     }
-    
-    void VulkanPipelineCache::clear() {
+
+    void VulkanPipelineCache::clear()
+    {
         std::lock_guard<std::mutex> lock(m_cacheMutex);
-        
+
         m_pipelineCache.clear();
         m_stats = CacheStats{};
-        
+
         MR_LOG_INFO("Pipeline cache cleared");
     }
-    
-    uint64 VulkanPipelineCache::calculateDescHash(const PipelineStateDesc& desc) const {
+
+    uint64 VulkanPipelineCache::calculateDescHash(const PipelineStateDesc &desc) const
+    {
         // Simple hash implementation
         // TODO: Implement more sophisticated hashing
         uint64 hash = 0;
-        
-        if (desc.vertexShader) {
-            hash ^= std::hash<void*>{}(desc.vertexShader.get());
+
+        if (desc.vertexShader)
+        {
+            hash ^= std::hash<void *>{}(desc.vertexShader.get());
         }
-        if (desc.pixelShader) {
-            hash ^= std::hash<void*>{}(desc.pixelShader.get());
+        if (desc.pixelShader)
+        {
+            hash ^= std::hash<void *>{}(desc.pixelShader.get());
         }
-        
+
         hash ^= std::hash<uint32>{}(static_cast<uint32>(desc.primitiveTopology));
         hash ^= std::hash<String>{}(desc.debugName);
-        
+
         return hash;
     }
-    
-    void VulkanPipelineCache::updateStats(bool hit) const {
-        if (hit) {
+
+    void VulkanPipelineCache::updateStats(bool hit) const
+    {
+        if (hit)
+        {
             m_stats.cacheHits++;
-        } else {
+        }
+        else
+        {
             m_stats.cacheMisses++;
         }
         m_stats.totalPipelines = static_cast<uint32>(m_pipelineCache.size());

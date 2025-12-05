@@ -122,42 +122,45 @@ namespace MonsterRender::RHI::Vulkan {
             uint32 start = i;
 
             if (op == 71 /*OpDecorate*/) {
-                if (i + 2 <= start + wc - 1) {
-                    uint32 targetId = code[i++];
-                    uint32 decoration = code[i++];
+                if (wc >= 3) {  // OpDecorate needs at least 3 words
+                    uint32 targetId = code[i];
+                    uint32 decoration = code[i + 1];
                     switch (decoration) {
                         case 33: /* Binding */
                         {
-                            uint32 val = (i < start + wc) ? code[i++] : 0;
+                            uint32 val = (wc >= 4) ? code[i + 2] : 0;
                             auto& info = idToBinding[targetId];
                             info.binding = val; info.hasBinding = true;
+                            MR_LOG_DEBUG("Reflection: Found Binding=" + std::to_string(val) + " for ID=" + std::to_string(targetId));
                             break;
                         }
                         case 34: /* DescriptorSet */
                         {
-                            uint32 val = (i < start + wc) ? code[i++] : 0;
+                            uint32 val = (wc >= 4) ? code[i + 2] : 0;
                             auto& info = idToBinding[targetId];
                             info.set = val; info.hasSet = true;
+                            MR_LOG_DEBUG("Reflection: Found DescriptorSet=" + std::to_string(val) + " for ID=" + std::to_string(targetId));
                             break;
                         }
                         default:
-                            // skip extra operands
-                            while (i < start + wc) ++i;
                             break;
                     }
-                } else {
-                    i = start + wc - 1;
                 }
+                i = start + wc - 1;
             } else if (op == 59 /*OpVariable*/) {
-                // Storage class is at operand 2; if Uniform/UniformConstant, check previous decorations
-                if (i + 2 <= start + wc - 1) {
-                    uint32 resultType = code[i++];
-                    uint32 resultId = code[i++];
-                    uint32 storageClass = code[i++];
+                // OpVariable format: wc | op | result_type | result_id | storage_class [| initializer]
+                if (wc >= 4) {
+                    uint32 resultType = code[i];
+                    uint32 resultId = code[i + 1];
+                    uint32 storageClass = code[i + 2];
                     (void)resultType;
+                    
+                    MR_LOG_DEBUG("Reflection: OpVariable ID=" + std::to_string(resultId) + 
+                                ", storageClass=" + std::to_string(storageClass));
+                    
                     if (storageClass == 2 /*UniformConstant*/ || storageClass == 0 /*Uniform*/) {
                         auto it = idToBinding.find(resultId);
-                        if (it != idToBinding.end()) {
+                        if (it != idToBinding.end() && it->second.hasBinding) {
                             VkDescriptorSetLayoutBinding b{};
                             b.binding = it->second.binding;
                             b.descriptorCount = 1;
@@ -165,12 +168,14 @@ namespace MonsterRender::RHI::Vulkan {
                             // Heuristic: UniformConstant -> sampled image/sampler; Uniform -> uniform buffer
                             b.descriptorType = (storageClass == 2) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                             m_descriptorBindings.push_back(b);
+                            MR_LOG_DEBUG("Reflection: Added binding " + std::to_string(b.binding) + 
+                                        " as " + (storageClass == 2 ? "COMBINED_IMAGE_SAMPLER" : "UNIFORM_BUFFER"));
+                        } else {
+                            MR_LOG_DEBUG("Reflection: No binding found for ID=" + std::to_string(resultId));
                         }
                     }
                 }
                 i = start + wc - 1;
-            } else if (op == 71 /*OpDecorate*/ ) {
-                // handled above
             } else {
                 i = start + wc - 1;
             }
