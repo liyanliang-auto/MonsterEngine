@@ -31,6 +31,9 @@ namespace MonsterRender {
 // Logging System Test Forward Declaration
 void RunLoggingSystemTests();
 
+// Math Library Test Forward Declaration
+void RunMathLibraryTests();
+
 // Entry point following UE5's application architecture
 int main(int argc, char** argv) {
     using namespace MonsterRender;
@@ -55,6 +58,7 @@ int main(int argc, char** argv) {
     bool runVulkanMemoryTests = false;
     bool runVulkanResourceTests = false;
     bool runLoggingTests = false;
+    bool runMathTests = false;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -76,6 +80,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-logging") == 0 || strcmp(argv[i], "-tl") == 0) {
             runLoggingTests = true;
         }
+        else if (strcmp(argv[i], "--test-math") == 0 || strcmp(argv[i], "-tmath") == 0) {
+            runMathTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -83,7 +90,7 @@ int main(int argc, char** argv) {
     
     // Default behavior: don't run tests, run application
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
-        !runVulkanMemoryTests && !runVulkanResourceTests && !runLoggingTests && !runAllTests) {
+        !runVulkanMemoryTests && !runVulkanResourceTests && !runLoggingTests && !runMathTests && !runAllTests) {
         runAllTests = false;
     }
     
@@ -93,9 +100,21 @@ int main(int argc, char** argv) {
         //return 0;
     }
     
+    // Run math library tests
+    if (runMathTests) {
+        MR_LOG_INFO("\n");
+        MR_LOG_INFO("==========================================");
+        MR_LOG_INFO("  Math Library Tests");
+        MR_LOG_INFO("==========================================");
+        MR_LOG_INFO("\n");
+        
+        RunMathLibraryTests();
+        return 0;
+    }
+    
     // Run tests if requested
     if (runMemoryTests || runTextureTests || runVirtualTextureTests || 
-        runVulkanMemoryTests || runVulkanResourceTests || runAllTests) {
+        runVulkanMemoryTests || runVulkanResourceTests || runMathTests || runAllTests) {
         MR_LOG_INFO("\n");
         MR_LOG_INFO("==========================================");
         MR_LOG_INFO("  MonsterEngine Test Suite");
