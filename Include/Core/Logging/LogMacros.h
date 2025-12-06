@@ -17,6 +17,7 @@
 #include "Core/Logging/OutputDeviceRedirector.h"
 #include <cstdio>
 #include <cstdarg>
+#include <string>
 
 namespace MonsterRender {
 
@@ -213,10 +214,19 @@ using MonsterRender::LogTemp;
 
 // These macros use the LogTemp category for simple logging
 // They maintain backward compatibility with the old MR_LOG_* macros
+// Note: Message can be const char*, std::string, or string expression
 
-#define MR_LOG_TRACE(Message)   MR_LOG(LogTemp, VeryVerbose, "%s", Message)
-#define MR_LOG_DEBUG(Message)   MR_LOG(LogTemp, Verbose, "%s", Message)
-#define MR_LOG_INFO(Message)    MR_LOG(LogTemp, Log, "%s", Message)
-#define MR_LOG_WARNING(Message) MR_LOG(LogTemp, Warning, "%s", Message)
-#define MR_LOG_ERROR(Message)   MR_LOG(LogTemp, Error, "%s", Message)
-#define MR_LOG_FATAL(Message)   MR_LOG(LogTemp, Fatal, "%s", Message)
+// Helper to convert message to const char* (handles both const char* and std::string)
+namespace MonsterRender {
+namespace Private {
+    inline const char* ToLogString(const char* str) { return str; }
+    inline const char* ToLogString(const std::string& str) { return str.c_str(); }
+} // namespace Private
+} // namespace MonsterRender
+
+#define MR_LOG_TRACE(Message)   MR_LOG(LogTemp, VeryVerbose, "%s", MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_DEBUG(Message)   MR_LOG(LogTemp, Verbose, "%s", MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_INFO(Message)    MR_LOG(LogTemp, Log, "%s", MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_WARNING(Message) MR_LOG(LogTemp, Warning, "%s", MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_ERROR(Message)   MR_LOG(LogTemp, Error, "%s", MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_FATAL(Message)   MR_LOG(LogTemp, Fatal, "%s", MonsterRender::Private::ToLogString(Message))
