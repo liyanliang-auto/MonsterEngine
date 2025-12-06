@@ -433,11 +433,17 @@ namespace MonsterRender::RHI::Vulkan {
         TArray<VkDescriptorBufferInfo> BufferInfos;
         TArray<VkDescriptorImageInfo> ImageInfos;
         
+        // Store binding slots for later write setup
+        TArray<uint32> BufferSlots;
+        TArray<uint32> ImageSlots;
+        
         // Reserve to prevent reallocation
         BufferInfos.reserve(Key.BufferBindings.size());
         ImageInfos.reserve(Key.ImageBindings.size());
+        BufferSlots.reserve(Key.BufferBindings.size());
+        ImageSlots.reserve(Key.ImageBindings.size());
         
-        // Add buffer writes
+        // First pass: Collect all buffer infos
         for (const auto& [Slot, Binding] : Key.BufferBindings) {
             if (Binding.Buffer == VK_NULL_HANDLE) continue;
             
@@ -445,19 +451,10 @@ namespace MonsterRender::RHI::Vulkan {
             BufferInfo.buffer = Binding.Buffer;
             BufferInfo.offset = Binding.Offset;
             BufferInfo.range = Binding.Range > 0 ? Binding.Range : VK_WHOLE_SIZE;
-            
-            VkWriteDescriptorSet Write{};
-            Write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            Write.dstSet = Set;
-            Write.dstBinding = Slot;
-            Write.dstArrayElement = 0;
-            Write.descriptorCount = 1;
-            Write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            Write.pBufferInfo = &BufferInfos.back();
-            Writes.push_back(Write);
+            BufferSlots.push_back(Slot);
         }
         
-        // Add image writes
+        // Second pass: Collect all image infos
         for (const auto& [Slot, Binding] : Key.ImageBindings) {
             if (Binding.ImageView == VK_NULL_HANDLE) {
                 MR_LOG_WARNING("UpdateDescriptorSet: Skipping slot " + std::to_string(Slot) + " - ImageView is NULL");
@@ -473,15 +470,34 @@ namespace MonsterRender::RHI::Vulkan {
             ImageInfo.imageView = Binding.ImageView;
             ImageInfo.sampler = Binding.Sampler;
             ImageInfo.imageLayout = Binding.ImageLayout;
-            
+            ImageSlots.push_back(Slot);
+        }
+        
+        // Third pass: Build write descriptors with stable pointers
+        // Now that BufferInfos and ImageInfos are fully populated, their addresses won't change
+        Writes.reserve(BufferInfos.size() + ImageInfos.size());
+        
+        for (size_t i = 0; i < BufferInfos.size(); ++i) {
             VkWriteDescriptorSet Write{};
             Write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             Write.dstSet = Set;
-            Write.dstBinding = Slot;
+            Write.dstBinding = BufferSlots[i];
+            Write.dstArrayElement = 0;
+            Write.descriptorCount = 1;
+            Write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            Write.pBufferInfo = &BufferInfos[i];  // Stable pointer after all insertions
+            Writes.push_back(Write);
+        }
+        
+        for (size_t i = 0; i < ImageInfos.size(); ++i) {
+            VkWriteDescriptorSet Write{};
+            Write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            Write.dstSet = Set;
+            Write.dstBinding = ImageSlots[i];
             Write.dstArrayElement = 0;
             Write.descriptorCount = 1;
             Write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            Write.pImageInfo = &ImageInfos.back();
+            Write.pImageInfo = &ImageInfos[i];  // Stable pointer after all insertions
             Writes.push_back(Write);
         }
         
