@@ -1,4 +1,4 @@
-#include "Core/Logging/LogMacros.h"
+#include "Core/Logging/Logging.h"
 
 /**
  * LogCategories.cpp
@@ -15,14 +15,6 @@ namespace MonsterRender {
 
 // Default temporary log category (equivalent to UE5's LogTemp)
 DEFINE_LOG_CATEGORY(LogTemp)
-
-} // namespace MonsterRender
-
-// ============================================================================
-// Additional Engine Log Categories
-// ============================================================================
-
-// These are defined outside the namespace for easier access
 
 // Core engine categories
 DEFINE_LOG_CATEGORY(LogCore)
@@ -41,3 +33,5 @@ DEFINE_LOG_CATEGORY(LogTextures)
 DEFINE_LOG_CATEGORY(LogPlatform)
 DEFINE_LOG_CATEGORY(LogWindow)
 DEFINE_LOG_CATEGORY(LogInput)
+
+} // namespace MonsterRender
