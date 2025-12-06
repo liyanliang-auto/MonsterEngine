@@ -28,6 +28,9 @@ namespace MonsterRender {
     }
 }
 
+// Logging System Test Forward Declaration
+void RunLoggingSystemTests();
+
 // Entry point following UE5's application architecture
 int main(int argc, char** argv) {
     using namespace MonsterRender;
@@ -43,6 +46,7 @@ int main(int argc, char** argv) {
     bool runVirtualTextureTests = false;
     bool runVulkanMemoryTests = false;
     bool runVulkanResourceTests = false;
+    bool runLoggingTests = true;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -61,6 +65,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-vulkan-resource") == 0 || strcmp(argv[i], "-tvr") == 0) {
             runVulkanResourceTests = true;
         }
+        else if (strcmp(argv[i], "--test-logging") == 0 || strcmp(argv[i], "-tl") == 0) {
+            runLoggingTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -68,8 +75,14 @@ int main(int argc, char** argv) {
     
     // Default behavior: don't run tests, run application
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
-        !runVulkanMemoryTests && !runVulkanResourceTests && !runAllTests) {
+        !runVulkanMemoryTests && !runVulkanResourceTests && !runLoggingTests && !runAllTests) {
         runAllTests = false;
+    }
+    
+    // Run logging tests separately (can run standalone)
+    if (runLoggingTests) {
+        RunLoggingSystemTests();
+        return 0;
     }
     
     // Run tests if requested
