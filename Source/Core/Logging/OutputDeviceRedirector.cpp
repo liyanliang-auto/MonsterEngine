@@ -84,11 +84,26 @@ void FOutputDeviceRedirector::Serialize(const char* Message, ELogVerbosity::Type
 }
 
 void FOutputDeviceRedirector::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) {
+    Serialize(Message, Verbosity, Category, Time, nullptr, 0);
+}
+
+void FOutputDeviceRedirector::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                                        const char* File, int32 Line) {
+    // Get current time
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    double time = std::chrono::duration<double>(duration).count();
+
+    Serialize(Message, Verbosity, Category, time, File, Line);
+}
+
+void FOutputDeviceRedirector::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category,
+                                        double Time, const char* File, int32 Line) {
     // In panic mode, only use panic-safe devices
     if (m_bInPanicMode.load(std::memory_order_acquire)) {
         // Only the panic thread can log
         if (std::this_thread::get_id() == m_panicThreadId) {
-            SerializeToAllDevices(Message, Verbosity, Category, Time);
+            SerializeToAllDevices(Message, Verbosity, Category, Time, File, Line);
         }
         return;
     }
@@ -96,16 +111,16 @@ void FOutputDeviceRedirector::Serialize(const char* Message, ELogVerbosity::Type
     // Check if we're on the primary thread
     if (IsInPrimaryThread()) {
         // Direct output to all devices
-        SerializeToAllDevices(Message, Verbosity, Category, Time);
+        SerializeToAllDevices(Message, Verbosity, Category, Time, File, Line);
     } else {
         // Buffer for later flushing
-        BufferLine(Message, Verbosity, Category, Time);
+        BufferLine(Message, Verbosity, Category, Time, File, Line);
     }
 
     // Store in backlog if enabled
     if (m_bBacklogEnabled) {
         std::lock_guard<std::mutex> lock(m_backlogMutex);
-        m_backlog.emplace_back(Message, Category, Verbosity, Time);
+        m_backlog.emplace_back(Message, Category, Verbosity, Time, File, Line);
     }
 }
 
@@ -152,7 +167,8 @@ void FOutputDeviceRedirector::FlushThreadedLogs() {
 
     // Output them
     for (const auto& line : linesToFlush) {
-        SerializeToAllDevices(line.Data.c_str(), line.Verbosity, line.Category.c_str(), line.Time);
+        SerializeToAllDevices(line.Data.c_str(), line.Verbosity, line.Category.c_str(), line.Time,
+                             line.File.empty() ? nullptr : line.File.c_str(), line.Line);
     }
 }
 
@@ -208,7 +224,8 @@ void FOutputDeviceRedirector::SerializeBacklog(FOutputDevice* OutputDevice) {
 
     std::lock_guard<std::mutex> lock(m_backlogMutex);
     for (const auto& line : m_backlog) {
-        OutputDevice->Serialize(line.Data.c_str(), line.Verbosity, line.Category.c_str(), line.Time);
+        OutputDevice->Serialize(line.Data.c_str(), line.Verbosity, line.Category.c_str(), line.Time,
+                               line.File.empty() ? nullptr : line.File.c_str(), line.Line);
     }
 }
 
@@ -216,7 +233,9 @@ void FOutputDeviceRedirector::SerializeBacklog(FOutputDevice* OutputDevice) {
 // Internal Methods
 // ============================================================================
 
-void FOutputDeviceRedirector::SerializeToAllDevices(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) {
+void FOutputDeviceRedirector::SerializeToAllDevices(const char* Message, ELogVerbosity::Type Verbosity, 
+                                                    const char* Category, double Time,
+                                                    const char* File, int32 Line) {
     std::lock_guard<std::mutex> lock(m_devicesMutex);
 
     bool bInPanic = m_bInPanicMode.load(std::memory_order_acquire);
@@ -227,13 +246,15 @@ void FOutputDeviceRedirector::SerializeToAllDevices(const char* Message, ELogVer
             continue;
         }
 
-        m_outputDevices[i]->Serialize(Message, Verbosity, Category, Time);
+        m_outputDevices[i]->Serialize(Message, Verbosity, Category, Time, File, Line);
     }
 }
 
-void FOutputDeviceRedirector::BufferLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) {
+void FOutputDeviceRedirector::BufferLine(const char* Message, ELogVerbosity::Type Verbosity, 
+                                         const char* Category, double Time,
+                                         const char* File, int32 Line) {
     std::lock_guard<std::mutex> lock(m_bufferMutex);
-    m_bufferedLines.emplace_back(Message, Category, Verbosity, Time);
+    m_bufferedLines.emplace_back(Message, Category, Verbosity, Time, File, Line);
 }
 
 } // namespace MonsterRender

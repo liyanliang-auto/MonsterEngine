@@ -84,6 +84,10 @@ public:
 
     void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category) override;
     void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) override;
+    void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                  const char* File, int32 Line) override;
+    void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category,
+                  double Time, const char* File, int32 Line) override;
     void Flush() override;
     void TearDown() override;
 
@@ -111,8 +115,9 @@ private:
     /** Create the async writer if not already created */
     bool CreateWriter();
 
-    /** Format a log line with timestamp and category */
-    String FormatLogLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time);
+    /** Format a log line with timestamp, category, file and line */
+    String FormatLogLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                        double Time, const char* File = nullptr, int32 Line = 0);
 
     TUniquePtr<FAsyncWriter> m_asyncWriter;
     String m_filename;

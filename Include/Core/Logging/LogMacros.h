@@ -47,15 +47,34 @@ namespace MonsterRender {
 namespace Private {
 
 /**
+ * Extract filename from full path (compile-time friendly)
+ * @param Path - Full file path
+ * @return Pointer to the filename portion
+ */
+inline const char* ExtractFilename(const char* Path) {
+    const char* file = Path;
+    while (*Path) {
+        if (*Path == '/' || *Path == '\\') {
+            file = Path + 1;
+        }
+        ++Path;
+    }
+    return file;
+}
+
+/**
  * Internal log function - formats and outputs the message.
  * Uses printf-style formatting.
  * 
  * @param Category - Log category
  * @param Verbosity - Log verbosity level
+ * @param File - Source file name (__FILE__)
+ * @param Line - Source line number (__LINE__)
  * @param Format - printf-style format string
  * @param ... - Format arguments
  */
-inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Verbosity, const char* Format, ...) {
+inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Verbosity, 
+                        const char* File, int Line, const char* Format, ...) {
     // Format the message
     char buffer[4096];
     va_list args;
@@ -63,18 +82,21 @@ inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Ve
     vsnprintf(buffer, sizeof(buffer), Format, args);
     va_end(args);
 
-    // Output to GLog
-    GLog->Serialize(buffer, Verbosity, Category.GetCategoryName());
+    // Output to GLog with file and line info
+    GLog->Serialize(buffer, Verbosity, Category.GetCategoryName(), ExtractFilename(File), Line);
 }
 
 /**
  * Fatal log function - logs and then crashes.
  * 
  * @param Category - Log category
+ * @param File - Source file name (__FILE__)
+ * @param Line - Source line number (__LINE__)
  * @param Format - printf-style format string
  * @param ... - Format arguments
  */
-[[noreturn]] inline void FatalLogInternal(const FLogCategoryBase& Category, const char* Format, ...) {
+[[noreturn]] inline void FatalLogInternal(const FLogCategoryBase& Category, 
+                                          const char* File, int Line, const char* Format, ...) {
     // Format the message
     char buffer[4096];
     va_list args;
@@ -82,8 +104,8 @@ inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Ve
     vsnprintf(buffer, sizeof(buffer), Format, args);
     va_end(args);
 
-    // Output to GLog
-    GLog->Serialize(buffer, ELogVerbosity::Fatal, Category.GetCategoryName());
+    // Output to GLog with file and line info
+    GLog->Serialize(buffer, ELogVerbosity::Fatal, Category.GetCategoryName(), ExtractFilename(File), Line);
     GLog->Flush();
 
     // Crash
@@ -135,11 +157,11 @@ inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Ve
                     /* Handle Fatal specially */ \
                     if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) == MonsterRender::ELogVerbosity::Fatal) \
                     { \
-                        MonsterRender::Private::FatalLogInternal(CategoryName, Format, ##__VA_ARGS__); \
+                        MonsterRender::Private::FatalLogInternal(CategoryName, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
                     } \
                     else \
                     { \
-                        MonsterRender::Private::LogInternal(CategoryName, MonsterRender::ELogVerbosity::Verbosity, Format, ##__VA_ARGS__); \
+                        MonsterRender::Private::LogInternal(CategoryName, MonsterRender::ELogVerbosity::Verbosity, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
                     } \
                 } \
             } \
@@ -166,7 +188,7 @@ inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Ve
                 { \
                     if (Condition) \
                     { \
-                        MonsterRender::Private::LogInternal(CategoryName, MonsterRender::ELogVerbosity::Verbosity, Format, ##__VA_ARGS__); \
+                        MonsterRender::Private::LogInternal(CategoryName, MonsterRender::ELogVerbosity::Verbosity, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
                     } \
                 } \
             } \

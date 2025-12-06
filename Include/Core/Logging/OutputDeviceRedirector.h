@@ -27,12 +27,17 @@ namespace MonsterRender {
 struct FBufferedLine {
     String Data;
     String Category;
+    String File;
+    int32 Line;
     double Time;
     ELogVerbosity::Type Verbosity;
 
-    FBufferedLine(const char* InData, const char* InCategory, ELogVerbosity::Type InVerbosity, double InTime = -1.0)
+    FBufferedLine(const char* InData, const char* InCategory, ELogVerbosity::Type InVerbosity, 
+                  double InTime = -1.0, const char* InFile = nullptr, int32 InLine = 0)
         : Data(InData)
         , Category(InCategory)
+        , File(InFile ? InFile : "")
+        , Line(InLine)
         , Time(InTime)
         , Verbosity(InVerbosity)
     {
@@ -85,6 +90,10 @@ public:
 
     void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category) override;
     void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) override;
+    void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                  const char* File, int32 Line) override;
+    void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category,
+                  double Time, const char* File, int32 Line) override;
     void Flush() override;
     void TearDown() override;
 
@@ -143,10 +152,12 @@ public:
 
 private:
     /** Serialize to all output devices (internal) */
-    void SerializeToAllDevices(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time);
+    void SerializeToAllDevices(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time,
+                               const char* File = nullptr, int32 Line = 0);
 
     /** Buffer a log line for later flushing */
-    void BufferLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time);
+    void BufferLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time,
+                    const char* File = nullptr, int32 Line = 0);
 
     // Output devices
     TArray<FOutputDevice*> m_outputDevices;
