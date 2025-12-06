@@ -688,9 +688,10 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         
         // Find queue families
-        m_graphicsQueueFamily = findQueueFamilies(m_physicalDevice, m_surface, VK_QUEUE_GRAPHICS_BIT); // 
+        m_graphicsQueueFamily = findQueueFamilies(m_physicalDevice, m_surface, VK_QUEUE_GRAPHICS_BIT);
         if (m_surface != VK_NULL_HANDLE) {
-            // 杩欓噷鍙傛暟浣跨敤浜?VK_QUEUE_GRAPHICS_BIT锛屽彲鑳芥槸涓瑪璇紝閫氬父鍛堢幇闃熷垪鏈変笓闂ㄧ殑鏌ヨ鏂瑰紡锛屼緥濡備娇鐢?vkGetPhysicalDeviceSurfaceSupportKHR
+            // Note: Using VK_QUEUE_GRAPHICS_BIT here. Typically present queue should be queried
+            // using vkGetPhysicalDeviceSurfaceSupportKHR for proper surface support detection.
             m_presentQueueFamily = findQueueFamilies(m_physicalDevice, m_surface, VK_QUEUE_GRAPHICS_BIT);
         } else {
             m_presentQueueFamily = m_graphicsQueueFamily; // Use graphics queue for present when no surface
