@@ -119,7 +119,7 @@ private:
     bool m_bAppendIfExists;
     bool m_bCreateWriterLazily;
     bool m_bDead;
-    std::mutex m_writerMutex;
+    mutable std::mutex m_writerMutex;  // mutable to allow locking in const methods
 };
 
 } // namespace MonsterRender

@@ -47,45 +47,43 @@ namespace MonsterRender {
 namespace Private {
 
 /**
- * Static log record - created at compile time for each log statement.
- * Stores format string, file, line for efficient logging.
+ * Internal log function - formats and outputs the message.
+ * Uses printf-style formatting.
+ * 
+ * @param Category - Log category
+ * @param Verbosity - Log verbosity level
+ * @param Format - printf-style format string
+ * @param ... - Format arguments
  */
-struct FStaticLogRecord {
-    const char* Format;
-    const char* File;
-    int32 Line;
-    ELogVerbosity::Type Verbosity;
-
-    constexpr FStaticLogRecord(const char* InFormat, const char* InFile, int32 InLine, ELogVerbosity::Type InVerbosity)
-        : Format(InFormat), File(InFile), Line(InLine), Verbosity(InVerbosity)
-    {
-    }
-};
-
-/** Internal log function - formats and outputs the message */
-inline void LogInternal(const FLogCategoryBase& Category, const FStaticLogRecord& Record, ...) {
+inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Verbosity, const char* Format, ...) {
     // Format the message
     char buffer[4096];
     va_list args;
-    va_start(args, Record);
-    vsnprintf(buffer, sizeof(buffer), Record.Format, args);
+    va_start(args, Format);
+    vsnprintf(buffer, sizeof(buffer), Format, args);
     va_end(args);
 
     // Output to GLog
-    GLog->Serialize(buffer, Record.Verbosity, Category.GetCategoryName());
+    GLog->Serialize(buffer, Verbosity, Category.GetCategoryName());
 }
 
-/** Fatal log function - logs and then crashes */
-[[noreturn]] inline void FatalLogInternal(const FLogCategoryBase& Category, const FStaticLogRecord& Record, ...) {
+/**
+ * Fatal log function - logs and then crashes.
+ * 
+ * @param Category - Log category
+ * @param Format - printf-style format string
+ * @param ... - Format arguments
+ */
+[[noreturn]] inline void FatalLogInternal(const FLogCategoryBase& Category, const char* Format, ...) {
     // Format the message
     char buffer[4096];
     va_list args;
-    va_start(args, Record);
-    vsnprintf(buffer, sizeof(buffer), Record.Format, args);
+    va_start(args, Format);
+    vsnprintf(buffer, sizeof(buffer), Format, args);
     va_end(args);
 
     // Output to GLog
-    GLog->Serialize(buffer, Record.Verbosity, Category.GetCategoryName());
+    GLog->Serialize(buffer, ELogVerbosity::Fatal, Category.GetCategoryName());
     GLog->Flush();
 
     // Crash
@@ -134,18 +132,14 @@ inline void LogInternal(const FLogCategoryBase& Category, const FStaticLogRecord
                 /* Runtime check: is this verbosity level currently enabled? */ \
                 if (!CategoryName.IsSuppressed(MonsterRender::ELogVerbosity::Verbosity)) \
                 { \
-                    /* Create static log record */ \
-                    static constexpr MonsterRender::Private::FStaticLogRecord LOG_Record( \
-                        Format, __FILE__, __LINE__, MonsterRender::ELogVerbosity::Verbosity); \
-                    \
                     /* Handle Fatal specially */ \
                     if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) == MonsterRender::ELogVerbosity::Fatal) \
                     { \
-                        MonsterRender::Private::FatalLogInternal(CategoryName, LOG_Record, ##__VA_ARGS__); \
+                        MonsterRender::Private::FatalLogInternal(CategoryName, Format, ##__VA_ARGS__); \
                     } \
                     else \
                     { \
-                        MonsterRender::Private::LogInternal(CategoryName, LOG_Record, ##__VA_ARGS__); \
+                        MonsterRender::Private::LogInternal(CategoryName, MonsterRender::ELogVerbosity::Verbosity, Format, ##__VA_ARGS__); \
                     } \
                 } \
             } \
@@ -172,9 +166,7 @@ inline void LogInternal(const FLogCategoryBase& Category, const FStaticLogRecord
                 { \
                     if (Condition) \
                     { \
-                        static constexpr MonsterRender::Private::FStaticLogRecord LOG_Record( \
-                            Format, __FILE__, __LINE__, MonsterRender::ELogVerbosity::Verbosity); \
-                        MonsterRender::Private::LogInternal(CategoryName, LOG_Record, ##__VA_ARGS__); \
+                        MonsterRender::Private::LogInternal(CategoryName, MonsterRender::ELogVerbosity::Verbosity, Format, ##__VA_ARGS__); \
                     } \
                 } \
             } \
@@ -185,8 +177,13 @@ inline void LogInternal(const FLogCategoryBase& Category, const FStaticLogRecord
 // Default Log Category
 // ============================================================================
 
+namespace MonsterRender {
 // Declare the default log category (LogTemp equivalent)
 DECLARE_LOG_CATEGORY_EXTERN(LogTemp, Log, All)
+} // namespace MonsterRender
+
+// Bring LogTemp into global namespace for convenience
+using MonsterRender::LogTemp;
 
 // ============================================================================
 // Convenience Macros (Backward Compatibility)
