@@ -1,0 +1,203 @@
+#pragma once
+
+/**
+ * LogMacros.h
+ * 
+ * Main logging macros following UE5 architecture.
+ * Provides compile-time and runtime filtering of log messages.
+ * 
+ * Usage:
+ *   MR_LOG(LogRenderer, Warning, "Failed to load texture: %s", filename);
+ *   MR_LOG(LogCore, Log, "Initialization complete");
+ */
+
+#include "Core/CoreTypes.h"
+#include "Core/Logging/LogVerbosity.h"
+#include "Core/Logging/LogCategory.h"
+#include "Core/Logging/OutputDeviceRedirector.h"
+#include <cstdio>
+#include <cstdarg>
+
+namespace MonsterRender {
+
+// ============================================================================
+// Compile-Time Configuration
+// ============================================================================
+
+/**
+ * Minimum verbosity level that will be compiled into the code.
+ * Logs with higher verbosity (more verbose) will be completely stripped.
+ * 
+ * Override by defining COMPILED_IN_MINIMUM_VERBOSITY before including this header.
+ */
+#ifndef COMPILED_IN_MINIMUM_VERBOSITY
+    #if defined(NDEBUG) || defined(MR_SHIPPING)
+        // Release/Shipping: Only compile Fatal, Error, Warning, Display, Log
+        #define COMPILED_IN_MINIMUM_VERBOSITY ELogVerbosity::Log
+    #else
+        // Debug: Compile all verbosity levels
+        #define COMPILED_IN_MINIMUM_VERBOSITY ELogVerbosity::VeryVerbose
+    #endif
+#endif
+
+// ============================================================================
+// Internal Logging Functions
+// ============================================================================
+
+namespace Private {
+
+/**
+ * Static log record - created at compile time for each log statement.
+ * Stores format string, file, line for efficient logging.
+ */
+struct FStaticLogRecord {
+    const char* Format;
+    const char* File;
+    int32 Line;
+    ELogVerbosity::Type Verbosity;
+
+    constexpr FStaticLogRecord(const char* InFormat, const char* InFile, int32 InLine, ELogVerbosity::Type InVerbosity)
+        : Format(InFormat), File(InFile), Line(InLine), Verbosity(InVerbosity)
+    {
+    }
+};
+
+/** Internal log function - formats and outputs the message */
+inline void LogInternal(const FLogCategoryBase& Category, const FStaticLogRecord& Record, ...) {
+    // Format the message
+    char buffer[4096];
+    va_list args;
+    va_start(args, Record);
+    vsnprintf(buffer, sizeof(buffer), Record.Format, args);
+    va_end(args);
+
+    // Output to GLog
+    GLog->Serialize(buffer, Record.Verbosity, Category.GetCategoryName());
+}
+
+/** Fatal log function - logs and then crashes */
+[[noreturn]] inline void FatalLogInternal(const FLogCategoryBase& Category, const FStaticLogRecord& Record, ...) {
+    // Format the message
+    char buffer[4096];
+    va_list args;
+    va_start(args, Record);
+    vsnprintf(buffer, sizeof(buffer), Record.Format, args);
+    va_end(args);
+
+    // Output to GLog
+    GLog->Serialize(buffer, Record.Verbosity, Category.GetCategoryName());
+    GLog->Flush();
+
+    // Crash
+    std::abort();
+}
+
+} // namespace Private
+
+} // namespace MonsterRender
+
+// ============================================================================
+// Main Logging Macros
+// ============================================================================
+
+/**
+ * Check if a log category is active at a given verbosity level.
+ * 
+ * @param CategoryName - Name of the log category
+ * @param Verbosity - Verbosity level to check
+ * @return true if logging is active at this level
+ */
+#define MR_LOG_ACTIVE(CategoryName, Verbosity) \
+    (((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= COMPILED_IN_MINIMUM_VERBOSITY) && \
+     ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= CategoryName.GetCompileTimeVerbosity()) && \
+     !CategoryName.IsSuppressed(MonsterRender::ELogVerbosity::Verbosity))
+
+/**
+ * Main logging macro with category support.
+ * 
+ * @param CategoryName - Name of the log category (must be declared with DECLARE_LOG_CATEGORY_EXTERN)
+ * @param Verbosity - Verbosity level (Fatal, Error, Warning, Display, Log, Verbose, VeryVerbose)
+ * @param Format - printf-style format string
+ * @param ... - Format arguments
+ * 
+ * Example:
+ *   MR_LOG(LogRenderer, Warning, "Texture %s not found", textureName);
+ */
+#define MR_LOG(CategoryName, Verbosity, Format, ...) \
+    do { \
+        /* Compile-time check: is this verbosity level compiled in? */ \
+        if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= COMPILED_IN_MINIMUM_VERBOSITY) \
+        { \
+            /* Compile-time check: is this verbosity level within category's compile-time limit? */ \
+            if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= decltype(CategoryName)::CompileTimeVerbosity) \
+            { \
+                /* Runtime check: is this verbosity level currently enabled? */ \
+                if (!CategoryName.IsSuppressed(MonsterRender::ELogVerbosity::Verbosity)) \
+                { \
+                    /* Create static log record */ \
+                    static constexpr MonsterRender::Private::FStaticLogRecord LOG_Record( \
+                        Format, __FILE__, __LINE__, MonsterRender::ELogVerbosity::Verbosity); \
+                    \
+                    /* Handle Fatal specially */ \
+                    if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) == MonsterRender::ELogVerbosity::Fatal) \
+                    { \
+                        MonsterRender::Private::FatalLogInternal(CategoryName, LOG_Record, ##__VA_ARGS__); \
+                    } \
+                    else \
+                    { \
+                        MonsterRender::Private::LogInternal(CategoryName, LOG_Record, ##__VA_ARGS__); \
+                    } \
+                } \
+            } \
+        } \
+    } while (0)
+
+/**
+ * Conditional logging macro.
+ * Only evaluates the condition if the log level is active.
+ * 
+ * @param Condition - Condition to check
+ * @param CategoryName - Name of the log category
+ * @param Verbosity - Verbosity level
+ * @param Format - printf-style format string
+ * @param ... - Format arguments
+ */
+#define MR_CLOG(Condition, CategoryName, Verbosity, Format, ...) \
+    do { \
+        if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= COMPILED_IN_MINIMUM_VERBOSITY) \
+        { \
+            if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= decltype(CategoryName)::CompileTimeVerbosity) \
+            { \
+                if (!CategoryName.IsSuppressed(MonsterRender::ELogVerbosity::Verbosity)) \
+                { \
+                    if (Condition) \
+                    { \
+                        static constexpr MonsterRender::Private::FStaticLogRecord LOG_Record( \
+                            Format, __FILE__, __LINE__, MonsterRender::ELogVerbosity::Verbosity); \
+                        MonsterRender::Private::LogInternal(CategoryName, LOG_Record, ##__VA_ARGS__); \
+                    } \
+                } \
+            } \
+        } \
+    } while (0)
+
+// ============================================================================
+// Default Log Category
+// ============================================================================
+
+// Declare the default log category (LogTemp equivalent)
+DECLARE_LOG_CATEGORY_EXTERN(LogTemp, Log, All)
+
+// ============================================================================
+// Convenience Macros (Backward Compatibility)
+// ============================================================================
+
+// These macros use the LogTemp category for simple logging
+// They maintain backward compatibility with the old MR_LOG_* macros
+
+#define MR_LOG_TRACE(Message)   MR_LOG(LogTemp, VeryVerbose, "%s", Message)
+#define MR_LOG_DEBUG(Message)   MR_LOG(LogTemp, Verbose, "%s", Message)
+#define MR_LOG_INFO(Message)    MR_LOG(LogTemp, Log, "%s", Message)
+#define MR_LOG_WARNING(Message) MR_LOG(LogTemp, Warning, "%s", Message)
+#define MR_LOG_ERROR(Message)   MR_LOG(LogTemp, Error, "%s", Message)
+#define MR_LOG_FATAL(Message)   MR_LOG(LogTemp, Fatal, "%s", Message)

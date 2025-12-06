@@ -1,81 +1,89 @@
 #pragma once
 
-#include <iostream>
-#include <string>
-#include <string_view>
-#include <sstream>
-#include <chrono>
-#include <iomanip>
-#include <time.h>
+/**
+ * Log.h
+ * 
+ * Main logging header for MonsterEngine.
+ * This file provides backward compatibility with the old logging API
+ * while using the new UE5-style logging system internally.
+ * 
+ * New Code Should Use:
+ *   #include "Core/Logging/Logging.h"
+ *   MR_LOG(LogCategory, Verbosity, Format, ...);
+ * 
+ * Legacy Code Can Still Use:
+ *   MR_LOG_INFO("message");
+ *   MR_LOG_WARNING("message");
+ *   MR_LOG_ERROR("message");
+ */
+
+#include "Core/Logging/Logging.h"
+
+// ============================================================================
+// Legacy API (Deprecated - Use MR_LOG with categories instead)
+// ============================================================================
 
 namespace MonsterRender {
-    
-    enum class ELogLevel : uint8_t {
-        Trace = 0,
-        Debug = 1,
-        Info = 2,
-        Warning = 3,
-        Error = 4,
-        Fatal = 5
-    };
-    
-    class Logger {
-    public:
-        static Logger& getInstance() {
-            static Logger instance;
-            return instance;
-        }
-        
-        template<typename... Args>
-        void log(ELogLevel level, std::string_view format, Args&&... args) {
-            if (level < m_minLevel) {
-                return;
-            }
-            
-            auto now = std::chrono::system_clock::now();
-            auto time_t = std::chrono::system_clock::to_time_t(now);
-            
-            std::ostringstream oss;
-            //oss << "[" << std::put_time(localtime_s(&time_t), "%H:%M:%S") << "] ";
-            oss << "[" << getLevelString(level) << "] ";
-            
-            // Simple format string replacement (basic implementation)
-            std::string message(format);
-            oss << message;
-            
-            std::cout << oss.str() << std::endl;
-            
-            if (level == ELogLevel::Fatal) {
-                std::abort();
-            }
-        }
-        
-        void setMinLevel(ELogLevel level) {
-            m_minLevel = level;
-        }
-        
-    private:
-        Logger() = default;
-        ELogLevel m_minLevel = ELogLevel::Info;
-        
-        const char* getLevelString(ELogLevel level) {
-            switch (level) {
-                case ELogLevel::Trace: return "TRACE";
-                case ELogLevel::Debug: return "DEBUG";
-                case ELogLevel::Info: return "INFO";
-                case ELogLevel::Warning: return "WARN";
-                case ELogLevel::Error: return "ERROR";
-                case ELogLevel::Fatal: return "FATAL";
-                default: return "UNKNOWN";
-            }
-        }
-    };
-}
 
-// Logging macros
-#define MR_LOG_TRACE(message)   MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Trace, message)
-#define MR_LOG_DEBUG(message)   MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Debug, message)
-#define MR_LOG_INFO(message)    MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Info, message)
-#define MR_LOG_WARNING(message) MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Warning, message)
-#define MR_LOG_ERROR(message)   MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Error, message)
-#define MR_LOG_FATAL(message)   MonsterRender::Logger::getInstance().log(MonsterRender::ELogLevel::Fatal, message)
+/**
+ * @deprecated Use ELogVerbosity instead
+ */
+enum class ELogLevel : uint8 {
+    Trace = ELogVerbosity::VeryVerbose,
+    Debug = ELogVerbosity::Verbose,
+    Info = ELogVerbosity::Log,
+    Warning = ELogVerbosity::Warning,
+    Error = ELogVerbosity::Error,
+    Fatal = ELogVerbosity::Fatal
+};
+
+/**
+ * @deprecated Use the new logging system with categories
+ * 
+ * Legacy Logger class - wraps the new logging system for backward compatibility.
+ */
+class Logger {
+public:
+    static Logger& getInstance() {
+        static Logger instance;
+        return instance;
+    }
+
+    template<typename... Args>
+    void log(ELogLevel level, const char* message, Args&&... args) {
+        ELogVerbosity::Type verbosity = static_cast<ELogVerbosity::Type>(level);
+        GLog->Serialize(message, verbosity, "LogTemp");
+        
+        if (level == ELogLevel::Fatal) {
+            GLog->Flush();
+            std::abort();
+        }
+    }
+
+    void log(ELogLevel level, const std::string& message) {
+        log(level, message.c_str());
+    }
+
+    void log(ELogLevel level, std::string_view message) {
+        log(level, std::string(message).c_str());
+    }
+
+    void setMinLevel(ELogLevel level) {
+        // Map to new verbosity system
+        LogTemp.SetVerbosity(static_cast<ELogVerbosity::Type>(level));
+    }
+
+private:
+    Logger() = default;
+};
+
+} // namespace MonsterRender
+
+// ============================================================================
+// Legacy Macros (Backward Compatibility)
+// ============================================================================
+
+// These macros are provided for backward compatibility.
+// New code should use: MR_LOG(Category, Verbosity, Format, ...)
+
+// Note: The new MR_LOG_* macros are defined in LogMacros.h and use LogTemp category
