@@ -208,6 +208,13 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanDescriptorSet.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDescriptorSetLayoutCache.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanRenderTargetCache.cpp" />
+    <ClCompile Include="Source\Core\Logging\Logging.cpp" />
+    <ClCompile Include="Source\Core\Logging\LogCategories.cpp" />
+    <ClCompile Include="Source\Core\Logging\OutputDevice.cpp" />
+    <ClCompile Include="Source\Core\Logging\OutputDeviceRedirector.cpp" />
+    <ClCompile Include="Source\Core\Logging\OutputDeviceFile.cpp" />
+    <ClCompile Include="Source\Core\Logging\OutputDeviceConsole.cpp" />
+    <ClCompile Include="Source\Core\Logging\OutputDeviceDebug.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -254,6 +261,15 @@
     <ClInclude Include="Include\Platform\Vulkan\VulkanDescriptorSet.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanDescriptorSetLayoutCache.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanRenderTargetCache.h" />
+    <ClInclude Include="Include\Core\Logging\Logging.h" />
+    <ClInclude Include="Include\Core\Logging\LogMacros.h" />
+    <ClInclude Include="Include\Core\Logging\LogCategory.h" />
+    <ClInclude Include="Include\Core\Logging\LogVerbosity.h" />
+    <ClInclude Include="Include\Core\Logging\OutputDevice.h" />
+    <ClInclude Include="Include\Core\Logging\OutputDeviceRedirector.h" />
+    <ClInclude Include="Include\Core\Logging\OutputDeviceFile.h" />
+    <ClInclude Include="Include\Core\Logging\OutputDeviceConsole.h" />
+    <ClInclude Include="Include\Core\Logging\OutputDeviceDebug.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
