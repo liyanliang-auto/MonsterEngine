@@ -158,18 +158,21 @@ namespace MonsterRender::RHI::Vulkan {
                     MR_LOG_DEBUG("Reflection: OpVariable ID=" + std::to_string(resultId) + 
                                 ", storageClass=" + std::to_string(storageClass));
                     
-                    if (storageClass == 2 /*UniformConstant*/ || storageClass == 0 /*Uniform*/) {
+                    // SPIR-V Storage Classes (from SPIR-V spec):
+                    // 0 = UniformConstant (samplers, sampled images, combined image samplers)
+                    // 2 = Uniform (uniform buffers, UBOs)
+                    if (storageClass == 0 /*UniformConstant*/ || storageClass == 2 /*Uniform*/) {
                         auto it = idToBinding.find(resultId);
                         if (it != idToBinding.end() && it->second.hasBinding) {
                             VkDescriptorSetLayoutBinding b{};
                             b.binding = it->second.binding;
                             b.descriptorCount = 1;
                             b.stageFlags = (getStage() == EShaderStage::Vertex) ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
-                            // Heuristic: UniformConstant -> sampled image/sampler; Uniform -> uniform buffer
-                            b.descriptorType = (storageClass == 2) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                            // UniformConstant (0) -> sampled image/sampler; Uniform (2) -> uniform buffer
+                            b.descriptorType = (storageClass == 0) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                             m_descriptorBindings.push_back(b);
                             MR_LOG_DEBUG("Reflection: Added binding " + std::to_string(b.binding) + 
-                                        " as " + (storageClass == 2 ? "COMBINED_IMAGE_SAMPLER" : "UNIFORM_BUFFER"));
+                                        " as " + (storageClass == 0 ? "COMBINED_IMAGE_SAMPLER" : "UNIFORM_BUFFER"));
                         } else {
                             MR_LOG_DEBUG("Reflection: No binding found for ID=" + std::to_string(resultId));
                         }
