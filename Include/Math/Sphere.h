@@ -16,6 +16,7 @@
 #include "Vector.h"
 #include "Box.h"
 #include <cmath>
+#include <string>
 #include <type_traits>
 
 namespace MonsterEngine

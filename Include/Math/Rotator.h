@@ -16,6 +16,7 @@
 #include "Vector.h"
 #include "Quat.h"
 #include <cmath>
+#include <string>
 #include <type_traits>
 
 namespace MonsterEngine

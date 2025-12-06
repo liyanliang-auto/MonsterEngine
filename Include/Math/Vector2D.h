@@ -13,6 +13,7 @@
 #include "MathFwd.h"
 #include "MathUtility.h"
 #include <cmath>
+#include <string>
 #include <type_traits>
 
 namespace MonsterEngine

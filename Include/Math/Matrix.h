@@ -19,6 +19,7 @@
 #include "Quat.h"
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <type_traits>
 
 namespace MonsterEngine
