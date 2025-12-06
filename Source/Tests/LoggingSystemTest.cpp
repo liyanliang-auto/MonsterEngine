@@ -280,14 +280,8 @@ void RunLoggingSystemTests()
 {
     using namespace MonsterRender;
 
-    // Initialize the logging system with all output devices
-    // This registers Console, Debug, and File output devices with GLog
-    InitializeLogging(
-        "LoggingTest.log",  // Log file name
-        true,               // Enable console output
-        true,               // Enable debug output (OutputDebugString)
-        true                // Enable file output
-    );
+    // Note: Logging system is already initialized in main()
+    // No need to call InitializeLogging() here
 
     std::cout << "\n" << std::endl;
     std::cout << "================================================================" << std::endl;
@@ -321,8 +315,8 @@ void RunLoggingSystemTests()
     std::cout << "================================================================" << std::endl;
     std::cout << "\n" << std::endl;
 
-    // Shutdown the logging system
-    ShutdownLogging();
+    // Note: Logging system shutdown is handled in main()
+    // No need to call ShutdownLogging() here
 }
 
 // Declare the test function for external use

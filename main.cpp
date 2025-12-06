@@ -1,5 +1,5 @@
 #include "Core/Application.h"
-#include "Core/Log.h"
+#include "Core/Logging/Logging.h"
 
 // Test Suite Forward Declarations
 namespace MonsterRender {
@@ -35,10 +35,18 @@ void RunLoggingSystemTests();
 int main(int argc, char** argv) {
     using namespace MonsterRender;
     
-    MR_LOG_INFO("Starting MonsterRender Engine");
+    // ========================================================================
+    // Initialize Logging System FIRST - before any other initialization
+    // ========================================================================
+    InitializeLogging(
+        "MonsterEngine.log",    // Log file name
+        true,                   // Enable console output
+        true,                   // Enable debug output (OutputDebugString on Windows)
+        true                    // Enable file output
+    );
     
-    // Set log level for detailed output
-    Logger::getInstance().setMinLevel(ELogLevel::Debug);
+    MR_LOG(LogInit, Log, "Starting MonsterRender Engine");
+    MR_LOG(LogInit, Log, "Command line arguments: %d", argc);
     
     // Check for test mode flag
     bool runMemoryTests = false;
@@ -46,7 +54,7 @@ int main(int argc, char** argv) {
     bool runVirtualTextureTests = false;
     bool runVulkanMemoryTests = false;
     bool runVulkanResourceTests = false;
-    bool runLoggingTests = true;
+    bool runLoggingTests = false;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -82,7 +90,7 @@ int main(int argc, char** argv) {
     // Run logging tests separately (can run standalone)
     if (runLoggingTests) {
         RunLoggingSystemTests();
-        return 0;
+        //return 0;
     }
     
     // Run tests if requested
@@ -189,6 +197,10 @@ int main(int argc, char** argv) {
     // Cleanup is handled by RAII
     app.reset();
     
-    MR_LOG_INFO("MonsterRender Engine shutting down with exit code: " + std::to_string(exitCode));
+    MR_LOG(LogExit, Log, "MonsterRender Engine shutting down with exit code: %d", exitCode);
+    
+    // Shutdown logging system LAST - after all other cleanup
+    ShutdownLogging();
+    
     return exitCode;
 }
