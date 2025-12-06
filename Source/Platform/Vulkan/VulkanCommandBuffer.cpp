@@ -90,7 +90,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         const auto& functions = VulkanAPI::getFunctions();
         
-        // If command buffer was previously used (Ended state), reset it automatically
+        // If command buffer was previously used (Ended or Submitted state), reset it automatically
         // This enables reuse of the same command buffer for multiple operations
         if (m_state == EState::Ended) {
             MR_LOG_INFO("  Command buffer in Ended state, resetting for reuse...");
@@ -101,6 +101,27 @@ namespace MonsterRender::RHI::Vulkan {
             }
             m_state = EState::ReadyForBegin;
             MR_LOG_INFO("  Command buffer reset successfully, now in ReadyForBegin state");
+        }
+        else if (m_state == EState::Submitted) {
+            // Command buffer was submitted, need to wait for fence and reset
+            MR_LOG_INFO("  Command buffer in Submitted state, waiting for fence and resetting...");
+            VkDevice device = m_device->getLogicalDevice();
+            
+            // Wait for the fence to be signaled (GPU finished with this command buffer)
+            VkResult waitResult = functions.vkWaitForFences(device, 1, &m_fence, VK_TRUE, UINT64_MAX);
+            if (waitResult != VK_SUCCESS) {
+                MR_LOG_ERROR("  vkWaitForFences FAILED with result: " + std::to_string(waitResult));
+                return;
+            }
+            
+            // Reset the command buffer for reuse
+            VkResult resetResult = functions.vkResetCommandBuffer(m_commandBuffer, 0);
+            if (resetResult != VK_SUCCESS) {
+                MR_LOG_ERROR("  vkResetCommandBuffer FAILED with result: " + std::to_string(resetResult));
+                return;
+            }
+            m_state = EState::ReadyForBegin;
+            MR_LOG_INFO("  Command buffer reset after submission, now in ReadyForBegin state");
         }
         
         if (m_state != EState::ReadyForBegin) {
