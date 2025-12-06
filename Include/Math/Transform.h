@@ -19,6 +19,7 @@
 #include "Rotator.h"
 #include "Matrix.h"
 #include <cmath>
+#include <string>
 #include <type_traits>
 
 namespace MonsterEngine

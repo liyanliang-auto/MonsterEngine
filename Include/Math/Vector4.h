@@ -14,6 +14,7 @@
 #include "MathUtility.h"
 #include "VectorRegister.h"
 #include <cmath>
+#include <string>
 #include <type_traits>
 
 namespace MonsterEngine
