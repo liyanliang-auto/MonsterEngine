@@ -473,7 +473,7 @@ namespace MonsterRender {
         
         // Rasterizer state
         pipelineDesc.rasterizerState.fillMode = RHI::EFillMode::Solid;
-        pipelineDesc.rasterizerState.cullMode = RHI::ECullMode::Back;  // Enable back-face culling
+        pipelineDesc.rasterizerState.cullMode = RHI::ECullMode::None;  // Disable culling temporarily for debugging
         pipelineDesc.rasterizerState.frontCounterClockwise = false;
         
         // Depth stencil state - ENABLE depth testing for 3D cube

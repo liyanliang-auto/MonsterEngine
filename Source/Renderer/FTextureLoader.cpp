@@ -8,6 +8,7 @@
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanRHICommandList.h"  // UE5-style immediate command list
+#include "Platform/Vulkan/VulkanCommandListContext.h"  // For submitCommands
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 #include "Renderer/FTextureStreamingManager.h"
 #include <algorithm>
@@ -472,8 +473,14 @@ bool FTextureLoader::UploadTextureData(
     
     MR_LOG_DEBUG("Submitting texture upload commands...");
     
-    // Note: For immediate command list, submission and waiting is handled by the device
-    // The command list is already submitted and GPU operations are synchronized
+    // CRITICAL: Submit the command buffer to GPU queue
+    // The end() function only ends recording, it does NOT submit to GPU!
+    // We need to explicitly submit the commands for the layout transitions to take effect.
+    auto* vulkanDevice = static_cast<VulkanDevice*>(Device);
+    if (vulkanDevice && vulkanDevice->getCommandListContext()) {
+        // Submit without semaphores (synchronous upload)
+        vulkanDevice->getCommandListContext()->submitCommands(nullptr, 0, nullptr, 0);
+    }
     
     // Wait for GPU to complete (synchronous upload)
     MR_LOG_DEBUG("Waiting for GPU to complete texture upload...");
