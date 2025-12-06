@@ -31,10 +31,20 @@ FOutputDeviceConsole::~FOutputDeviceConsole() {
 }
 
 void FOutputDeviceConsole::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category) {
-    Serialize(Message, Verbosity, Category, -1.0);
+    Serialize(Message, Verbosity, Category, -1.0, nullptr, 0);
 }
 
 void FOutputDeviceConsole::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) {
+    Serialize(Message, Verbosity, Category, Time, nullptr, 0);
+}
+
+void FOutputDeviceConsole::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                                     const char* File, int32 Line) {
+    Serialize(Message, Verbosity, Category, -1.0, File, Line);
+}
+
+void FOutputDeviceConsole::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category,
+                                     double Time, const char* File, int32 Line) {
     std::lock_guard<std::mutex> lock(m_consoleMutex);
 
     // Set color based on verbosity
@@ -43,7 +53,7 @@ void FOutputDeviceConsole::Serialize(const char* Message, ELogVerbosity::Type Ve
     }
 
     // Format and output the log line
-    String formattedLine = FormatLogLine(Message, Verbosity, Category, Time);
+    String formattedLine = FormatLogLine(Message, Verbosity, Category, Time, File, Line);
 
     // Use stderr for errors and warnings, stdout for everything else
     if ((Verbosity & ELogVerbosity::VerbosityMask) <= ELogVerbosity::Warning) {
@@ -169,12 +179,14 @@ void FOutputDeviceConsole::ResetColor() {
 #endif
 }
 
-String FOutputDeviceConsole::FormatLogLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) {
+String FOutputDeviceConsole::FormatLogLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                                           double Time, const char* File, int32 Line) {
     std::ostringstream oss;
 
-    // Timestamp
+    // Timestamp with milliseconds: [YYYY/MM/DD HH:MM:SS:mmm]
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
     std::tm tm_buf;
 #if PLATFORM_WINDOWS
@@ -183,9 +195,15 @@ String FOutputDeviceConsole::FormatLogLine(const char* Message, ELogVerbosity::T
     localtime_r(&time_t, &tm_buf);
 #endif
 
-    oss << "[" << std::put_time(&tm_buf, "%H:%M:%S") << "]";
+    oss << "[" << std::put_time(&tm_buf, "%Y/%m/%d %H:%M:%S");
+    oss << ":" << std::setfill('0') << std::setw(3) << ms.count() << "] ";
 
-    // Category and verbosity
+    // File and line: filename.cpp(123):
+    if (File && Line > 0) {
+        oss << File << "(" << Line << "): ";
+    }
+
+    // Category and verbosity: [LogTemp][LOG ]
     oss << "[" << Category << "]";
     oss << "[" << ToShortString(Verbosity) << "] ";
 

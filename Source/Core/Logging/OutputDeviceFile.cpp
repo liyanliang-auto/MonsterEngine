@@ -161,10 +161,20 @@ FOutputDeviceFile::~FOutputDeviceFile() {
 }
 
 void FOutputDeviceFile::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category) {
-    Serialize(Message, Verbosity, Category, -1.0);
+    Serialize(Message, Verbosity, Category, -1.0, nullptr, 0);
 }
 
 void FOutputDeviceFile::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) {
+    Serialize(Message, Verbosity, Category, Time, nullptr, 0);
+}
+
+void FOutputDeviceFile::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                                  const char* File, int32 Line) {
+    Serialize(Message, Verbosity, Category, -1.0, File, Line);
+}
+
+void FOutputDeviceFile::Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category,
+                                  double Time, const char* File, int32 Line) {
     if (m_bDead) {
         return;
     }
@@ -177,7 +187,7 @@ void FOutputDeviceFile::Serialize(const char* Message, ELogVerbosity::Type Verbo
     }
 
     // Format and write the log line
-    String formattedLine = FormatLogLine(Message, Verbosity, Category, Time);
+    String formattedLine = FormatLogLine(Message, Verbosity, Category, Time, File, Line);
     m_asyncWriter->Write(formattedLine);
 }
 
@@ -274,10 +284,11 @@ bool FOutputDeviceFile::CreateWriter() {
     return true;
 }
 
-String FOutputDeviceFile::FormatLogLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, double Time) {
+String FOutputDeviceFile::FormatLogLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                                        double Time, const char* File, int32 Line) {
     std::ostringstream oss;
 
-    // Timestamp
+    // Timestamp with milliseconds: [YYYY/MM/DD HH:MM:SS:mmm]
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
@@ -289,10 +300,15 @@ String FOutputDeviceFile::FormatLogLine(const char* Message, ELogVerbosity::Type
     localtime_r(&time_t, &tm_buf);
 #endif
 
-    oss << "[" << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
-    oss << "." << std::setfill('0') << std::setw(3) << ms.count() << "]";
+    oss << "[" << std::put_time(&tm_buf, "%Y/%m/%d %H:%M:%S");
+    oss << ":" << std::setfill('0') << std::setw(3) << ms.count() << "] ";
 
-    // Category and verbosity
+    // File and line: filename.cpp(123):
+    if (File && Line > 0) {
+        oss << File << "(" << Line << "): ";
+    }
+
+    // Category and verbosity: [LogTemp][LOG ]
     oss << "[" << Category << "]";
     oss << "[" << ToShortString(Verbosity) << "] ";
 

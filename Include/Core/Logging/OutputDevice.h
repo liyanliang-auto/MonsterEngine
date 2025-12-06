@@ -65,6 +65,33 @@ public:
     }
 
     /**
+     * Serialize with file location information (file name and line number)
+     * @param Message - The formatted log message
+     * @param Verbosity - Verbosity level of the message
+     * @param Category - Name of the log category
+     * @param File - Source file name (__FILE__)
+     * @param Line - Source line number (__LINE__)
+     */
+    virtual void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
+                          const char* File, int32 Line) {
+        Serialize(Message, Verbosity, Category);
+    }
+
+    /**
+     * Serialize with full context (timestamp and file location)
+     * @param Message - The formatted log message
+     * @param Verbosity - Verbosity level of the message
+     * @param Category - Name of the log category
+     * @param Time - Timestamp
+     * @param File - Source file name (__FILE__)
+     * @param Line - Source line number (__LINE__)
+     */
+    virtual void Serialize(const char* Message, ELogVerbosity::Type Verbosity, const char* Category,
+                          double Time, const char* File, int32 Line) {
+        Serialize(Message, Verbosity, Category, File, Line);
+    }
+
+    /**
      * Flush any buffered output
      */
     virtual void Flush() {}
