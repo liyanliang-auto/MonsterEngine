@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 // MonsterEngine - Vulkan GPU Memory System Comprehensive Test
 //
-// 测试四层架构：RHI Layer -> ResourceManager Layer -> PoolManager Layer -> Vulkan API Layer
+// Test 4-layer architecture: RHI Layer -> ResourceManager Layer -> PoolManager Layer -> Vulkan API Layer
 
 #include "Core/CoreTypes.h"
 #include "Core/Log.h"
@@ -20,7 +20,7 @@ namespace VulkanGPUMemorySystemTest {
 using namespace RHI;
 using namespace Vulkan;
 
-// 测试辅助函数
+// Test helper function
 void PrintSeparator(const String& title) {
     MR_LOG_INFO("========================================");
     MR_LOG_INFO(title);
@@ -28,48 +28,48 @@ void PrintSeparator(const String& title) {
 }
 
 /**
- * 测试 1: RHI 层 - 资源引用计数
+ * Test 1: RHI Layer - Resource Reference Counting
  */
 void TestRHIRefCounting() {
-    PrintSeparator("测试 1: RHI 层引用计数");
+    PrintSeparator("Test 1: RHI Layer Reference Counting");
     
-    // 创建一个简单的 Buffer（手动实现用于测试）
+    // Create a simple Buffer (manual implementation for testing)
     class TestBuffer : public FRHIBuffer {
     public:
         TestBuffer() : FRHIBuffer(1024, EResourceUsage::VertexBuffer, 4) {}
         virtual ~TestBuffer() {
-            MR_LOG_INFO("TestBuffer 被销毁");
+            MR_LOG_INFO("TestBuffer destroyed");
         }
         virtual void* Lock(uint32, uint32) override { return nullptr; }
         virtual void Unlock() override {}
     };
     
     {
-        // 测试引用计数智能指针
+        // Test reference counting smart pointer
         FRHIBufferRef bufferRef1 = new TestBuffer();
-        MR_LOG_INFO("初始引用计数: " + std::to_string(bufferRef1->GetRefCount()));
+        MR_LOG_INFO("Initial ref count: " + std::to_string(bufferRef1->GetRefCount()));
         
         {
             FRHIBufferRef bufferRef2 = bufferRef1;
-            MR_LOG_INFO("增加引用后: " + std::to_string(bufferRef1->GetRefCount()));
+            MR_LOG_INFO("After adding ref: " + std::to_string(bufferRef1->GetRefCount()));
         }
         
-        MR_LOG_INFO("减少引用后: " + std::to_string(bufferRef1->GetRefCount()));
+        MR_LOG_INFO("After releasing ref: " + std::to_string(bufferRef1->GetRefCount()));
     }
     
-    MR_LOG_INFO("[OK] RHI 层引用计数测试通过");
+    MR_LOG_INFO("[OK] RHI layer reference counting test passed");
 }
 
 /**
- * 测试 2: ResourceManager 层 - 缓冲区创建和销毁
+ * Test 2: ResourceManager Layer - Buffer Creation and Destruction
  */
 void TestResourceManagerBuffers(VulkanDevice* device) {
-    PrintSeparator("测试 2: ResourceManager 层 - 缓冲区管理");
+    PrintSeparator("Test 2: ResourceManager Layer - Buffer Management");
     
     FVulkanMemoryManager* memMgr = device->GetMemoryManager();
     FVulkanResourceManager resourceMgr(device, memMgr);
     
-    // 创建多个不同类型的缓冲区
+    // Create multiple buffers of different types
     std::vector<FRHIBufferRef> buffers;
     
     // Vertex Buffer (Device Local)
@@ -80,7 +80,7 @@ void TestResourceManagerBuffers(VulkanDevice* device) {
         sizeof(float) * 3  // stride = 3 floats (position)
     );
     if (vb) {
-        MR_LOG_INFO("[OK] Vertex Buffer 创建成功");
+        MR_LOG_INFO("[OK] Vertex Buffer created successfully");
         buffers.push_back(vb);
     }
     
@@ -92,7 +92,7 @@ void TestResourceManagerBuffers(VulkanDevice* device) {
         sizeof(uint32)
     );
     if (ib) {
-        MR_LOG_INFO("[OK] Index Buffer 创建成功");
+        MR_LOG_INFO("[OK] Index Buffer created successfully");
         buffers.push_back(ib);
     }
     
@@ -104,29 +104,29 @@ void TestResourceManagerBuffers(VulkanDevice* device) {
         0
     );
     if (ub) {
-        MR_LOG_INFO("[OK] Uniform Buffer 创建成功");
+        MR_LOG_INFO("[OK] Uniform Buffer created successfully");
         buffers.push_back(ub);
     }
     
-    // 获取统计信息
+    // Get statistics
     FVulkanResourceManager::FResourceStats stats;
     resourceMgr.GetResourceStats(stats);
     
-    MR_LOG_INFO("ResourceManager 统计:");
-    MR_LOG_INFO("  缓冲区数量: " + std::to_string(stats.NumBuffers));
-    MR_LOG_INFO("  缓冲区内存: " + std::to_string(stats.BufferMemory / 1024) + " KB");
+    MR_LOG_INFO("ResourceManager Statistics:");
+    MR_LOG_INFO("  Buffer count: " + std::to_string(stats.NumBuffers));
+    MR_LOG_INFO("  Buffer memory: " + std::to_string(stats.BufferMemory / 1024) + " KB");
     
-    // 清理（通过引用计数自动释放）
+    // Cleanup (auto-released via reference counting)
     buffers.clear();
     
-    MR_LOG_INFO("[OK] ResourceManager 缓冲区测试通过");
+    MR_LOG_INFO("[OK] ResourceManager buffer test passed");
 }
 
 /**
- * 测试 3: ResourceManager 层 - 纹理创建和销毁
+ * Test 3: ResourceManager Layer - Texture Creation and Destruction
  */
 void TestResourceManagerTextures(VulkanDevice* device) {
-    PrintSeparator("测试 3: ResourceManager 层 - 纹理管理");
+    PrintSeparator("Test 3: ResourceManager Layer - Texture Management");
     
     FVulkanMemoryManager* memMgr = device->GetMemoryManager();
     FVulkanResourceManager resourceMgr(device, memMgr);
@@ -145,7 +145,7 @@ void TestResourceManagerTextures(VulkanDevice* device) {
     
     auto tex2D = resourceMgr.CreateTexture(desc2D, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (tex2D) {
-        MR_LOG_INFO("[OK] 2D Texture 创建成功 (1024x1024, 10 mips)");
+        MR_LOG_INFO("[OK] 2D Texture created successfully (1024x1024, 10 mips)");
         textures.push_back(tex2D);
     }
     
@@ -161,79 +161,79 @@ void TestResourceManagerTextures(VulkanDevice* device) {
     
     auto texCube = resourceMgr.CreateTexture(descCube, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (texCube) {
-        MR_LOG_INFO("[OK] Cube Texture 创建成功 (512x512x6, 9 mips)");
+        MR_LOG_INFO("[OK] Cube Texture created successfully (512x512x6, 9 mips)");
         textures.push_back(texCube);
     }
     
-    // 获取统计信息
+    // Get statistics
     FVulkanResourceManager::FResourceStats stats;
     resourceMgr.GetResourceStats(stats);
     
-    MR_LOG_INFO("ResourceManager 统计:");
-    MR_LOG_INFO("  纹理数量: " + std::to_string(stats.NumTextures));
-    MR_LOG_INFO("  纹理内存: " + std::to_string(stats.TextureMemory / (1024 * 1024)) + " MB");
+    MR_LOG_INFO("ResourceManager Statistics:");
+    MR_LOG_INFO("  Texture count: " + std::to_string(stats.NumTextures));
+    MR_LOG_INFO("  Texture memory: " + std::to_string(stats.TextureMemory / (1024 * 1024)) + " MB");
     
     textures.clear();
     
-    MR_LOG_INFO("[OK] ResourceManager 纹理测试通过");
+    MR_LOG_INFO("[OK] ResourceManager texture test passed");
 }
 
 /**
- * 测试 4: PoolManager 层 - 内存池分配和释放
+ * Test 4: PoolManager Layer - Memory Pool Allocation and Release
  */
 void TestPoolManager(VulkanDevice* device) {
-    PrintSeparator("测试 4: PoolManager 层 - 内存池管理");
+    PrintSeparator("Test 4: PoolManager Layer - Memory Pool Management");
     
     FVulkanPoolManager poolMgr(device);
     
-    // 创建多个不同大小的分配请求
+    // Create multiple allocation requests of different sizes
     std::vector<FVulkanAllocation> allocations;
     
     for (int i = 0; i < 10; ++i) {
         FVulkanMemoryManager::FAllocationRequest request{};
         request.Size = (i + 1) * 1024 * 1024;  // 1MB, 2MB, ..., 10MB
         request.Alignment = 256;
-        request.MemoryTypeBits = 0xFFFFFFFF;  // 任意类型
+        request.MemoryTypeBits = 0xFFFFFFFF;  // Any type
         request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         
         FVulkanAllocation allocation;
         if (poolMgr.Allocate(request, allocation)) {
-            MR_LOG_INFO("[OK] 分配 " + std::to_string(request.Size / (1024 * 1024)) + "MB 成功");
+            MR_LOG_INFO("[OK] Allocated " + std::to_string(request.Size / (1024 * 1024)) + "MB successfully");
             allocations.push_back(allocation);
         }
     }
     
-    // 获取统计信息
+    // Get statistics
     FVulkanPoolManager::FManagerStats stats;
     poolMgr.GetStats(stats);
     
-    // 释放一半的分配
+    // Release half of the allocations
     for (size_t i = 0; i < allocations.size() / 2; ++i) {
         poolMgr.Free(allocations[i]);
     }
     allocations.erase(allocations.begin(), allocations.begin() + allocations.size() / 2);
     
-    MR_LOG_INFO("释放一半分配后:");
+    MR_LOG_INFO("After releasing half allocations:");
     poolMgr.GetStats(stats);
     
-    // 清理空闲页
+    // Trim idle pages
     uint32 freedPages = poolMgr.TrimAllPools();
-    MR_LOG_INFO("清理了 " + std::to_string(freedPages) + " 个空闲页");
+    MR_LOG_INFO("Trimmed " + std::to_string(freedPages) + " idle pages");
     
-    // 释放剩余分配
+    // Release remaining allocations
     for (auto& alloc : allocations) {
         poolMgr.Free(alloc);
     }
     allocations.clear();
     
-    MR_LOG_INFO("[OK] PoolManager 测试通过");
+    MR_LOG_INFO("[OK] PoolManager test passed");
 }
 
 /**
- * 测试 5: 并发分配测试（多线程）
+ * Test 5: Concurrent Allocation Test (Multi-threaded)
  */
 void TestConcurrentAllocations(VulkanDevice* device) {
-    PrintSeparator("测试 5: 并发分配测试");
+    PrintSeparator("Test 5: Concurrent Allocation Test");
     
     FVulkanMemoryManager* memMgr = device->GetMemoryManager();
     FVulkanResourceManager resourceMgr(device, memMgr);
@@ -246,7 +246,7 @@ void TestConcurrentAllocations(VulkanDevice* device) {
     
     auto workerFunc = [&](int threadId) {
         for (int i = 0; i < AllocationsPerThread; ++i) {
-            // 交替创建 Buffer 和 Texture
+            // Alternately create Buffer and Texture
             if (i % 2 == 0) {
                 auto buffer = resourceMgr.CreateBuffer(
                     4096,  // 4KB
@@ -288,28 +288,28 @@ void TestConcurrentAllocations(VulkanDevice* device) {
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     
-    MR_LOG_INFO("并发分配完成:");
-    MR_LOG_INFO("  线程数: " + std::to_string(NumThreads));
-    MR_LOG_INFO("  每线程分配数: " + std::to_string(AllocationsPerThread));
-    MR_LOG_INFO("  成功分配数: " + std::to_string(successCount.load()));
-    MR_LOG_INFO("  耗时: " + std::to_string(duration.count()) + " ms");
+    MR_LOG_INFO("Concurrent allocation completed:");
+    MR_LOG_INFO("  Thread count: " + std::to_string(NumThreads));
+    MR_LOG_INFO("  Allocations per thread: " + std::to_string(AllocationsPerThread));
+    MR_LOG_INFO("  Successful allocations: " + std::to_string(successCount.load()));
+    MR_LOG_INFO("  Duration: " + std::to_string(duration.count()) + " ms");
     
     FVulkanResourceManager::FResourceStats stats;
     resourceMgr.GetResourceStats(stats);
     
-    MR_LOG_INFO("[OK] 并发分配测试通过");
+    MR_LOG_INFO("[OK] Concurrent allocation test passed");
 }
 
 /**
- * 测试 6: 延迟释放机制
+ * Test 6: Deferred Release Mechanism
  */
 void TestDeferredRelease(VulkanDevice* device) {
-    PrintSeparator("测试 6: 延迟释放机制");
+    PrintSeparator("Test 6: Deferred Release Mechanism");
     
     FVulkanMemoryManager* memMgr = device->GetMemoryManager();
     FVulkanResourceManager resourceMgr(device, memMgr);
     
-    // 创建资源
+    // Create resource
     auto buffer = resourceMgr.CreateBuffer(
         1024 * 1024,  // 1MB
         EResourceUsage::VertexBuffer,
@@ -318,53 +318,53 @@ void TestDeferredRelease(VulkanDevice* device) {
     );
     
     if (buffer) {
-        MR_LOG_INFO("[OK] 创建 Buffer 用于延迟释放测试");
+        MR_LOG_INFO("[OK] Created Buffer for deferred release test");
         
-        // 模拟 GPU 使用资源（帧号 0）
+        // Simulate GPU using resource (frame 0)
         uint64 currentFrame = 0;
         
-        // 请求延迟释放
+        // Request deferred release
         resourceMgr.DeferredRelease(buffer.Get(), currentFrame);
-        buffer.SafeRelease();  // 清空智能指针
+        buffer.SafeRelease();  // Clear smart pointer
         
-        MR_LOG_INFO("请求延迟释放（帧 " + std::to_string(currentFrame) + "）");
+        MR_LOG_INFO("Requested deferred release (frame " + std::to_string(currentFrame) + ")");
         
-        // 模拟多帧推进
+        // Simulate multiple frame advances
         for (uint64 frame = 1; frame <= 5; ++frame) {
             resourceMgr.ProcessDeferredReleases(frame);
-            MR_LOG_INFO("处理延迟释放（帧 " + std::to_string(frame) + "）");
+            MR_LOG_INFO("Processing deferred releases (frame " + std::to_string(frame) + ")");
             
             FVulkanResourceManager::FResourceStats stats;
             resourceMgr.GetResourceStats(stats);
             
             if (stats.PendingReleases > 0) {
-                MR_LOG_INFO("  仍有 " + std::to_string(stats.PendingReleases) + " 个待释放资源");
+                MR_LOG_INFO("  Still have " + std::to_string(stats.PendingReleases) + " pending releases");
             } else {
-                MR_LOG_INFO("  所有资源已释放");
+                MR_LOG_INFO("  All resources released");
                 break;
             }
         }
     }
     
-    MR_LOG_INFO("[OK] 延迟释放测试通过");
+    MR_LOG_INFO("[OK] Deferred release test passed");
 }
 
 /**
- * 测试 7: 实际场景 - 游戏资产加载
+ * Test 7: Real World Scenario - Game Asset Loading
  */
 void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
-    PrintSeparator("测试 7: 实际场景 - 游戏资产加载");
+    PrintSeparator("Test 7: Real World Scenario - Game Asset Loading");
     
     FVulkanMemoryManager* memMgr = device->GetMemoryManager();
     FVulkanResourceManager resourceMgr(device, memMgr);
     
-    MR_LOG_INFO("模拟加载一个完整的游戏场景...");
+    MR_LOG_INFO("Simulating loading a complete game scene...");
     
     std::vector<FRHIBufferRef> buffers;
     std::vector<FRHITextureRef> textures;
     
-    // 1. 加载几何体数据（Vertex + Index Buffers）
-    MR_LOG_INFO("[1/4] 加载几何体数据...");
+    // 1. Load geometry data (Vertex + Index Buffers)
+    MR_LOG_INFO("[1/4] Loading geometry data...");
     for (int i = 0; i < 20; ++i) {
         // Vertex Buffer (varying sizes)
         auto vb = resourceMgr.CreateBuffer(
@@ -385,8 +385,8 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
         if (ib) buffers.push_back(ib);
     }
     
-    // 2. 加载纹理（Albedo, Normal, Roughness, etc.）
-    MR_LOG_INFO("[2/4] 加载纹理数据...");
+    // 2. Load textures (Albedo, Normal, Roughness, etc.)
+    MR_LOG_INFO("[2/4] Loading texture data...");
     uint32 textureSizes[] = {2048, 1024, 512, 256};
     for (uint32 size : textureSizes) {
         for (int i = 0; i < 5; ++i) {
@@ -404,8 +404,8 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
         }
     }
     
-    // 3. 加载 Uniform Buffers（材质参数、变换矩阵等）
-    MR_LOG_INFO("[3/4] 加载 Uniform Buffers...");
+    // 3. Load Uniform Buffers (material parameters, transform matrices, etc.)
+    MR_LOG_INFO("[3/4] Loading Uniform Buffers...");
     for (int i = 0; i < 100; ++i) {
         auto ub = resourceMgr.CreateBuffer(
             256,  // typical UBO size
@@ -416,8 +416,8 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
         if (ub) buffers.push_back(ub);
     }
     
-    // 4. 加载环境贴图（Cube Map）
-    MR_LOG_INFO("[4/4] 加载环境贴图...");
+    // 4. Load environment map (Cube Map)
+    MR_LOG_INFO("[4/4] Loading environment map...");
     TextureDesc cubemapDesc{};
     cubemapDesc.width = 1024;
     cubemapDesc.height = 1024;
@@ -430,50 +430,50 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
     auto cubemap = resourceMgr.CreateTexture(cubemapDesc, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (cubemap) textures.push_back(cubemap);
     
-    // 获取最终统计
+    // Get final statistics
     FVulkanResourceManager::FResourceStats stats;
     resourceMgr.GetResourceStats(stats);
     
-    MR_LOG_INFO("场景加载完成:");
-    MR_LOG_INFO("  总缓冲区: " + std::to_string(stats.NumBuffers));
-    MR_LOG_INFO("  总纹理: " + std::to_string(stats.NumTextures));
-    MR_LOG_INFO("  缓冲区内存: " + std::to_string(stats.BufferMemory / (1024 * 1024)) + " MB");
-    MR_LOG_INFO("  纹理内存: " + std::to_string(stats.TextureMemory / (1024 * 1024)) + " MB");
-    MR_LOG_INFO("  总内存: " + std::to_string((stats.BufferMemory + stats.TextureMemory) / (1024 * 1024)) + " MB");
+    MR_LOG_INFO("Scene loading completed:");
+    MR_LOG_INFO("  Total buffers: " + std::to_string(stats.NumBuffers));
+    MR_LOG_INFO("  Total textures: " + std::to_string(stats.NumTextures));
+    MR_LOG_INFO("  Buffer memory: " + std::to_string(stats.BufferMemory / (1024 * 1024)) + " MB");
+    MR_LOG_INFO("  Texture memory: " + std::to_string(stats.TextureMemory / (1024 * 1024)) + " MB");
+    MR_LOG_INFO("  Total memory: " + std::to_string((stats.BufferMemory + stats.TextureMemory) / (1024 * 1024)) + " MB");
     
-    // 清理
+    // Cleanup
     buffers.clear();
     textures.clear();
     
-    MR_LOG_INFO("[OK] 游戏资产加载场景测试通过");
+    MR_LOG_INFO("[OK] Game asset loading scenario test passed");
 }
 
 /**
- * 运行所有测试
+ * Run all tests
  */
 void RunAllTests() {
-    PrintSeparator("Vulkan GPU 内存系统综合测试（四层架构）");
+    PrintSeparator("Vulkan GPU Memory System Comprehensive Test (4-Layer Architecture)");
     
-    // 初始化 Vulkan 设备
-    MR_LOG_INFO("初始化 Vulkan 设备...");
+    // Initialize Vulkan device
+    MR_LOG_INFO("Initializing Vulkan device...");
     
     auto window = std::make_unique<GLFWWindow>();
     if (!window->initialize("VulkanGPUMemoryTest", 800, 600)) {
-        MR_LOG_ERROR("窗口初始化失败");
+        MR_LOG_ERROR("Window initialization failed");
         return;
     }
     
     auto device = std::make_unique<VulkanDevice>();
     if (!device->initialize(window.get())) {
-        MR_LOG_ERROR("Vulkan 设备初始化失败");
+        MR_LOG_ERROR("Vulkan device initialization failed");
         return;
     }
     
-    MR_LOG_INFO("[OK] Vulkan 设备初始化成功");
+    MR_LOG_INFO("[OK] Vulkan device initialized successfully");
     MR_LOG_INFO("");
     
     try {
-        // 运行各项测试
+        // Run all tests
         TestRHIRefCounting();
         MR_LOG_INFO("");
         
@@ -495,13 +495,13 @@ void RunAllTests() {
         TestRealWorldScenario_AssetLoading(device.get());
         MR_LOG_INFO("");
         
-        PrintSeparator("所有测试通过！");
+        PrintSeparator("All tests passed!");
         
     } catch (const std::exception& e) {
-        MR_LOG_ERROR("测试异常: " + String(e.what()));
+        MR_LOG_ERROR("Test exception: " + String(e.what()));
     }
     
-    // 清理
+    // Cleanup
     device->shutdown();
     window->shutdown();
 }
