@@ -53,11 +53,11 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Load global functions
-        // ����Vulkanʵ��
+        // Create Vulkan instance
         s_functions.vkCreateInstance = (PFN_vkCreateInstance)vkGetInstanceProcAddr(nullptr, "vkCreateInstance");
-        // ö��ʵ����չ
+        // Enumerate instance extensions
         s_functions.vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceExtensionProperties");
-        // ö����֤��
+        // Enumerate validation layers
         s_functions.vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceLayerProperties");
         
         if (!s_functions.vkCreateInstance || 
