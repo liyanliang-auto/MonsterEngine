@@ -216,6 +216,7 @@
     <ClCompile Include="Source\Core\Logging\OutputDeviceConsole.cpp" />
     <ClCompile Include="Source\Core\Logging\OutputDeviceDebug.cpp" />
     <ClCompile Include="Source\Tests\LoggingSystemTest.cpp" />
+    <ClCompile Include="Source\Tests\MathLibraryTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -271,6 +272,23 @@
     <ClInclude Include="Include\Core\Logging\OutputDeviceFile.h" />
     <ClInclude Include="Include\Core\Logging\OutputDeviceConsole.h" />
     <ClInclude Include="Include\Core\Logging\OutputDeviceDebug.h" />
+    <ClInclude Include="Include\Math\MathFwd.h" />
+    <ClInclude Include="Include\Math\MathUtility.h" />
+    <ClInclude Include="Include\Math\MathFunctions.h" />
+    <ClInclude Include="Include\Math\VectorRegister.h" />
+    <ClInclude Include="Include\Math\MonsterMathSSE.h" />
+    <ClInclude Include="Include\Math\MonsterMathFPU.h" />
+    <ClInclude Include="Include\Math\Vector.h" />
+    <ClInclude Include="Include\Math\Vector2D.h" />
+    <ClInclude Include="Include\Math\Vector4.h" />
+    <ClInclude Include="Include\Math\Quat.h" />
+    <ClInclude Include="Include\Math\Rotator.h" />
+    <ClInclude Include="Include\Math\Matrix.h" />
+    <ClInclude Include="Include\Math\Transform.h" />
+    <ClInclude Include="Include\Math\Box.h" />
+    <ClInclude Include="Include\Math\Sphere.h" />
+    <ClInclude Include="Include\Math\Plane.h" />
+    <ClInclude Include="Include\Math\MonsterMath.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
