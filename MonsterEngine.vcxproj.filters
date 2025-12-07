@@ -138,6 +138,9 @@
     <ClCompile Include="Source\Containers\Text.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Tests\SmartPointerTest.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Assert.h">
@@ -310,6 +313,18 @@
     </ClInclude>
     <ClInclude Include="Include\Serialization\Archive.h">
       <Filter>头文件\Serialization</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Core\Templates\SharedPointerFwd.h">
+      <Filter>头文件\Core\Templates</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Core\Templates\SharedPointerInternals.h">
+      <Filter>头文件\Core\Templates</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Core\Templates\SharedPointer.h">
+      <Filter>头文件\Core\Templates</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Core\Templates\UniquePtr.h">
+      <Filter>头文件\Core\Templates</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

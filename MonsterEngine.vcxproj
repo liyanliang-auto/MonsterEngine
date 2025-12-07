@@ -221,6 +221,7 @@
     <ClCompile Include="Source\Core\Color.cpp" />
     <ClCompile Include="Source\Containers\Text.cpp" />
     <ClCompile Include="Source\Tests\ColorAndContainerTest.cpp" />
+    <ClCompile Include="Source\Tests\SmartPointerTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -316,6 +317,10 @@
     <ClInclude Include="Include\Containers\Containers.h" />
     <ClInclude Include="Include\Serialization\Archive.h" />
     <ClInclude Include="Include\Core\Color.h" />
+    <ClInclude Include="Include\Core\Templates\SharedPointerFwd.h" />
+    <ClInclude Include="Include\Core\Templates\SharedPointerInternals.h" />
+    <ClInclude Include="Include\Core\Templates\SharedPointer.h" />
+    <ClInclude Include="Include\Core\Templates\UniquePtr.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
