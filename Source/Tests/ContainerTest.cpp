@@ -13,6 +13,10 @@
 #include <iostream>
 #include <cassert>
 
+// Use MonsterRender logging types
+namespace ELogVerbosity = MonsterRender::ELogVerbosity;
+using MonsterRender::LogTemp;
+
 namespace MonsterEngine
 {
 
@@ -26,7 +30,7 @@ static int32 TestsFailed = 0;
 #define TEST_ASSERT(condition, message) \
     do { \
         if (!(condition)) { \
-            MR_LOG_ERROR("FAILED: %s - %s", #condition, message); \
+            MR_LOG(LogTemp, Error, "FAILED: %s - %s", #condition, message); \
             ++TestsFailed; \
         } else { \
             ++TestsPassed; \
@@ -34,7 +38,7 @@ static int32 TestsFailed = 0;
     } while(0)
 
 #define TEST_SECTION(name) \
-    MR_LOG_INFO("=== Testing %s ===", name)
+    MR_LOG(LogTemp, Log, "=== Testing %s ===", name)
 
 // ============================================================================
 // TArray Tests

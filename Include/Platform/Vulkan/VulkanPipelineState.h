@@ -3,10 +3,17 @@
 #include "Core/CoreMinimal.h"
 #include "RHI/IRHIResource.h"
 #include "Platform/Vulkan/VulkanRHI.h"
+#include "Containers/Map.h"
 
 #include <mutex>
+#include <vector>
+#include <map>
 
 namespace MonsterRender::RHI::Vulkan {
+
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+using MonsterEngine::TMap;
     
     // Forward declarations
     class VulkanDevice;
@@ -117,21 +124,21 @@ namespace MonsterRender::RHI::Vulkan {
         /**
          * Get descriptor set layouts
          */
-        const TArray<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return m_descriptorSetLayouts; }
+        const std::vector<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return m_descriptorSetLayouts; }
         
     private:
         VulkanDevice* m_device;
         bool m_isValid;
         
-        // Vulkan objects
+        // Vulkan objects - use std::vector for Vulkan API compatibility
         VkPipeline m_pipeline;
         VkPipelineLayout m_pipelineLayout;
         VkRenderPass m_renderPass;
-        TArray<VkDescriptorSetLayout> m_descriptorSetLayouts;
+        std::vector<VkDescriptorSetLayout> m_descriptorSetLayouts;
         
-        // Shader modules
-        TArray<VkShaderModule> m_shaderModules;
-        TArray<VkPipelineShaderStageCreateInfo> m_shaderStages;
+        // Shader modules - use std::vector for Vulkan API compatibility
+        std::vector<VkShaderModule> m_shaderModules;
+        std::vector<VkPipelineShaderStageCreateInfo> m_shaderStages;
         
         // Reflection data
         TArray<ShaderReflectionData> m_reflectionData;
@@ -155,15 +162,15 @@ namespace MonsterRender::RHI::Vulkan {
         bool loadFromCache();
         void saveToCache();
         
-        // Helper methods
+        // Helper methods - use std::vector for Vulkan API compatibility
         VkVertexInputBindingDescription createVertexInputBinding() const;
-        TArray<VkVertexInputAttributeDescription> createVertexInputAttributes() const;
+        std::vector<VkVertexInputAttributeDescription> createVertexInputAttributes() const;
         VkPipelineInputAssemblyStateCreateInfo createInputAssemblyState() const;
         VkPipelineRasterizationStateCreateInfo createRasterizationState() const;
         VkPipelineColorBlendStateCreateInfo createColorBlendState() const;
         VkPipelineDepthStencilStateCreateInfo createDepthStencilState() const;
         VkPipelineMultisampleStateCreateInfo createMultisampleState() const;
-        TArray<VkPipelineColorBlendAttachmentState> createColorBlendAttachments() const;
+        std::vector<VkPipelineColorBlendAttachmentState> createColorBlendAttachments() const;
     };
     
     /**

@@ -15,6 +15,9 @@
 namespace MonsterRender {
 namespace RHI {
 
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+
 // Forward declaration
 class FVulkanMemoryPool;
 

@@ -10,6 +10,10 @@
 
 namespace MonsterRender {
 
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+using MonsterEngine::TMap;
+
 // Forward declarations
 class FTexture;
 class FTexturePool;

@@ -353,6 +353,7 @@ namespace MonsterRender::Platform::GLFW {
         glfwWindowHint(GLFW_RESIZABLE, properties.resizable ? GLFW_TRUE : GLFW_FALSE);
         glfwWindowHint(GLFW_DECORATED, properties.decorated ? GLFW_TRUE : GLFW_FALSE);
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); // Start hidden, show after setup
+        glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);  // Request focus when shown
         
         // Create window
         GLFWmonitor* monitor = properties.fullscreen ? glfwGetPrimaryMonitor() : nullptr;
@@ -378,14 +379,22 @@ namespace MonsterRender::Platform::GLFW {
         
         // Create input manager
         m_inputManager = MakeUnique<GLFWInputManager>(m_window);
+        if (!m_inputManager) {
+            MR_LOG_ERROR("Failed to create input manager");
+            glfwDestroyWindow(m_window);
+            m_window = nullptr;
+            glfwTerminate();
+            return false;
+        }
+        
+        // Mark as initialized before showing window (callbacks may be triggered)
+        m_initialized = true;
         
         // Show window
         glfwShowWindow(m_window);
         
         // Update properties from actual window
         updateWindowProperties();
-        
-        m_initialized = true;
         
         MR_LOG_INFO("GLFW window initialized successfully");
         return true;

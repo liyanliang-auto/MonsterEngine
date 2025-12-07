@@ -15,6 +15,11 @@
 
 namespace MonsterRender {
 
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+using MonsterEngine::TQueue;
+using MonsterEngine::TMap;
+
 /**
  * FAsyncFileIO - Asynchronous file I/O system
  * 

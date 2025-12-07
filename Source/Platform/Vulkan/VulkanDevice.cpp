@@ -17,18 +17,21 @@
 
 #include <set>
 #include <algorithm>
+#include <vector>
 
 namespace MonsterRender::RHI::Vulkan {
     
-    // Required device extensions
-    const TArray<const char*> VulkanDevice::s_deviceExtensions = {
+    // Required device extensions - use C arrays to avoid static initialization order issues
+    static const char* const g_deviceExtensions[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
+    static constexpr uint32 g_deviceExtensionCount = sizeof(g_deviceExtensions) / sizeof(g_deviceExtensions[0]);
     
-    // Validation layers
-    const TArray<const char*> VulkanDevice::s_validationLayers = {
+    // Validation layers - use C arrays to avoid static initialization order issues
+    static const char* const g_validationLayers[] = {
         "VK_LAYER_KHRONOS_validation"
     };
+    static constexpr uint32 g_validationLayerCount = sizeof(g_validationLayers) / sizeof(g_validationLayers[0]);
     
     VulkanDevice::VulkanDevice() {
         MR_LOG_INFO("Creating Vulkan device...");
@@ -553,8 +556,8 @@ namespace MonsterRender::RHI::Vulkan {
         // Set validation layers if enabled
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
         if (m_validationEnabled) {
-            instanceCreateInfo.enabledLayerCount = static_cast<uint32>(s_validationLayers.size());
-            instanceCreateInfo.ppEnabledLayerNames = s_validationLayers.data();
+            instanceCreateInfo.enabledLayerCount = g_validationLayerCount;
+            instanceCreateInfo.ppEnabledLayerNames = g_validationLayers;
             
             // Setup debug messenger for instance creation/destruction
             debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -654,12 +657,13 @@ namespace MonsterRender::RHI::Vulkan {
         
         MR_LOG_INFO("Found " + std::to_string(deviceCount) + " Vulkan-capable device(s)");
         
-        // Get all physical devices
-        TArray<VkPhysicalDevice> devices(deviceCount);
+        // Get all physical devices - use std::vector for Vulkan API compatibility
+        std::vector<VkPhysicalDevice> devices(deviceCount);
         functions.vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
         
         // Find the first suitable device
-        for (const auto& device : devices) {
+        for (size_t i = 0; i < devices.size(); ++i) {
+            const auto& device = devices[i];
             if (isDeviceSuitable(device)) {
                 m_physicalDevice = device;
                 
@@ -703,7 +707,8 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Create queue create infos
-        TArray<VkDeviceQueueCreateInfo> queueCreateInfos;
+        // Use std::vector for Vulkan API compatibility
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
         std::set<uint32> uniqueQueueFamilies = {m_graphicsQueueFamily.familyIndex};
         
         if (m_surface != VK_NULL_HANDLE && m_presentQueueFamily.familyIndex != m_graphicsQueueFamily.familyIndex) {
@@ -735,13 +740,13 @@ namespace MonsterRender::RHI::Vulkan {
         createInfo.pEnabledFeatures = &deviceFeatures;
         
         // Device extensions
-        createInfo.enabledExtensionCount = static_cast<uint32>(s_deviceExtensions.size());
-        createInfo.ppEnabledExtensionNames = s_deviceExtensions.data();
+        createInfo.enabledExtensionCount = g_deviceExtensionCount;
+        createInfo.ppEnabledExtensionNames = g_deviceExtensions;
         
         // Validation layers (deprecated for devices, but needed for older Vulkan)
         if (m_validationEnabled) {
-            createInfo.enabledLayerCount = static_cast<uint32>(s_validationLayers.size());
-            createInfo.ppEnabledLayerNames = s_validationLayers.data();
+            createInfo.enabledLayerCount = g_validationLayerCount;
+            createInfo.ppEnabledLayerNames = g_validationLayers;
         } else {
             createInfo.enabledLayerCount = 0;
         }
@@ -789,14 +794,15 @@ namespace MonsterRender::RHI::Vulkan {
         VkSurfaceCapabilitiesKHR capabilities;
         functions.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities);
         
+        // Use std::vector for Vulkan API compatibility
         uint32 formatCount;
         functions.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr);
-        TArray<VkSurfaceFormatKHR> formats(formatCount);
+        std::vector<VkSurfaceFormatKHR> formats(formatCount);
         functions.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data());
         
         uint32 presentModeCount;
         functions.vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr);
-        TArray<VkPresentModeKHR> presentModes(presentModeCount);
+        std::vector<VkPresentModeKHR> presentModes(presentModeCount);
         functions.vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
         
         if (formats.empty() || presentModes.empty()) {
@@ -926,7 +932,8 @@ namespace MonsterRender::RHI::Vulkan {
         // Reference: UE5 FVulkanRenderPass::Create
         // ============================================================================
         
-        TArray<VkAttachmentDescription> attachments;
+        // Use std::vector for Vulkan API compatibility
+        std::vector<VkAttachmentDescription> attachments;
         
         // Attachment 0: Color attachment (swapchain image)
         VkAttachmentDescription colorAttachment{};
@@ -1031,7 +1038,8 @@ namespace MonsterRender::RHI::Vulkan {
         for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
             // Attachment array: color view (per-swapchain) + depth view (shared)
             // The depth view is shared because we only render to one framebuffer at a time
-            TArray<VkImageView> attachments = {
+            // Use std::vector for Vulkan API compatibility
+            std::vector<VkImageView> attachments = {
                 m_swapchainImageViews[i],  // Attachment 0: Color
                 m_depthImageView           // Attachment 1: Depth
             };
@@ -1136,23 +1144,32 @@ namespace MonsterRender::RHI::Vulkan {
     bool VulkanDevice::checkValidationLayerSupport() {
         const auto& functions = VulkanAPI::getFunctions();
         
-        uint32 layerCount;
+        uint32 layerCount = 0;
         functions.vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
         
-        TArray<VkLayerProperties> availableLayers(layerCount);
+        // No layers available - validation layers not supported
+        if (layerCount == 0) {
+            MR_LOG_WARNING("No Vulkan layers available, validation layers not supported");
+            return false;
+        }
+        
+        // Use std::vector to avoid TArray issues during static initialization
+        std::vector<VkLayerProperties> availableLayers(layerCount);
         functions.vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
         
-        for (const char* layerName : s_validationLayers) {
+        for (uint32 i = 0; i < g_validationLayerCount; ++i) {
+            const char* layerName = g_validationLayers[i];
             bool layerFound = false;
             
-            for (const auto& layerProperties : availableLayers) {
-                if (strcmp(layerName, layerProperties.layerName) == 0) {
+            for (size_t j = 0; j < availableLayers.size(); ++j) {
+                if (strcmp(layerName, availableLayers[j].layerName) == 0) {
                     layerFound = true;
                     break;
                 }
             }
             
             if (!layerFound) {
+                MR_LOG_WARNING("Validation layer not found: " + String(layerName));
                 return false;
             }
         }
@@ -1160,8 +1177,8 @@ namespace MonsterRender::RHI::Vulkan {
         return true;
     }
     
-    TArray<const char*> VulkanDevice::getRequiredExtensions(bool enableValidation) {
-        TArray<const char*> extensions;
+    std::vector<const char*> VulkanDevice::getRequiredExtensions(bool enableValidation) {
+        std::vector<const char*> extensions;
         
         // Surface extensions (platform-specific)
         #if PLATFORM_WINDOWS
@@ -1179,8 +1196,8 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Log extensions
         MR_LOG_INFO("Required Vulkan extensions:");
-        for (const auto& extension : extensions) {
-            MR_LOG_INFO("  - " + String(extension));
+        for (size_t i = 0; i < extensions.size(); ++i) {
+            MR_LOG_INFO("  - " + String(extensions[i]));
         }
         
         return extensions;
@@ -1229,10 +1246,11 @@ namespace MonsterRender::RHI::Vulkan {
         uint32 queueFamilyCount = 0;
         functions.vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
         
-        TArray<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        // Use std::vector for Vulkan API compatibility
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         functions.vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
         
-        for (uint32 i = 0; i < queueFamilies.size(); i++) {
+        for (uint32 i = 0; i < static_cast<uint32>(queueFamilies.size()); i++) {
             const auto& queueFamilyProperties = queueFamilies[i];
             
             // Check if this family supports the required flags
@@ -1260,16 +1278,26 @@ namespace MonsterRender::RHI::Vulkan {
     bool VulkanDevice::checkDeviceExtensionSupport(VkPhysicalDevice device) {
         const auto& functions = VulkanAPI::getFunctions();
         
-        uint32 extensionCount;
+        uint32 extensionCount = 0;
         functions.vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
         
-        TArray<VkExtensionProperties> availableExtensions(extensionCount);
+        // No extensions available
+        if (extensionCount == 0) {
+            MR_LOG_WARNING("No device extensions available");
+            return g_deviceExtensionCount == 0;
+        }
+        
+        // Use std::vector to avoid TArray issues
+        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
         functions.vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
         
-        std::set<String> requiredExtensions(s_deviceExtensions.begin(), s_deviceExtensions.end());
+        std::set<String> requiredExtensions;
+        for (uint32 i = 0; i < g_deviceExtensionCount; ++i) {
+            requiredExtensions.insert(g_deviceExtensions[i]);
+        }
         
-        for (const auto& extension : availableExtensions) {
-            requiredExtensions.erase(extension.extensionName);
+        for (size_t i = 0; i < availableExtensions.size(); ++i) {
+            requiredExtensions.erase(availableExtensions[i].extensionName);
         }
         
         return requiredExtensions.empty();

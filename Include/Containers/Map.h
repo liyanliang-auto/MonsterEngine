@@ -119,7 +119,8 @@ FORCEINLINE uint32 GetTypeHash(const TPair<KeyType, ValueType>& Pair)
 template<typename KeyType, typename ValueType, bool bInAllowDuplicateKeys>
 struct TDefaultMapKeyFuncs : BaseKeyFuncs<TPair<KeyType, ValueType>, KeyType, bInAllowDuplicateKeys>
 {
-    using KeyInitType = typename TTypeTraits<KeyType>::ConstPointerType;
+    // Use ConstInitType (value for small types, const ref for large types) instead of pointer
+    using KeyInitType = typename TTypeTraits<KeyType>::ConstInitType;
     using ElementInitType = const TPair<KeyType, ValueType>&;
     
     /**
@@ -677,6 +678,43 @@ public:
     auto end() { return Pairs.end(); }
     auto begin() const { return Pairs.begin(); }
     auto end() const { return Pairs.end(); }
+    
+    // ========================================================================
+    // STL Compatibility Methods
+    // ========================================================================
+    
+    /**
+     * STL-compatible size() - same as Num()
+     */
+    FORCEINLINE SizeType size() const { return Num(); }
+    
+    /**
+     * STL-compatible empty() - same as IsEmpty()
+     */
+    FORCEINLINE bool empty() const { return Num() == 0; }
+    
+    /**
+     * STL-compatible clear() - same as Empty()
+     */
+    FORCEINLINE void clear() { Empty(); }
+    
+    /**
+     * STL-compatible find() - returns iterator to element or end()
+     * Note: This is a simplified version that returns pointer to value
+     */
+    FORCEINLINE ValueType* find(const KeyType& Key) { return Find(Key); }
+    FORCEINLINE const ValueType* find(const KeyType& Key) const { return Find(Key); }
+    
+    /**
+     * STL-compatible count() - returns 1 if key exists, 0 otherwise
+     */
+    FORCEINLINE SizeType count(const KeyType& Key) const { return Contains(Key) ? 1 : 0; }
+    
+    /**
+     * STL-compatible erase() - removes element by key
+     * @return Number of elements removed (0 or 1)
+     */
+    FORCEINLINE SizeType erase(const KeyType& Key) { return Remove(Key); }
     
     // ========================================================================
     // Comparison

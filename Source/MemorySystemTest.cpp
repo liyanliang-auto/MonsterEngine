@@ -5,6 +5,10 @@
 #include <chrono>
 
 namespace MonsterRender {
+
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+
 namespace MemorySystemTest {
 
 /**

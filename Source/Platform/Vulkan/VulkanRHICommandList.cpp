@@ -303,7 +303,7 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanRHICommandListImmediate::setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) {
         // Track bound sampler
-        if (m_boundResources.find(slot) != m_boundResources.end()) {
+        if (m_boundResources.Contains(slot)) {
             m_boundResources[slot].sampler = sampler;
             m_boundResources[slot].isDirty = true;
         } else {

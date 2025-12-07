@@ -11,6 +11,7 @@
  */
 
 #include "Core/CoreTypes.h"
+#include "Core/HAL/FMemory.h"
 #include "Containers/Array.h"
 #include <initializer_list>
 #include <utility>
@@ -250,7 +251,7 @@ public:
         Clear();
         if (Data)
         {
-            FMemory::Free(Data);
+            MonsterRender::FMemory::Free(Data);
             Data = nullptr;
         }
     }
@@ -278,7 +279,7 @@ public:
             Clear();
             if (Data)
             {
-                FMemory::Free(Data);
+                MonsterRender::FMemory::Free(Data);
             }
             
             Data = Other.Data;
@@ -379,7 +380,7 @@ public:
         
         // Allocate new buffer
         ElementType* NewData = static_cast<ElementType*>(
-            FMemory::Malloc(NewCapacity * sizeof(ElementType), alignof(ElementType))
+            MonsterRender::FMemory::Malloc(NewCapacity * sizeof(ElementType), alignof(ElementType))
         );
         
         // Copy existing elements
@@ -395,7 +396,7 @@ public:
         // Free old buffer
         if (Data)
         {
-            FMemory::Free(Data);
+            MonsterRender::FMemory::Free(Data);
         }
         
         Data = NewData;
@@ -411,7 +412,7 @@ public:
         {
             if (Data)
             {
-                FMemory::Free(Data);
+                MonsterRender::FMemory::Free(Data);
                 Data = nullptr;
             }
             Capacity = 0;
@@ -423,7 +424,7 @@ public:
         if (Count < Capacity)
         {
             ElementType* NewData = static_cast<ElementType*>(
-                FMemory::Malloc(Count * sizeof(ElementType), alignof(ElementType))
+                MonsterRender::FMemory::Malloc(Count * sizeof(ElementType), alignof(ElementType))
             );
             
             for (SizeType i = 0; i < Count; ++i)
@@ -432,7 +433,7 @@ public:
                 (*this)[i].~ElementType();
             }
             
-            FMemory::Free(Data);
+            MonsterRender::FMemory::Free(Data);
             Data = NewData;
             Capacity = Count;
             Head = 0;
@@ -559,11 +560,46 @@ public:
         Clear();
         if (Data)
         {
-            FMemory::Free(Data);
+            MonsterRender::FMemory::Free(Data);
             Data = nullptr;
         }
         Capacity = 0;
     }
+
+    // ========================================================================
+    // STL Compatibility Methods
+    // ========================================================================
+    
+    /** STL-compatible clear() - same as Clear() */
+    void clear() { Clear(); }
+    
+    /** STL-compatible size() - same as Num() */
+    SizeType size() const { return Count; }
+    
+    /** STL-compatible empty() - same as IsEmpty() */
+    bool empty() const { return Count == 0; }
+    
+    /** STL-compatible push_back() - same as PushBack() */
+    template<typename ArgType>
+    void push_back(ArgType&& Item) { PushBack(std::forward<ArgType>(Item)); }
+    
+    /** STL-compatible push_front() - same as PushFront() */
+    template<typename ArgType>
+    void push_front(ArgType&& Item) { PushFront(std::forward<ArgType>(Item)); }
+    
+    /** STL-compatible pop_back() - same as PopBack() but returns void */
+    void pop_back() { PopBack(); }
+    
+    /** STL-compatible pop_front() - same as PopFront() but returns void */
+    void pop_front() { PopFront(); }
+    
+    /** STL-compatible front() - same as First() */
+    ElementType& front() { return First(); }
+    const ElementType& front() const { return First(); }
+    
+    /** STL-compatible back() - same as Last() */
+    ElementType& back() { return Last(); }
+    const ElementType& back() const { return Last(); }
 
 public:
     // ========================================================================

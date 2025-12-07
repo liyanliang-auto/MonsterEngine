@@ -3,8 +3,14 @@
 #include "Core/CoreMinimal.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "RHI/RHI.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
 
 namespace MonsterRender::RHI::Vulkan {
+
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+using MonsterEngine::TMap;
     
     // Forward declarations
     class VulkanDevice;

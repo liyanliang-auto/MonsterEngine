@@ -3,9 +3,22 @@
 
 #pragma once
 
+// Prevent Windows min/max macros from interfering with std::max_align_t
+#ifdef _WIN32
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+#endif
+
 #include "Core/CoreTypes.h"
 #include <cstring>
 #include <new>
+#include <cstddef>  // for std::max_align_t
+
+// Default alignment for memory allocations
+#ifndef DEFAULT_ALIGNMENT
+    #define DEFAULT_ALIGNMENT 16
+#endif
 
 namespace MonsterRender {
 
@@ -129,7 +142,8 @@ public:
     static uint64 GetTotalAllocatedMemory();
     static void GetMemoryStats(FMemoryStats& OutStats);
 
-    static constexpr uint32 DEFAULT_ALIGNMENT = alignof(std::max_align_t);
+    // Default alignment for memory allocations (16 bytes for x64)
+    static const unsigned int DefaultAlignment = 16;
 
 private:
     FMemory() = delete;  // Static class, no instances

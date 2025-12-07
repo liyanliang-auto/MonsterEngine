@@ -713,7 +713,7 @@ namespace MonsterRender::RHI::Vulkan {
         m_boundSamplers[slot] = sampler;
         
         // Also update the resource entry if it exists
-        if (m_boundResources.find(slot) != m_boundResources.end()) {
+        if (m_boundResources.Contains(slot)) {
             m_boundResources[slot].sampler = sampler;
             m_boundResources[slot].isDirty = true;
         }

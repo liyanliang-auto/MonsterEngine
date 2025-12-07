@@ -1,5 +1,12 @@
 #pragma once
 
+// Prevent Windows min/max macros from interfering with std::min/max and std::numeric_limits
+#if defined(_WIN32) || defined(_WIN64)
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+#endif
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -64,15 +71,13 @@ namespace MonsterRender {
         return std::make_unique<T>(std::forward<Args>(args)...);
     }
     
-    // Array and container types
-    template<typename T>
-    using TArray = std::vector<T>;
-    
+    // Span type
     template<typename T>
     using TSpan = std::span<T>;
     
+    // Note: TArray is now defined in MonsterEngine::TArray (Containers/Array.h)
     // Note: TMap is now defined in MonsterEngine::TMap (Containers/Map.h)
-    // Use MonsterEngine::TMap for new code
+    // Use MonsterEngine containers for new code
     
     // Optional type
     template<typename T>
@@ -81,6 +86,31 @@ namespace MonsterRender {
     // Function type
     template<typename T>
     using TFunction = std::function<T>;
+}
+
+// MonsterEngine namespace - mirror types for container system compatibility
+namespace MonsterEngine {
+    // Size type
+    using SIZE_T = std::size_t;
+    
+    // Basic integer types
+    using uint8  = std::uint8_t;
+    using uint16 = std::uint16_t;
+    using uint32 = std::uint32_t;
+    using uint64 = std::uint64_t;
+    
+    using int8   = std::int8_t;
+    using int16  = std::int16_t;
+    using int32  = std::int32_t;
+    using int64  = std::int64_t;
+    
+    // Floating point types
+    using float32 = float;
+    using float64 = double;
+    
+    // String types
+    using String = std::string;
+    using StringView = std::string_view;
 }
 
 

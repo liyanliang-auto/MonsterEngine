@@ -105,18 +105,18 @@ namespace MonsterRender::RHI::Vulkan {
         uint64 hash = Layout.GetHash();
         
         // Check cache
-        auto it = m_cache.find(hash);
-        if (it != m_cache.end()) {
+        VkRenderPass* cachedPass = m_cache.Find(hash);
+        if (cachedPass) {
             MR_LOG_DEBUG("FVulkanRenderPassCache: Cache hit for hash " + std::to_string(hash));
-            return it->second;
+            return *cachedPass;
         }
         
         // Create new render pass
         VkRenderPass renderPass = CreateRenderPass(Layout);
         if (renderPass != VK_NULL_HANDLE) {
-            m_cache[hash] = renderPass;
+            m_cache.Add(hash, renderPass);
             MR_LOG_DEBUG("FVulkanRenderPassCache: Created and cached render pass, hash=" + 
-                        std::to_string(hash) + ", cache size=" + std::to_string(m_cache.size()));
+                        std::to_string(hash) + ", cache size=" + std::to_string(m_cache.Num()));
         }
         
         return renderPass;
@@ -126,12 +126,12 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
-        for (auto& pair : m_cache) {
-            if (pair.second != VK_NULL_HANDLE) {
-                functions.vkDestroyRenderPass(device, pair.second, nullptr);
+        for (auto It = m_cache.CreateIterator(); It; ++It) {
+            if (It->Value != VK_NULL_HANDLE) {
+                functions.vkDestroyRenderPass(device, It->Value, nullptr);
             }
         }
-        m_cache.clear();
+        m_cache.Empty();
         
         MR_LOG_DEBUG("FVulkanRenderPassCache: Cleared all cached render passes");
     }
@@ -298,18 +298,18 @@ namespace MonsterRender::RHI::Vulkan {
         uint64 hash = Key.GetHash();
         
         // Check cache
-        auto it = m_cache.find(hash);
-        if (it != m_cache.end()) {
+        VkFramebuffer* cachedFB = m_cache.Find(hash);
+        if (cachedFB) {
             MR_LOG_DEBUG("FVulkanFramebufferCache: Cache hit for hash " + std::to_string(hash));
-            return it->second;
+            return *cachedFB;
         }
         
         // Create new framebuffer
         VkFramebuffer framebuffer = CreateFramebuffer(Key);
         if (framebuffer != VK_NULL_HANDLE) {
-            m_cache[hash] = framebuffer;
+            m_cache.Add(hash, framebuffer);
             MR_LOG_DEBUG("FVulkanFramebufferCache: Created and cached framebuffer, hash=" + 
-                        std::to_string(hash) + ", cache size=" + std::to_string(m_cache.size()));
+                        std::to_string(hash) + ", cache size=" + std::to_string(m_cache.Num()));
         }
         
         return framebuffer;
@@ -319,12 +319,12 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
-        for (auto& pair : m_cache) {
-            if (pair.second != VK_NULL_HANDLE) {
-                functions.vkDestroyFramebuffer(device, pair.second, nullptr);
+        for (auto It = m_cache.CreateIterator(); It; ++It) {
+            if (It->Value != VK_NULL_HANDLE) {
+                functions.vkDestroyFramebuffer(device, It->Value, nullptr);
             }
         }
-        m_cache.clear();
+        m_cache.Empty();
         
         MR_LOG_DEBUG("FVulkanFramebufferCache: Cleared all cached framebuffers");
     }

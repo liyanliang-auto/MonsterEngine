@@ -229,10 +229,10 @@ namespace MonsterRender::RHI::Vulkan {
             m_scissorDirty = false;
         }
         
-        // Apply vertex buffers if dirty
+        // Apply vertex buffers if dirty - use std::vector for Vulkan API compatibility
         if (m_vertexBuffersDirty) {
-            TArray<VkBuffer> buffers;
-            TArray<VkDeviceSize> offsets;
+            std::vector<VkBuffer> buffers;
+            std::vector<VkDeviceSize> offsets;
             
             for (const auto& vb : m_vertexBuffers) {
                 if (vb.buffer != VK_NULL_HANDLE) {
@@ -341,10 +341,10 @@ namespace MonsterRender::RHI::Vulkan {
             return VK_NULL_HANDLE;
         }
         
-        // Update descriptor set with bound resources
-        TArray<VkWriteDescriptorSet> Writes;
-        TArray<VkDescriptorBufferInfo> BufferInfos;
-        TArray<VkDescriptorImageInfo> ImageInfos;
+        // Update descriptor set with bound resources - use std::vector for Vulkan API compatibility
+        std::vector<VkWriteDescriptorSet> Writes;
+        std::vector<VkDescriptorBufferInfo> BufferInfos;
+        std::vector<VkDescriptorImageInfo> ImageInfos;
         
         // Reserve space to prevent reallocation invalidating pointers
         BufferInfos.reserve(m_uniformBuffers.size());
@@ -448,10 +448,10 @@ namespace MonsterRender::RHI::Vulkan {
         , m_allocatedSets(0) {
         
         // Configure pool sizes (UE5 typical configuration)
-        m_poolSizes.push_back({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 512});
-        m_poolSizes.push_back({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 512});
-        m_poolSizes.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 256});
-        m_poolSizes.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 256});
+        m_poolSizes.Add(PoolSizeInfo{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 512});
+        m_poolSizes.Add(PoolSizeInfo{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 512});
+        m_poolSizes.Add(PoolSizeInfo{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 256});
+        m_poolSizes.Add(PoolSizeInfo{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 256});
     }
     
     FVulkanDescriptorPoolSetContainer::~FVulkanDescriptorPoolSetContainer() {
@@ -471,8 +471,8 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
-        // Prepare pool sizes
-        TArray<VkDescriptorPoolSize> poolSizes;
+        // Prepare pool sizes - use std::vector for Vulkan API compatibility
+        std::vector<VkDescriptorPoolSize> poolSizes;
         poolSizes.reserve(m_poolSizes.size());
         
         for (const auto& sizeInfo : m_poolSizes) {

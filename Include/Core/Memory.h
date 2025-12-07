@@ -1,6 +1,12 @@
 #pragma once
 
 #include "Core/CoreMinimal.h"
+#include "Containers/Array.h"
+
+namespace MonsterRender {
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+}
 
 // Platform-specific alignment and huge pages
 #if PLATFORM_WINDOWS

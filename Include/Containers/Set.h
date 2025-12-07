@@ -122,7 +122,8 @@ struct BaseKeyFuncs
 template<typename ElementType, bool bInAllowDuplicateKeys = false>
 struct DefaultKeyFuncs : BaseKeyFuncs<ElementType, ElementType, bInAllowDuplicateKeys>
 {
-    using KeyInitType = typename TTypeTraits<ElementType>::ConstPointerType;
+    // Use ConstInitType (value for small types, const ref for large types) instead of pointer
+    using KeyInitType = typename TTypeTraits<ElementType>::ConstInitType;
     using ElementInitType = typename TCallTraits<ElementType>::ParamType;
     
     /**
@@ -180,9 +181,12 @@ public:
     TSetElement(TSetElement&&) = default;
     
     /**
-     * Value constructor
+     * Value constructor (variadic - for in-place construction)
+     * SFINAE excludes TSetElement to avoid ambiguity with copy/move constructors
      */
-    template<typename... ArgsType>
+    template<typename... ArgsType,
+             typename = std::enable_if_t<sizeof...(ArgsType) != 1 || 
+                                         !std::is_same_v<std::decay_t<std::tuple_element_t<0, std::tuple<ArgsType...>>>, TSetElement>>>
     explicit TSetElement(ArgsType&&... Args)
         : Value(std::forward<ArgsType>(Args)...)
         , HashNextId()
@@ -376,7 +380,7 @@ public:
      */
     FSetElementId Add(const ElementType& InElement, bool* bIsAlreadyInSetPtr = nullptr)
     {
-        return Emplace(InElement, bIsAlreadyInSetPtr);
+        return EmplaceImpl(bIsAlreadyInSetPtr, InElement);
     }
     
     /**
@@ -385,7 +389,7 @@ public:
      */
     FSetElementId Add(ElementType&& InElement, bool* bIsAlreadyInSetPtr = nullptr)
     {
-        return Emplace(std::move(InElement), bIsAlreadyInSetPtr);
+        return EmplaceImpl(bIsAlreadyInSetPtr, std::move(InElement));
     }
     
     /**
@@ -396,15 +400,6 @@ public:
     FSetElementId Emplace(ArgsType&&... Args)
     {
         return EmplaceImpl(nullptr, std::forward<ArgsType>(Args)...);
-    }
-    
-    /**
-     * Constructs an element in place with duplicate check
-     */
-    template<typename... ArgsType>
-    FSetElementId Emplace(ArgsType&&... Args, bool* bIsAlreadyInSetPtr)
-    {
-        return EmplaceImpl(bIsAlreadyInSetPtr, std::forward<ArgsType>(Args)...);
     }
     
     // ========================================================================
