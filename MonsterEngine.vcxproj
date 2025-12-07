@@ -217,6 +217,10 @@
     <ClCompile Include="Source\Core\Logging\OutputDeviceDebug.cpp" />
     <ClCompile Include="Source\Tests\LoggingSystemTest.cpp" />
     <ClCompile Include="Source\Tests\MathLibraryTest.cpp" />
+    <ClCompile Include="Source\Tests\ContainerTest.cpp" />
+    <ClCompile Include="Source\Core\Color.cpp" />
+    <ClCompile Include="Source\Containers\Text.cpp" />
+    <ClCompile Include="Source\Tests\ColorAndContainerTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -289,6 +293,26 @@
     <ClInclude Include="Include\Math\Sphere.h" />
     <ClInclude Include="Include\Math\Plane.h" />
     <ClInclude Include="Include\Math\MonsterMath.h" />
+    <ClInclude Include="Include\Core\Templates\TypeTraits.h" />
+    <ClInclude Include="Include\Core\Templates\TypeHash.h" />
+    <ClInclude Include="Include\Core\Templates\MemoryOps.h" />
+    <ClInclude Include="Include\Containers\ContainerFwd.h" />
+    <ClInclude Include="Include\Containers\ContainerAllocationPolicies.h" />
+    <ClInclude Include="Include\Containers\Array.h" />
+    <ClInclude Include="Include\Containers\BitArray.h" />
+    <ClInclude Include="Include\Containers\SparseArray.h" />
+    <ClInclude Include="Include\Containers\Set.h" />
+    <ClInclude Include="Include\Containers\Map.h" />
+    <ClInclude Include="Include\Containers\String.h" />
+    <ClInclude Include="Include\Containers\Name.h" />
+    <ClInclude Include="Include\Containers\Text.h" />
+    <ClInclude Include="Include\Containers\Queue.h" />
+    <ClInclude Include="Include\Containers\Deque.h" />
+    <ClInclude Include="Include\Containers\CircularBuffer.h" />
+    <ClInclude Include="Include\Containers\ScriptArray.h" />
+    <ClInclude Include="Include\Containers\Containers.h" />
+    <ClInclude Include="Include\Serialization\Archive.h" />
+    <ClInclude Include="Include\Core\Color.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
