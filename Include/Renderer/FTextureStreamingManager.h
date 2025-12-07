@@ -4,15 +4,18 @@
 #pragma once
 
 #include "Core/CoreTypes.h"
+#include "Core/Templates/UniquePtr.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
 #include <mutex>
 
 namespace MonsterRender {
 
-// Use MonsterEngine containers
+// Use MonsterEngine containers and smart pointers
 using MonsterEngine::TArray;
 using MonsterEngine::TMap;
+using MonsterEngine::TUniquePtr;
+using MonsterEngine::MakeUnique;
 
 // Forward declarations
 class FTexture;

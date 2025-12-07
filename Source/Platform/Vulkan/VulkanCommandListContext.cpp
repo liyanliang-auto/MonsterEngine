@@ -231,7 +231,7 @@ namespace MonsterRender::RHI::Vulkan {
             // Build color targets from provided textures
             for (uint32 i = 0; i < renderTargets.size() && i < FVulkanRenderTargetInfo::MaxColorTargets; ++i) {
                 if (renderTargets[i]) {
-                    rtInfo.ColorTargets[i] = std::static_pointer_cast<VulkanTexture>(renderTargets[i]);
+                    rtInfo.ColorTargets[i] = StaticCastSharedPtr<VulkanTexture>(renderTargets[i]);
                     rtInfo.bClearColor[i] = true;
                     rtInfo.ClearColors[i] = {{0.0f, 0.0f, 0.0f, 1.0f}};
                     rtInfo.NumColorTargets++;
@@ -240,7 +240,7 @@ namespace MonsterRender::RHI::Vulkan {
             
             // Add depth target if provided, or use device's depth buffer
             if (depthStencil) {
-                rtInfo.DepthStencilTarget = std::static_pointer_cast<VulkanTexture>(depthStencil);
+                rtInfo.DepthStencilTarget = StaticCastSharedPtr<VulkanTexture>(depthStencil);
             }
             
             // Set render area from first color target

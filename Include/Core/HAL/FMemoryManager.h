@@ -5,9 +5,14 @@
 
 #include "Core/HAL/FMalloc.h"
 #include "Core/HAL/FMallocBinned2.h"
+#include "Core/Templates/UniquePtr.h"
 #include <memory>
 
 namespace MonsterRender {
+
+// Use MonsterEngine smart pointers
+using MonsterEngine::TUniquePtr;
+using MonsterEngine::MakeUnique;
 
 /**
  * FMemoryManager - Global memory manager singleton (similar to UE5)

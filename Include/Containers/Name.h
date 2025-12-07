@@ -16,6 +16,7 @@
 #include "Core/CoreTypes.h"
 #include "Core/Templates/TypeTraits.h"
 #include "Core/Templates/TypeHash.h"
+#include "Core/Templates/UniquePtr.h"
 #include "String.h"
 #include "Array.h"
 #include "Map.h"
@@ -218,7 +219,7 @@ public:
         
         // Add new entry
         uint32 NewIndex = static_cast<uint32>(Entries.Num());
-        Entries.Add(std::make_unique<FNameEntry>(Name));
+        Entries.Add(MakeUnique<FNameEntry>(Name));
         NameToIndex[ComparisonKey] = NewIndex;
         
         return FNameEntryId::FromUnstableInt(NewIndex);
@@ -269,7 +270,7 @@ public:
         uint32 Index = Id.ToUnstableInt();
         if (Index < static_cast<uint32>(Entries.Num()))
         {
-            return Entries[Index].get();
+            return Entries[Index].Get();
         }
         return nullptr;
     }
@@ -287,7 +288,7 @@ private:
     FNamePool()
     {
         // Reserve entry 0 for NAME_None
-        Entries.Add(std::make_unique<FNameEntry>(L"None"));
+        Entries.Add(MakeUnique<FNameEntry>(L"None"));
         NameToIndex[L"none"] = 0;
     }
     
@@ -297,7 +298,7 @@ private:
     FNamePool& operator=(const FNamePool&) = delete;
     
     mutable std::shared_mutex Mutex;
-    TArray<std::unique_ptr<FNameEntry>> Entries;
+    TArray<TUniquePtr<FNameEntry>> Entries;
     TMap<std::wstring, uint32> NameToIndex;
 };
 

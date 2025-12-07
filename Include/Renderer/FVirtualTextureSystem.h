@@ -5,15 +5,22 @@
 
 #include "Core/CoreTypes.h"
 #include "Core/HAL/FMemory.h"
+#include "Core/Templates/SharedPointer.h"
+#include "Core/Templates/UniquePtr.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
 #include <mutex>
 
 namespace MonsterRender {
 
-// Use MonsterEngine containers
+// Use MonsterEngine containers and smart pointers
 using MonsterEngine::TArray;
 using MonsterEngine::TMap;
+using MonsterEngine::TSharedPtr;
+using MonsterEngine::TWeakPtr;
+using MonsterEngine::TUniquePtr;
+using MonsterEngine::MakeShared;
+using MonsterEngine::MakeUnique;
 
 // Forward declarations
 class FVirtualTexturePhysicalSpace;

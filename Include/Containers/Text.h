@@ -12,8 +12,8 @@
  */
 
 #include "Core/CoreTypes.h"
+#include "Core/Templates/SharedPointer.h"
 #include "Containers/String.h"
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <mutex>
@@ -514,11 +514,11 @@ public:
 
 private:
     /** Internal constructor */
-    FText(std::shared_ptr<ITextData> InData, uint32_t InFlags);
+    FText(TSharedPtr<ITextData> InData, uint32_t InFlags);
 
 private:
     /** The text data */
-    std::shared_ptr<ITextData> TextData;
+    TSharedPtr<ITextData> TextData;
 
     /** Text flags */
     uint32_t Flags;

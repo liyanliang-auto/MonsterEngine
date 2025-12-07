@@ -402,8 +402,9 @@ namespace MonsterRender::RHI::Vulkan {
         vkCommandBuffers.reserve(commandLists.size());
         
         for (const auto& cmdList : commandLists) {
-            if (auto vulkanCmdList = std::static_pointer_cast<VulkanCommandList>(cmdList)) {
-                vkCommandBuffers.push_back(vulkanCmdList->getVulkanCommandBuffer());
+            auto vulkanCmdList = StaticCastSharedPtr<VulkanCommandList>(cmdList);
+            if (vulkanCmdList) {
+                vkCommandBuffers.Add(vulkanCmdList->getVulkanCommandBuffer());
             }
         }
         

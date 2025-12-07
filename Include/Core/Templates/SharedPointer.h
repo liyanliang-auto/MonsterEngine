@@ -245,6 +245,9 @@ private:
     template<typename T, ESPMode M, typename... Args>
     friend TSharedRef<T, M> MakeShared(Args&&... args);
 
+    template<typename T, ESPMode M, typename... Args>
+    friend TSharedRef<T, M> MakeSharedPooled(Args&&... args);
+
     ObjectType* Object;
     SharedPointerInternals::FSharedReferencer<Mode> SharedReferenceCount;
 };
@@ -386,7 +389,8 @@ public:
     FORCEINLINE TSharedPtr& operator=(TSharedPtr const& InSharedPtr)
     {
         TSharedPtr Temp = InSharedPtr;
-        Swap(Temp, *this);
+        std::swap(Object, Temp.Object);
+        std::swap(SharedReferenceCount, Temp.SharedReferenceCount);
         return *this;
     }
 
@@ -425,6 +429,12 @@ public:
         return Object;
     }
 
+    /** std::shared_ptr compatibility alias for Get() */
+    [[nodiscard]] FORCEINLINE ObjectType* get() const
+    {
+        return Object;
+    }
+
     /** Checks if the pointer is valid */
     [[nodiscard]] FORCEINLINE explicit operator bool() const
     {
@@ -453,6 +463,12 @@ public:
     FORCEINLINE void Reset()
     {
         *this = TSharedPtr<ObjectType, Mode>();
+    }
+
+    /** std::shared_ptr compatibility alias for Reset() */
+    FORCEINLINE void reset()
+    {
+        Reset();
     }
 
     /** Returns the number of shared references */
@@ -956,6 +972,23 @@ template<typename ObjectType, ESPMode Mode = ESPMode::ThreadSafe, typename... Ar
 [[nodiscard]] FORCEINLINE TSharedRef<ObjectType, Mode> MakeShared(ArgTypes&&... Args)
 {
     auto* Controller = SharedPointerInternals::NewIntrusiveReferenceController<Mode, ObjectType>(
+        std::forward<ArgTypes>(Args)...);
+    return TSharedRef<ObjectType, Mode>(
+        Controller->GetObjectPtr(), 
+        static_cast<SharedPointerInternals::TReferenceControllerBase<Mode>*>(Controller));
+}
+
+/**
+ * MakeSharedPooled - Creates a shared reference using memory pool
+ * 
+ * Uses a memory pool for the reference controller allocation, which is
+ * more efficient for high-frequency allocation/deallocation patterns.
+ * The pool reuses freed memory blocks to reduce allocation overhead.
+ */
+template<typename ObjectType, ESPMode Mode = ESPMode::ThreadSafe, typename... ArgTypes>
+[[nodiscard]] FORCEINLINE TSharedRef<ObjectType, Mode> MakeSharedPooled(ArgTypes&&... Args)
+{
+    auto* Controller = SharedPointerInternals::NewPooledIntrusiveReferenceController<Mode, ObjectType>(
         std::forward<ArgTypes>(Args)...);
     return TSharedRef<ObjectType, Mode>(
         Controller->GetObjectPtr(), 

@@ -30,12 +30,28 @@
 
 // Core types and definitions
 #include "Core/CoreTypes.h"
+#include "Core/Templates/SharedPointer.h"
+#include "Core/Templates/UniquePtr.h"
 #include "Core/Log.h"
 #include "Core/Assert.h"
 #include "Core/Memory.h"
 
 // Engine namespace
 namespace MonsterRender {
+
+// Import MonsterEngine smart pointers into MonsterRender namespace
+using MonsterEngine::TSharedPtr;
+using MonsterEngine::TSharedRef;
+using MonsterEngine::TWeakPtr;
+using MonsterEngine::TUniquePtr;
+using MonsterEngine::MakeShared;
+using MonsterEngine::MakeSharedPooled;
+using MonsterEngine::MakeUnique;
+using MonsterEngine::MakeShareable;
+using MonsterEngine::StaticCastSharedPtr;
+using MonsterEngine::StaticCastSharedRef;
+using MonsterEngine::ConstCastSharedPtr;
+using MonsterEngine::ConstCastSharedRef;
     // Forward declarations
     class Engine;
     class Renderer;
