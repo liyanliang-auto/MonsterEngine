@@ -583,6 +583,284 @@ FText FText::AsMemory(uint64_t Bytes, bool bUseIEC)
     return FText::FromString(SS.str());
 }
 
+FText FText::AsDate(int32_t Year, int32_t Month, int32_t Day, EDateTimeStyle::Type Style)
+{
+    std::wstringstream SS;
+    
+    // Month names for Long/Full styles
+    static const wchar_t* MonthNames[] = {
+        L"January", L"February", L"March", L"April", L"May", L"June",
+        L"July", L"August", L"September", L"October", L"November", L"December"
+    };
+    
+    static const wchar_t* MonthNamesShort[] = {
+        L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
+        L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"
+    };
+    
+    switch (Style)
+    {
+        case EDateTimeStyle::Short:
+            // MM/DD/YY
+            SS << std::setfill(L'0') << std::setw(2) << Month << L"/"
+               << std::setw(2) << Day << L"/"
+               << std::setw(2) << (Year % 100);
+            break;
+            
+        case EDateTimeStyle::Medium:
+            // MMM DD, YYYY
+            if (Month >= 1 && Month <= 12)
+            {
+                SS << MonthNamesShort[Month - 1] << L" " << Day << L", " << Year;
+            }
+            break;
+            
+        case EDateTimeStyle::Long:
+            // MMMM DD, YYYY
+            if (Month >= 1 && Month <= 12)
+            {
+                SS << MonthNames[Month - 1] << L" " << Day << L", " << Year;
+            }
+            break;
+            
+        case EDateTimeStyle::Full:
+            // DayOfWeek, MMMM DD, YYYY (simplified - no day of week calculation)
+            if (Month >= 1 && Month <= 12)
+            {
+                SS << MonthNames[Month - 1] << L" " << Day << L", " << Year;
+            }
+            break;
+            
+        case EDateTimeStyle::Default:
+        default:
+            // YYYY-MM-DD (ISO 8601)
+            SS << Year << L"-"
+               << std::setfill(L'0') << std::setw(2) << Month << L"-"
+               << std::setw(2) << Day;
+            break;
+    }
+    
+    return FText::FromString(SS.str());
+}
+
+FText FText::AsTime(int32_t Hour, int32_t Minute, int32_t Second, EDateTimeStyle::Type Style)
+{
+    std::wstringstream SS;
+    
+    switch (Style)
+    {
+        case EDateTimeStyle::Short:
+            // HH:MM AM/PM
+            {
+                int Hour12 = Hour % 12;
+                if (Hour12 == 0) Hour12 = 12;
+                SS << Hour12 << L":"
+                   << std::setfill(L'0') << std::setw(2) << Minute
+                   << (Hour < 12 ? L" AM" : L" PM");
+            }
+            break;
+            
+        case EDateTimeStyle::Medium:
+            // HH:MM:SS AM/PM
+            {
+                int Hour12 = Hour % 12;
+                if (Hour12 == 0) Hour12 = 12;
+                SS << Hour12 << L":"
+                   << std::setfill(L'0') << std::setw(2) << Minute << L":"
+                   << std::setw(2) << Second
+                   << (Hour < 12 ? L" AM" : L" PM");
+            }
+            break;
+            
+        case EDateTimeStyle::Long:
+        case EDateTimeStyle::Full:
+            // HH:MM:SS AM/PM timezone (simplified - no timezone)
+            {
+                int Hour12 = Hour % 12;
+                if (Hour12 == 0) Hour12 = 12;
+                SS << Hour12 << L":"
+                   << std::setfill(L'0') << std::setw(2) << Minute << L":"
+                   << std::setw(2) << Second
+                   << (Hour < 12 ? L" AM" : L" PM");
+            }
+            break;
+            
+        case EDateTimeStyle::Default:
+        default:
+            // HH:MM:SS (24-hour)
+            SS << std::setfill(L'0') << std::setw(2) << Hour << L":"
+               << std::setw(2) << Minute << L":"
+               << std::setw(2) << Second;
+            break;
+    }
+    
+    return FText::FromString(SS.str());
+}
+
+FText FText::AsDateTime(
+    int32_t Year, int32_t Month, int32_t Day,
+    int32_t Hour, int32_t Minute, int32_t Second,
+    EDateTimeStyle::Type DateStyle, EDateTimeStyle::Type TimeStyle)
+{
+    FText DateText = AsDate(Year, Month, Day, DateStyle);
+    FText TimeText = AsTime(Hour, Minute, Second, TimeStyle);
+    
+    return FText::FromString(DateText.ToString() + L" " + TimeText.ToString());
+}
+
+FText FText::AsTimespan(int64_t TotalSeconds)
+{
+    std::wstringstream SS;
+    
+    bool bNegative = TotalSeconds < 0;
+    if (bNegative)
+    {
+        TotalSeconds = -TotalSeconds;
+        SS << L"-";
+    }
+    
+    int64_t Days = TotalSeconds / 86400;
+    int64_t Hours = (TotalSeconds % 86400) / 3600;
+    int64_t Minutes = (TotalSeconds % 3600) / 60;
+    int64_t Seconds = TotalSeconds % 60;
+    
+    if (Days > 0)
+    {
+        SS << Days << (Days == 1 ? L" day, " : L" days, ");
+    }
+    
+    SS << std::setfill(L'0') << std::setw(2) << Hours << L":"
+       << std::setw(2) << Minutes << L":"
+       << std::setw(2) << Seconds;
+    
+    return FText::FromString(SS.str());
+}
+
+FText FText::FormatPlural(int64_t Count, const FText& Singular, const FText& Plural)
+{
+    // Simple English plural rule: 1 = singular, else plural
+    if (Count == 1 || Count == -1)
+    {
+        return Singular;
+    }
+    return Plural;
+}
+
+ETextPluralForm FText::GetPluralForm(int64_t Count, ETextPluralType Type)
+{
+    // Get current culture
+    const std::string& Culture = FTextLocalizationManager::Get().GetCurrentCulture();
+    
+    // Simplified plural rules based on common language families
+    // Full implementation would use CLDR plural rules
+    
+    int64_t AbsCount = Count < 0 ? -Count : Count;
+    
+    // English-like languages (en, de, nl, etc.)
+    if (Culture.find("en") == 0 || Culture.find("de") == 0 || Culture.find("nl") == 0)
+    {
+        if (AbsCount == 1) return ETextPluralForm::One;
+        return ETextPluralForm::Other;
+    }
+    
+    // French-like languages (fr, pt-BR)
+    if (Culture.find("fr") == 0 || Culture == "pt-BR")
+    {
+        if (AbsCount == 0 || AbsCount == 1) return ETextPluralForm::One;
+        return ETextPluralForm::Other;
+    }
+    
+    // Russian/Slavic languages
+    if (Culture.find("ru") == 0 || Culture.find("uk") == 0 || Culture.find("pl") == 0)
+    {
+        int64_t Mod10 = AbsCount % 10;
+        int64_t Mod100 = AbsCount % 100;
+        
+        if (Mod10 == 1 && Mod100 != 11)
+        {
+            return ETextPluralForm::One;
+        }
+        if (Mod10 >= 2 && Mod10 <= 4 && (Mod100 < 12 || Mod100 > 14))
+        {
+            return ETextPluralForm::Few;
+        }
+        return ETextPluralForm::Many;
+    }
+    
+    // Arabic
+    if (Culture.find("ar") == 0)
+    {
+        if (AbsCount == 0) return ETextPluralForm::Zero;
+        if (AbsCount == 1) return ETextPluralForm::One;
+        if (AbsCount == 2) return ETextPluralForm::Two;
+        
+        int64_t Mod100 = AbsCount % 100;
+        if (Mod100 >= 3 && Mod100 <= 10) return ETextPluralForm::Few;
+        if (Mod100 >= 11 && Mod100 <= 99) return ETextPluralForm::Many;
+        return ETextPluralForm::Other;
+    }
+    
+    // Chinese, Japanese, Korean (no plural forms)
+    if (Culture.find("zh") == 0 || Culture.find("ja") == 0 || Culture.find("ko") == 0)
+    {
+        return ETextPluralForm::Other;
+    }
+    
+    // Default: English-like
+    if (AbsCount == 1) return ETextPluralForm::One;
+    return ETextPluralForm::Other;
+}
+
+FText FText::FormatPluralFull(
+    int64_t Count,
+    const std::unordered_map<ETextPluralForm, FText>& Forms)
+{
+    ETextPluralForm Form = GetPluralForm(Count);
+    
+    // Try to find the exact form
+    auto It = Forms.find(Form);
+    if (It != Forms.end())
+    {
+        return It->second;
+    }
+    
+    // Fall back to Other
+    It = Forms.find(ETextPluralForm::Other);
+    if (It != Forms.end())
+    {
+        return It->second;
+    }
+    
+    // Fall back to One
+    It = Forms.find(ETextPluralForm::One);
+    if (It != Forms.end())
+    {
+        return It->second;
+    }
+    
+    // Return empty if nothing found
+    return FText::GetEmpty();
+}
+
+FText FText::FormatGender(
+    ETextGender Gender,
+    const FText& Masculine,
+    const FText& Feminine,
+    const FText& Neuter)
+{
+    switch (Gender)
+    {
+        case ETextGender::Masculine:
+            return Masculine;
+        case ETextGender::Feminine:
+            return Feminine;
+        case ETextGender::Neuter:
+            return Neuter.IsEmpty() ? Masculine : Neuter;
+        default:
+            return Masculine;
+    }
+}
+
 FText FText::ToUpper() const
 {
     if (!TextData)

@@ -309,6 +309,9 @@
     <ClInclude Include="Include\Containers\Queue.h" />
     <ClInclude Include="Include\Containers\Deque.h" />
     <ClInclude Include="Include\Containers\CircularBuffer.h" />
+    <ClInclude Include="Include\Containers\RingBuffer.h" />
+    <ClInclude Include="Include\Containers\StaticArray.h" />
+    <ClInclude Include="Include\Containers\BitSet.h" />
     <ClInclude Include="Include\Containers\ScriptArray.h" />
     <ClInclude Include="Include\Containers\Containers.h" />
     <ClInclude Include="Include\Serialization\Archive.h" />

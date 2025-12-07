@@ -296,6 +296,15 @@
     <ClInclude Include="Include\Containers\CircularBuffer.h">
       <Filter>头文件\Containers</Filter>
     </ClInclude>
+    <ClInclude Include="Include\Containers\RingBuffer.h">
+      <Filter>头文件\Containers</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Containers\StaticArray.h">
+      <Filter>头文件\Containers</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Containers\BitSet.h">
+      <Filter>头文件\Containers</Filter>
+    </ClInclude>
     <ClInclude Include="Include\Core\Color.h">
       <Filter>头文件</Filter>
     </ClInclude>
