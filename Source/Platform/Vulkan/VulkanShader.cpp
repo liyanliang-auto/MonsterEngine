@@ -3,6 +3,7 @@
 #include "Core/Log.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
+#include <map>
 
 namespace MonsterRender::RHI::Vulkan {
 
@@ -37,12 +38,25 @@ using MonsterEngine::TMap;
             return false;
         }
         
+        // Debug: Validate SPIR-V magic number
+        if (bytecode.size() >= 4) {
+            uint32 magic = *reinterpret_cast<const uint32*>(bytecode.data());
+            MR_LOG_DEBUG("SPIR-V bytecode size: " + std::to_string(bytecode.size()) + 
+                        ", magic: 0x" + std::to_string(magic) +
+                        ", data ptr: " + std::to_string(reinterpret_cast<uintptr_t>(bytecode.data())));
+            if (magic != 0x07230203) {
+                MR_LOG_ERROR("Invalid SPIR-V magic number: 0x" + std::to_string(magic) + " (expected 0x07230203)");
+                return false;
+            }
+        }
+        
         // Create shader module
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         createInfo.codeSize = bytecode.size();
         createInfo.pCode = reinterpret_cast<const uint32*>(bytecode.data());
         
+        MR_LOG_DEBUG("Calling vkCreateShaderModule with codeSize=" + std::to_string(createInfo.codeSize));
         VkResult result = functions.vkCreateShaderModule(device, &createInfo, nullptr, &m_shaderModule);
         if (result != VK_SUCCESS) {
             MR_LOG_ERROR("Failed to create Vulkan shader module: " + std::to_string(result));
@@ -117,8 +131,9 @@ using MonsterEngine::TMap;
         // SPIR-V instruction stream starts after 5-word header
         uint32 i = 5;
         // Maps from (targetId) -> (binding,set)
+        // Use std::map instead of TMap to avoid potential memory allocation issues
         struct BindingInfo { uint32 set = 0; uint32 binding = 0; bool hasSet = false; bool hasBinding = false; };
-        TMap<uint32, BindingInfo> idToBinding;
+        std::map<uint32, BindingInfo> idToBinding;
 
         while (i < wordCount) {
             uint32 word = code[i++];
@@ -168,8 +183,9 @@ using MonsterEngine::TMap;
                     // 0 = UniformConstant (samplers, sampled images, combined image samplers)
                     // 2 = Uniform (uniform buffers, UBOs)
                     if (storageClass == 0 /*UniformConstant*/ || storageClass == 2 /*Uniform*/) {
-                        BindingInfo* bindingInfoPtr = idToBinding.Find(resultId);
-                        if (bindingInfoPtr && bindingInfoPtr->hasBinding) {
+                        auto it = idToBinding.find(resultId);
+                        if (it != idToBinding.end() && it->second.hasBinding) {
+                            BindingInfo* bindingInfoPtr = &it->second;
                             VkDescriptorSetLayoutBinding b{};
                             b.binding = bindingInfoPtr->binding;
                             b.descriptorCount = 1;

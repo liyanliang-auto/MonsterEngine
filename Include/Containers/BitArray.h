@@ -98,13 +98,16 @@ public:
     }
     
     /**
-     * Move constructor
+     * Move constructor (UE5 pattern)
      */
     TBitArray(TBitArray&& Other) noexcept
-        : NumBits(Other.NumBits)
-        , MaxBits(Other.MaxBits)
-        , AllocatorInstance(std::move(Other.AllocatorInstance))
+        : NumBits(0)
+        , MaxBits(0)
     {
+        // Use MoveToEmpty to transfer ownership (UE5 pattern)
+        AllocatorInstance.MoveToEmpty(Other.AllocatorInstance);
+        NumBits = Other.NumBits;
+        MaxBits = Other.MaxBits;
         Other.NumBits = 0;
         Other.MaxBits = 0;
     }
@@ -140,13 +143,14 @@ public:
     }
     
     /**
-     * Move assignment
+     * Move assignment (UE5 pattern)
      */
     TBitArray& operator=(TBitArray&& Other) noexcept
     {
         if (this != &Other)
         {
-            AllocatorInstance = std::move(Other.AllocatorInstance);
+            // Use MoveToEmpty to transfer ownership (UE5 pattern)
+            AllocatorInstance.MoveToEmpty(Other.AllocatorInstance);
             NumBits = Other.NumBits;
             MaxBits = Other.MaxBits;
             Other.NumBits = 0;

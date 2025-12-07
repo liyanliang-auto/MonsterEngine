@@ -387,20 +387,30 @@ namespace MonsterRender {
         String vsPath = "Shaders/Cube.vert.spv";
         String psPath = "Shaders/Cube.frag.spv";
 
-        // Read vertex shader SPV
-        TArray<uint8> vsSpv = ShaderCompiler::readFileBytes(vsPath);
+        // Read vertex shader SPV - use std::vector for stability
+        std::vector<uint8> vsSpv = ShaderCompiler::readFileBytes(vsPath);
         if (vsSpv.empty()) {
             MR_LOG_ERROR("Failed to load vertex shader: " + vsPath);
             return false;
         }
+        MR_LOG_INFO("Loaded vertex shader: " + std::to_string(vsSpv.size()) + " bytes, data ptr: " + 
+                   std::to_string(reinterpret_cast<uintptr_t>(vsSpv.data())));
         
-        // Read fragment shader SPV
-        TArray<uint8> psSpv = ShaderCompiler::readFileBytes(psPath);
+        // Validate SPIR-V magic before passing to Vulkan
+        if (vsSpv.size() >= 4) {
+            uint32 magic = *reinterpret_cast<const uint32*>(vsSpv.data());
+            MR_LOG_INFO("VS SPIR-V magic: 0x" + std::to_string(magic));
+        }
+        
+        // Read fragment shader SPV - use std::vector for stability
+        std::vector<uint8> psSpv = ShaderCompiler::readFileBytes(psPath);
         if (psSpv.empty()) {
             MR_LOG_ERROR("Failed to load fragment shader: " + psPath);
             return false;
         }
+        MR_LOG_INFO("Loaded fragment shader: " + std::to_string(psSpv.size()) + " bytes");
 
+        MR_LOG_INFO("Creating vertex shader...");
         m_vertexShader = m_device->createVertexShader(TSpan<const uint8>(vsSpv.data(), vsSpv.size()));
         if (!m_vertexShader) {
             MR_LOG_ERROR("Failed to create vertex shader");

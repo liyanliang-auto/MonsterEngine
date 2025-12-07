@@ -7,6 +7,7 @@
 
 #include "Core/CoreMinimal.h"
 #include "RHI/RHI.h"
+#include <vector>
 
 namespace MonsterRender {
 
@@ -51,8 +52,8 @@ struct FTextureData {
     uint32 Channels;                    // Number of channels (1-4)
     uint32 MipLevels;                   // Number of mipmap levels
     RHI::EPixelFormat Format;           // Pixel format
-    TArray<uint8*> MipData;             // Mipmap level data pointers
-    TArray<uint32> MipSizes;            // Mipmap level sizes in bytes
+    std::vector<uint8*> MipData;        // Mipmap level data pointers (use std::vector for stability)
+    std::vector<uint32> MipSizes;       // Mipmap level sizes in bytes (use std::vector for stability)
     
     FTextureData()
         : Pixels(nullptr)

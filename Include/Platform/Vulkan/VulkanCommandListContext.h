@@ -40,6 +40,12 @@ namespace MonsterRender::RHI::Vulkan {
         void prepareForNewFrame();
         
         /**
+         * Refresh command buffer after synchronous operations
+         * Unlike prepareForNewFrame(), this does NOT acquire swapchain image
+         */
+        void refreshCommandBuffer();
+        
+        /**
          * Get command buffer for this context
          */
         FVulkanCmdBuffer* getCmdBuffer() const { return m_cmdBuffer; }

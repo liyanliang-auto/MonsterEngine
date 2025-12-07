@@ -21,8 +21,8 @@ namespace MonsterRender {
         return s;
     }
 
-    TArray<uint8> ShaderCompiler::compileFromFile(const String& filePath, const ShaderCompileOptions& options) {
-        TArray<uint8> result;
+    std::vector<uint8> ShaderCompiler::compileFromFile(const String& filePath, const ShaderCompileOptions& options) {
+        std::vector<uint8> result;
 
         // Decide compiler and args
         bool useGLSLC = options.language == EShaderLanguage::GLSL;
@@ -73,8 +73,8 @@ namespace MonsterRender {
         return result;
     }
 
-    TArray<uint8> ShaderCompiler::readFileBytes(const String& filePath) {
-        TArray<uint8> data;
+    std::vector<uint8> ShaderCompiler::readFileBytes(const String& filePath) {
+        std::vector<uint8> data;
         std::ifstream f(filePath, std::ios::binary);
         if (!f) return data;
         f.seekg(0, std::ios::end);

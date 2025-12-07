@@ -88,15 +88,15 @@ namespace MonsterRender {
         String vsPath = "Shaders/Triangle.vert.spv";
         String psPath = "Shaders/Triangle.frag.spv";
 
-        // Read vertex shader SPV
-        TArray<uint8> vsSpv = ShaderCompiler::readFileBytes(vsPath);
+        // Read vertex shader SPV - use std::vector for stability
+        std::vector<uint8> vsSpv = ShaderCompiler::readFileBytes(vsPath);
         if (vsSpv.empty()) {
             MR_LOG_ERROR("Failed to load vertex shader: " + vsPath);
             return false;
         }
         
-        // Read fragment shader SPV
-        TArray<uint8> psSpv = ShaderCompiler::readFileBytes(psPath);
+        // Read fragment shader SPV - use std::vector for stability
+        std::vector<uint8> psSpv = ShaderCompiler::readFileBytes(psPath);
         if (psSpv.empty()) {
             MR_LOG_ERROR("Failed to load fragment shader: " + psPath);
             return false;
