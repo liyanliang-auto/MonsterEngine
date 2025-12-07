@@ -50,27 +50,6 @@ namespace MonsterRender {
     using String = std::string;
     using StringView = std::string_view;
     
-    // Smart pointers (following UE5 style)
-    template<typename T>
-    using TSharedPtr = std::shared_ptr<T>;
-    
-    template<typename T>
-    using TUniquePtr = std::unique_ptr<T>;
-    
-    template<typename T>
-    using TWeakPtr = std::weak_ptr<T>;
-    
-    // Helper functions for smart pointers
-    template<typename T, typename... Args>
-    constexpr TSharedPtr<T> MakeShared(Args&&... args) {
-        return std::make_shared<T>(std::forward<Args>(args)...);
-    }
-    
-    template<typename T, typename... Args>
-    constexpr TUniquePtr<T> MakeUnique(Args&&... args) {
-        return std::make_unique<T>(std::forward<Args>(args)...);
-    }
-    
     // Span type
     template<typename T>
     using TSpan = std::span<T>;
@@ -78,6 +57,9 @@ namespace MonsterRender {
     // Note: TArray is now defined in MonsterEngine::TArray (Containers/Array.h)
     // Note: TMap is now defined in MonsterEngine::TMap (Containers/Map.h)
     // Use MonsterEngine containers for new code
+    
+    // Note: Smart pointers (TSharedPtr, TUniquePtr, TWeakPtr) are now defined in MonsterEngine namespace
+    // Include "Core/Templates/SharedPointer.h" and "Core/Templates/UniquePtr.h" for smart pointer support
     
     // Optional type
     template<typename T>

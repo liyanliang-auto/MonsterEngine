@@ -1,11 +1,14 @@
 #pragma once
 
 #include "Core/CoreMinimal.h"
+#include "Core/Templates/UniquePtr.h"
 #include "Containers/Array.h"
 
 namespace MonsterRender {
-// Use MonsterEngine containers
+// Use MonsterEngine containers and smart pointers
 using MonsterEngine::TArray;
+using MonsterEngine::TUniquePtr;
+using MonsterEngine::MakeUnique;
 }
 
 // Platform-specific alignment and huge pages

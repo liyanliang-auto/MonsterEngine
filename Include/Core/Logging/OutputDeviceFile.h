@@ -8,6 +8,7 @@
  */
 
 #include "Core/CoreTypes.h"
+#include "Core/Templates/UniquePtr.h"
 #include "Core/Logging/OutputDevice.h"
 #include <fstream>
 #include <mutex>
@@ -17,6 +18,10 @@
 #include <queue>
 
 namespace MonsterRender {
+
+// Use MonsterEngine smart pointers
+using MonsterEngine::TUniquePtr;
+using MonsterEngine::MakeUnique;
 
 /**
  * Asynchronous file writer that writes logs in a background thread.

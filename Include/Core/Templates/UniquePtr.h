@@ -239,12 +239,24 @@ public:
         return Ptr;
     }
 
+    /** std::unique_ptr compatibility alias for Get() */
+    [[nodiscard]] FORCEINLINE T* get() const
+    {
+        return Ptr;
+    }
+
     /** Relinquishes control of the owned object to the caller */
     [[nodiscard]] FORCEINLINE T* Release()
     {
         T* Result = Ptr;
         Ptr = nullptr;
         return Result;
+    }
+
+    /** std::unique_ptr compatibility alias for Release() */
+    [[nodiscard]] FORCEINLINE T* release()
+    {
+        return Release();
     }
 
     /** Gives the TUniquePtr a new object to own, destroying any previously-owned object */
@@ -259,6 +271,24 @@ public:
                 GetDeleter()(OldPtr);
             }
         }
+    }
+
+    /** std::unique_ptr compatibility alias for Reset() */
+    FORCEINLINE void reset(T* InPtr = nullptr)
+    {
+        Reset(InPtr);
+    }
+
+    /** Swap with another TUniquePtr */
+    FORCEINLINE void Swap(TUniquePtr& Other)
+    {
+        std::swap(Ptr, Other.Ptr);
+    }
+
+    /** std::unique_ptr compatibility alias for Swap() */
+    FORCEINLINE void swap(TUniquePtr& Other)
+    {
+        Swap(Other);
     }
 
     /** Returns a reference to the deleter */
@@ -423,12 +453,24 @@ public:
         return Ptr;
     }
 
+    /** std::unique_ptr compatibility alias for Get() */
+    [[nodiscard]] FORCEINLINE T* get() const
+    {
+        return Ptr;
+    }
+
     /** Relinquishes control of the owned array */
     [[nodiscard]] FORCEINLINE T* Release()
     {
         T* Result = Ptr;
         Ptr = nullptr;
         return Result;
+    }
+
+    /** std::unique_ptr compatibility alias for Release() */
+    [[nodiscard]] FORCEINLINE T* release()
+    {
+        return Release();
     }
 
     /** Resets with a new array */
@@ -443,6 +485,24 @@ public:
                 GetDeleter()(OldPtr);
             }
         }
+    }
+
+    /** std::unique_ptr compatibility alias for Reset() */
+    FORCEINLINE void reset(T* InPtr = nullptr)
+    {
+        Reset(InPtr);
+    }
+
+    /** Swap with another TUniquePtr */
+    FORCEINLINE void Swap(TUniquePtr& Other)
+    {
+        std::swap(Ptr, Other.Ptr);
+    }
+
+    /** std::unique_ptr compatibility alias for Swap() */
+    FORCEINLINE void swap(TUniquePtr& Other)
+    {
+        Swap(Other);
     }
 
     /** Returns a reference to the deleter */

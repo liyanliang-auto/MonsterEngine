@@ -333,7 +333,7 @@ FText& FText::operator=(FText&& Other) noexcept
     return *this;
 }
 
-FText::FText(std::shared_ptr<ITextData> InData, uint32_t InFlags)
+FText::FText(TSharedPtr<ITextData> InData, uint32_t InFlags)
     : TextData(std::move(InData))
     , Flags(InFlags)
 {
@@ -347,7 +347,7 @@ FText FText::GetEmpty()
 FText FText::AsCultureInvariant(const std::wstring& String)
 {
     return FText(
-        std::make_shared<FSimpleTextData>(String, true),
+        MakeShared<FSimpleTextData>(String, true),
         ETextFlag::CultureInvariant
     );
 }
@@ -355,7 +355,7 @@ FText FText::AsCultureInvariant(const std::wstring& String)
 FText FText::AsCultureInvariant(std::wstring&& String)
 {
     return FText(
-        std::make_shared<FSimpleTextData>(std::move(String), true),
+        MakeShared<FSimpleTextData>(std::move(String), true),
         ETextFlag::CultureInvariant
     );
 }
@@ -363,7 +363,7 @@ FText FText::AsCultureInvariant(std::wstring&& String)
 FText FText::FromString(const std::wstring& String)
 {
     return FText(
-        std::make_shared<FSimpleTextData>(String, false),
+        MakeShared<FSimpleTextData>(String, false),
         ETextFlag::InitializedFromString
     );
 }
@@ -371,7 +371,7 @@ FText FText::FromString(const std::wstring& String)
 FText FText::FromString(std::wstring&& String)
 {
     return FText(
-        std::make_shared<FSimpleTextData>(std::move(String), false),
+        MakeShared<FSimpleTextData>(std::move(String), false),
         ETextFlag::InitializedFromString
     );
 }
@@ -387,7 +387,7 @@ FText FText::FromStringTable(
     const std::wstring& DefaultString)
 {
     return FText(
-        std::make_shared<FLocalizedTextData>(Namespace, Key, DefaultString),
+        MakeShared<FLocalizedTextData>(Namespace, Key, DefaultString),
         0
     );
 }

@@ -202,7 +202,7 @@ void FOutputDeviceFile::TearDown() {
     std::lock_guard<std::mutex> lock(m_writerMutex);
     if (m_asyncWriter) {
         m_asyncWriter->Stop();
-        m_asyncWriter.reset();
+        m_asyncWriter.Reset();
     }
     m_bDead = true;
 }
@@ -213,7 +213,7 @@ void FOutputDeviceFile::SetFilename(const char* Filename) {
     // Close current file
     if (m_asyncWriter) {
         m_asyncWriter->Stop();
-        m_asyncWriter.reset();
+        m_asyncWriter.Reset();
     }
 
     m_filename = Filename ? Filename : "";
@@ -276,7 +276,7 @@ bool FOutputDeviceFile::CreateWriter() {
     m_asyncWriter = MakeUnique<FAsyncWriter>(m_filename.c_str(), m_bAppendIfExists);
 
     if (!m_asyncWriter->IsOpen()) {
-        m_asyncWriter.reset();
+        m_asyncWriter.Reset();
         m_bDead = true;
         return false;
     }

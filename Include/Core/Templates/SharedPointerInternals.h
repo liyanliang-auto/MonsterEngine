@@ -324,6 +324,294 @@ struct DefaultDeleter
 };
 
 // ============================================================================
+// Reference Controller Memory Pool
+// ============================================================================
+
+/**
+ * TReferenceControllerPool - Memory pool for reference controllers
+ * 
+ * Provides efficient allocation/deallocation of reference controllers
+ * by reusing freed memory blocks. Thread-safe for ThreadSafe mode.
+ * 
+ * Based on UE5's object pool patterns for high-frequency allocations.
+ */
+template<typename ControllerType, ESPMode Mode>
+class TReferenceControllerPool
+{
+    // Use atomic or regular pointer based on thread safety mode
+    using NodePtrType = std::conditional_t<Mode == ESPMode::ThreadSafe, 
+                                            std::atomic<void*>, void*>;
+
+    struct FreeNode
+    {
+        FreeNode* Next;
+    };
+
+public:
+    static TReferenceControllerPool& Get()
+    {
+        static TReferenceControllerPool Instance;
+        return Instance;
+    }
+
+    /** Allocate memory for a controller */
+    void* Allocate()
+    {
+        if constexpr (Mode == ESPMode::ThreadSafe)
+        {
+            // Lock-free pop from free list
+            void* Head = FreeList.load(std::memory_order_acquire);
+            while (Head != nullptr)
+            {
+                FreeNode* Node = static_cast<FreeNode*>(Head);
+                if (FreeList.compare_exchange_weak(Head, Node->Next,
+                    std::memory_order_release, std::memory_order_relaxed))
+                {
+                    PooledCount.fetch_sub(1, std::memory_order_relaxed);
+                    return Head;
+                }
+            }
+        }
+        else
+        {
+            if (FreeList != nullptr)
+            {
+                void* Result = FreeList;
+                FreeList = static_cast<FreeNode*>(FreeList)->Next;
+                --PooledCount;
+                return Result;
+            }
+        }
+
+        // No pooled memory available, allocate new
+        TotalAllocated.fetch_add(1, std::memory_order_relaxed);
+        return MonsterRender::FMemory::Malloc(sizeof(ControllerType), alignof(ControllerType));
+    }
+
+    /** Return memory to the pool */
+    void Free(void* Ptr)
+    {
+        if (Ptr == nullptr)
+        {
+            return;
+        }
+
+        // Check if we should pool or actually free
+        int32 CurrentPooled;
+        if constexpr (Mode == ESPMode::ThreadSafe)
+        {
+            CurrentPooled = PooledCount.load(std::memory_order_relaxed);
+        }
+        else
+        {
+            CurrentPooled = PooledCount;
+        }
+
+        if (CurrentPooled >= MaxPoolSize)
+        {
+            // Pool is full, actually free the memory
+            MonsterRender::FMemory::Free(Ptr);
+            TotalAllocated.fetch_sub(1, std::memory_order_relaxed);
+            return;
+        }
+
+        // Add to free list
+        FreeNode* Node = static_cast<FreeNode*>(Ptr);
+        
+        if constexpr (Mode == ESPMode::ThreadSafe)
+        {
+            // Lock-free push to free list
+            void* Head = FreeList.load(std::memory_order_relaxed);
+            do
+            {
+                Node->Next = static_cast<FreeNode*>(Head);
+            } while (!FreeList.compare_exchange_weak(Head, Node,
+                std::memory_order_release, std::memory_order_relaxed));
+            
+            PooledCount.fetch_add(1, std::memory_order_relaxed);
+        }
+        else
+        {
+            Node->Next = static_cast<FreeNode*>(FreeList);
+            FreeList = Node;
+            ++PooledCount;
+        }
+    }
+
+    /** Get statistics */
+    int32 GetPooledCount() const
+    {
+        if constexpr (Mode == ESPMode::ThreadSafe)
+        {
+            return PooledCount.load(std::memory_order_relaxed);
+        }
+        else
+        {
+            return PooledCount;
+        }
+    }
+
+    int32 GetTotalAllocated() const
+    {
+        return TotalAllocated.load(std::memory_order_relaxed);
+    }
+
+    /** Set maximum pool size */
+    void SetMaxPoolSize(int32 NewMaxSize)
+    {
+        MaxPoolSize = NewMaxSize;
+    }
+
+    /** Clear the pool (free all pooled memory) */
+    void Clear()
+    {
+        if constexpr (Mode == ESPMode::ThreadSafe)
+        {
+            void* Head = FreeList.exchange(nullptr, std::memory_order_acquire);
+            while (Head != nullptr)
+            {
+                FreeNode* Node = static_cast<FreeNode*>(Head);
+                Head = Node->Next;
+                MonsterRender::FMemory::Free(Node);
+                TotalAllocated.fetch_sub(1, std::memory_order_relaxed);
+            }
+            PooledCount.store(0, std::memory_order_relaxed);
+        }
+        else
+        {
+            while (FreeList != nullptr)
+            {
+                FreeNode* Node = static_cast<FreeNode*>(FreeList);
+                FreeList = Node->Next;
+                MonsterRender::FMemory::Free(Node);
+                TotalAllocated.fetch_sub(1, std::memory_order_relaxed);
+            }
+            PooledCount = 0;
+        }
+    }
+
+private:
+    TReferenceControllerPool()
+        : MaxPoolSize(1024)  // Default max pool size
+    {
+        if constexpr (Mode == ESPMode::ThreadSafe)
+        {
+            FreeList.store(nullptr, std::memory_order_relaxed);
+            PooledCount.store(0, std::memory_order_relaxed);
+        }
+        else
+        {
+            FreeList = nullptr;
+            PooledCount = 0;
+        }
+        TotalAllocated.store(0, std::memory_order_relaxed);
+    }
+
+    ~TReferenceControllerPool()
+    {
+        Clear();
+    }
+
+    // Non-copyable
+    TReferenceControllerPool(const TReferenceControllerPool&) = delete;
+    TReferenceControllerPool& operator=(const TReferenceControllerPool&) = delete;
+
+    NodePtrType FreeList;
+    std::conditional_t<Mode == ESPMode::ThreadSafe, std::atomic<int32>, int32> PooledCount;
+    std::atomic<int32> TotalAllocated;
+    int32 MaxPoolSize;
+};
+
+// ============================================================================
+// Pooled Reference Controller
+// ============================================================================
+
+/**
+ * TPooledReferenceController - Reference controller that uses memory pool
+ * 
+ * Overrides new/delete to use the memory pool for efficient allocation.
+ */
+template<typename ObjectType, typename DeleterType, ESPMode Mode>
+class TPooledReferenceController : private TDeleterHolder<DeleterType>, public TReferenceControllerBase<Mode>
+{
+    using PoolType = TReferenceControllerPool<TPooledReferenceController, Mode>;
+
+public:
+    explicit TPooledReferenceController(ObjectType* InObject, DeleterType&& InDeleter)
+        : TDeleterHolder<DeleterType>(std::move(InDeleter))
+        , Object(InObject)
+    {
+    }
+
+    virtual void DestroyObject() override
+    {
+        this->InvokeDeleter(Object);
+    }
+
+    // Custom new/delete using pool
+    static void* operator new(size_t Size)
+    {
+        return PoolType::Get().Allocate();
+    }
+
+    static void operator delete(void* Ptr)
+    {
+        PoolType::Get().Free(Ptr);
+    }
+
+    // Non-copyable
+    TPooledReferenceController(const TPooledReferenceController&) = delete;
+    TPooledReferenceController& operator=(const TPooledReferenceController&) = delete;
+
+private:
+    ObjectType* Object;
+};
+
+/**
+ * TPooledIntrusiveReferenceController - Intrusive controller with pool support
+ */
+template<typename ObjectType, ESPMode Mode>
+class TPooledIntrusiveReferenceController : public TReferenceControllerBase<Mode>
+{
+    using PoolType = TReferenceControllerPool<TPooledIntrusiveReferenceController, Mode>;
+
+public:
+    template<typename... ArgTypes>
+    explicit TPooledIntrusiveReferenceController(ArgTypes&&... Args)
+    {
+        new (GetObjectPtr()) ObjectType(std::forward<ArgTypes>(Args)...);
+    }
+
+    ObjectType* GetObjectPtr() const
+    {
+        return reinterpret_cast<ObjectType*>(const_cast<uint8*>(ObjectStorage));
+    }
+
+    virtual void DestroyObject() override
+    {
+        GetObjectPtr()->~ObjectType();
+    }
+
+    // Custom new/delete using pool
+    static void* operator new(size_t Size)
+    {
+        return PoolType::Get().Allocate();
+    }
+
+    static void operator delete(void* Ptr)
+    {
+        PoolType::Get().Free(Ptr);
+    }
+
+    // Non-copyable
+    TPooledIntrusiveReferenceController(const TPooledIntrusiveReferenceController&) = delete;
+    TPooledIntrusiveReferenceController& operator=(const TPooledIntrusiveReferenceController&) = delete;
+
+private:
+    alignas(ObjectType) uint8 ObjectStorage[sizeof(ObjectType)];
+};
+
+// ============================================================================
 // Factory Functions
 // ============================================================================
 
@@ -332,6 +620,14 @@ template<ESPMode Mode, typename ObjectType>
 inline TReferenceControllerBase<Mode>* NewDefaultReferenceController(ObjectType* Object)
 {
     return new TReferenceControllerWithDeleter<ObjectType, DefaultDeleter<ObjectType>, Mode>(
+        Object, DefaultDeleter<ObjectType>());
+}
+
+/** Creates a pooled reference controller with default deleter (for high-frequency allocations) */
+template<ESPMode Mode, typename ObjectType>
+inline TReferenceControllerBase<Mode>* NewPooledReferenceController(ObjectType* Object)
+{
+    return new TPooledReferenceController<ObjectType, DefaultDeleter<ObjectType>, Mode>(
         Object, DefaultDeleter<ObjectType>());
 }
 
@@ -348,6 +644,13 @@ template<ESPMode Mode, typename ObjectType, typename... ArgTypes>
 inline TIntrusiveReferenceController<ObjectType, Mode>* NewIntrusiveReferenceController(ArgTypes&&... Args)
 {
     return new TIntrusiveReferenceController<ObjectType, Mode>(std::forward<ArgTypes>(Args)...);
+}
+
+/** Creates a pooled intrusive reference controller (for MakeSharedPooled) */
+template<ESPMode Mode, typename ObjectType, typename... ArgTypes>
+inline TPooledIntrusiveReferenceController<ObjectType, Mode>* NewPooledIntrusiveReferenceController(ArgTypes&&... Args)
+{
+    return new TPooledIntrusiveReferenceController<ObjectType, Mode>(std::forward<ArgTypes>(Args)...);
 }
 
 // ============================================================================
