@@ -32,6 +32,11 @@
 #include "Queue.h"
 #include "Deque.h"
 #include "CircularBuffer.h"
+#include "RingBuffer.h"
+
+// Fixed-size containers
+#include "StaticArray.h"
+#include "BitSet.h"
 
 // Script containers (for reflection)
 #include "ScriptArray.h"

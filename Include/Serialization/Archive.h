@@ -576,4 +576,96 @@ FArchive& operator<<(FArchive& Ar, TSet<ElementType, KeyFuncs, Allocator>& Set)
     return Ar;
 }
 
+/**
+ * Helper to serialize TStaticArray
+ */
+template<typename ElementType, uint32 N>
+FArchive& operator<<(FArchive& Ar, TStaticArray<ElementType, N>& Array)
+{
+    // Check if we can bulk serialize
+    if constexpr (TCanBulkSerialize<ElementType>::Value)
+    {
+        Ar.Serialize(Array.GetData(), N * sizeof(ElementType));
+    }
+    else
+    {
+        for (uint32 i = 0; i < N; ++i)
+        {
+            Ar << Array[i];
+        }
+    }
+    
+    return Ar;
+}
+
+/**
+ * Helper to serialize TBitSet
+ */
+template<uint32 N>
+FArchive& operator<<(FArchive& Ar, TBitSet<N>& BitSet)
+{
+    // Serialize the underlying words directly
+    constexpr uint32 NumWords = (N + 63) / 64;
+    for (uint32 i = 0; i < NumWords; ++i)
+    {
+        // Access internal storage through bit operations
+        // This is a simplified approach - full implementation would need friend access
+        uint64 Word = 0;
+        if (Ar.IsSaving())
+        {
+            for (uint32 j = 0; j < 64 && (i * 64 + j) < N; ++j)
+            {
+                if (BitSet.Test(i * 64 + j))
+                {
+                    Word |= (uint64(1) << j);
+                }
+            }
+        }
+        Ar << Word;
+        if (Ar.IsLoading())
+        {
+            for (uint32 j = 0; j < 64 && (i * 64 + j) < N; ++j)
+            {
+                BitSet.Set(i * 64 + j, (Word & (uint64(1) << j)) != 0);
+            }
+        }
+    }
+    
+    return Ar;
+}
+
+} // namespace MonsterEngine
+
+// ============================================================================
+// Forward declarations for new types serialization
+// ============================================================================
+
+namespace MonsterEngine
+{
+
+// Forward declare color types
+struct FLinearColor;
+struct FColor;
+
+/**
+ * Serialize FLinearColor
+ */
+inline FArchive& operator<<(FArchive& Ar, FLinearColor& Color)
+{
+    Ar << reinterpret_cast<float&>(Color);  // R
+    Ar << *(reinterpret_cast<float*>(&Color) + 1);  // G
+    Ar << *(reinterpret_cast<float*>(&Color) + 2);  // B
+    Ar << *(reinterpret_cast<float*>(&Color) + 3);  // A
+    return Ar;
+}
+
+/**
+ * Serialize FColor
+ */
+inline FArchive& operator<<(FArchive& Ar, FColor& Color)
+{
+    Ar << reinterpret_cast<uint32&>(Color);
+    return Ar;
+}
+
 } // namespace MonsterEngine

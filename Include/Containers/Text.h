@@ -342,6 +342,91 @@ public:
      */
     static FText AsMemory(uint64_t Bytes, bool bUseIEC = true);
 
+    /**
+     * Format a date
+     * @param Year The year
+     * @param Month The month (1-12)
+     * @param Day The day (1-31)
+     * @param Style The date style
+     */
+    static FText AsDate(
+        int32_t Year, int32_t Month, int32_t Day,
+        EDateTimeStyle::Type Style = EDateTimeStyle::Default
+    );
+
+    /**
+     * Format a time
+     * @param Hour The hour (0-23)
+     * @param Minute The minute (0-59)
+     * @param Second The second (0-59)
+     * @param Style The time style
+     */
+    static FText AsTime(
+        int32_t Hour, int32_t Minute, int32_t Second,
+        EDateTimeStyle::Type Style = EDateTimeStyle::Default
+    );
+
+    /**
+     * Format a date and time
+     */
+    static FText AsDateTime(
+        int32_t Year, int32_t Month, int32_t Day,
+        int32_t Hour, int32_t Minute, int32_t Second,
+        EDateTimeStyle::Type DateStyle = EDateTimeStyle::Default,
+        EDateTimeStyle::Type TimeStyle = EDateTimeStyle::Default
+    );
+
+    /**
+     * Format a timespan (duration)
+     * @param TotalSeconds The total number of seconds
+     */
+    static FText AsTimespan(int64_t TotalSeconds);
+
+    /**
+     * Get plural form text based on count
+     * Selects appropriate plural form based on the count and current culture
+     * 
+     * @param Count The count to determine plural form
+     * @param Singular Text for singular form (count == 1)
+     * @param Plural Text for plural form (count != 1)
+     */
+    static FText FormatPlural(
+        int64_t Count,
+        const FText& Singular,
+        const FText& Plural
+    );
+
+    /**
+     * Get plural form text with full plural form support
+     * Supports Zero, One, Two, Few, Many, Other forms for languages that need them
+     * 
+     * @param Count The count to determine plural form
+     * @param Forms Map of plural forms to text
+     */
+    static FText FormatPluralFull(
+        int64_t Count,
+        const std::unordered_map<ETextPluralForm, FText>& Forms
+    );
+
+    /**
+     * Get the plural form for a count in the current culture
+     */
+    static ETextPluralForm GetPluralForm(int64_t Count, ETextPluralType Type = ETextPluralType::Cardinal);
+
+    /**
+     * Format text with gender agreement
+     * @param Gender The grammatical gender
+     * @param Masculine Text for masculine
+     * @param Feminine Text for feminine
+     * @param Neuter Text for neuter (optional, falls back to masculine)
+     */
+    static FText FormatGender(
+        ETextGender Gender,
+        const FText& Masculine,
+        const FText& Feminine,
+        const FText& Neuter = FText()
+    );
+
 public:
     // ========================================================================
     // Case Conversion
