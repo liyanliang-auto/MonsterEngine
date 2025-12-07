@@ -41,6 +41,10 @@ void RunMathLibraryTests();
 // Implementation in Source/Tests/ContainerTest.cpp
 void RunContainerTests();
 
+// Smart Pointer Test Forward Declaration
+// Implementation in Source/Tests/SmartPointerTest.cpp
+void RunSmartPointerTests();
+
 // Entry point following UE5's application architecture
 int main(int argc, char** argv) {
     using namespace MonsterRender;
@@ -67,6 +71,7 @@ int main(int argc, char** argv) {
     bool runLoggingTests = false;
     bool runMathTests = false;
     bool runContainerTests = false;
+    bool runSmartPointerTests = false;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -94,6 +99,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-container") == 0 || strcmp(argv[i], "-tc") == 0) {
             runContainerTests = true;
         }
+        else if (strcmp(argv[i], "--test-smartptr") == 0 || strcmp(argv[i], "-tsp") == 0) {
+            runSmartPointerTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -102,7 +110,7 @@ int main(int argc, char** argv) {
     // Default behavior: don't run tests, run application
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
         !runVulkanMemoryTests && !runVulkanResourceTests && !runLoggingTests && 
-        !runMathTests && !runContainerTests && !runAllTests) {
+        !runMathTests && !runContainerTests && !runSmartPointerTests && !runAllTests) {
         runAllTests = false;
     }
     
@@ -132,6 +140,12 @@ int main(int argc, char** argv) {
         RunContainerTests();
         printf("Container tests completed.\n");
         fflush(stdout);
+        return 0;
+    }
+    
+    // Run smart pointer tests
+    if (runSmartPointerTests) {
+        RunSmartPointerTests();
         return 0;
     }
     
