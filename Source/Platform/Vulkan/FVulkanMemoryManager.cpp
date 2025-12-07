@@ -5,6 +5,7 @@
 
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 #include "Platform/Vulkan/VulkanRHI.h"
+#include "Core/HAL/FMemory.h"
 #include "Core/Log.h"
 #include <algorithm>
 
@@ -52,9 +53,8 @@ FVulkanMemoryPool::FVulkanMemoryPool(VkDevice InDevice, VkDeviceSize InPoolSize,
         }
     }
     
-    // Initialize Free-List: entire pool as one large free block
-
-    FreeList = new FMemoryBlock(0, PoolSize, true);
+    // Initialize Free-List: entire pool as one large free block using FMemory
+    FreeList = FMemory::New<FMemoryBlock>(0, PoolSize, true);
     
     MR_LOG_INFO("FVulkanMemoryPool: Created " + std::to_string(PoolSize / (1024 * 1024)) + 
                 "MB pool (Type Index: " + std::to_string(MemoryTypeIndex) + 
@@ -69,7 +69,7 @@ FVulkanMemoryPool::~FVulkanMemoryPool()
 FMemoryBlock* current = FreeList;
     while (current) {
         FMemoryBlock* next = current->Next;
-        delete current;
+        FMemory::Delete(current);
         current = next;
     }
     FreeList = nullptr;
@@ -109,7 +109,7 @@ VkDeviceSize alignedOffset = (current->Offset + Alignment - 1) & ~(Alignment - 1
                 
                 // Step 1: Create padding block if needed
                 if (padding > 0) {
-                    FMemoryBlock* paddingBlock = new FMemoryBlock(current->Offset, padding, true);
+                    FMemoryBlock* paddingBlock = FMemory::New<FMemoryBlock>(current->Offset, padding, true);
                     paddingBlock->Next = current;
                     paddingBlock->Prev = prev;
                     
@@ -126,7 +126,7 @@ VkDeviceSize alignedOffset = (current->Offset + Alignment - 1) & ~(Alignment - 1
                 
                 // Step 2: Split remainder block if allocated size is smaller than free block
                 if (current->Size > Size) {
-                    FMemoryBlock* remainder = new FMemoryBlock(
+                    FMemoryBlock* remainder = FMemory::New<FMemoryBlock>(
                         current->Offset + Size,
                         current->Size - Size,
                         true
@@ -279,7 +279,7 @@ void FVulkanMemoryPool::MergeFreeBlocks()
                 next->Next->Prev = current;
             }
             
-            delete next;
+            FMemory::Delete(next);
             // Continue from current block (don't advance)
         } else {
             current = current->Next;
@@ -608,7 +608,7 @@ FVulkanMemoryPool* FVulkanMemoryManager::FindOrCreatePool(uint32 MemoryTypeIndex
     std::lock_guard<std::mutex> lock(PoolsMutex[MemoryTypeIndex]);
     
     // Check if pool count exceeds limit
-    if (Pools[MemoryTypeIndex].size() >= MAX_POOLS_PER_TYPE) {
+    if (static_cast<uint32>(Pools[MemoryTypeIndex].Num()) >= MAX_POOLS_PER_TYPE) {
         MR_LOG_WARNING("FVulkanMemoryManager: Memory type " + std::to_string(MemoryTypeIndex) + 
                        " pool count reached limit (" + std::to_string(MAX_POOLS_PER_TYPE) + ")");
         return nullptr;
@@ -629,8 +629,8 @@ FVulkanMemoryPool* FVulkanMemoryManager::CreatePool(uint32 MemoryTypeIndex, VkDe
         return nullptr;
     }
     
-    Pools[MemoryTypeIndex].push_back(std::move(newPool));
-    return Pools[MemoryTypeIndex].back().get();
+    Pools[MemoryTypeIndex].Add(std::move(newPool));
+    return Pools[MemoryTypeIndex].Last().get();
 }
 
 bool FVulkanMemoryManager::AllocateDedicated(const FAllocationRequest& Request, FVulkanAllocation& OutAllocation)

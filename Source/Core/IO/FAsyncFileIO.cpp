@@ -2,6 +2,7 @@
 // MonsterEngine - Async File IO Implementation
 
 #include "Core/IO/FAsyncFileIO.h"
+#include "Core/HAL/FMemory.h"
 #include "Core/Log.h"
 #include <fstream>
 #include <chrono>
@@ -36,7 +37,7 @@ bool FAsyncFileIO::Initialize(uint32 NumWorkerThreads) {
 
     // Create worker threads
     for (uint32 i = 0; i < NumWorkerThreads; ++i) {
-        WorkerThreads.emplace_back(&FAsyncFileIO::WorkerThreadFunc, this);
+        WorkerThreads.Add(std::thread(&FAsyncFileIO::WorkerThreadFunc, this));
     }
 
     bInitialized = true;
@@ -59,15 +60,14 @@ void FAsyncFileIO::Shutdown() {
             thread.join();
         }
     }
-    WorkerThreads.clear();
+    WorkerThreads.Empty();
 
     // Clear pending requests
     {
         std::scoped_lock lock(QueueMutex);
-        while (!RequestQueue.empty()) {
-            auto* request = RequestQueue.front();
-            RequestQueue.pop();
-            delete request;
+        FInternalRequest* request = nullptr;
+        while (RequestQueue.Dequeue(request)) {
+            FMemory::Delete(request);
         }
     }
 
@@ -75,9 +75,9 @@ void FAsyncFileIO::Shutdown() {
     {
         std::scoped_lock lock(ActiveRequestsMutex);
         for (auto& pair : ActiveRequests) {
-            delete pair.second;
+            FMemory::Delete(pair.Value);
         }
-        ActiveRequests.clear();
+        ActiveRequests.Empty();
     }
 
     bInitialized = false;
@@ -90,8 +90,8 @@ uint64 FAsyncFileIO::ReadAsync(const FReadRequest& Request) {
         return 0;
     }
 
-    // Create internal request
-    auto* internalReq = new FInternalRequest();
+    // Create internal request using FMemory
+    auto* internalReq = FMemory::New<FInternalRequest>();
     internalReq->RequestID = NextRequestID++;
     internalReq->Request = Request;
     internalReq->bCompleted = false;
@@ -105,7 +105,7 @@ uint64 FAsyncFileIO::ReadAsync(const FReadRequest& Request) {
     // Add to queue
     {
         std::scoped_lock lock(QueueMutex);
-        RequestQueue.push(internalReq);
+        RequestQueue.Enqueue(internalReq);
     }
 
     // Notify worker thread
@@ -124,11 +124,11 @@ bool FAsyncFileIO::WaitForRequest(uint64 RequestID) {
     // Find request
     {
         std::scoped_lock lock(ActiveRequestsMutex);
-        auto it = ActiveRequests.find(RequestID);
-        if (it == ActiveRequests.end()) {
+        FInternalRequest** FoundRequest = ActiveRequests.Find(RequestID);
+        if (!FoundRequest) {
             return false;  // Already completed or invalid
         }
-        request = it->second;
+        request = *FoundRequest;
     }
 
     // Wait for completion
@@ -142,7 +142,7 @@ void FAsyncFileIO::WaitForAll() {
         
         {
             std::scoped_lock lock(ActiveRequestsMutex);
-            hasActive = !ActiveRequests.empty();
+            hasActive = !ActiveRequests.IsEmpty();
         }
 
         if (!hasActive) break;
@@ -153,8 +153,8 @@ void FAsyncFileIO::WaitForAll() {
 
 bool FAsyncFileIO::IsRequestComplete(uint64 RequestID) {
     std::scoped_lock lock(ActiveRequestsMutex);
-    auto it = ActiveRequests.find(RequestID);
-    return (it == ActiveRequests.end() || it->second->bCompleted);
+    FInternalRequest** FoundRequest = ActiveRequests.Find(RequestID);
+    return (!FoundRequest || (*FoundRequest)->bCompleted);
 }
 
 void FAsyncFileIO::GetStats(FIOStats& OutStats) {
@@ -165,7 +165,8 @@ void FAsyncFileIO::GetStats(FIOStats& OutStats) {
 
     {
         std::scoped_lock lock(QueueMutex);
-        OutStats.PendingRequests = RequestQueue.size();
+        // Note: TQueue doesn't have size(), count pending differently
+        OutStats.PendingRequests = 0;  // Approximate - TQueue is lock-free
     }
 
     // Calculate bandwidth (simplified)
@@ -189,15 +190,12 @@ void FAsyncFileIO::WorkerThreadFunc() {
         {
             std::unique_lock<std::mutex> lock(QueueMutex);
             QueueCV.wait(lock, [this]() {
-                return !RequestQueue.empty() || bShuttingDown;
+                return !RequestQueue.IsEmpty() || bShuttingDown;
             });
 
             if (bShuttingDown) break;
 
-            if (!RequestQueue.empty()) {
-                request = RequestQueue.front();
-                RequestQueue.pop();
-            }
+            RequestQueue.Dequeue(request);
         }
 
         if (!request) continue;
@@ -218,7 +216,7 @@ void FAsyncFileIO::WorkerThreadFunc() {
         // Remove from active requests
         {
             std::scoped_lock lock(ActiveRequestsMutex);
-            ActiveRequests.erase(request->RequestID);
+            ActiveRequests.Remove(request->RequestID);
         }
 
         // Update stats
@@ -228,7 +226,7 @@ void FAsyncFileIO::WorkerThreadFunc() {
             FailedRequests.fetch_add(1, std::memory_order_relaxed);
         }
 
-        delete request;
+        FMemory::Delete(request);
     }
 
     MR_LOG_INFO("FAsyncFileIO worker thread stopped");

@@ -4,9 +4,11 @@
 #pragma once
 
 #include "Core/CoreTypes.h"
+#include "Containers/Array.h"
+#include "Containers/Queue.h"
+#include "Containers/Map.h"
 #include <functional>
 #include <future>
-#include <queue>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -83,12 +85,12 @@ private:
     // Process a single request
     bool ProcessRequest(FInternalRequest& InternalRequest);
 
-    std::vector<std::thread> WorkerThreads;
-    std::queue<FInternalRequest*> RequestQueue;
+    TArray<std::thread> WorkerThreads;
+    TQueue<FInternalRequest*> RequestQueue;
     std::mutex QueueMutex;
     std::condition_variable QueueCV;
     
-    std::unordered_map<uint64, FInternalRequest*> ActiveRequests;
+    TMap<uint64, FInternalRequest*> ActiveRequests;
     std::mutex ActiveRequestsMutex;
 
     uint64 NextRequestID;

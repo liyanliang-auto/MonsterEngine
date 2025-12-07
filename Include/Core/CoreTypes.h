@@ -6,7 +6,6 @@
 #include <string_view>
 #include <vector>
 #include <span>
-#include <unordered_map>
 #include <optional>
 #include <functional>
 #include <cstddef>
@@ -72,8 +71,8 @@ namespace MonsterRender {
     template<typename T>
     using TSpan = std::span<T>;
     
-    template<typename Key, typename Value>
-    using TMap = std::unordered_map<Key, Value>;
+    // Note: TMap is now defined in MonsterEngine::TMap (Containers/Map.h)
+    // Use MonsterEngine::TMap for new code
     
     // Optional type
     template<typename T>

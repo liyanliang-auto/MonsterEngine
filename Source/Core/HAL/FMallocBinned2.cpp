@@ -334,7 +334,9 @@ void FMallocBinned2::FreeToBin(FBin& Bin, void* Ptr, FThreadCache* Cache) {
 
 FMallocBinned2::FThreadCache* FMallocBinned2::GetTLSCache() {
     if (!TLSCache) {
-        TLSCache = new FThreadCache();
+        // Use system malloc for internal structures to avoid circular dependency
+        TLSCache = static_cast<FThreadCache*>(::malloc(sizeof(FThreadCache)));
+        new(TLSCache) FThreadCache();
         for (uint32 i = 0; i < NUM_SMALL_BINS; ++i) {
             TLSCache->Count[i] = 0;
             for (uint32 j = 0; j < TLS_CACHE_SIZE; ++j) {
@@ -365,7 +367,8 @@ void FMallocBinned2::ReleaseTLSCache(FThreadCache* Cache) {
             }
         }
     }
-    delete Cache;
+    Cache->~FThreadCache();
+    ::free(Cache);
 }
 
 } // namespace MonsterRender

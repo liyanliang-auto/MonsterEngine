@@ -9,9 +9,9 @@
 #include "RHI/RHIResources.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
+#include "Containers/Array.h"
+#include "Containers/Deque.h"
 #include <mutex>
-#include <vector>
-#include <deque>
 
 namespace MonsterRender {
 namespace RHI {
@@ -105,7 +105,7 @@ private:
     uint32 NumBuffers;                      // Number of buffer instances
     uint32 CurrentBufferIndex;              // Current active buffer
     
-    std::vector<FBufferInstance> Buffers;   // Buffer instances
+    TArray<FBufferInstance> Buffers;        // Buffer instances
     std::mutex Mutex;                        // Thread safety
 };
 
@@ -296,13 +296,13 @@ private:
     FVulkanMemoryManager* MemoryManager;                    // Memory manager
     
     // Resource tracking
-    std::vector<FRHIBuffer*> ActiveBuffers;                 // Active buffers
-    std::vector<FVulkanResourceMultiBuffer*> ActiveMultiBuffers;  // Active multi-buffers
-    std::vector<FVulkanTexture*> ActiveTextures;            // Active textures
+    TArray<FRHIBuffer*> ActiveBuffers;                      // Active buffers
+    TArray<FVulkanResourceMultiBuffer*> ActiveMultiBuffers; // Active multi-buffers
+    TArray<FVulkanTexture*> ActiveTextures;                 // Active textures
     std::mutex ResourcesMutex;                              // Resource lock
     
     // Deferred release queue
-    std::deque<FDeferredReleaseEntry> DeferredReleases;     // Release queue
+    TDeque<FDeferredReleaseEntry> DeferredReleases;         // Release queue
     std::mutex DeferredReleasesMutex;                       // Release queue lock
     
     // Statistics

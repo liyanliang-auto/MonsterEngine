@@ -15,11 +15,11 @@
 
 #include "Core/Logging/Logging.h"
 #include "Core/CoreTypes.h"
+#include "Containers/Array.h"
 
 #include <iostream>
 #include <thread>
 #include <chrono>
-#include <vector>
 #include <atomic>
 
 namespace MonsterRender {
@@ -190,9 +190,9 @@ void TestMultiThreadedLogging()
         completedThreads++;
     };
 
-    std::vector<std::thread> threads;
+    TArray<std::thread> threads;
     for (int i = 0; i < numThreads; ++i) {
-        threads.emplace_back(threadFunc, i);
+        threads.Add(std::thread(threadFunc, i));
     }
 
     for (auto& t : threads) {

@@ -104,7 +104,7 @@ void FTextureStreamingManager::RegisterTexture(FTexture* Texture) {
     st.Priority = 1.0f;
     st.Distance = 1000.0f;  // Default distance
 
-    StreamingTextures.push_back(st);
+    StreamingTextures.Add(st);
 
     MR_LOG_INFO("Texture registered: " + Texture->FilePath + 
                 " (Mips: " + std::to_string(Texture->TotalMipLevels) + ")");
@@ -122,7 +122,7 @@ void FTextureStreamingManager::UnregisterTexture(FTexture* Texture) {
         });
 
     if (it != StreamingTextures.end()) {
-        StreamingTextures.erase(it, StreamingTextures.end());
+        StreamingTextures.SetNum(it - StreamingTextures.begin());
         MR_LOG_INFO("Texture unregistered: " + Texture->FilePath);
     }
 }
@@ -255,9 +255,9 @@ void FTextureStreamingManager::ProcessStreamingRequests() {
     // Reference: UE5's FStreamingManagerTexture::ProcessStreamingRequests()
     
     // Sort by priority (highest first)
-    std::vector<FStreamingTexture*> sortedTextures;
+    TArray<FStreamingTexture*> sortedTextures;
     for (auto& st : StreamingTextures) {
-        sortedTextures.push_back(&st);
+        sortedTextures.Add(&st);
     }
 
     std::sort(sortedTextures.begin(), sortedTextures.end(),
@@ -355,11 +355,11 @@ void FTextureStreamingManager::StreamOutMips(FStreamingTexture* StreamingTexture
 
 bool FTextureStreamingManager::EvictLowPriorityTextures(SIZE_T RequiredSize) {
     // Find textures with lowest priority and evict their mips
-    std::vector<FStreamingTexture*> evictionCandidates;
+    TArray<FStreamingTexture*> evictionCandidates;
     
     for (auto& st : StreamingTextures) {
         if (st.Priority < 0.5f && st.ResidentMips > 1) {
-            evictionCandidates.push_back(&st);
+            evictionCandidates.Add(&st);
         }
     }
 

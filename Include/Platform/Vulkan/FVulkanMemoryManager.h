@@ -8,8 +8,8 @@
 
 #include "Core/CoreTypes.h"
 #include "Platform/Vulkan/VulkanRHI.h"
+#include "Containers/Array.h"
 #include <mutex>
-#include <vector>
 #include <atomic>
 
 namespace MonsterRender {
@@ -273,8 +273,8 @@ private:
     VkPhysicalDevice PhysicalDevice;
     VkPhysicalDeviceMemoryProperties MemoryProperties;
     
-    // Heaps[MemoryTypeIndex] = vector of pools for that type
-    std::vector<TUniquePtr<FVulkanMemoryPool>> Pools[VK_MAX_MEMORY_TYPES];
+    // Heaps[MemoryTypeIndex] = array of pools for that type
+    TArray<TUniquePtr<FVulkanMemoryPool>> Pools[VK_MAX_MEMORY_TYPES];
     
     std::atomic<uint32> TotalAllocationCount;
     std::atomic<uint32> DedicatedAllocationCount;

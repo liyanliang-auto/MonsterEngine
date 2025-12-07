@@ -1,5 +1,6 @@
 #include "Core/CoreMinimal.h"
 #include "Core/Memory.h"
+#include "Containers/Array.h"
 #include <thread>
 #include <chrono>
 
@@ -98,14 +99,14 @@ void testSmallObjectPool() {
     
     // Test bulk allocation
     MR_LOG_INFO("\n  Testing bulk allocation (1000 objects of 64B)...");
-    std::vector<void*> pointers;
+    TArray<void*> pointers;
     for (int i = 0; i < 1000; ++i) {
         void* ptr = memSys.allocateSmall(64);
         if (ptr) {
-            pointers.push_back(ptr);
+            pointers.Add(ptr);
         }
     }
-    MR_LOG_INFO("  [OK] Allocated " + std::to_string(pointers.size()) + " objects");
+    MR_LOG_INFO("  [OK] Allocated " + std::to_string(pointers.Num()) + " objects");
     
     // Free all objects
     for (void* ptr : pointers) {
@@ -173,12 +174,12 @@ void testTexturePool() {
         {32 * 1024 * 1024, "32MB texture"}
     };
     
-    std::vector<void*> texturePointers;
+    TArray<void*> texturePointers;
     
     for (auto& tex : textures) {
         void* ptr = memSys.textureAllocate(tex.size);
         if (ptr) {
-            texturePointers.push_back(ptr);
+            texturePointers.Add(ptr);
             MR_LOG_INFO(String("  [OK] Allocated ") + tex.name);
             
             // Write test pattern
@@ -205,12 +206,12 @@ void testThreadLocalCache() {
     
     // Perform many small allocations to trigger TLS cache
     const int allocCount = 100;
-    std::vector<void*> pointers;
+    TArray<void*> pointers;
     
     for (int i = 0; i < allocCount; ++i) {
         void* ptr = memSys.allocateSmall(64);
         if (ptr) {
-            pointers.push_back(ptr);
+            pointers.Add(ptr);
         }
     }
     
@@ -270,11 +271,11 @@ void testEmptyPageTrimming() {
     auto& memSys = MemorySystem::get();
     
     // Allocate many objects
-    std::vector<void*> pointers;
+    TArray<void*> pointers;
     for (int i = 0; i < 500; ++i) {
         void* ptr = memSys.allocateSmall(128);
         if (ptr) {
-            pointers.push_back(ptr);
+            pointers.Add(ptr);
         }
     }
     
@@ -346,14 +347,14 @@ void testConcurrency() {
     const int allocsPerThread = 100;
     
     auto workerFunc = [&](int threadId) {
-        std::vector<void*> localPointers;
+        TArray<void*> localPointers;
         
         for (int i = 0; i < allocsPerThread; ++i) {
             // Mix different allocation sizes
             size_t size = (i % 4 == 0) ? 64 : (i % 4 == 1) ? 128 : (i % 4 == 2) ? 256 : 512;
             void* ptr = memSys.allocateSmall(size);
             if (ptr) {
-                localPointers.push_back(ptr);
+                localPointers.Add(ptr);
                 // Write test data
                 memset(ptr, threadId, size);
             }
@@ -363,18 +364,18 @@ void testConcurrency() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         
         // Free
-        for (size_t i = 0; i < localPointers.size(); ++i) {
+        for (int32 i = 0; i < localPointers.Num(); ++i) {
             size_t size = (i % 4 == 0) ? 64 : (i % 4 == 1) ? 128 : (i % 4 == 2) ? 256 : 512;
             memSys.freeSmall(localPointers[i], size);
         }
     };
     
     // Launch threads
-    std::vector<std::thread> threads;
+    TArray<std::thread> threads;
     auto startTime = std::chrono::high_resolution_clock::now();
     
     for (int i = 0; i < numThreads; ++i) {
-        threads.emplace_back(workerFunc, i);
+        threads.Add(std::thread(workerFunc, i));
     }
     
     // Wait for all threads to complete
