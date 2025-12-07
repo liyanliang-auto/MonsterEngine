@@ -39,13 +39,10 @@ FMallocBinned2::~FMallocBinned2() {
 void* FMallocBinned2::Malloc(SIZE_T Size, uint32 Alignment) {
     if (Size == 0) Size = 1;
 
-    // Large allocations fall back to OS
+    // Large allocations fall back to standard malloc for debug heap compatibility
     if (Size > SMALL_BIN_MAX_SIZE) {
-#if PLATFORM_WINDOWS
-        return _aligned_malloc(Size, Alignment);
-#else
-        return aligned_alloc(Alignment, Size);
-#endif
+        (void)Alignment; // Alignment ignored for large allocations with malloc
+        return std::malloc(Size);
     }
 
     // Small allocation - use binned allocator
@@ -101,11 +98,8 @@ void FMallocBinned2::Free(void* Original) {
     }
 
     // Not found in bins - must be large allocation
-#if PLATFORM_WINDOWS
-    _aligned_free(Original);
-#else
-    free(Original);
-#endif
+    // Use standard free for debug heap compatibility
+    std::free(Original);
 }
 
 SIZE_T FMallocBinned2::GetAllocationSize(void* Original) {

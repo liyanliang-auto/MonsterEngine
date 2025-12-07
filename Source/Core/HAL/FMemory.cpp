@@ -23,19 +23,13 @@ SIZE_T FMemory::GetAllocSize(void* Original) {
 }
 
 void* FMemory::SystemMalloc(SIZE_T Size) {
-#if PLATFORM_WINDOWS
-    return ::_aligned_malloc(Size, DEFAULT_ALIGNMENT);
-#else
-    return ::aligned_alloc(DEFAULT_ALIGNMENT, Size);
-#endif
+    // Use standard malloc for debug heap compatibility
+    return std::malloc(Size);
 }
 
 void FMemory::SystemFree(void* Ptr) {
-#if PLATFORM_WINDOWS
-    ::_aligned_free(Ptr);
-#else
-    ::free(Ptr);
-#endif
+    // Use standard free for debug heap compatibility
+    std::free(Ptr);
 }
 
 uint64 FMemory::GetTotalAllocatedMemory() {
