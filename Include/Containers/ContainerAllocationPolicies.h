@@ -204,11 +204,7 @@ public:
             {
                 if (Data)
                 {
-#if defined(_MSC_VER)
-                    _aligned_free(Data);
-#else
                     std::free(Data);
-#endif
                 }
                 Data = Other.Data;
                 Other.Data = nullptr;
@@ -220,11 +216,7 @@ public:
         {
             if (Data)
             {
-#if defined(_MSC_VER)
-                _aligned_free(Data);
-#else
                 std::free(Data);
-#endif
                 Data = nullptr;
             }
         }
@@ -240,28 +232,29 @@ public:
             {
                 if (Data)
                 {
-#if defined(_MSC_VER)
-                    _aligned_free(Data);
-#else
                     std::free(Data);
-#endif
                     Data = nullptr;
                 }
             }
             else
             {
-                // Allocate new memory with alignment
+                // Use standard malloc/realloc for compatibility with debug heap
                 size_t NewSize = static_cast<size_t>(NumElements) * NumBytesPerElement;
                 void* NewData = nullptr;
                 
-#if defined(_MSC_VER)
-                NewData = _aligned_malloc(NewSize, AlignmentOfElement);
-#else
-                if (posix_memalign(&NewData, AlignmentOfElement, NewSize) != 0)
+                if (Data && PreviousNumElements > 0)
                 {
-                    NewData = nullptr;
+                    // Use realloc for efficiency when resizing
+                    NewData = std::realloc(Data, NewSize);
+                    if (NewData)
+                    {
+                        Data = NewData;
+                        return;
+                    }
+                    // realloc failed, fall back to malloc + copy + free
                 }
-#endif
+                
+                NewData = std::malloc(NewSize);
                 
                 if (NewData && Data && PreviousNumElements > 0)
                 {
@@ -272,11 +265,7 @@ public:
                 
                 if (Data)
                 {
-#if defined(_MSC_VER)
-                    _aligned_free(Data);
-#else
                     std::free(Data);
-#endif
                 }
                 
                 Data = NewData;

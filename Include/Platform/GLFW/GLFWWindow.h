@@ -3,6 +3,8 @@
 #include "Core/Window.h"
 #include "Core/Input.h"
 
+#include <vector>
+
 // Forward declare GLFW types to avoid including GLFW headers in public headers
 struct GLFWwindow;
 
@@ -39,14 +41,14 @@ namespace MonsterRender::Platform::GLFW {
     private:
         GLFWwindow* m_window = nullptr;
         
-        // Current frame input state
-        TArray<bool> m_keyStates;
-        TArray<bool> m_keyPressed;
-        TArray<bool> m_keyReleased;
+        // Current frame input state - use std::vector to avoid TArray memory issues
+        std::vector<bool> m_keyStates;
+        std::vector<bool> m_keyPressed;
+        std::vector<bool> m_keyReleased;
         
-        TArray<bool> m_mouseButtonStates;
-        TArray<bool> m_mouseButtonPressed;
-        TArray<bool> m_mouseButtonReleased;
+        std::vector<bool> m_mouseButtonStates;
+        std::vector<bool> m_mouseButtonPressed;
+        std::vector<bool> m_mouseButtonReleased;
         
         MousePosition m_mousePosition;
         MousePosition m_lastMousePosition;

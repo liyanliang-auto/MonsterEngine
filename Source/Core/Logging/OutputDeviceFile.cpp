@@ -289,19 +289,24 @@ String FOutputDeviceFile::FormatLogLine(const char* Message, ELogVerbosity::Type
     std::ostringstream oss;
 
     // Timestamp with milliseconds: [YYYY/MM/DD HH:MM:SS:mmm]
+    // Use strftime instead of std::put_time to avoid potential heap corruption issues
     auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto time_t_val = std::chrono::system_clock::to_time_t(now);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
-    std::tm tm_buf;
+    std::tm tm_buf = {};
+    char timeStr[32] = {};
 #if PLATFORM_WINDOWS
-    localtime_s(&tm_buf, &time_t);
+    errno_t err = localtime_s(&tm_buf, &time_t_val);
+    if (err == 0) {
+        strftime(timeStr, sizeof(timeStr), "%Y/%m/%d %H:%M:%S", &tm_buf);
+    }
 #else
-    localtime_r(&time_t, &tm_buf);
+    if (localtime_r(&time_t_val, &tm_buf) != nullptr) {
+        strftime(timeStr, sizeof(timeStr), "%Y/%m/%d %H:%M:%S", &tm_buf);
+    }
 #endif
-
-    oss << "[" << std::put_time(&tm_buf, "%Y/%m/%d %H:%M:%S");
-    oss << ":" << std::setfill('0') << std::setw(3) << ms.count() << "] ";
+    oss << "[" << timeStr << ":" << std::setfill('0') << std::setw(3) << ms.count() << "] ";
 
     // File and line: filename.cpp(123):
     if (File && Line > 0) {

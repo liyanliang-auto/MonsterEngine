@@ -292,7 +292,9 @@ namespace MonsterRender {
 		if (size <= 1024) {
 			return allocateSmall(size, alignment);
 		}
-		return ::_aligned_malloc(size, alignment);
+		// Use standard malloc for debug heap compatibility
+		(void)alignment; // Alignment ignored for large allocations with malloc
+		return std::malloc(size);
 	}
 
 	void MemorySystem::free(void* ptr, size_t size) {
@@ -301,7 +303,8 @@ namespace MonsterRender {
 			freeSmall(ptr, size);
 			return;
 		}
-		::_aligned_free(ptr);
+		// Use standard free for debug heap compatibility
+		std::free(ptr);
 	}
 
 	void* MemorySystem::frameAllocate(size_t size, size_t alignment) {
