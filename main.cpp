@@ -1,5 +1,8 @@
 #include "Core/Application.h"
 #include "Core/Logging/Logging.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
+#include "Containers/Set.h"
 
 // Test Suite Forward Declarations
 namespace MonsterRender {
@@ -34,6 +37,10 @@ void RunLoggingSystemTests();
 // Math Library Test Forward Declaration
 void RunMathLibraryTests();
 
+// Container Test Forward Declaration
+// Implementation in Source/Tests/ContainerTest.cpp
+void RunContainerTests();
+
 // Entry point following UE5's application architecture
 int main(int argc, char** argv) {
     using namespace MonsterRender;
@@ -59,6 +66,7 @@ int main(int argc, char** argv) {
     bool runVulkanResourceTests = false;
     bool runLoggingTests = false;
     bool runMathTests = false;
+    bool runContainerTests = false;
     bool runAllTests = false;
     
     for (int i = 1; i < argc; ++i) {
@@ -83,6 +91,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-math") == 0 || strcmp(argv[i], "-tmath") == 0) {
             runMathTests = true;
         }
+        else if (strcmp(argv[i], "--test-container") == 0 || strcmp(argv[i], "-tc") == 0) {
+            runContainerTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -90,7 +101,8 @@ int main(int argc, char** argv) {
     
     // Default behavior: don't run tests, run application
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
-        !runVulkanMemoryTests && !runVulkanResourceTests && !runLoggingTests && !runMathTests && !runAllTests) {
+        !runVulkanMemoryTests && !runVulkanResourceTests && !runLoggingTests && 
+        !runMathTests && !runContainerTests && !runAllTests) {
         runAllTests = false;
     }
     
@@ -102,77 +114,88 @@ int main(int argc, char** argv) {
     
     // Run math library tests
     if (runMathTests) {
-        MR_LOG_INFO("\n");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("  Math Library Tests");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("\n");
+        printf("\n");
+        printf("==========================================");
+        printf("  Math Library Tests");
+        printf("==========================================");
+        printf("\n");
         
         RunMathLibraryTests();
         return 0;
     }
     
+    // Run container tests
+    if (runContainerTests) {
+        printf("Starting container tests...\n");
+        fflush(stdout);
+        printf("\n");
+        RunContainerTests();
+        printf("Container tests completed.\n");
+        fflush(stdout);
+        return 0;
+    }
+    
     // Run tests if requested
     if (runMemoryTests || runTextureTests || runVirtualTextureTests || 
-        runVulkanMemoryTests || runVulkanResourceTests || runMathTests || runAllTests) {
-        MR_LOG_INFO("\n");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("  MonsterEngine Test Suite");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("\n");
+        runVulkanMemoryTests || runVulkanResourceTests || runMathTests || runContainerTests || runAllTests) {
+        printf("\n");
+        printf("==========================================");
+        printf("  MonsterEngine Test Suite");
+        printf("==========================================");
+        printf("\n");
         
         // Run memory system tests
         if (runMemoryTests || runAllTests) {
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("  Memory System Tests");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("");
+            printf("======================================");
+            printf("  Memory System Tests");
+            printf("======================================");
+            printf("");
             
             MemorySystemTest::runAllTests();
             
-            MR_LOG_INFO("\n");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("  FMemory System Tests");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("");
+            printf("\n");
+            printf("======================================");
+            printf("  FMemory System Tests");
+            printf("======================================");
+            printf("");
             
             FMemorySystemTest::runFMemoryTests();
         }
         
         // Run texture streaming tests
         if (runTextureTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("  Texture Streaming System Tests");
-            MR_LOG_INFO("======================================");
-            MR_LOG_INFO("");
+            printf("\n\n");
+            printf("======================================");
+            printf("  Texture Streaming System Tests");
+            printf("======================================");
+            printf("");
             
             TextureStreamingSystemTest::runTextureStreamingTests();
         }
         
         // Run virtual texture system tests
         if (runVirtualTextureTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("  Virtual Texture System Tests");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("");
+            printf("\n\n");
+            printf("==========================================");
+            printf("  Virtual Texture System Tests");
+            printf("==========================================");
+            printf("");
             
             // Run basic tests
             VirtualTextureSystemTest::RunAllTests();
             
             // Run real-world scenario tests
-            MR_LOG_INFO("\n");
+            printf("\n");
             VirtualTextureSystemTest::RunRealWorldScenarioTests();
         }
         
         // Run Vulkan memory manager tests
         if (runVulkanMemoryTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("  Vulkan Memory Manager Tests");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("");
+            printf("\n\n");
+            printf("==========================================");
+            printf("  Vulkan Memory Manager Tests");
+            printf("==========================================");
+            printf("");
             
             // Run all Vulkan memory tests
             VulkanMemoryManagerTest::RunAllTests();
@@ -180,21 +203,21 @@ int main(int argc, char** argv) {
         
         // Run Vulkan resource manager tests
         if (runVulkanResourceTests || runAllTests) {
-            MR_LOG_INFO("\n\n");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("  Vulkan Resource Manager Tests");
-            MR_LOG_INFO("==========================================");
-            MR_LOG_INFO("");
+            printf("\n\n");
+            printf("==========================================");
+            printf("  Vulkan Resource Manager Tests");
+            printf("==========================================");
+            printf("");
             
             // Run all Vulkan resource management tests
             VulkanResourceManagerTest::RunAllTests();
         }
         
-        MR_LOG_INFO("\n");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("  All Tests Completed");
-        MR_LOG_INFO("==========================================");
-        MR_LOG_INFO("\n");
+        printf("\n");
+        printf("==========================================");
+        printf("  All Tests Completed");
+        printf("==========================================");
+        printf("\n");
         
         // Exit after tests
         return 0;
@@ -203,7 +226,7 @@ int main(int argc, char** argv) {
     // Create application instance
     auto app = createApplication();
     if (!app) {
-        MR_LOG_ERROR("Failed to create application");
+        printf("Failed to create application");
         return -1;
     }
     
