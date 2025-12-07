@@ -10,6 +10,7 @@
 #include "Containers/Queue.h"
 #include "Containers/Deque.h"
 #include "Containers/CircularBuffer.h"
+#include "Containers/Array.h"
 #include "Core/Logging/LogMacros.h"
 
 #include <iostream>
@@ -131,7 +132,7 @@ void TestFText()
     
     // Test formatting with ordered arguments
     FText Pattern = FText::FromString(L"Hello {0}, welcome to {1}!");
-    std::vector<FText> Args = {
+    TArray<FText> Args = {
         FText::FromString(L"User"),
         FText::FromString(L"MonsterEngine")
     };

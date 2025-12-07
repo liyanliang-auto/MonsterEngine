@@ -7,8 +7,7 @@
 #include "Renderer/FTextureStreamingManager.h"
 #include "Core/Log.h"
 #include "Core/Assert.h"
-
-#include <vector>
+#include "Containers/Array.h"
 #include <thread>
 #include <chrono>
 #include <random>
@@ -74,7 +73,7 @@ public:
     }
 
     void AddResult(const TestResult& result) {
-        results.push_back(result);
+        results.Add(result);
         if (result.passed) {
             passedCount++;
             MR_LOG_INFO("PASSED: " + result.testName + 
@@ -90,7 +89,7 @@ public:
         MR_LOG_INFO("\n======================================");
         MR_LOG_INFO("  Texture Streaming Test Summary");
         MR_LOG_INFO("======================================");
-        MR_LOG_INFO("Total Tests: " + std::to_string(results.size()));
+        MR_LOG_INFO("Total Tests: " + std::to_string(results.Num()));
         MR_LOG_INFO("Passed: " + std::to_string(passedCount));
         MR_LOG_INFO("Failed: " + std::to_string(failedCount));
         
@@ -103,13 +102,13 @@ public:
     }
 
     void Reset() {
-        results.clear();
+        results.Empty();
         passedCount = 0;
         failedCount = 0;
     }
 
 private:
-    std::vector<TestResult> results;
+    TArray<TestResult> results;
     uint32 passedCount = 0;
     uint32 failedCount = 0;
 };
@@ -205,20 +204,20 @@ void TestTexturePoolFragmentation() {
         const SIZE_T poolSize = 32 * 1024 * 1024; // 32MB
         FTexturePool pool(poolSize);
 
-        std::vector<void*> allocations;
+        TArray<void*> allocations;
         
         // Allocate multiple blocks
         for (int i = 0; i < 10; ++i) {
             void* ptr = pool.Allocate(2 * 1024 * 1024); // 2MB each
             if (ptr) {
-                allocations.push_back(ptr);
+                allocations.Add(ptr);
             }
         }
 
-        MR_LOG_DEBUG("  Allocated " + std::to_string(allocations.size()) + " blocks");
+        MR_LOG_DEBUG("  Allocated " + std::to_string(allocations.Num()) + " blocks");
 
         // Free every other allocation (create fragmentation)
-        for (size_t i = 1; i < allocations.size(); i += 2) {
+        for (int32 i = 1; i < allocations.Num(); i += 2) {
             pool.Free(allocations[i]);
         }
 
@@ -234,7 +233,7 @@ void TestTexturePoolFragmentation() {
         MR_LOG_DEBUG("  After compact: " + std::to_string(usedAfter / 1024 / 1024) + " MB used");
 
         // Cleanup
-        for (size_t i = 0; i < allocations.size(); i += 2) {
+        for (int32 i = 0; i < allocations.Num(); i += 2) {
             pool.Free(allocations[i]);
         }
 
@@ -317,12 +316,15 @@ void TestAsyncFileIOBasicRead() {
         String testFilePath = "test_texture_data.bin";
         {
             std::ofstream file(testFilePath, std::ios::binary);
-            std::vector<uint8> testData(4096, 0xAB);
-            file.write(reinterpret_cast<char*>(testData.data()), testData.size());
+            TArray<uint8> testData;
+            testData.SetNumUninitialized(4096);
+            FMemory::Memset(testData.GetData(), 0xAB, 4096);
+            file.write(reinterpret_cast<char*>(testData.GetData()), testData.Num());
         }
 
         // Prepare read buffer
-        std::vector<uint8> readBuffer(4096, 0);
+        TArray<uint8> readBuffer;
+        readBuffer.SetNumZeroed(4096);
         bool readCompleted = false;
         SIZE_T bytesReadTotal = 0;
 
@@ -331,7 +333,7 @@ void TestAsyncFileIOBasicRead() {
         request.FilePath = testFilePath;
         request.Offset = 0;
         request.Size = 4096;
-        request.DestBuffer = readBuffer.data();
+        request.DestBuffer = readBuffer.GetData();
         request.OnComplete = [&](bool success, SIZE_T bytesRead) {
             readCompleted = true;
             bytesReadTotal = bytesRead;
@@ -355,7 +357,7 @@ void TestAsyncFileIOBasicRead() {
 
         // Verify data
         bool dataValid = true;
-        for (size_t i = 0; i < readBuffer.size(); ++i) {
+        for (int32 i = 0; i < readBuffer.Num(); ++i) {
             if (readBuffer[i] != 0xAB) {
                 dataValid = false;
                 break;
@@ -384,37 +386,40 @@ void TestAsyncFileIOConcurrentReads() {
         FAsyncFileIO& fileIO = FAsyncFileIO::Get();
         
         const int numFiles = 4;
-        std::vector<String> testFiles;
-        std::vector<std::vector<uint8>> readBuffers(numFiles);
+        TArray<String> testFiles;
+        TArray<TArray<uint8>> readBuffers;
+        readBuffers.SetNum(numFiles);
         std::atomic<int> completedReads{0};
 
         // Create test files
         for (int i = 0; i < numFiles; ++i) {
             String filename = "test_concurrent_" + std::to_string(i) + ".bin";
-            testFiles.push_back(filename);
+            testFiles.Add(filename);
             
             std::ofstream file(filename, std::ios::binary);
-            std::vector<uint8> testData(1024, static_cast<uint8>(i + 1));
-            file.write(reinterpret_cast<char*>(testData.data()), testData.size());
+            TArray<uint8> testData;
+            testData.SetNumUninitialized(1024);
+            FMemory::Memset(testData.GetData(), static_cast<uint8>(i + 1), 1024);
+            file.write(reinterpret_cast<char*>(testData.GetData()), testData.Num());
         }
 
         // Submit multiple concurrent reads
-        std::vector<uint64> requestIDs;
+        TArray<uint64> requestIDs;
         for (int i = 0; i < numFiles; ++i) {
-            readBuffers[i].resize(1024, 0);
+            readBuffers[i].SetNumZeroed(1024);
             
             FAsyncFileIO::FReadRequest request;
             request.FilePath = testFiles[i];
             request.Offset = 0;
             request.Size = 1024;
-            request.DestBuffer = readBuffers[i].data();
+            request.DestBuffer = readBuffers[i].GetData();
             request.OnComplete = [&completedReads, i](bool success, SIZE_T bytesRead) {
                 completedReads++;
                 MR_LOG_DEBUG("  File " + std::to_string(i) + " completed");
             };
 
             uint64 requestID = fileIO.ReadAsync(request);
-            requestIDs.push_back(requestID);
+            requestIDs.Add(requestID);
         }
 
         // Wait for all requests
@@ -510,10 +515,10 @@ void TestStreamingPrioritization() {
         FTextureStreamingManager& manager = FTextureStreamingManager::Get();
         
         // Create textures with different priorities
-        std::vector<FTexture*> textures;
-        textures.push_back(new FTexture("HighPriority_Near", 2048, 2048, 11));
-        textures.push_back(new FTexture("MediumPriority_Mid", 1024, 1024, 10));
-        textures.push_back(new FTexture("LowPriority_Far", 512, 512, 9));
+        TArray<FTexture*> textures;
+        textures.Add(FMemory::New<FTexture>("HighPriority_Near", 2048, 2048, 11));
+        textures.Add(FMemory::New<FTexture>("MediumPriority_Mid", 1024, 1024, 10));
+        textures.Add(FMemory::New<FTexture>("LowPriority_Far", 512, 512, 9));
 
         // Register all textures
         for (auto* texture : textures) {
@@ -537,7 +542,7 @@ void TestStreamingPrioritization() {
         // Cleanup
         for (auto* texture : textures) {
             manager.UnregisterTexture(texture);
-            delete texture;
+            FMemory::Delete(texture);
         }
 
         timer.Success();
@@ -558,13 +563,13 @@ void TestMemoryBudgetManagement() {
         manager.SetPoolSize(smallBudget);
 
         // Create textures that exceed budget
-        std::vector<FTexture*> textures;
+        TArray<FTexture*> textures;
         for (int i = 0; i < 10; ++i) {
-            textures.push_back(new FTexture(
+            textures.Add(FMemory::New<FTexture>(
                 "Texture_" + std::to_string(i), 
                 1024, 1024, 10
             ));
-            manager.RegisterTexture(textures.back());
+            manager.RegisterTexture(textures.Last());
         }
 
         // Force streaming updates
@@ -582,7 +587,7 @@ void TestMemoryBudgetManagement() {
         // Cleanup
         for (auto* texture : textures) {
             manager.UnregisterTexture(texture);
-            delete texture;
+            FMemory::Delete(texture);
         }
 
         timer.Success();
@@ -605,12 +610,12 @@ void TestScenarioOpenWorldStreaming() {
         MR_LOG_DEBUG("  Simulating open world with terrain tiles...");
 
         // Simulate 3x3 terrain grid
-        std::vector<FTexture*> terrainTextures;
+        TArray<FTexture*> terrainTextures;
         for (int y = 0; y < 3; ++y) {
             for (int x = 0; x < 3; ++x) {
                 String name = "Terrain_" + std::to_string(x) + "_" + std::to_string(y);
-                terrainTextures.push_back(new FTexture(name, 2048, 2048, 11));
-                manager.RegisterTexture(terrainTextures.back());
+                terrainTextures.Add(FMemory::New<FTexture>(name, 2048, 2048, 11));
+                manager.RegisterTexture(terrainTextures.Last());
             }
         }
 
@@ -632,7 +637,7 @@ void TestScenarioOpenWorldStreaming() {
         // Cleanup
         for (auto* texture : terrainTextures) {
             manager.UnregisterTexture(texture);
-            delete texture;
+            FMemory::Delete(texture);
         }
 
         timer.Success();
@@ -656,23 +661,23 @@ void TestScenarioCharacterLODStreaming() {
             FTexture* Specular;
         };
 
-        std::vector<Character> characters;
+        TArray<Character> characters;
         
         // Create 5 characters with 3 textures each
         for (int i = 0; i < 5; ++i) {
             Character ch;
-            ch.Diffuse = new FTexture("Char" + std::to_string(i) + "_Diffuse", 2048, 2048, 11);
-            ch.Normal = new FTexture("Char" + std::to_string(i) + "_Normal", 2048, 2048, 11);
-            ch.Specular = new FTexture("Char" + std::to_string(i) + "_Specular", 1024, 1024, 10);
+            ch.Diffuse = FMemory::New<FTexture>("Char" + std::to_string(i) + "_Diffuse", 2048, 2048, 11);
+            ch.Normal = FMemory::New<FTexture>("Char" + std::to_string(i) + "_Normal", 2048, 2048, 11);
+            ch.Specular = FMemory::New<FTexture>("Char" + std::to_string(i) + "_Specular", 1024, 1024, 10);
             
             manager.RegisterTexture(ch.Diffuse);
             manager.RegisterTexture(ch.Normal);
             manager.RegisterTexture(ch.Specular);
             
-            characters.push_back(ch);
+            characters.Add(ch);
         }
 
-        MR_LOG_DEBUG("  Registered " + std::to_string(characters.size() * 3) + " character textures");
+        MR_LOG_DEBUG("  Registered " + std::to_string(characters.Num() * 3) + " character textures");
 
         // Simulate distance-based LOD changes
         for (int frame = 0; frame < 15; ++frame) {
@@ -690,9 +695,9 @@ void TestScenarioCharacterLODStreaming() {
             manager.UnregisterTexture(ch.Diffuse);
             manager.UnregisterTexture(ch.Normal);
             manager.UnregisterTexture(ch.Specular);
-            delete ch.Diffuse;
-            delete ch.Normal;
-            delete ch.Specular;
+            FMemory::Delete(ch.Diffuse);
+            FMemory::Delete(ch.Normal);
+            FMemory::Delete(ch.Specular);
         }
 
         timer.Success();
@@ -711,10 +716,10 @@ void TestScenarioLevelTransition() {
         MR_LOG_DEBUG("  Simulating level transition...");
 
         // Old level textures
-        std::vector<FTexture*> oldLevelTextures;
+        TArray<FTexture*> oldLevelTextures;
         for (int i = 0; i < 5; ++i) {
-            oldLevelTextures.push_back(new FTexture("OldLevel_" + std::to_string(i), 1024, 1024, 10));
-            manager.RegisterTexture(oldLevelTextures.back());
+            oldLevelTextures.Add(FMemory::New<FTexture>("OldLevel_" + std::to_string(i), 1024, 1024, 10));
+            manager.RegisterTexture(oldLevelTextures.Last());
         }
 
         // Load old level
@@ -729,15 +734,15 @@ void TestScenarioLevelTransition() {
         // Unload old level
         for (auto* texture : oldLevelTextures) {
             manager.UnregisterTexture(texture);
-            delete texture;
+            FMemory::Delete(texture);
         }
-        oldLevelTextures.clear();
+        oldLevelTextures.Empty();
 
         // New level textures
-        std::vector<FTexture*> newLevelTextures;
+        TArray<FTexture*> newLevelTextures;
         for (int i = 0; i < 7; ++i) {
-            newLevelTextures.push_back(new FTexture("NewLevel_" + std::to_string(i), 2048, 2048, 11));
-            manager.RegisterTexture(newLevelTextures.back());
+            newLevelTextures.Add(FMemory::New<FTexture>("NewLevel_" + std::to_string(i), 2048, 2048, 11));
+            manager.RegisterTexture(newLevelTextures.Last());
         }
 
         // Load new level
@@ -752,7 +757,7 @@ void TestScenarioLevelTransition() {
         // Cleanup
         for (auto* texture : newLevelTextures) {
             manager.UnregisterTexture(texture);
-            delete texture;
+            FMemory::Delete(texture);
         }
 
         timer.Success();
@@ -771,10 +776,10 @@ void TestScenarioCutscenePreloading() {
         MR_LOG_DEBUG("  Simulating cutscene preload...");
 
         // High-quality cutscene textures
-        std::vector<FTexture*> cutsceneTextures;
-        cutsceneTextures.push_back(new FTexture("Cutscene_Character_4K", 4096, 4096, 12));
-        cutsceneTextures.push_back(new FTexture("Cutscene_Environment_4K", 4096, 4096, 12));
-        cutsceneTextures.push_back(new FTexture("Cutscene_Props_2K", 2048, 2048, 11));
+        TArray<FTexture*> cutsceneTextures;
+        cutsceneTextures.Add(FMemory::New<FTexture>("Cutscene_Character_4K", 4096, 4096, 12));
+        cutsceneTextures.Add(FMemory::New<FTexture>("Cutscene_Environment_4K", 4096, 4096, 12));
+        cutsceneTextures.Add(FMemory::New<FTexture>("Cutscene_Props_2K", 2048, 2048, 11));
 
         // Register all at once (preload scenario)
         auto startTime = std::chrono::high_resolution_clock::now();
@@ -800,7 +805,7 @@ void TestScenarioCutscenePreloading() {
         // Cleanup
         for (auto* texture : cutsceneTextures) {
             manager.UnregisterTexture(texture);
-            delete texture;
+            FMemory::Delete(texture);
         }
 
         timer.Success();

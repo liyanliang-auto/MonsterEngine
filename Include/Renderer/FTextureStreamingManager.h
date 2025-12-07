@@ -4,9 +4,9 @@
 #pragma once
 
 #include "Core/CoreTypes.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
 #include <mutex>
-#include <vector>
-#include <unordered_map>
 
 namespace MonsterRender {
 
@@ -89,7 +89,7 @@ private:
     SIZE_T CalculateMipSize(FTexture* Texture, uint32 StartMip, uint32 EndMip);
 
     TUniquePtr<FTexturePool> TexturePool;
-    std::vector<FStreamingTexture> StreamingTextures;
+    TArray<FStreamingTexture> StreamingTextures;
     std::mutex StreamingMutex;
     
     SIZE_T PoolSize;
@@ -143,7 +143,7 @@ private:
     SIZE_T UsedSize;
     
     FFreeRegion* FreeList;
-    std::unordered_map<void*, FAllocation> Allocations;
+    TMap<void*, FAllocation> Allocations;
     std::mutex PoolMutex;
 
     // Internal helpers

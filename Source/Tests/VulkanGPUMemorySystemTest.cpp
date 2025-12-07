@@ -4,14 +4,15 @@
 // Test 4-layer architecture: RHI Layer -> ResourceManager Layer -> PoolManager Layer -> Vulkan API Layer
 
 #include "Core/CoreTypes.h"
+#include "Core/HAL/FMemory.h"
 #include "Core/Log.h"
 #include "RHI/RHIResources.h"
 #include "Platform/Vulkan/FVulkanResourceManager.h"
 #include "Platform/Vulkan/FVulkanMemoryPool.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/GLFW/GLFWWindow.h"
+#include "Containers/Array.h"
 #include <thread>
-#include <vector>
 #include <chrono>
 
 namespace MonsterRender {
@@ -46,7 +47,7 @@ void TestRHIRefCounting() {
     
     {
         // Test reference counting smart pointer
-        FRHIBufferRef bufferRef1 = new TestBuffer();
+        FRHIBufferRef bufferRef1 = FMemory::New<TestBuffer>();
         MR_LOG_INFO("Initial ref count: " + std::to_string(bufferRef1->GetRefCount()));
         
         {
@@ -70,7 +71,7 @@ void TestResourceManagerBuffers(VulkanDevice* device) {
     FVulkanResourceManager resourceMgr(device, memMgr);
     
     // Create multiple buffers of different types
-    std::vector<FRHIBufferRef> buffers;
+    TArray<FRHIBufferRef> buffers;
     
     // Vertex Buffer (Device Local)
     auto vb = resourceMgr.CreateBuffer(
@@ -81,7 +82,7 @@ void TestResourceManagerBuffers(VulkanDevice* device) {
     );
     if (vb) {
         MR_LOG_INFO("[OK] Vertex Buffer created successfully");
-        buffers.push_back(vb);
+        buffers.Add(vb);
     }
     
     // Index Buffer (Device Local)
@@ -93,7 +94,7 @@ void TestResourceManagerBuffers(VulkanDevice* device) {
     );
     if (ib) {
         MR_LOG_INFO("[OK] Index Buffer created successfully");
-        buffers.push_back(ib);
+        buffers.Add(ib);
     }
     
     // Uniform Buffer (Host Visible for updates)
@@ -105,7 +106,7 @@ void TestResourceManagerBuffers(VulkanDevice* device) {
     );
     if (ub) {
         MR_LOG_INFO("[OK] Uniform Buffer created successfully");
-        buffers.push_back(ub);
+        buffers.Add(ub);
     }
     
     // Get statistics
@@ -131,7 +132,7 @@ void TestResourceManagerTextures(VulkanDevice* device) {
     FVulkanMemoryManager* memMgr = device->GetMemoryManager();
     FVulkanResourceManager resourceMgr(device, memMgr);
     
-    std::vector<FRHITextureRef> textures;
+    TArray<FRHITextureRef> textures;
     
     // 2D Texture (1024x1024, RGBA)
     TextureDesc desc2D{};
@@ -146,7 +147,7 @@ void TestResourceManagerTextures(VulkanDevice* device) {
     auto tex2D = resourceMgr.CreateTexture(desc2D, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (tex2D) {
         MR_LOG_INFO("[OK] 2D Texture created successfully (1024x1024, 10 mips)");
-        textures.push_back(tex2D);
+        textures.Add(tex2D);
     }
     
     // Cube Texture (512x512, RGBA)
@@ -162,7 +163,7 @@ void TestResourceManagerTextures(VulkanDevice* device) {
     auto texCube = resourceMgr.CreateTexture(descCube, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (texCube) {
         MR_LOG_INFO("[OK] Cube Texture created successfully (512x512x6, 9 mips)");
-        textures.push_back(texCube);
+        textures.Add(texCube);
     }
     
     // Get statistics
@@ -187,7 +188,7 @@ void TestPoolManager(VulkanDevice* device) {
     FVulkanPoolManager poolMgr(device);
     
     // Create multiple allocation requests of different sizes
-    std::vector<FVulkanAllocation> allocations;
+    TArray<FVulkanAllocation> allocations;
     
     for (int i = 0; i < 10; ++i) {
         FVulkanMemoryManager::FAllocationRequest request{};
@@ -199,7 +200,7 @@ void TestPoolManager(VulkanDevice* device) {
         FVulkanAllocation allocation;
         if (poolMgr.Allocate(request, allocation)) {
             MR_LOG_INFO("[OK] Allocated " + std::to_string(request.Size / (1024 * 1024)) + "MB successfully");
-            allocations.push_back(allocation);
+            allocations.Add(allocation);
         }
     }
     
@@ -208,10 +209,11 @@ void TestPoolManager(VulkanDevice* device) {
     poolMgr.GetStats(stats);
     
     // Release half of the allocations
-    for (size_t i = 0; i < allocations.size() / 2; ++i) {
+    int32 halfCount = allocations.Num() / 2;
+    for (int32 i = 0; i < halfCount; ++i) {
         poolMgr.Free(allocations[i]);
     }
-    allocations.erase(allocations.begin(), allocations.begin() + allocations.size() / 2);
+    allocations.RemoveAt(0, halfCount);
     
     MR_LOG_INFO("After releasing half allocations:");
     poolMgr.GetStats(stats);
@@ -241,7 +243,7 @@ void TestConcurrentAllocations(VulkanDevice* device) {
     const int NumThreads = 4;
     const int AllocationsPerThread = 50;
     
-    std::vector<std::thread> threads;
+    TArray<std::thread> threads;
     std::atomic<int> successCount{0};
     
     auto workerFunc = [&](int threadId) {
@@ -278,7 +280,7 @@ void TestConcurrentAllocations(VulkanDevice* device) {
     auto startTime = std::chrono::high_resolution_clock::now();
     
     for (int i = 0; i < NumThreads; ++i) {
-        threads.emplace_back(workerFunc, i);
+        threads.Add(std::thread(workerFunc, i));
     }
     
     for (auto& thread : threads) {
@@ -360,8 +362,8 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
     
     MR_LOG_INFO("Simulating loading a complete game scene...");
     
-    std::vector<FRHIBufferRef> buffers;
-    std::vector<FRHITextureRef> textures;
+    TArray<FRHIBufferRef> buffers;
+    TArray<FRHITextureRef> textures;
     
     // 1. Load geometry data (Vertex + Index Buffers)
     MR_LOG_INFO("[1/4] Loading geometry data...");
@@ -373,7 +375,7 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             32  // typical vertex stride
         );
-        if (vb) buffers.push_back(vb);
+        if (vb) buffers.Add(vb);
         
         // Index Buffer
         auto ib = resourceMgr.CreateBuffer(
@@ -382,7 +384,7 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             4
         );
-        if (ib) buffers.push_back(ib);
+        if (ib) buffers.Add(ib);
     }
     
     // 2. Load textures (Albedo, Normal, Roughness, etc.)
@@ -400,7 +402,7 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
             desc.usage = EResourceUsage::ShaderResource | EResourceUsage::TransferDst;
             
             auto tex = resourceMgr.CreateTexture(desc, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-            if (tex) textures.push_back(tex);
+            if (tex) textures.Add(tex);
         }
     }
     
@@ -413,7 +415,7 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             0
         );
-        if (ub) buffers.push_back(ub);
+        if (ub) buffers.Add(ub);
     }
     
     // 4. Load environment map (Cube Map)
@@ -428,7 +430,7 @@ void TestRealWorldScenario_AssetLoading(VulkanDevice* device) {
     cubemapDesc.usage = EResourceUsage::ShaderResource | EResourceUsage::TransferDst;
     
     auto cubemap = resourceMgr.CreateTexture(cubemapDesc, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (cubemap) textures.push_back(cubemap);
+    if (cubemap) textures.Add(cubemap);
     
     // Get final statistics
     FVulkanResourceManager::FResourceStats stats;

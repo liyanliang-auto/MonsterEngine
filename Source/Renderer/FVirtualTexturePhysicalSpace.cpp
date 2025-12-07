@@ -85,7 +85,7 @@ void FVirtualTexturePhysicalSpace::FreePage(uint32 PageIndex) {
     
     // Unmap from virtual address
     if (page.VirtualAddress != 0xFFFFFFFF) {
-        VirtualToPhysicalMap.erase(page.VirtualAddress);
+        VirtualToPhysicalMap.Remove(page.VirtualAddress);
         page.VirtualAddress = 0xFFFFFFFF;
     }
     
@@ -93,7 +93,7 @@ void FVirtualTexturePhysicalSpace::FreePage(uint32 PageIndex) {
     page.MipLevel = 0;
     
     // Add back to free list
-    FreeList.push_back(PageIndex);
+    FreeList.Add(PageIndex);
     
     MR_LOG_DEBUG("Freed physical page " + std::to_string(PageIndex));
 }
@@ -102,9 +102,9 @@ bool FVirtualTexturePhysicalSpace::MapPage(uint32 VirtualAddress, uint32 MipLeve
     std::scoped_lock lock(Mutex);
     
     // Check if already mapped
-    auto it = VirtualToPhysicalMap.find(VirtualAddress);
-    if (it != VirtualToPhysicalMap.end()) {
-        OutPhysicalAddress = it->second;
+    uint32* FoundPhysical = VirtualToPhysicalMap.Find(VirtualAddress);
+    if (FoundPhysical) {
+        OutPhysicalAddress = *FoundPhysical;
         TouchPage(OutPhysicalAddress);
         return true;
     }
@@ -138,7 +138,7 @@ void FVirtualTexturePhysicalSpace::UnmapPage(uint32 PhysicalAddress) {
     
     auto& page = Pages[PhysicalAddress];
     if (page.VirtualAddress != 0xFFFFFFFF) {
-        VirtualToPhysicalMap.erase(page.VirtualAddress);
+        VirtualToPhysicalMap.Remove(page.VirtualAddress);
         page.VirtualAddress = 0xFFFFFFFF;
     }
 }
@@ -171,7 +171,7 @@ uint32 FVirtualTexturePhysicalSpace::EvictLRUPage() {
     // Unmap the page
     auto& page = Pages[lruPage];
     if (page.VirtualAddress != 0xFFFFFFFF) {
-        VirtualToPhysicalMap.erase(page.VirtualAddress);
+        VirtualToPhysicalMap.Remove(page.VirtualAddress);
         page.VirtualAddress = 0xFFFFFFFF;
     }
     

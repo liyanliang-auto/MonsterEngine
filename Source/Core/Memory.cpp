@@ -97,7 +97,7 @@ namespace MonsterRender {
 				TextureFreeRegion* region = block->freeList;
 				while (region) {
 					TextureFreeRegion* next = region->next;
-					delete region;
+					::free(region);
 					region = next;
 				}
 				// Free huge pages if used
@@ -162,7 +162,9 @@ namespace MonsterRender {
 	// TLS cache management
 	MemorySystem::ThreadLocalCache* MemorySystem::getTLSCache() {
 		if (!t_tlsCache) {
-			t_tlsCache = new ThreadLocalCache();
+			// Use system malloc for internal structures to avoid circular dependency
+			t_tlsCache = static_cast<ThreadLocalCache*>(::malloc(sizeof(ThreadLocalCache)));
+			new(t_tlsCache) ThreadLocalCache();
 			// Zero-initialize cache
 			for (uint32 i = 0; i < kNumSmallBins; ++i) {
 				t_tlsCache->count[i] = 0;
@@ -191,7 +193,8 @@ namespace MonsterRender {
 				}
 			}
 		}
-		delete cache;
+		cache->~ThreadLocalCache();
+		::free(cache);
 	}
 
 	void* MemorySystem::allocateFromBin(SmallBin& bin, size_t alignment, ThreadLocalCache* tlsCache) {
@@ -363,7 +366,7 @@ namespace MonsterRender {
 					} else {
 						block.freeList = region->next;
 					}
-					delete region;
+					::free(region);
 				}
 				block.usedBytes.fetch_add(size, std::memory_order_relaxed);
 				m_textureUsedBytes.fetch_add(size, std::memory_order_relaxed);
@@ -379,7 +382,11 @@ namespace MonsterRender {
 		std::scoped_lock lock(block.mutex);
 		uint8* basePtr = block.usesHugePages ? block.rawHugePagePtr : block.buffer.get();
 		uint64 offset = static_cast<uint8*>(ptr) - basePtr;
-		auto* newRegion = new TextureFreeRegion{offset, size, nullptr};
+		// Use system malloc for internal structures to avoid circular dependency
+		auto* newRegion = static_cast<TextureFreeRegion*>(::malloc(sizeof(TextureFreeRegion)));
+		newRegion->offset = offset;
+		newRegion->size = size;
+		newRegion->next = nullptr;
 		// Insert sorted by offset
 		if (!block.freeList || block.freeList->offset > offset) {
 			newRegion->next = block.freeList;
@@ -406,7 +413,7 @@ namespace MonsterRender {
 				TextureFreeRegion* next = current->next;
 				current->size += next->size;
 				current->next = next->next;
-				delete next;
+				::free(next);
 			} else {
 				current = current->next;
 			}
@@ -506,7 +513,7 @@ namespace MonsterRender {
 			TextureFreeRegion* region = block->freeList;
 			while (region) {
 				TextureFreeRegion* next = region->next;
-				delete region;
+				::free(region);
 				region = next;
 			}
 			block->freeList = nullptr;

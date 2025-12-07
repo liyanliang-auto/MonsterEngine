@@ -6,6 +6,7 @@
 #include "Core/IO/FAsyncFileIO.h"
 #include "Renderer/FTextureStreamingManager.h"
 #include "Core/Log.h"
+#include "Containers/Array.h"
 #include <thread>
 #include <chrono>
 
@@ -67,9 +68,9 @@ void RunAllTests() {
         FTexturePool pool(8 * 1024 * 1024);  // 8MB pool
         
         // Create fragmentation
-        std::vector<void*> ptrs;
+        TArray<void*> ptrs;
         for (int i = 0; i < 10; ++i) {
-            ptrs.push_back(pool.Allocate(512 * 1024));  // 512KB each
+            ptrs.Add(pool.Allocate(512 * 1024));  // 512KB each
         }
         
         // Free every other allocation

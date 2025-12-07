@@ -17,12 +17,12 @@
 #include "Core/Templates/TypeTraits.h"
 #include "Core/Templates/TypeHash.h"
 #include "String.h"
+#include "Array.h"
+#include "Map.h"
 
 #include <atomic>
 #include <mutex>
 #include <shared_mutex>
-#include <unordered_map>
-#include <vector>
 #include <string>
 
 namespace MonsterEngine
@@ -200,10 +200,10 @@ public:
         // Try read lock first (fast path)
         {
             std::shared_lock<std::shared_mutex> ReadLock(Mutex);
-            auto It = NameToIndex.find(ComparisonKey);
-            if (It != NameToIndex.end())
+            const uint32* FoundIndex = NameToIndex.Find(ComparisonKey);
+            if (FoundIndex)
             {
-                return FNameEntryId::FromUnstableInt(It->second);
+                return FNameEntryId::FromUnstableInt(*FoundIndex);
             }
         }
         
@@ -211,15 +211,15 @@ public:
         std::unique_lock<std::shared_mutex> WriteLock(Mutex);
         
         // Double-check after acquiring write lock
-        auto It = NameToIndex.find(ComparisonKey);
-        if (It != NameToIndex.end())
+        const uint32* FoundIndex = NameToIndex.Find(ComparisonKey);
+        if (FoundIndex)
         {
-            return FNameEntryId::FromUnstableInt(It->second);
+            return FNameEntryId::FromUnstableInt(*FoundIndex);
         }
         
         // Add new entry
-        uint32 NewIndex = static_cast<uint32>(Entries.size());
-        Entries.push_back(std::make_unique<FNameEntry>(Name));
+        uint32 NewIndex = static_cast<uint32>(Entries.Num());
+        Entries.Add(std::make_unique<FNameEntry>(Name));
         NameToIndex[ComparisonKey] = NewIndex;
         
         return FNameEntryId::FromUnstableInt(NewIndex);
@@ -247,10 +247,10 @@ public:
         }
         
         std::shared_lock<std::shared_mutex> ReadLock(Mutex);
-        auto It = NameToIndex.find(ComparisonKey);
-        if (It != NameToIndex.end())
+        const uint32* FoundIndex = NameToIndex.Find(ComparisonKey);
+        if (FoundIndex)
         {
-            return FNameEntryId::FromUnstableInt(It->second);
+            return FNameEntryId::FromUnstableInt(*FoundIndex);
         }
         
         return FNameEntryId();
@@ -268,7 +268,7 @@ public:
         
         std::shared_lock<std::shared_mutex> ReadLock(Mutex);
         uint32 Index = Id.ToUnstableInt();
-        if (Index < Entries.size())
+        if (Index < static_cast<uint32>(Entries.Num()))
         {
             return Entries[Index].get();
         }
@@ -281,14 +281,14 @@ public:
     int32 GetNumNames() const
     {
         std::shared_lock<std::shared_mutex> ReadLock(Mutex);
-        return static_cast<int32>(Entries.size());
+        return Entries.Num();
     }
     
 private:
     FNamePool()
     {
         // Reserve entry 0 for NAME_None
-        Entries.push_back(std::make_unique<FNameEntry>(L"None"));
+        Entries.Add(std::make_unique<FNameEntry>(L"None"));
         NameToIndex[L"none"] = 0;
     }
     
@@ -298,8 +298,8 @@ private:
     FNamePool& operator=(const FNamePool&) = delete;
     
     mutable std::shared_mutex Mutex;
-    std::vector<std::unique_ptr<FNameEntry>> Entries;
-    std::unordered_map<std::wstring, uint32> NameToIndex;
+    TArray<std::unique_ptr<FNameEntry>> Entries;
+    TMap<std::wstring, uint32> NameToIndex;
 };
 
 // ============================================================================

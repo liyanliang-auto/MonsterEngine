@@ -494,7 +494,7 @@ void TestSerialization()
     
     // Basic types
     {
-        std::vector<uint8> Buffer;
+        TArray<uint8> Buffer;
         
         // Write
         {
@@ -527,7 +527,7 @@ void TestSerialization()
     
     // String
     {
-        std::vector<uint8> Buffer;
+        TArray<uint8> Buffer;
         
         {
             FMemoryWriter Writer(Buffer);
@@ -545,7 +545,7 @@ void TestSerialization()
     
     // TArray
     {
-        std::vector<uint8> Buffer;
+        TArray<uint8> Buffer;
         
         {
             FMemoryWriter Writer(Buffer);
@@ -560,6 +560,60 @@ void TestSerialization()
             TEST_ASSERT(Arr.Num() == 5, "Array should serialize with correct size");
             TEST_ASSERT(Arr[0] == 1, "Array elements should serialize correctly");
             TEST_ASSERT(Arr[4] == 5, "Array elements should serialize correctly");
+        }
+    }
+    
+    // TMap
+    {
+        TArray<uint8> Buffer;
+        
+        {
+            FMemoryWriter Writer(Buffer);
+            TMap<int32, int32> Map;
+            Map.Add(1, 100);
+            Map.Add(2, 200);
+            Map.Add(3, 300);
+            Writer << Map;
+        }
+        
+        {
+            FMemoryReader Reader(Buffer);
+            TMap<int32, int32> Map;
+            Reader << Map;
+            TEST_ASSERT(Map.Num() == 3, "Map should serialize with correct size");
+            TEST_ASSERT(Map.Contains(1), "Map should contain key 1");
+            TEST_ASSERT(Map.Contains(2), "Map should contain key 2");
+            TEST_ASSERT(Map.Contains(3), "Map should contain key 3");
+            int32* Val1 = Map.Find(1);
+            int32* Val2 = Map.Find(2);
+            int32* Val3 = Map.Find(3);
+            TEST_ASSERT(Val1 && *Val1 == 100, "Map value for key 1 should be 100");
+            TEST_ASSERT(Val2 && *Val2 == 200, "Map value for key 2 should be 200");
+            TEST_ASSERT(Val3 && *Val3 == 300, "Map value for key 3 should be 300");
+        }
+    }
+    
+    // TSet
+    {
+        TArray<uint8> Buffer;
+        
+        {
+            FMemoryWriter Writer(Buffer);
+            TSet<int32> Set;
+            Set.Add(10);
+            Set.Add(20);
+            Set.Add(30);
+            Writer << Set;
+        }
+        
+        {
+            FMemoryReader Reader(Buffer);
+            TSet<int32> Set;
+            Reader << Set;
+            TEST_ASSERT(Set.Num() == 3, "Set should serialize with correct size");
+            TEST_ASSERT(Set.Contains(10), "Set should contain 10");
+            TEST_ASSERT(Set.Contains(20), "Set should contain 20");
+            TEST_ASSERT(Set.Contains(30), "Set should contain 30");
         }
     }
     

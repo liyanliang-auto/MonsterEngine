@@ -5,9 +5,9 @@
 
 #include "Core/CoreTypes.h"
 #include "Core/HAL/FMemory.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
 #include <mutex>
-#include <vector>
-#include <unordered_map>
 
 namespace MonsterRender {
 
@@ -90,7 +90,7 @@ private:
     TArray<uint32> FreeList;                    // Indices of free pages
     
     // Mapping: VirtualAddress -> PhysicalAddress
-    std::unordered_map<uint32, uint32> VirtualToPhysicalMap;
+    TMap<uint32, uint32> VirtualToPhysicalMap;
     
     std::mutex Mutex;          // Thread safety
     

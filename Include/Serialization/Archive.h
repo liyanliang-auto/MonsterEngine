@@ -384,7 +384,7 @@ public:
 class FMemoryWriter : public FMemoryArchive
 {
 public:
-    FMemoryWriter(std::vector<uint8>& InBytes)
+    FMemoryWriter(TArray<uint8>& InBytes)
         : Bytes(InBytes)
     {
         Flags = EArchiveFlags::Saving | EArchiveFlags::Persistent;
@@ -397,23 +397,23 @@ public:
             int64 WritePos = Tell();
             
             // Grow buffer if needed
-            if (WritePos + Num > static_cast<int64>(Bytes.size()))
+            if (WritePos + Num > static_cast<int64>(Bytes.Num()))
             {
-                Bytes.resize(static_cast<size_t>(WritePos + Num));
+                Bytes.SetNumUninitialized(static_cast<int32>(WritePos + Num));
             }
             
-            std::memcpy(Bytes.data() + WritePos, Data, static_cast<size_t>(Num));
+            std::memcpy(Bytes.GetData() + WritePos, Data, static_cast<size_t>(Num));
             Position = WritePos + Num;
         }
     }
     
     virtual int64 TotalSize() override
     {
-        return static_cast<int64>(Bytes.size());
+        return static_cast<int64>(Bytes.Num());
     }
     
 private:
-    std::vector<uint8>& Bytes;
+    TArray<uint8>& Bytes;
 };
 
 // ============================================================================
@@ -426,7 +426,7 @@ private:
 class FMemoryReader : public FMemoryArchive
 {
 public:
-    FMemoryReader(const std::vector<uint8>& InBytes)
+    FMemoryReader(const TArray<uint8>& InBytes)
         : Bytes(InBytes)
     {
         Flags = EArchiveFlags::Loading | EArchiveFlags::Persistent;
@@ -444,8 +444,8 @@ public:
         if (Num > 0)
         {
             int64 ReadPos = Tell();
-            const uint8* Source = DataPtr ? DataPtr : Bytes.data();
-            int64 SourceSize = DataPtr ? DataSize : static_cast<int64>(Bytes.size());
+            const uint8* Source = DataPtr ? DataPtr : Bytes.GetData();
+            int64 SourceSize = DataPtr ? DataSize : static_cast<int64>(Bytes.Num());
             
             if (ReadPos + Num <= SourceSize)
             {
@@ -462,15 +462,15 @@ public:
     
     virtual int64 TotalSize() override
     {
-        return DataPtr ? DataSize : static_cast<int64>(Bytes.size());
+        return DataPtr ? DataSize : static_cast<int64>(Bytes.Num());
     }
     
 private:
-    const std::vector<uint8>& Bytes = EmptyBytes;
+    const TArray<uint8>& Bytes = EmptyBytes;
     const uint8* DataPtr = nullptr;
     int64 DataSize = 0;
     
-    static inline const std::vector<uint8> EmptyBytes;
+    static inline const TArray<uint8> EmptyBytes;
 };
 
 // ============================================================================
@@ -570,6 +570,78 @@ FArchive& operator<<(FArchive& Ar, TSet<ElementType, KeyFuncs, Allocator>& Set)
         {
             ElementType Copy = Element;
             Ar << Copy;
+        }
+    }
+    
+    return Ar;
+}
+
+/**
+ * Helper to serialize TMap
+ * Serializes key-value pairs sequentially
+ */
+template<typename KeyType, typename ValueType, typename SetAllocator, typename KeyFuncs>
+FArchive& operator<<(FArchive& Ar, TMap<KeyType, ValueType, SetAllocator, KeyFuncs>& Map)
+{
+    int32 Num = Map.Num();
+    Ar << Num;
+    
+    if (Ar.IsLoading())
+    {
+        Map.Empty(Num);
+        for (int32 i = 0; i < Num; ++i)
+        {
+            KeyType Key;
+            ValueType Value;
+            Ar << Key;
+            Ar << Value;
+            Map.Add(std::move(Key), std::move(Value));
+        }
+    }
+    else
+    {
+        for (auto& Pair : Map)
+        {
+            KeyType Key = Pair.Key;
+            ValueType Value = Pair.Value;
+            Ar << Key;
+            Ar << Value;
+        }
+    }
+    
+    return Ar;
+}
+
+/**
+ * Helper to serialize TMultiMap
+ * Serializes key-value pairs sequentially (allows duplicate keys)
+ */
+template<typename KeyType, typename ValueType, typename SetAllocator, typename KeyFuncs>
+FArchive& operator<<(FArchive& Ar, TMultiMap<KeyType, ValueType, SetAllocator, KeyFuncs>& Map)
+{
+    int32 Num = Map.Num();
+    Ar << Num;
+    
+    if (Ar.IsLoading())
+    {
+        Map.Empty(Num);
+        for (int32 i = 0; i < Num; ++i)
+        {
+            KeyType Key;
+            ValueType Value;
+            Ar << Key;
+            Ar << Value;
+            Map.Add(std::move(Key), std::move(Value));
+        }
+    }
+    else
+    {
+        for (auto& Pair : Map)
+        {
+            KeyType Key = Pair.Key;
+            ValueType Value = Pair.Value;
+            Ar << Key;
+            Ar << Value;
         }
     }
     

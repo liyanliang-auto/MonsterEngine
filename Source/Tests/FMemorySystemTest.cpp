@@ -8,8 +8,7 @@
 #include "Core/HAL/FMemoryManager.h"
 #include "Core/Log.h"
 #include "Core/Assert.h"
-
-#include <vector>
+#include "Containers/Array.h"
 #include <thread>
 #include <chrono>
 #include <random>
@@ -33,7 +32,7 @@ public:
     }
 
     void AddResult(const TestResult& result) {
-        results.push_back(result);
+        results.Add(result);
         if (result.passed) {
             passedCount++;
             MR_LOG_INFO("PASSED: " + result.testName + 
@@ -49,7 +48,7 @@ public:
         MR_LOG_INFO("\n======================================");
         MR_LOG_INFO("  FMemory System Test Summary");
         MR_LOG_INFO("======================================");
-        MR_LOG_INFO("Total Tests: " + std::to_string(results.size()));
+        MR_LOG_INFO("Total Tests: " + std::to_string(results.Num()));
         MR_LOG_INFO("Passed: " + std::to_string(passedCount));
         MR_LOG_INFO("Failed: " + std::to_string(failedCount));
         
@@ -62,13 +61,13 @@ public:
     }
 
     void Reset() {
-        results.clear();
+        results.Empty();
         passedCount = 0;
         failedCount = 0;
     }
 
 private:
-    std::vector<TestResult> results;
+    TArray<TestResult> results;
     uint32 passedCount = 0;
     uint32 failedCount = 0;
 };
@@ -244,7 +243,7 @@ void TestMultithreaded() {
         auto workerFunc = [&](int threadId) {
             try {
                 FMalloc* allocator = FMemoryManager::Get().GetAllocator();
-                std::vector<void*> localAllocations;
+                TArray<void*> localAllocations;
 
                 for (int i = 0; i < allocationsPerThread; ++i) {
                     SIZE_T size = 16 + (threadId * 16) + (i % 512);
@@ -257,11 +256,11 @@ void TestMultithreaded() {
                     }
 
                     FMemory::Memset(ptr, static_cast<uint8>(threadId + 1), size);
-                    localAllocations.push_back(ptr);
+                    localAllocations.Add(ptr);
 
-                    if (i % 10 == 0 && !localAllocations.empty()) {
-                        allocator->Free(localAllocations.back());
-                        localAllocations.pop_back();
+                    if (i % 10 == 0 && !localAllocations.IsEmpty()) {
+                        allocator->Free(localAllocations.Last());
+                        localAllocations.Pop();
                     }
                 }
 
@@ -275,9 +274,9 @@ void TestMultithreaded() {
             }
         };
 
-        std::vector<std::thread> threads;
+        TArray<std::thread> threads;
         for (int i = 0; i < numThreads; ++i) {
-            threads.emplace_back(workerFunc, i);
+            threads.Add(std::thread(workerFunc, i));
         }
 
         for (auto& thread : threads) {

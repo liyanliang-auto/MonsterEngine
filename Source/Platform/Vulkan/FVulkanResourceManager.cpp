@@ -7,6 +7,7 @@
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
+#include "Core/HAL/FMemory.h"
 #include "Core/Log.h"
 #include <algorithm>
 
@@ -461,20 +462,20 @@ TRefCountPtr<FVulkanResourceMultiBuffer> FVulkanResourceManager::CreateMultiBuff
     VkMemoryPropertyFlags MemoryFlags,
     uint32 NumBuffers)
 {
-    FVulkanResourceMultiBuffer* multiBuffer = new FVulkanResourceMultiBuffer(
+    FVulkanResourceMultiBuffer* multiBuffer = FMemory::New<FVulkanResourceMultiBuffer>(
         Device, Size, Usage, MemoryFlags, NumBuffers
     );
     
     if (!multiBuffer->Initialize()) {
         MR_LOG_ERROR("FVulkanResourceManager: Multi-buffer initialization failed");
-        delete multiBuffer;
+        FMemory::Delete(multiBuffer);
         return nullptr;
     }
     
     // Track
     {
         std::lock_guard<std::mutex> lock(ResourcesMutex);
-        ActiveMultiBuffers.push_back(multiBuffer);
+        ActiveMultiBuffers.Add(multiBuffer);
     }
     
     TotalMultiBufferCount.fetch_add(1);
@@ -487,18 +488,18 @@ FRHITextureRef FVulkanResourceManager::CreateTexture(
     const TextureDesc& Desc,
     VkMemoryPropertyFlags MemoryFlags)
 {
-    FVulkanTexture* texture = new FVulkanTexture(Device, Desc, MemoryFlags);
+    FVulkanTexture* texture = FMemory::New<FVulkanTexture>(Device, Desc, MemoryFlags);
     
     if (!texture->Initialize()) {
         MR_LOG_ERROR("FVulkanResourceManager: Texture initialization failed");
-        delete texture;
+        FMemory::Delete(texture);
         return nullptr;
     }
     
     // Track
     {
         std::lock_guard<std::mutex> lock(ResourcesMutex);
-        ActiveTextures.push_back(texture);
+        ActiveTextures.Add(texture);
     }
     
     TotalTextureCount.fetch_add(1);
@@ -511,20 +512,20 @@ FRHITextureRef FVulkanResourceManager::CreateTexture(
 void FVulkanResourceManager::DeferredRelease(FRHIResource* Resource, uint64 FrameNumber)
 {
     std::lock_guard<std::mutex> lock(DeferredReleasesMutex);
-    DeferredReleases.emplace_back(Resource, FrameNumber);
+    DeferredReleases.PushBack(FDeferredReleaseEntry(Resource, FrameNumber));
 }
 
 void FVulkanResourceManager::ProcessDeferredReleases(uint64 CompletedFrameNumber)
 {
     std::lock_guard<std::mutex> lock(DeferredReleasesMutex);
     
-    while (!DeferredReleases.empty()) {
-        auto& entry = DeferredReleases.front();
+    while (!DeferredReleases.IsEmpty()) {
+        auto& entry = DeferredReleases.First();
         
         // If resource submission frame completed + DEFERRED_RELEASE_FRAMES, safe to release
         if (CompletedFrameNumber >= entry.FrameNumber + DEFERRED_RELEASE_FRAMES) {
             entry.Resource->Release();
-            DeferredReleases.pop_front();
+            DeferredReleases.PopFront();
         } else {
             // Queue is sorted by frame number, so we can break here
             break;
@@ -548,14 +549,14 @@ void FVulkanResourceManager::GetResourceStats(FResourceStats& OutStats)
     
     {
         std::lock_guard<std::mutex> lock(ResourcesMutex);
-        OutStats.NumBuffers = static_cast<uint32>(ActiveBuffers.size());
-        OutStats.NumMultiBuffers = static_cast<uint32>(ActiveMultiBuffers.size());
-        OutStats.NumTextures = static_cast<uint32>(ActiveTextures.size());
+        OutStats.NumBuffers = static_cast<uint32>(ActiveBuffers.Num());
+        OutStats.NumMultiBuffers = static_cast<uint32>(ActiveMultiBuffers.Num());
+        OutStats.NumTextures = static_cast<uint32>(ActiveTextures.Num());
     }
     
     {
         std::lock_guard<std::mutex> lock(DeferredReleasesMutex);
-        OutStats.PendingReleases = static_cast<uint32>(DeferredReleases.size());
+        OutStats.PendingReleases = static_cast<uint32>(DeferredReleases.Num());
     }
     
     OutStats.BufferMemory = TotalBufferMemory.load();

@@ -23,8 +23,8 @@ FTexturePool::FTexturePool(SIZE_T PoolSizeBytes)
         return;
     }
 
-    // Initialize with one large free region
-    FreeList = new FFreeRegion();
+    // Initialize with one large free region using FMemory
+    FreeList = FMemory::New<FFreeRegion>();
     FreeList->Offset = 0;
     FreeList->Size = PoolSizeBytes;
     FreeList->Next = nullptr;
@@ -37,7 +37,7 @@ FTexturePool::~FTexturePool() {
     FFreeRegion* region = FreeList;
     while (region) {
         FFreeRegion* next = region->Next;
-        delete region;
+        FMemory::Delete(region);
         region = next;
     }
 
@@ -77,14 +77,14 @@ void FTexturePool::Free(void* Ptr) {
     std::scoped_lock lock(PoolMutex);
 
     // Find allocation in map
-    auto it = Allocations.find(Ptr);
-    if (it == Allocations.end()) {
+    FAllocation* FoundAlloc = Allocations.Find(Ptr);
+    if (!FoundAlloc) {
         MR_LOG_WARNING("FTexturePool::Free: pointer not found in allocations");
         return;
     }
 
-    FAllocation alloc = it->second;
-    Allocations.erase(it);
+    FAllocation alloc = *FoundAlloc;
+    Allocations.Remove(Ptr);
 
     // Add back to free list
     AddToFreeList(alloc.Offset, alloc.Size);
@@ -98,12 +98,12 @@ SIZE_T FTexturePool::GetAllocationSize(void* Ptr) {
 
     std::scoped_lock lock(PoolMutex);
 
-    auto it = Allocations.find(Ptr);
-    if (it == Allocations.end()) {
+    FAllocation* FoundAlloc = Allocations.Find(Ptr);
+    if (!FoundAlloc) {
         return 0;
     }
 
-    return it->second.Size;
+    return FoundAlloc->Size;
 }
 
 void FTexturePool::Compact() {
@@ -149,7 +149,7 @@ void* FTexturePool::AllocateFromFreeList(SIZE_T Size, SIZE_T Alignment) {
                 } else {
                     FreeList = region->Next;
                 }
-                delete region;
+                FMemory::Delete(region);
             }
 
             return ptr;
@@ -163,8 +163,8 @@ void* FTexturePool::AllocateFromFreeList(SIZE_T Size, SIZE_T Alignment) {
 }
 
 void FTexturePool::AddToFreeList(SIZE_T Offset, SIZE_T Size) {
-    // Create new free region
-    FFreeRegion* newRegion = new FFreeRegion();
+    // Create new free region using FMemory
+    FFreeRegion* newRegion = FMemory::New<FFreeRegion>();
     newRegion->Offset = Offset;
     newRegion->Size = Size;
     newRegion->Next = nullptr;
@@ -198,7 +198,7 @@ void FTexturePool::MergeFreeRegions() {
             FFreeRegion* next = current->Next;
             current->Size += next->Size;
             current->Next = next->Next;
-            delete next;
+            FMemory::Delete(next);
             // Don't advance - check if we can merge again
         } else {
             current = current->Next;
