@@ -216,6 +216,30 @@ public:
     }
     
     /**
+     * Constructor with initial size (elements are default-constructed)
+     */
+    explicit TArray(SizeType InitialSize)
+        : ArrayNum(0)
+        , ArrayMax(AllocatorInstance.GetInitialCapacity())
+    {
+        SetNum(InitialSize);
+    }
+    
+    /**
+     * Constructor with initial size and default value
+     */
+    TArray(SizeType InitialSize, const ElementType& DefaultValue)
+        : ArrayNum(0)
+        , ArrayMax(AllocatorInstance.GetInitialCapacity())
+    {
+        SetNum(InitialSize);
+        for (SizeType i = 0; i < InitialSize; ++i)
+        {
+            GetData()[i] = DefaultValue;
+        }
+    }
+    
+    /**
      * Copy constructor
      */
     TArray(const TArray& Other)
@@ -438,6 +462,114 @@ public:
     {
         return ArrayMax - ArrayNum;
     }
+    
+    // ========================================================================
+    // STL Compatibility Methods
+    // ========================================================================
+    
+    /**
+     * STL-compatible size() - same as Num()
+     */
+    FORCEINLINE SizeType size() const { return ArrayNum; }
+    
+    /**
+     * STL-compatible empty() - same as IsEmpty()
+     */
+    FORCEINLINE bool empty() const { return ArrayNum == 0; }
+    
+    /**
+     * STL-compatible clear() - same as Empty()
+     */
+    FORCEINLINE void clear() { Empty(); }
+    
+    /**
+     * STL-compatible resize() - same as SetNum()
+     */
+    FORCEINLINE void resize(SizeType NewSize) { SetNum(NewSize); }
+    
+    /**
+     * STL-compatible push_back() - same as Add()
+     */
+    template<typename ArgType>
+    FORCEINLINE void push_back(ArgType&& Item) { Add(std::forward<ArgType>(Item)); }
+    
+    /**
+     * STL-compatible pop_back() - removes last element
+     */
+    FORCEINLINE void pop_back() { RemoveAt(ArrayNum - 1); }
+    
+    /**
+     * STL-compatible back() - same as Last()
+     */
+    FORCEINLINE ElementType& back() { return Last(); }
+    FORCEINLINE const ElementType& back() const { return Last(); }
+    
+    /**
+     * STL-compatible front() - returns first element
+     */
+    FORCEINLINE ElementType& front() { return GetData()[0]; }
+    FORCEINLINE const ElementType& front() const { return GetData()[0]; }
+    
+    /**
+     * STL-compatible erase() - removes element at iterator position
+     */
+    FORCEINLINE ElementType* erase(ElementType* Position)
+    {
+        SizeType Index = Position - GetData();
+        RemoveAt(Index);
+        return GetData() + Index;
+    }
+    
+    /**
+     * STL-compatible erase() - removes range of elements
+     */
+    FORCEINLINE ElementType* erase(ElementType* First, ElementType* Last)
+    {
+        SizeType Index = First - GetData();
+        SizeType Count = Last - First;
+        RemoveAt(Index, Count);
+        return GetData() + Index;
+    }
+    
+    /**
+     * STL-compatible data() - returns pointer to underlying data
+     */
+    FORCEINLINE ElementType* data() { return GetData(); }
+    FORCEINLINE const ElementType* data() const { return GetData(); }
+    
+    /**
+     * STL-compatible reserve() - same as Reserve()
+     */
+    FORCEINLINE void reserve(SizeType NewCapacity) { Reserve(NewCapacity); }
+    
+    /**
+     * STL-compatible resize() with default value - resizes and fills with value
+     */
+    FORCEINLINE void resize(SizeType NewSize, const ElementType& DefaultValue)
+    {
+        SizeType OldSize = ArrayNum;
+        SetNum(NewSize);
+        for (SizeType i = OldSize; i < NewSize; ++i)
+        {
+            GetData()[i] = DefaultValue;
+        }
+    }
+    
+    /**
+     * STL-compatible emplace_back() - constructs element in place at the end
+     */
+    template<typename... ArgsType>
+    FORCEINLINE ElementType& emplace_back(ArgsType&&... Args)
+    {
+        SizeType Index = AddUninitialized(1);
+        new (GetData() + Index) ElementType(std::forward<ArgsType>(Args)...);
+        return GetData()[Index];
+    }
+    
+    /**
+     * STL-compatible capacity() - returns current capacity
+     */
+    FORCEINLINE SizeType capacity() const { return ArrayMax; }
     
     // ========================================================================
     // Adding Elements

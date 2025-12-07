@@ -7,8 +7,14 @@
 #include "Core/CoreMinimal.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "RHI/RHIDefinitions.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
 
 namespace MonsterRender::RHI::Vulkan {
+
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+using MonsterEngine::TMap;
 
     class VulkanDevice;
     class VulkanTexture;

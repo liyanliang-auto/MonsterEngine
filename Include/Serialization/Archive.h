@@ -577,42 +577,6 @@ FArchive& operator<<(FArchive& Ar, TSet<ElementType, KeyFuncs, Allocator>& Set)
 }
 
 /**
- * Helper to serialize TMap
- * Serializes key-value pairs sequentially
- */
-template<typename KeyType, typename ValueType, typename SetAllocator, typename KeyFuncs>
-FArchive& operator<<(FArchive& Ar, TMap<KeyType, ValueType, SetAllocator, KeyFuncs>& Map)
-{
-    int32 Num = Map.Num();
-    Ar << Num;
-    
-    if (Ar.IsLoading())
-    {
-        Map.Empty(Num);
-        for (int32 i = 0; i < Num; ++i)
-        {
-            KeyType Key;
-            ValueType Value;
-            Ar << Key;
-            Ar << Value;
-            Map.Add(std::move(Key), std::move(Value));
-        }
-    }
-    else
-    {
-        for (auto& Pair : Map)
-        {
-            KeyType Key = Pair.Key;
-            ValueType Value = Pair.Value;
-            Ar << Key;
-            Ar << Value;
-        }
-    }
-    
-    return Ar;
-}
-
-/**
  * Helper to serialize TMultiMap
  * Serializes key-value pairs sequentially (allows duplicate keys)
  */

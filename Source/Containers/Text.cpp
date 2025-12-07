@@ -534,19 +534,19 @@ FText FText::AsCurrency(
     }
     else if (CurrencyCode == "EUR")
     {
-        CurrencySymbol = L"€";
+        CurrencySymbol = L"\u20AC";  // Euro sign
     }
     else if (CurrencyCode == "GBP")
     {
-        CurrencySymbol = L"£";
+        CurrencySymbol = L"\u00A3";  // Pound sign
     }
     else if (CurrencyCode == "JPY")
     {
-        CurrencySymbol = L"¥";
+        CurrencySymbol = L"\u00A5";  // Yen sign
     }
     else if (CurrencyCode == "CNY")
     {
-        CurrencySymbol = L"¥";
+        CurrencySymbol = L"\u00A5";  // Yuan sign (same as Yen)
     }
     else
     {

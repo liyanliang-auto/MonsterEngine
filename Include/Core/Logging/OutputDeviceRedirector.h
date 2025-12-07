@@ -14,12 +14,16 @@
 
 #include "Core/CoreTypes.h"
 #include "Core/Logging/OutputDevice.h"
+#include "Containers/Array.h"
 #include <mutex>
 #include <atomic>
 #include <thread>
 #include <condition_variable>
 
 namespace MonsterRender {
+
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
 
 /**
  * Buffered log line for multi-threaded logging

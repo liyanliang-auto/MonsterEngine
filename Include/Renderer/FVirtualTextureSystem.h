@@ -11,6 +11,10 @@
 
 namespace MonsterRender {
 
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+using MonsterEngine::TMap;
+
 // Forward declarations
 class FVirtualTexturePhysicalSpace;
 class FVirtualTexture;

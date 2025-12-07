@@ -121,7 +121,7 @@ FORCEINLINE SizeType DefaultCalculateSlackGrow(
     // Ensure we don't overflow
     if (NumElements > Result)
     {
-        Result = std::numeric_limits<SizeType>::max();
+        Result = (std::numeric_limits<SizeType>::max)();
     }
     
     return Result;
@@ -147,7 +147,7 @@ FORCEINLINE SizeType DefaultCalculateSlackReserve(
         // Ensure we don't overflow
         if (NumElements > Result)
         {
-            Result = std::numeric_limits<SizeType>::max();
+            Result = (std::numeric_limits<SizeType>::max)();
         }
     }
     
@@ -204,7 +204,11 @@ public:
             {
                 if (Data)
                 {
+#if defined(_MSC_VER)
+                    _aligned_free(Data);
+#else
                     std::free(Data);
+#endif
                 }
                 Data = Other.Data;
                 Other.Data = nullptr;
@@ -216,7 +220,11 @@ public:
         {
             if (Data)
             {
+#if defined(_MSC_VER)
+                _aligned_free(Data);
+#else
                 std::free(Data);
+#endif
                 Data = nullptr;
             }
         }
@@ -232,7 +240,11 @@ public:
             {
                 if (Data)
                 {
+#if defined(_MSC_VER)
+                    _aligned_free(Data);
+#else
                     std::free(Data);
+#endif
                     Data = nullptr;
                 }
             }

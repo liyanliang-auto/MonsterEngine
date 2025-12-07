@@ -1,8 +1,14 @@
 #include "Platform/Vulkan/VulkanShader.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Core/Log.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
 
 namespace MonsterRender::RHI::Vulkan {
+
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+using MonsterEngine::TMap;
     
     VulkanShader::VulkanShader(VulkanDevice* device, EShaderStage stage, TSpan<const uint8> bytecode)
         : IRHIShader(stage), m_device(device) {
@@ -162,15 +168,15 @@ namespace MonsterRender::RHI::Vulkan {
                     // 0 = UniformConstant (samplers, sampled images, combined image samplers)
                     // 2 = Uniform (uniform buffers, UBOs)
                     if (storageClass == 0 /*UniformConstant*/ || storageClass == 2 /*Uniform*/) {
-                        auto it = idToBinding.find(resultId);
-                        if (it != idToBinding.end() && it->second.hasBinding) {
+                        BindingInfo* bindingInfoPtr = idToBinding.Find(resultId);
+                        if (bindingInfoPtr && bindingInfoPtr->hasBinding) {
                             VkDescriptorSetLayoutBinding b{};
-                            b.binding = it->second.binding;
+                            b.binding = bindingInfoPtr->binding;
                             b.descriptorCount = 1;
                             b.stageFlags = (getStage() == EShaderStage::Vertex) ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
                             // UniformConstant (0) -> sampled image/sampler; Uniform (2) -> uniform buffer
                             b.descriptorType = (storageClass == 0) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                            m_descriptorBindings.push_back(b);
+                            m_descriptorBindings.Add(b);
                             MR_LOG_DEBUG("Reflection: Added binding " + std::to_string(b.binding) + 
                                         " as " + (storageClass == 0 ? "COMBINED_IMAGE_SAMPLER" : "UNIFORM_BUFFER"));
                         } else {

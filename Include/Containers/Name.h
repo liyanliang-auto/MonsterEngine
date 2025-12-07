@@ -135,10 +135,9 @@ public:
         return FString(NameString.c_str());
     }
     
-private:
-    friend class FNamePool;
-    
-    FNameEntry(const std::wstring& InName)
+public:
+    // Public constructor to allow make_unique (FNamePool controls access)
+    explicit FNameEntry(const std::wstring& InName)
         : NameString(InName)
     {
         // Create lowercase comparison string

@@ -444,9 +444,9 @@ public:
     /** Get approximate count */
     SizeType Num() const
     {
-        SizeType H = Head.load(std::memory_order_acquire);
-        SizeType T = Tail.load(std::memory_order_acquire);
-        return (T >= H) ? (T - H) : (Capacity - H + T);
+        SizeType HeadPos = Head.load(std::memory_order_acquire);
+        SizeType TailPos = Tail.load(std::memory_order_acquire);
+        return (TailPos >= HeadPos) ? (TailPos - HeadPos) : (Capacity - HeadPos + TailPos);
     }
 
     /** Get capacity */

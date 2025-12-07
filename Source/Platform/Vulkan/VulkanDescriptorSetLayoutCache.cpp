@@ -147,16 +147,16 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanDescriptorSetLayoutCache::ReleaseLayout(VkDescriptorSetLayout Layout) {
         std::lock_guard<std::mutex> Lock(CacheMutex);
         
-        auto HashIt = HandleToHash.find(Layout);
-        if (HashIt == HandleToHash.end()) {
+        uint64* HashPtr = HandleToHash.Find(Layout);
+        if (!HashPtr) {
             MR_LOG_WARNING("FVulkanDescriptorSetLayoutCache: Attempted to release unknown layout");
             return;
         }
         
-        uint64 Hash = HashIt->second;
-        auto EntryIt = LayoutCache.find(Hash);
-        if (EntryIt != LayoutCache.end() && EntryIt->second.RefCount > 0) {
-            EntryIt->second.RefCount--;
+        uint64 Hash = *HashPtr;
+        FVulkanDescriptorSetLayoutEntry* EntryPtr = LayoutCache.Find(Hash);
+        if (EntryPtr && EntryPtr->RefCount > 0) {
+            EntryPtr->RefCount--;
         }
     }
 
@@ -165,7 +165,10 @@ namespace MonsterRender::RHI::Vulkan {
         
         TArray<uint64> ToRemove;
         
-        for (auto& [Hash, Entry] : LayoutCache) {
+        for (auto It = LayoutCache.CreateIterator(); It; ++It) {
+            auto& Entry = It->Value;
+            uint64 Hash = It->Key;
+            
             // Update last used frame if still referenced
             if (Entry.RefCount > 0) {
                 Entry.LastUsedFrame = CurrentFrame;
@@ -174,31 +177,31 @@ namespace MonsterRender::RHI::Vulkan {
             
             // Check age - remove if unused for too long
             if (CurrentFrame - Entry.LastUsedFrame > MaxAge) {
-                ToRemove.push_back(Hash);
+                ToRemove.Add(Hash);
             }
         }
         
         // Remove stale entries
         for (uint64 Hash : ToRemove) {
-            auto It = LayoutCache.find(Hash);
-            if (It != LayoutCache.end()) {
+            FVulkanDescriptorSetLayoutEntry* EntryPtr = LayoutCache.Find(Hash);
+            if (EntryPtr) {
                 // Destroy Vulkan layout
                 const auto& Functions = VulkanAPI::getFunctions();
                 VkDevice VkDev = Device->getLogicalDevice();
-                Functions.vkDestroyDescriptorSetLayout(VkDev, It->second.Handle, nullptr);
+                Functions.vkDestroyDescriptorSetLayout(VkDev, EntryPtr->Handle, nullptr);
                 
                 // Remove from reverse lookup
-                HandleToHash.erase(It->second.Handle);
+                HandleToHash.Remove(EntryPtr->Handle);
                 
                 // Remove from cache
-                LayoutCache.erase(It);
+                LayoutCache.Remove(Hash);
                 Stats.TotalLayouts--;
                 
                 MR_LOG_DEBUG("FVulkanDescriptorSetLayoutCache: GC removed stale layout");
             }
         }
         
-        if (!ToRemove.empty()) {
+        if (!ToRemove.IsEmpty()) {
             MR_LOG_DEBUG("FVulkanDescriptorSetLayoutCache: GC removed " + 
                         std::to_string(ToRemove.size()) + " stale layouts");
         }
@@ -240,8 +243,8 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& Functions = VulkanAPI::getFunctions();
         VkDevice VkDev = Device->getLogicalDevice();
         
-        // Convert to Vulkan format
-        TArray<VkDescriptorSetLayoutBinding> VkBindings;
+        // Convert to Vulkan format - use std::vector for Vulkan API compatibility
+        std::vector<VkDescriptorSetLayoutBinding> VkBindings;
         VkBindings.reserve(LayoutInfo.Bindings.size());
         
         for (const auto& Binding : LayoutInfo.Bindings) {
@@ -273,11 +276,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     FVulkanDescriptorSetLayoutEntry* FVulkanDescriptorSetLayoutCache::FindByHash(uint64 Hash) {
-        auto It = LayoutCache.find(Hash);
-        if (It != LayoutCache.end()) {
-            return &It->second;
-        }
-        return nullptr;
+        return LayoutCache.Find(Hash);
     }
 
     // ============================================================================
@@ -293,7 +292,9 @@ namespace MonsterRender::RHI::Vulkan {
         Hash *= 1099511628211ULL;
         
         // Hash buffer bindings
-        for (const auto& [Slot, Binding] : BufferBindings) {
+        for (auto It = BufferBindings.CreateConstIterator(); It; ++It) {
+            uint32 Slot = It->Key;
+            const auto& Binding = It->Value;
             Hash ^= static_cast<uint64>(Slot);
             Hash *= 1099511628211ULL;
             Hash ^= reinterpret_cast<uint64>(Binding.Buffer);
@@ -305,7 +306,9 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Hash image bindings
-        for (const auto& [Slot, Binding] : ImageBindings) {
+        for (auto It = ImageBindings.CreateConstIterator(); It; ++It) {
+            uint32 Slot = It->Key;
+            const auto& Binding = It->Value;
             Hash ^= static_cast<uint64>(Slot);
             Hash *= 1099511628211ULL;
             Hash ^= reinterpret_cast<uint64>(Binding.ImageView);
@@ -321,19 +324,19 @@ namespace MonsterRender::RHI::Vulkan {
 
     bool FVulkanDescriptorSetKey::operator==(const FVulkanDescriptorSetKey& Other) const {
         if (Layout != Other.Layout) return false;
-        if (BufferBindings.size() != Other.BufferBindings.size()) return false;
-        if (ImageBindings.size() != Other.ImageBindings.size()) return false;
+        if (BufferBindings.Num() != Other.BufferBindings.Num()) return false;
+        if (ImageBindings.Num() != Other.ImageBindings.Num()) return false;
         
-        for (const auto& [Slot, Binding] : BufferBindings) {
-            auto It = Other.BufferBindings.find(Slot);
-            if (It == Other.BufferBindings.end() || !(It->second == Binding)) {
+        for (auto It = BufferBindings.CreateConstIterator(); It; ++It) {
+            const FBufferBinding* OtherBinding = Other.BufferBindings.Find(It->Key);
+            if (!OtherBinding || !(*OtherBinding == It->Value)) {
                 return false;
             }
         }
         
-        for (const auto& [Slot, Binding] : ImageBindings) {
-            auto It = Other.ImageBindings.find(Slot);
-            if (It == Other.ImageBindings.end() || !(It->second == Binding)) {
+        for (auto It = ImageBindings.CreateConstIterator(); It; ++It) {
+            const FImageBinding* OtherBinding = Other.ImageBindings.Find(It->Key);
+            if (!OtherBinding || !(*OtherBinding == It->Value)) {
                 return false;
             }
         }
@@ -362,11 +365,11 @@ namespace MonsterRender::RHI::Vulkan {
         uint64 Hash = Key.GetHash();
         
         // Check frame cache
-        auto It = FrameCache.find(Hash);
-        if (It != FrameCache.end()) {
+        VkDescriptorSet* CachedSet = FrameCache.Find(Hash);
+        if (CachedSet) {
             Stats.CacheHits++;
             MR_LOG_DEBUG("FVulkanDescriptorSetCache: Cache hit for descriptor set");
-            return It->second;
+            return *CachedSet;
         }
         
         // Cache miss - allocate and update
@@ -374,8 +377,8 @@ namespace MonsterRender::RHI::Vulkan {
         VkDescriptorSet Set = AllocateAndUpdate(Key);
         
         if (Set != VK_NULL_HANDLE) {
-            FrameCache[Hash] = Set;
-            Stats.CurrentCacheSize = static_cast<uint32>(FrameCache.size());
+            FrameCache.Add(Hash, Set);
+            Stats.CurrentCacheSize = static_cast<uint32>(FrameCache.Num());
         }
         
         return Set;
@@ -385,7 +388,7 @@ namespace MonsterRender::RHI::Vulkan {
         std::lock_guard<std::mutex> Lock(CacheMutex);
         
         // Clear frame cache - descriptor sets will be recycled by the allocator
-        FrameCache.clear();
+        FrameCache.Empty();
         CurrentFrame = FrameNumber;
         Stats.CurrentCacheSize = 0;
         
@@ -429,13 +432,14 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("UpdateDescriptorSet: BufferBindings=" + std::to_string(Key.BufferBindings.size()) +
                    ", ImageBindings=" + std::to_string(Key.ImageBindings.size()));
         
-        TArray<VkWriteDescriptorSet> Writes;
-        TArray<VkDescriptorBufferInfo> BufferInfos;
-        TArray<VkDescriptorImageInfo> ImageInfos;
+        // Use std::vector for Vulkan API compatibility
+        std::vector<VkWriteDescriptorSet> Writes;
+        std::vector<VkDescriptorBufferInfo> BufferInfos;
+        std::vector<VkDescriptorImageInfo> ImageInfos;
         
         // Store binding slots for later write setup
-        TArray<uint32> BufferSlots;
-        TArray<uint32> ImageSlots;
+        std::vector<uint32> BufferSlots;
+        std::vector<uint32> ImageSlots;
         
         // Reserve to prevent reallocation
         BufferInfos.reserve(Key.BufferBindings.size());

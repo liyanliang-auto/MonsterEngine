@@ -5,6 +5,8 @@
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "RHI/RHI.h"
 
+#include <vector>
+
 namespace MonsterRender::RHI {
     class FVulkanMemoryManager;
 }
@@ -157,7 +159,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Helper functions
         bool checkValidationLayerSupport();
-        TArray<const char*> getRequiredExtensions(bool enableValidation);
+        std::vector<const char*> getRequiredExtensions(bool enableValidation);
         bool isDeviceSuitable(VkPhysicalDevice device);
         QueueFamily findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface, VkQueueFlags flags);
         bool checkDeviceExtensionSupport(VkPhysicalDevice device);
@@ -176,16 +178,16 @@ namespace MonsterRender::RHI::Vulkan {
         QueueFamily m_graphicsQueueFamily;
         QueueFamily m_presentQueueFamily;
         
-        // Swapchain
+        // Swapchain - use std::vector for Vulkan API compatibility
         VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
-        TArray<VkImage> m_swapchainImages;
-        TArray<VkImageView> m_swapchainImageViews;
+        std::vector<VkImage> m_swapchainImages;
+        std::vector<VkImageView> m_swapchainImageViews;
         VkFormat m_swapchainImageFormat = VK_FORMAT_UNDEFINED;
         VkExtent2D m_swapchainExtent = {0, 0};
         
         // Render pass and framebuffers
         VkRenderPass m_renderPass = VK_NULL_HANDLE;
-        TArray<VkFramebuffer> m_swapchainFramebuffers;
+        std::vector<VkFramebuffer> m_swapchainFramebuffers;
         
         // Depth buffer resources (UE5-style)
         VkImage m_depthImage = VK_NULL_HANDLE;
@@ -237,10 +239,6 @@ namespace MonsterRender::RHI::Vulkan {
         bool m_debugMarkersEnabled = true;
         uint32 m_currentFrame = 0;
         uint32 m_currentImageIndex = 0;
-        
-        // Required extensions and layers
-        static const TArray<const char*> s_deviceExtensions;
-        static const TArray<const char*> s_validationLayers;
         
         // Constants
         static constexpr uint32 MAX_FRAMES_IN_FLIGHT = 2;

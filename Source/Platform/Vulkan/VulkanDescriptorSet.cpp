@@ -169,35 +169,35 @@ namespace MonsterRender::RHI::Vulkan {
             write.descriptorType = binding.descriptorType;
             
             // Check if this binding is a buffer
-            auto bufferIt = buffers.find(binding.binding);
-            if (bufferIt != buffers.end() && bufferIt->second) {
-                auto* vulkanBuffer = static_cast<VulkanBuffer*>(bufferIt->second.get());
+            const TSharedPtr<IRHIBuffer>* bufferPtr = buffers.Find(binding.binding);
+            if (bufferPtr && *bufferPtr) {
+                auto* vulkanBuffer = static_cast<VulkanBuffer*>(bufferPtr->get());
                 
                 VkDescriptorBufferInfo bufferInfo{};
                 bufferInfo.buffer = vulkanBuffer->getBuffer();
                 bufferInfo.offset = 0;
                 bufferInfo.range = vulkanBuffer->getSize();
                 
-                bufferInfos.push_back(bufferInfo);
-                write.pBufferInfo = &bufferInfos.back();
-                writes.push_back(write);
+                bufferInfos.Add(bufferInfo);
+                write.pBufferInfo = &bufferInfos.Last();
+                writes.Add(write);
                 
                 MR_LOG_DEBUG("Update descriptor set: uniform buffer at binding " + std::to_string(binding.binding));
             }
             
             // Check if this binding is a texture
-            auto textureIt = textures.find(binding.binding);
-            if (textureIt != textures.end() && textureIt->second) {
-                auto* vulkanTexture = static_cast<VulkanTexture*>(textureIt->second.get());
+            const TSharedPtr<IRHITexture>* texturePtr = textures.Find(binding.binding);
+            if (texturePtr && *texturePtr) {
+                auto* vulkanTexture = static_cast<VulkanTexture*>(texturePtr->get());
                 
                 VkDescriptorImageInfo imageInfo{};
                 imageInfo.imageView = vulkanTexture->getImageView();
                 imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 imageInfo.sampler = VK_NULL_HANDLE; // TODO: Get actual sampler
                 
-                imageInfos.push_back(imageInfo);
-                write.pImageInfo = &imageInfos.back();
-                writes.push_back(write);
+                imageInfos.Add(imageInfo);
+                write.pImageInfo = &imageInfos.Last();
+                writes.Add(write);
                 
                 MR_LOG_DEBUG("Update descriptor set: texture at binding " + std::to_string(binding.binding));
             }

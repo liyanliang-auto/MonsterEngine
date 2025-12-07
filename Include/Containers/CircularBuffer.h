@@ -11,6 +11,7 @@
  */
 
 #include "Core/CoreTypes.h"
+#include "Core/HAL/FMemory.h"
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -57,7 +58,7 @@ public:
         
         // Allocate storage
         Elements = static_cast<ElementType*>(
-            FMemory::Malloc(RoundedCapacity * sizeof(ElementType), alignof(ElementType))
+            MonsterRender::FMemory::Malloc(RoundedCapacity * sizeof(ElementType), alignof(ElementType))
         );
         
         // Default construct all elements
@@ -84,7 +85,7 @@ public:
         SizeType RoundedCapacity = RoundUpToPowerOfTwo(InCapacity);
         
         Elements = static_cast<ElementType*>(
-            FMemory::Malloc(RoundedCapacity * sizeof(ElementType), alignof(ElementType))
+            MonsterRender::FMemory::Malloc(RoundedCapacity * sizeof(ElementType), alignof(ElementType))
         );
         
         for (SizeType i = 0; i < RoundedCapacity; ++i)
@@ -105,7 +106,7 @@ public:
             {
                 Elements[i].~ElementType();
             }
-            FMemory::Free(Elements);
+            MonsterRender::FMemory::Free(Elements);
             Elements = nullptr;
         }
     }
@@ -137,7 +138,7 @@ public:
                 {
                     Elements[i].~ElementType();
                 }
-                FMemory::Free(Elements);
+                MonsterRender::FMemory::Free(Elements);
             }
             
             IndexMask = Other.IndexMask;

@@ -11,10 +11,16 @@
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 #include "Containers/Array.h"
 #include "Containers/Deque.h"
+#include "Containers/Map.h"
 #include <mutex>
 
 namespace MonsterRender {
 namespace RHI {
+
+// Use MonsterEngine containers
+using MonsterEngine::TArray;
+using MonsterEngine::TDeque;
+using MonsterEngine::TMap;
 
 // Forward declarations
 namespace Vulkan {

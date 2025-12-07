@@ -11,10 +11,14 @@
 #include "Containers/Deque.h"
 #include "Containers/CircularBuffer.h"
 #include "Containers/Array.h"
-#include "Core/Logging/LogMacros.h"
+#include "Core/Logging/Logging.h"
 
 #include <iostream>
 #include <cassert>
+
+// Use MonsterRender logging types
+namespace ELogVerbosity = MonsterRender::ELogVerbosity;
+using MonsterRender::LogCore;
 
 namespace MonsterEngine
 {
@@ -132,7 +136,7 @@ void TestFText()
     
     // Test formatting with ordered arguments
     FText Pattern = FText::FromString(L"Hello {0}, welcome to {1}!");
-    TArray<FText> Args = {
+    std::vector<FText> Args = {
         FText::FromString(L"User"),
         FText::FromString(L"MonsterEngine")
     };

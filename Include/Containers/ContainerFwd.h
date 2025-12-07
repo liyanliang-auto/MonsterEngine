@@ -46,7 +46,7 @@ template<typename InElementType>
 using TArray64 = TArray<InElementType, FDefaultAllocator64>;
 
 // TSparseArray - Sparse array with O(1) removal
-template<typename InElementType, typename InAllocatorType = FDefaultAllocator>
+template<typename InElementType, typename InAllocatorType>
 class TSparseArray;
 
 // TSet - Hash set
@@ -103,7 +103,7 @@ class TScriptMap;
 // Bit Array Forward Declarations
 // ============================================================================
 
-template<typename Allocator = FDefaultAllocator>
+template<typename Allocator>
 class TBitArray;
 
 // ============================================================================
@@ -117,8 +117,8 @@ class FDefaultBitArrayAllocator;
 // Common Type Aliases
 // ============================================================================
 
-// Index type for containers
-using INDEX_NONE = struct { static constexpr int32 Value = -1; };
+// Index type for containers - invalid index constant
+constexpr int32 INDEX_NONE = -1;
 
 // Set element ID
 class FSetElementId;

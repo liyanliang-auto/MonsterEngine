@@ -170,7 +170,8 @@ namespace MonsterRender::RHI::Vulkan
 
         // Aggregate descriptor bindings from all shader stages
         // Maps (set, binding) -> VkDescriptorSetLayoutBinding
-        TMap<uint32, TArray<VkDescriptorSetLayoutBinding>> setBindings;
+        // Use std::map and std::vector for Vulkan API compatibility
+        std::map<uint32, std::vector<VkDescriptorSetLayoutBinding>> setBindings;
 
         // Collect bindings from vertex shader
         if (m_desc.vertexShader)
@@ -254,7 +255,8 @@ namespace MonsterRender::RHI::Vulkan
         }
 
         // Create VkDescriptorSetLayouts for each set
-        TArray<VkDescriptorSetLayout> descriptorSetLayouts;
+        // Use std::vector for Vulkan API compatibility
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
         for (const auto &[setIndex, bindings] : setBindings)
         {
             if (bindings.empty())
@@ -316,8 +318,9 @@ namespace MonsterRender::RHI::Vulkan
         VkDevice device = m_device->getLogicalDevice();
 
         // Create render pass based on render target formats
-        TArray<VkAttachmentDescription> attachments;
-        TArray<VkAttachmentReference> colorReferences;
+        // Use std::vector for Vulkan API compatibility
+        std::vector<VkAttachmentDescription> attachments;
+        std::vector<VkAttachmentReference> colorReferences;
         VkAttachmentReference depthReference{};
         bool hasDepth = false;
 
@@ -430,9 +433,9 @@ namespace MonsterRender::RHI::Vulkan
 
         MR_LOG_DEBUG("Pipeline has " + std::to_string(m_shaderStages.size()) + " shader stage(s)");
 
-        // Vertex input state
+        // Vertex input state - use std::vector for Vulkan API compatibility
         VkVertexInputBindingDescription bindingDescription = createVertexInputBinding();
-        TArray<VkVertexInputAttributeDescription> attributeDescriptions = createVertexInputAttributes();
+        std::vector<VkVertexInputAttributeDescription> attributeDescriptions = createVertexInputAttributes();
 
         MR_LOG_DEBUG("Vertex input: " + std::to_string(attributeDescriptions.size()) +
                      " attribute(s), stride = " + std::to_string(bindingDescription.stride));
@@ -473,8 +476,8 @@ namespace MonsterRender::RHI::Vulkan
         // Multisample state
         VkPipelineMultisampleStateCreateInfo multisampling = createMultisampleState();
 
-        // Color blend state
-        TArray<VkPipelineColorBlendAttachmentState> colorBlendAttachments = createColorBlendAttachments();
+        // Color blend state - use std::vector for Vulkan API compatibility
+        std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments = createColorBlendAttachments();
         VkPipelineColorBlendStateCreateInfo colorBlending = createColorBlendState();
         colorBlending.attachmentCount = static_cast<uint32>(colorBlendAttachments.size());
         colorBlending.pAttachments = colorBlendAttachments.data();
@@ -484,8 +487,8 @@ namespace MonsterRender::RHI::Vulkan
         // Depth stencil state
         VkPipelineDepthStencilStateCreateInfo depthStencil = createDepthStencilState();
 
-        // Dynamic state
-        TArray<VkDynamicState> dynamicStates = {
+        // Dynamic state - use std::vector for Vulkan API compatibility
+        std::vector<VkDynamicState> dynamicStates = {
             VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR};
 
@@ -717,9 +720,9 @@ namespace MonsterRender::RHI::Vulkan
         return bindingDescription;
     }
 
-    TArray<VkVertexInputAttributeDescription> VulkanPipelineState::createVertexInputAttributes() const
+    std::vector<VkVertexInputAttributeDescription> VulkanPipelineState::createVertexInputAttributes() const
     {
-        TArray<VkVertexInputAttributeDescription> attributes;
+        std::vector<VkVertexInputAttributeDescription> attributes;
 
         // Use custom vertex layout if provided
         if (!m_desc.vertexLayout.attributes.empty())
@@ -822,9 +825,9 @@ namespace MonsterRender::RHI::Vulkan
         return multisampling;
     }
 
-    TArray<VkPipelineColorBlendAttachmentState> VulkanPipelineState::createColorBlendAttachments() const
+    std::vector<VkPipelineColorBlendAttachmentState> VulkanPipelineState::createColorBlendAttachments() const
     {
-        TArray<VkPipelineColorBlendAttachmentState> attachments;
+        std::vector<VkPipelineColorBlendAttachmentState> attachments;
 
         for (uint32 i = 0; i < m_desc.renderTargetFormats.size(); ++i)
         {
@@ -864,12 +867,12 @@ namespace MonsterRender::RHI::Vulkan
         uint64 hash = calculateDescHash(desc);
 
         // Check if pipeline already exists in cache
-        auto it = m_pipelineCache.find(hash);
-        if (it != m_pipelineCache.end())
+        TSharedPtr<VulkanPipelineState>* existingPipeline = m_pipelineCache.Find(hash);
+        if (existingPipeline)
         {
             updateStats(true);
             MR_LOG_DEBUG("Pipeline cache hit for: " + desc.debugName);
-            return it->second;
+            return *existingPipeline;
         }
 
         // Create new pipeline state
