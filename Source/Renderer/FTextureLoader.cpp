@@ -9,6 +9,7 @@
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanRHICommandList.h"  // UE5-style immediate command list
 #include "Platform/Vulkan/VulkanCommandListContext.h"  // For submitCommands
+#include "Platform/Vulkan/VulkanCommandBuffer.h"  // For FVulkanCommandBufferManager
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 #include "Renderer/FTextureStreamingManager.h"
 #include <algorithm>
@@ -235,7 +236,7 @@ bool FTextureLoader::GenerateMipmaps(
     uint32 MipWidth = SourceData.Width;
     uint32 MipHeight = SourceData.Height;
     
-    TArray<uint32> MipSizes;
+    std::vector<uint32> MipSizes;
     MipSizes.reserve(MipLevels);
     
     for (uint32 MipLevel = 0; MipLevel < MipLevels; ++MipLevel) {
@@ -485,6 +486,13 @@ bool FTextureLoader::UploadTextureData(
     // Wait for GPU to complete (synchronous upload)
     MR_LOG_DEBUG("Waiting for GPU to complete texture upload...");
     Device->waitForIdle();
+    
+    // CRITICAL: After waitForIdle, refresh command buffer for next use
+    // This resets the command buffer state AND updates the context's m_cmdBuffer pointer
+    // Use refreshCommandBuffer() instead of prepareForNewFrame() to avoid acquiring swapchain image
+    if (vulkanDevice && vulkanDevice->getCommandListContext()) {
+        vulkanDevice->getCommandListContext()->refreshCommandBuffer();
+    }
     
     // ============================================================================
     // Step 5: Clean up staging buffer

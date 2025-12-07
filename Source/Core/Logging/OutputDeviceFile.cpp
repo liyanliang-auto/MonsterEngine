@@ -286,10 +286,12 @@ bool FOutputDeviceFile::CreateWriter() {
 
 String FOutputDeviceFile::FormatLogLine(const char* Message, ELogVerbosity::Type Verbosity, const char* Category, 
                                         double Time, const char* File, int32 Line) {
-    std::ostringstream oss;
+    // Use stack-based buffer to avoid heap allocation issues
+    char buffer[2048] = {};
+    char* ptr = buffer;
+    char* end = buffer + sizeof(buffer) - 1;
 
     // Timestamp with milliseconds: [YYYY/MM/DD HH:MM:SS:mmm]
-    // Use strftime instead of std::put_time to avoid potential heap corruption issues
     auto now = std::chrono::system_clock::now();
     auto time_t_val = std::chrono::system_clock::to_time_t(now);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
@@ -306,26 +308,36 @@ String FOutputDeviceFile::FormatLogLine(const char* Message, ELogVerbosity::Type
         strftime(timeStr, sizeof(timeStr), "%Y/%m/%d %H:%M:%S", &tm_buf);
     }
 #endif
-    oss << "[" << timeStr << ":" << std::setfill('0') << std::setw(3) << ms.count() << "] ";
+    
+    // Format: [timestamp:ms] file(line): [category][verbosity] message
+    int written = snprintf(ptr, end - ptr, "[%s:%03d] ", timeStr, static_cast<int>(ms.count()));
+    if (written > 0) ptr += written;
 
     // File and line: filename.cpp(123):
-    if (File && Line > 0) {
-        oss << File << "(" << Line << "): ";
+    if (File && Line > 0 && ptr < end) {
+        written = snprintf(ptr, end - ptr, "%s(%d): ", File, Line);
+        if (written > 0) ptr += written;
     }
 
     // Category and verbosity: [LogTemp][LOG ]
-    oss << "[" << Category << "]";
-    oss << "[" << ToShortString(Verbosity) << "] ";
-
-    // Message
-    oss << Message;
-
-    // Line terminator
-    if (GetAutoEmitLineTerminator()) {
-        oss << "\n";
+    if (ptr < end) {
+        written = snprintf(ptr, end - ptr, "[%s][%s] ", Category ? Category : "Unknown", ToShortString(Verbosity));
+        if (written > 0) ptr += written;
     }
 
-    return oss.str();
+    // Message
+    if (ptr < end && Message) {
+        written = snprintf(ptr, end - ptr, "%s", Message);
+        if (written > 0) ptr += written;
+    }
+
+    // Line terminator
+    if (GetAutoEmitLineTerminator() && ptr < end) {
+        *ptr++ = '\n';
+    }
+    
+    *ptr = '\0';
+    return String(buffer);
 }
 
 } // namespace MonsterRender

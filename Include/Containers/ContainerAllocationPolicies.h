@@ -19,6 +19,7 @@
 #include "ContainerFwd.h"
 #include <cstdlib>
 #include <cstring>
+#include <cassert>
 #include <new>
 
 namespace MonsterEngine
@@ -187,37 +188,42 @@ public:
     class ForAnyElementType
     {
     public:
-        ForAnyElementType() = default;
+        /** Default constructor. */
+        ForAnyElementType()
+            : Data(nullptr)
+        {
+        }
         
+        // Disable copy (UE5 pattern)
         ForAnyElementType(const ForAnyElementType&) = delete;
         ForAnyElementType& operator=(const ForAnyElementType&) = delete;
         
-        ForAnyElementType(ForAnyElementType&& Other) noexcept
-            : Data(Other.Data)
+        /**
+         * Moves the state of another allocator into this one.
+         * Assumes that the allocator is currently empty, i.e. memory may be allocated 
+         * but any existing elements have already been destructed (if necessary).
+         * @param Other - The allocator to move the state from. This allocator should be left in a valid empty state.
+         */
+        FORCEINLINE void MoveToEmpty(ForAnyElementType& Other)
         {
+            // UE5 uses checkSlow here, we use assert in debug builds
+            assert(this != &Other);
+            
+            if (Data)
+            {
+                std::free(Data);
+            }
+            
+            Data = Other.Data;
             Other.Data = nullptr;
         }
         
-        ForAnyElementType& operator=(ForAnyElementType&& Other) noexcept
-        {
-            if (this != &Other)
-            {
-                if (Data)
-                {
-                    std::free(Data);
-                }
-                Data = Other.Data;
-                Other.Data = nullptr;
-            }
-            return *this;
-        }
-        
-        ~ForAnyElementType()
+        /** Destructor. */
+        FORCEINLINE ~ForAnyElementType()
         {
             if (Data)
             {
                 std::free(Data);
-                Data = nullptr;
             }
         }
         
@@ -228,47 +234,12 @@ public:
         
         void ResizeAllocation(SizeType PreviousNumElements, SizeType NumElements, size_t NumBytesPerElement, uint32 AlignmentOfElement = DEFAULT_ALIGNMENT)
         {
-            if (NumElements == 0)
+            // UE5 pattern: Avoid calling realloc(nullptr, 0) as ANSI C mandates returning a valid pointer
+            // which is not what we want.
+            if (Data || NumElements)
             {
-                if (Data)
-                {
-                    std::free(Data);
-                    Data = nullptr;
-                }
-            }
-            else
-            {
-                // Use standard malloc/realloc for compatibility with debug heap
                 size_t NewSize = static_cast<size_t>(NumElements) * NumBytesPerElement;
-                void* NewData = nullptr;
-                
-                if (Data && PreviousNumElements > 0)
-                {
-                    // Use realloc for efficiency when resizing
-                    NewData = std::realloc(Data, NewSize);
-                    if (NewData)
-                    {
-                        Data = NewData;
-                        return;
-                    }
-                    // realloc failed, fall back to malloc + copy + free
-                }
-                
-                NewData = std::malloc(NewSize);
-                
-                if (NewData && Data && PreviousNumElements > 0)
-                {
-                    // Copy existing data
-                    size_t CopySize = static_cast<size_t>(std::min(PreviousNumElements, NumElements)) * NumBytesPerElement;
-                    std::memcpy(NewData, Data, CopySize);
-                }
-                
-                if (Data)
-                {
-                    std::free(Data);
-                }
-                
-                Data = NewData;
+                Data = std::realloc(Data, NewSize);
             }
         }
         

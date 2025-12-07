@@ -519,7 +519,12 @@ public:
         if (ExpectedNumElements > 0)
         {
             HashSize = GetHashSize(ExpectedNumElements);
-            Hash.SetNumZeroed(HashSize);
+            // CRITICAL: Initialize hash buckets to invalid ID, not zero!
+            Hash.SetNum(HashSize);
+            for (SizeType i = 0; i < HashSize; ++i)
+            {
+                Hash[i] = FSetElementId(); // INDEX_NONE_VALUE
+            }
         }
         else
         {
@@ -960,7 +965,14 @@ private:
         NewHashSize = RoundUpToPowerOfTwo(NewHashSize);
         
         HashSize = NewHashSize;
-        Hash.SetNumZeroed(HashSize);
+        
+        // CRITICAL: Initialize hash buckets to invalid ID (INDEX_NONE_VALUE), not zero!
+        // Zero is a valid index, so using SetNumZeroed would cause infinite loops in FindId
+        Hash.SetNum(HashSize);
+        for (SizeType i = 0; i < HashSize; ++i)
+        {
+            Hash[i] = FSetElementId(); // Default constructor sets Index to INDEX_NONE_VALUE
+        }
         
         // Re-link all elements
         for (auto It = Elements.CreateIterator(); It; ++It)

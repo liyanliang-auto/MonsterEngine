@@ -108,8 +108,14 @@ namespace MonsterRender::RHI::Vulkan {
             VkDevice device = m_device->getLogicalDevice();
             
             // Wait for the fence to be signaled (GPU finished with this command buffer)
-            VkResult waitResult = functions.vkWaitForFences(device, 1, &m_fence, VK_TRUE, UINT64_MAX);
-            if (waitResult != VK_SUCCESS) {
+            // Use a reasonable timeout (5 seconds) instead of UINT64_MAX to avoid infinite hang
+            constexpr uint64 timeoutNs = 5000000000ULL; // 5 seconds
+            VkResult waitResult = functions.vkWaitForFences(device, 1, &m_fence, VK_TRUE, timeoutNs);
+            if (waitResult == VK_TIMEOUT) {
+                MR_LOG_WARNING("  vkWaitForFences TIMEOUT - fence may not have been signaled properly");
+                // Try to continue anyway by resetting fence
+                functions.vkResetFences(device, 1, &m_fence);
+            } else if (waitResult != VK_SUCCESS) {
                 MR_LOG_ERROR("  vkWaitForFences FAILED with result: " + std::to_string(waitResult));
                 return;
             }

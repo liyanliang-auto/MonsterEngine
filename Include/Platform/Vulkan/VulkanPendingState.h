@@ -3,14 +3,10 @@
 #include "Core/CoreMinimal.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "RHI/RHI.h"
-#include "Containers/Array.h"
-#include "Containers/Map.h"
+#include <vector>
+#include <map>
 
 namespace MonsterRender::RHI::Vulkan {
-
-// Use MonsterEngine containers
-using MonsterEngine::TArray;
-using MonsterEngine::TMap;
     
     // Forward declarations
     class VulkanDevice;
@@ -138,7 +134,7 @@ using MonsterEngine::TMap;
             VkBuffer buffer;
             VkDeviceSize offset;
         };
-        TArray<VertexBufferBinding> m_vertexBuffers;
+        std::vector<VertexBufferBinding> m_vertexBuffers;
         bool m_vertexBuffersDirty;
         
         VkBuffer m_indexBuffer;
@@ -152,13 +148,13 @@ using MonsterEngine::TMap;
             VkDeviceSize offset = 0;
             VkDeviceSize range = 0;
         };
-        TMap<uint32, UniformBufferBinding> m_uniformBuffers;
+        std::map<uint32, UniformBufferBinding> m_uniformBuffers;
         
         struct TextureBinding {
             VkImageView imageView = VK_NULL_HANDLE;
             VkSampler sampler = VK_NULL_HANDLE;
         };
-        TMap<uint32, TextureBinding> m_textures;
+        std::map<uint32, TextureBinding> m_textures;
         
         bool m_descriptorsDirty = true;
         VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;

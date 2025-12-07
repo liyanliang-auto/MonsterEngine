@@ -85,6 +85,21 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() END =====");
     }
     
+    void FVulkanCommandListContext::refreshCommandBuffer() {
+        // Refresh command buffer after synchronous operations (e.g., texture upload)
+        // Unlike prepareForNewFrame(), this does NOT acquire swapchain image
+        MR_LOG_DEBUG("FVulkanCommandListContext::refreshCommandBuffer()");
+        
+        // Get next command buffer from ring buffer
+        m_manager->prepareForNewActiveCommandBuffer();
+        m_cmdBuffer = m_manager->getActiveCmdBuffer();
+        
+        // Update pending state's command buffer reference
+        if (m_pendingState && m_cmdBuffer) {
+            m_pendingState->updateCommandBuffer(m_cmdBuffer);
+        }
+    }
+    
     bool FVulkanCommandListContext::acquireNextSwapchainImage() {
         // Reference: UE5 FVulkanDynamicRHI::RHIBeginDrawingViewport
         // Acquire swapchain image at the beginning of frame, not during present

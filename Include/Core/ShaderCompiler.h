@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/CoreMinimal.h"
+#include <vector>
 
 namespace MonsterRender {
 
@@ -28,11 +29,11 @@ namespace MonsterRender {
      */
     class ShaderCompiler {
     public:
-        /** Compile from source file into SPIR-V bytecode. Returns empty array on failure. */
-        static TArray<uint8> compileFromFile(const String& filePath, const ShaderCompileOptions& options);
+        /** Compile from source file into SPIR-V bytecode. Returns empty vector on failure. */
+        static std::vector<uint8> compileFromFile(const String& filePath, const ShaderCompileOptions& options);
 
         /** Read a binary file from disk. */
-        static TArray<uint8> readFileBytes(const String& filePath);
+        static std::vector<uint8> readFileBytes(const String& filePath);
 
         /** Get last write time (seconds since epoch). Returns 0 on failure. */
         static uint64 getLastWriteTime(const String& filePath);

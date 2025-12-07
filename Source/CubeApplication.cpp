@@ -34,6 +34,7 @@ private:
         config.windowProperties.width = 800;   // Match LearnOpenGL window size
         config.windowProperties.height = 600;
         config.windowProperties.resizable = true;
+        // Re-enable validation for debugging
         config.enableValidation = true;
         config.enableDebugMarkers = true;
         return config;

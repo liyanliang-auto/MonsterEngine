@@ -250,13 +250,16 @@ public:
     }
     
     /**
-     * Move constructor
+     * Move constructor (UE5 pattern)
      */
     TArray(TArray&& Other) noexcept
-        : ArrayNum(Other.ArrayNum)
-        , ArrayMax(Other.ArrayMax)
-        , AllocatorInstance(std::move(Other.AllocatorInstance))
+        : ArrayNum(0)
+        , ArrayMax(AllocatorInstance.GetInitialCapacity())
     {
+        // Use MoveToEmpty to transfer ownership (UE5 pattern)
+        AllocatorInstance.MoveToEmpty(Other.AllocatorInstance);
+        ArrayNum = Other.ArrayNum;
+        ArrayMax = Other.ArrayMax;
         Other.ArrayNum = 0;
         Other.ArrayMax = Other.AllocatorInstance.GetInitialCapacity();
     }
@@ -288,14 +291,18 @@ public:
     }
     
     /**
-     * Move assignment operator
+     * Move assignment operator (UE5 pattern)
      */
     TArray& operator=(TArray&& Other) noexcept
     {
         if (this != &Other)
         {
+            // Destruct existing elements first
             DestructItems(GetData(), ArrayNum);
-            AllocatorInstance = std::move(Other.AllocatorInstance);
+            ArrayNum = 0;
+            
+            // Use MoveToEmpty to transfer ownership (UE5 pattern)
+            AllocatorInstance.MoveToEmpty(Other.AllocatorInstance);
             ArrayNum = Other.ArrayNum;
             ArrayMax = Other.ArrayMax;
             Other.ArrayNum = 0;
