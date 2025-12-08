@@ -107,6 +107,8 @@ namespace MonsterRender::RHI {
         // Depth formats
         D32_FLOAT,
         D24_UNORM_S8_UINT,
+        D32_FLOAT_S8_UINT,
+        D16_UNORM,
         // Compressed formats
         BC1_UNORM,
         BC1_SRGB,

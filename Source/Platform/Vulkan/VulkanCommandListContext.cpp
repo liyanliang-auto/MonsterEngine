@@ -258,7 +258,7 @@ namespace MonsterRender::RHI::Vulkan {
             // Add depth format if using device depth buffer without custom depth target
             if (!rtInfo.DepthStencilTarget && m_device->hasDepthBuffer()) {
                 layout.bHasDepthStencil = true;
-                layout.DepthStencilFormat = m_device->getDepthFormat();
+                layout.DepthStencilFormat = m_device->getVulkanDepthFormat();
             }
             
             auto* renderPassCache = m_device->GetRenderPassCache();

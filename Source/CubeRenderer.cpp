@@ -2,11 +2,14 @@
 #include "Core/Log.h"
 #include "Core/ShaderCompiler.h"
 #include "RHI/RHIResources.h"
-#include "Platform/Vulkan/VulkanPipelineState.h"
-#include "Platform/Vulkan/VulkanDevice.h"
 #include "Renderer/FTextureLoader.h"
 #include <cmath>
 #include <cstring>
+#include <fstream>
+
+// Conditionally include platform-specific headers
+#include "Platform/Vulkan/VulkanPipelineState.h"
+#include "Platform/Vulkan/VulkanDevice.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -21,6 +24,9 @@ namespace MonsterRender {
     bool CubeRenderer::initialize(RHI::IRHIDevice* device) {
         MR_LOG_INFO("Initializing Cube Renderer...");
         m_device = device;
+        m_rhiBackend = device->getRHIBackend();
+        
+        MR_LOG_INFO("Using RHI backend: " + String(RHI::GetRHIBackendName(m_rhiBackend)));
         
         // Initialize in correct order
         if (!createVertexBuffer()) {
@@ -381,7 +387,23 @@ namespace MonsterRender {
     }
     
     bool CubeRenderer::createShaders() {
-        MR_LOG_INFO("Loading cube shaders...");
+        MR_LOG_INFO("Loading cube shaders for " + String(RHI::GetRHIBackendName(m_rhiBackend)) + "...");
+        
+        // Load appropriate shaders based on RHI backend
+        switch (m_rhiBackend)
+        {
+            case RHI::ERHIBackend::Vulkan:
+                return createVulkanShaders();
+            case RHI::ERHIBackend::OpenGL:
+                return createOpenGLShaders();
+            default:
+                MR_LOG_ERROR("Unsupported RHI backend for shader loading");
+                return false;
+        }
+    }
+    
+    bool CubeRenderer::createVulkanShaders() {
+        MR_LOG_INFO("Loading Vulkan SPIR-V shaders...");
         
         // Load pre-compiled SPV files
         String vsPath = "Shaders/Cube.vert.spv";
@@ -393,8 +415,7 @@ namespace MonsterRender {
             MR_LOG_ERROR("Failed to load vertex shader: " + vsPath);
             return false;
         }
-        MR_LOG_INFO("Loaded vertex shader: " + std::to_string(vsSpv.size()) + " bytes, data ptr: " + 
-                   std::to_string(reinterpret_cast<uintptr_t>(vsSpv.data())));
+        MR_LOG_INFO("Loaded vertex shader: " + std::to_string(vsSpv.size()) + " bytes");
         
         // Validate SPIR-V magic before passing to Vulkan
         if (vsSpv.size() >= 4) {
@@ -423,7 +444,70 @@ namespace MonsterRender {
             return false;
         }
 
-        MR_LOG_INFO("Cube shaders loaded successfully");
+        MR_LOG_INFO("Vulkan shaders loaded successfully");
+        return true;
+    }
+    
+    bool CubeRenderer::createOpenGLShaders() {
+        MR_LOG_INFO("Loading OpenGL GLSL shaders...");
+        
+        // Load GLSL source files
+        String vsPath = "Shaders/Cube_GL.vert";
+        String psPath = "Shaders/Cube_GL.frag";
+        
+        // Read vertex shader source
+        std::ifstream vsFile(vsPath.c_str(), std::ios::binary);
+        if (!vsFile.is_open()) {
+            MR_LOG_ERROR("Failed to open vertex shader: " + vsPath);
+            return false;
+        }
+        std::string vsSource((std::istreambuf_iterator<char>(vsFile)),
+                             std::istreambuf_iterator<char>());
+        vsFile.close();
+        
+        if (vsSource.empty()) {
+            MR_LOG_ERROR("Vertex shader source is empty: " + vsPath);
+            return false;
+        }
+        MR_LOG_INFO("Loaded vertex shader: " + std::to_string(vsSource.size()) + " bytes");
+        
+        // Read fragment shader source
+        std::ifstream psFile(psPath.c_str(), std::ios::binary);
+        if (!psFile.is_open()) {
+            MR_LOG_ERROR("Failed to open fragment shader: " + psPath);
+            return false;
+        }
+        std::string psSource((std::istreambuf_iterator<char>(psFile)),
+                             std::istreambuf_iterator<char>());
+        psFile.close();
+        
+        if (psSource.empty()) {
+            MR_LOG_ERROR("Fragment shader source is empty: " + psPath);
+            return false;
+        }
+        MR_LOG_INFO("Loaded fragment shader: " + std::to_string(psSource.size()) + " bytes");
+        
+        // Create shaders from GLSL source (pass as bytecode - OpenGL backend will compile)
+        std::vector<uint8> vsData(vsSource.begin(), vsSource.end());
+        vsData.push_back(0);  // Null terminate
+        
+        std::vector<uint8> psData(psSource.begin(), psSource.end());
+        psData.push_back(0);  // Null terminate
+        
+        MR_LOG_INFO("Creating OpenGL vertex shader...");
+        m_vertexShader = m_device->createVertexShader(TSpan<const uint8>(vsData.data(), vsData.size()));
+        if (!m_vertexShader) {
+            MR_LOG_ERROR("Failed to create vertex shader");
+            return false;
+        }
+        
+        m_pixelShader = m_device->createPixelShader(TSpan<const uint8>(psData.data(), psData.size()));
+        if (!m_pixelShader) {
+            MR_LOG_ERROR("Failed to create pixel shader");
+            return false;
+        }
+        
+        MR_LOG_INFO("OpenGL shaders loaded successfully");
         return true;
     }
     
@@ -435,27 +519,12 @@ namespace MonsterRender {
             return false;
         }
         
-        // Get swapchain format from device
-        auto* vulkanDevice = dynamic_cast<MonsterRender::RHI::Vulkan::VulkanDevice*>(m_device);
-        if (!vulkanDevice) {
-            MR_LOG_ERROR("Device is not a VulkanDevice!");
-            return false;
-        }
+        // Get render target format from device (RHI-agnostic)
+        RHI::EPixelFormat renderTargetFormat = m_device->getSwapChainFormat();
+        RHI::EPixelFormat depthFormat = m_device->getDepthFormat();
         
-        VkFormat swapchainFormat = vulkanDevice->getSwapchainFormat();
-        MR_LOG_INFO("Using swapchain format: " + std::to_string(swapchainFormat));
-        
-        // Convert VkFormat to EPixelFormat
-        RHI::EPixelFormat renderTargetFormat = RHI::EPixelFormat::R8G8B8A8_SRGB;
-        if (swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB) {
-            renderTargetFormat = RHI::EPixelFormat::B8G8R8A8_SRGB;
-        } else if (swapchainFormat == VK_FORMAT_B8G8R8A8_UNORM) {
-            renderTargetFormat = RHI::EPixelFormat::B8G8R8A8_UNORM;
-        } else if (swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB) {
-            renderTargetFormat = RHI::EPixelFormat::R8G8B8A8_SRGB;
-        } else if (swapchainFormat == VK_FORMAT_R8G8B8A8_UNORM) {
-            renderTargetFormat = RHI::EPixelFormat::R8G8B8A8_UNORM;
-        }
+        MR_LOG_INFO("Using render target format: " + std::to_string(static_cast<int>(renderTargetFormat)));
+        MR_LOG_INFO("Using depth format: " + std::to_string(static_cast<int>(depthFormat)));
         
         // Create pipeline state descriptor
         RHI::PipelineStateDesc pipelineDesc;
@@ -497,8 +566,8 @@ namespace MonsterRender {
         // Render target format
         pipelineDesc.renderTargetFormats.push_back(renderTargetFormat);
         
-        // Depth format
-        pipelineDesc.depthStencilFormat = RHI::EPixelFormat::D32_FLOAT;
+        // Depth format (from device)
+        pipelineDesc.depthStencilFormat = depthFormat;
         
         pipelineDesc.debugName = "Cube Pipeline State";
         
@@ -550,7 +619,9 @@ namespace MonsterRender {
         float32 nearPlane = 0.1f;
         float32 farPlane = 100.0f;
         
-        matrixPerspective(outMatrix, fov, aspect, nearPlane, farPlane);
+        // Vulkan needs Y flip, OpenGL doesn't
+        bool flipY = (m_rhiBackend == RHI::ERHIBackend::Vulkan);
+        matrixPerspective(outMatrix, fov, aspect, nearPlane, farPlane, flipY);
     }
     
     // ============================================================================
@@ -623,13 +694,10 @@ namespace MonsterRender {
         matrixMultiply(temp, translation, matrix);
     }
     
-    void CubeRenderer::matrixPerspective(float* matrix, float fovRadians, float aspect, float nearPlane, float farPlane) {
-        // Vulkan-compatible perspective projection matrix
-        // Reference: GLM's perspectiveRH_ZO (Right-Handed, Zero-to-One depth)
-        // 
-        // Key differences from OpenGL:
-        // 1. Y-axis is flipped (Vulkan Y points down in NDC)
-        // 2. Z depth range is [0, 1] instead of [-1, 1]
+    void CubeRenderer::matrixPerspective(float* matrix, float fovRadians, float aspect, float nearPlane, float farPlane, bool flipY) {
+        // Perspective projection matrix
+        // Reference: GLM's perspectiveRH_ZO (Right-Handed, Zero-to-One depth) for Vulkan
+        //            GLM's perspectiveRH_NO (Right-Handed, Negative-One-to-One depth) for OpenGL
         
         std::memset(matrix, 0, 16 * sizeof(float));
         
@@ -637,12 +705,17 @@ namespace MonsterRender {
         
         matrix[0] = 1.0f / (aspect * tanHalfFov);
         
-        // CRITICAL: Negate Y to flip for Vulkan's coordinate system
-        // Vulkan NDC has Y pointing downward, opposite to OpenGL
-        matrix[5] = -1.0f / tanHalfFov;
+        // Y component: flip for Vulkan (Y points down in NDC), don't flip for OpenGL
+        if (flipY) {
+            matrix[5] = -1.0f / tanHalfFov;  // Vulkan: Y flipped
+        } else {
+            matrix[5] = 1.0f / tanHalfFov;   // OpenGL: Y not flipped
+        }
         
-        // Vulkan uses [0, 1] depth range instead of OpenGL's [-1, 1]
-        // This maps near plane to 0 and far plane to 1
+        // Depth mapping differs between APIs:
+        // Vulkan: [0, 1] depth range (Zero-to-One)
+        // OpenGL: [-1, 1] depth range (Negative-One-to-One) - but we use glClipControl for [0,1]
+        // Using [0, 1] for both for consistency with modern practices
         matrix[10] = farPlane / (nearPlane - farPlane);
         matrix[11] = -1.0f;
         matrix[14] = -(farPlane * nearPlane) / (farPlane - nearPlane);

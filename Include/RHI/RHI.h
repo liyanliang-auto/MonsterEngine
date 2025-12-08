@@ -5,17 +5,7 @@
 
 namespace MonsterRender::RHI {
     
-    /**
-     * RHI Backend types
-     */
-    enum class ERHIBackend : uint32 {
-        None = 0,
-        D3D11,
-        D3D12,
-        Vulkan,
-        OpenGL,
-        Metal
-    };
+    // ERHIBackend is defined in IRHISwapChain.h
     
     /**
      * RHI initialization parameters

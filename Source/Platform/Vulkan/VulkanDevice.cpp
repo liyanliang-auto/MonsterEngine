@@ -523,6 +523,34 @@ namespace MonsterRender::RHI::Vulkan {
         m_validationEnabled = enabled;
     }
     
+    TSharedPtr<IRHISwapChain> VulkanDevice::createSwapChain(const SwapChainDesc& desc) {
+        // For now, Vulkan device manages its own swapchain internally
+        // Return nullptr as the internal swapchain is used
+        MR_LOG_WARNING("VulkanDevice::createSwapChain - Using internal swapchain management");
+        return nullptr;
+    }
+    
+    EPixelFormat VulkanDevice::getSwapChainFormat() const {
+        // Convert VkFormat to EPixelFormat
+        switch (m_swapchainImageFormat) {
+            case VK_FORMAT_B8G8R8A8_SRGB:   return EPixelFormat::B8G8R8A8_SRGB;
+            case VK_FORMAT_B8G8R8A8_UNORM:  return EPixelFormat::B8G8R8A8_UNORM;
+            case VK_FORMAT_R8G8B8A8_SRGB:   return EPixelFormat::R8G8B8A8_SRGB;
+            case VK_FORMAT_R8G8B8A8_UNORM:  return EPixelFormat::R8G8B8A8_UNORM;
+            default:                         return EPixelFormat::R8G8B8A8_SRGB;
+        }
+    }
+    
+    EPixelFormat VulkanDevice::getDepthFormat() const {
+        // Convert VkFormat to EPixelFormat
+        switch (m_depthFormat) {
+            case VK_FORMAT_D32_SFLOAT:           return EPixelFormat::D32_FLOAT;
+            case VK_FORMAT_D24_UNORM_S8_UINT:    return EPixelFormat::D24_UNORM_S8_UINT;
+            case VK_FORMAT_D32_SFLOAT_S8_UINT:   return EPixelFormat::D32_FLOAT_S8_UINT;
+            default:                              return EPixelFormat::D32_FLOAT;
+        }
+    }
+    
     // Private implementation methods - full implementations
     bool VulkanDevice::createInstance(const RHICreateInfo& createInfo) {
         MR_LOG_INFO("Creating Vulkan instance...");

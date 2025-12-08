@@ -6,6 +6,9 @@
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 
 namespace MonsterRender::RHI::Vulkan {
+
+// Use types from parent namespace
+using MonsterRender::RHI::FVulkanAllocation;
     
     // Forward declarations
     class VulkanDevice;

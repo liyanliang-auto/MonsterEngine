@@ -29,26 +29,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -126,7 +126,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\lib-vc2022;$(VULKAN_SDK)\Lib;$(GLFW_DIR)\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>vulkan-1.lib;glfw3dll.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>xcopy /Y /D "$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\lib-vc2022\glfw3.dll" "$(OutDir)"</Command>
@@ -152,7 +152,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\lib-vc2022;$(VULKAN_SDK)\Lib;$(GLFW_DIR)\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>vulkan-1.lib;glfw3dll.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>xcopy /Y /D "$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\lib-vc2022\glfw3.dll" "$(OutDir)"</Command>
@@ -222,6 +222,15 @@
     <ClCompile Include="Source\Containers\Text.cpp" />
     <ClCompile Include="Source\Tests\ColorAndContainerTest.cpp" />
     <ClCompile Include="Source\Tests\SmartPointerTest.cpp" />
+    <!-- OpenGL files temporarily excluded for incremental compilation fix -->
+    <!-- <ClCompile Include="Source\Platform\OpenGL\OpenGLFunctions.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLContext.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLResources.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLShaders.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLPipeline.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLDevice.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLCommandList.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLSwapChain.cpp" /> -->
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -321,6 +330,18 @@
     <ClInclude Include="Include\Core\Templates\SharedPointerInternals.h" />
     <ClInclude Include="Include\Core\Templates\SharedPointer.h" />
     <ClInclude Include="Include\Core\Templates\UniquePtr.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLDefinitions.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLFunctions.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLContext.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLResources.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLShaders.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLPipeline.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLDevice.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLCommandList.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLRHI.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLSwapChain.h" />
+    <ClInclude Include="Include\Platform\Vulkan\VulkanSwapChain.h" />
+    <ClInclude Include="Include\RHI\IRHISwapChain.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
