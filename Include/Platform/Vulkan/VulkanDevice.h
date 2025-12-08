@@ -80,6 +80,12 @@ namespace MonsterRender::RHI::Vulkan {
         void setDebugName(const String& name) override;
         void setValidationEnabled(bool enabled) override;
         
+        // SwapChain and RHI type
+        TSharedPtr<IRHISwapChain> createSwapChain(const SwapChainDesc& desc) override;
+        ERHIBackend getRHIBackend() const override { return ERHIBackend::Vulkan; }
+        EPixelFormat getSwapChainFormat() const override;
+        EPixelFormat getDepthFormat() const override;
+        
         // Vulkan-specific getters
         VkInstance getInstance() const { return m_instance; }
         VkPhysicalDevice getPhysicalDevice() const { return m_physicalDevice; }
@@ -113,7 +119,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkRenderPass getRenderPass() const { return m_renderPass; }
         
         // Depth buffer accessors (UE5-style)
-        VkFormat getDepthFormat() const { return m_depthFormat; }
+        VkFormat getVulkanDepthFormat() const { return m_depthFormat; }
         VkImageView getDepthImageView() const { return m_depthImageView; }
         bool hasDepthBuffer() const { return m_depthImage != VK_NULL_HANDLE; }
         

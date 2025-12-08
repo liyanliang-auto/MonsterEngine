@@ -4,6 +4,7 @@
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHIResource.h"
 #include "RHI/IRHICommandList.h"
+#include "RHI/IRHISwapChain.h"
 
 namespace MonsterRender::RHI {
     
@@ -133,6 +134,28 @@ namespace MonsterRender::RHI {
          * Enable/disable GPU validation layer
          */
         virtual void setValidationEnabled(bool enabled) = 0;
+        
+        // SwapChain management
+        /**
+         * Create a swap chain for the given window
+         * Reference: UE5 RHICreateViewport
+         */
+        virtual TSharedPtr<IRHISwapChain> createSwapChain(const SwapChainDesc& desc) = 0;
+        
+        /**
+         * Get the RHI backend type
+         */
+        virtual ERHIBackend getRHIBackend() const = 0;
+        
+        /**
+         * Get the render target format for the current swapchain
+         */
+        virtual EPixelFormat getSwapChainFormat() const = 0;
+        
+        /**
+         * Get the depth format
+         */
+        virtual EPixelFormat getDepthFormat() const = 0;
         
     protected:
         RHIDeviceCapabilities m_capabilities;

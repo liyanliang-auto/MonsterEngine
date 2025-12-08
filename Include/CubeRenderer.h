@@ -2,6 +2,7 @@
 
 #include "Core/CoreMinimal.h"
 #include "RHI/RHI.h"
+#include "RHI/IRHISwapChain.h"
 #include <chrono>
 
 namespace MonsterRender {
@@ -35,6 +36,8 @@ namespace MonsterRender {
      * - Depth testing
      * - Rotation animation
      * 
+     * Supports both Vulkan and OpenGL RHI backends
+     * 
      * Reference: LearnOpenGL Coordinate Systems tutorial
      * https://learnopengl-cn.github.io/01%20Getting%20started/08%20Coordinate%20Systems/
      */
@@ -45,6 +48,7 @@ namespace MonsterRender {
         
         /**
          * Initialize the cube renderer with given RHI device
+         * Automatically detects RHI backend and loads appropriate shaders
          * @param device RHI device to use for rendering
          * @return true if initialization was successful
          */
@@ -88,8 +92,19 @@ namespace MonsterRender {
         
         /**
          * Create and compile shaders
+         * Loads appropriate shaders based on RHI backend
          */
         bool createShaders();
+        
+        /**
+         * Create shaders for Vulkan (SPIR-V)
+         */
+        bool createVulkanShaders();
+        
+        /**
+         * Create shaders for OpenGL (GLSL)
+         */
+        bool createOpenGLShaders();
         
         /**
          * Create graphics pipeline state
@@ -138,11 +153,13 @@ namespace MonsterRender {
         
         /**
          * Create perspective projection matrix
+         * @param flipY If true, flip Y axis for Vulkan coordinate system
          */
-        static void matrixPerspective(float* matrix, float fovRadians, float aspect, float nearPlane, float farPlane);
+        static void matrixPerspective(float* matrix, float fovRadians, float aspect, float nearPlane, float farPlane, bool flipY = true);
         
     private:
         RHI::IRHIDevice* m_device = nullptr;
+        RHI::ERHIBackend m_rhiBackend = RHI::ERHIBackend::Unknown;
         
         // Rendering resources
         TSharedPtr<RHI::IRHIBuffer> m_vertexBuffer;

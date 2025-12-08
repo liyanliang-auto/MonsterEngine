@@ -5,16 +5,24 @@
 #pragma once
 
 #include "Core/CoreMinimal.h"
-#include "Platform/Vulkan/VulkanRHI.h"
 #include "RHI/RHIDefinitions.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
 
+// Vulkan headers must be included before VulkanRHI.h for proper type definitions
+#if PLATFORM_WINDOWS
+    #define VK_USE_PLATFORM_WIN32_KHR
+#endif
+#include <vulkan/vulkan.h>
+
+#include "Platform/Vulkan/VulkanRHI.h"
+
 namespace MonsterRender::RHI::Vulkan {
 
-// Use MonsterEngine containers
+// Use MonsterEngine containers and smart pointers
 using MonsterEngine::TArray;
 using MonsterEngine::TMap;
+using MonsterEngine::TSharedPtr;
 
     class VulkanDevice;
     class VulkanTexture;
