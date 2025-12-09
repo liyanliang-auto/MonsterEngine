@@ -222,15 +222,14 @@
     <ClCompile Include="Source\Containers\Text.cpp" />
     <ClCompile Include="Source\Tests\ColorAndContainerTest.cpp" />
     <ClCompile Include="Source\Tests\SmartPointerTest.cpp" />
-    <!-- OpenGL files temporarily excluded for incremental compilation fix -->
-    <!-- <ClCompile Include="Source\Platform\OpenGL\OpenGLFunctions.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLFunctions.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLContext.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLResources.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLShaders.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLPipeline.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLDevice.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLCommandList.cpp" />
-    <ClCompile Include="Source\Platform\OpenGL\OpenGLSwapChain.cpp" /> -->
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLSwapChain.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />

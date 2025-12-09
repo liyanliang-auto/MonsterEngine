@@ -7,7 +7,7 @@
 
 #include "Platform/OpenGL/OpenGLShaders.h"
 #include "Platform/OpenGL/OpenGLFunctions.h"
-#include "Core/HAL/LogMacros.h"
+#include "Core/Logging/LogMacros.h"
 
 // Define log category
 DEFINE_LOG_CATEGORY_STATIC(LogOpenGLShaders, Log, All);
@@ -89,16 +89,14 @@ TUniquePtr<FOpenGLProgram> CreateProgramFromSources(
     FOpenGLShader vertexShader(GL_VERTEX_SHADER);
     if (!vertexShader.CompileFromSource(vertexSource))
     {
-        MR_LOG_ERROR(LogOpenGLShaders, "Vertex shader compilation failed: %s", 
-                     *vertexShader.GetErrorMessage());
+        OutputDebugStringA("OpenGL: Vertex shader compilation failed\n");
         return nullptr;
     }
     
     FOpenGLShader fragmentShader(GL_FRAGMENT_SHADER);
     if (!fragmentShader.CompileFromSource(fragmentSource))
     {
-        MR_LOG_ERROR(LogOpenGLShaders, "Fragment shader compilation failed: %s", 
-                     *fragmentShader.GetErrorMessage());
+        OutputDebugStringA("OpenGL: Fragment shader compilation failed\n");
         return nullptr;
     }
     
@@ -107,8 +105,7 @@ TUniquePtr<FOpenGLProgram> CreateProgramFromSources(
     
     if (!program->Link())
     {
-        MR_LOG_ERROR(LogOpenGLShaders, "Program linking failed: %s", 
-                     *program->GetErrorMessage());
+        OutputDebugStringA("OpenGL: Program linking failed\n");
         return nullptr;
     }
     
@@ -125,7 +122,7 @@ FOpenGLShader::FOpenGLShader(GLenum shaderType)
     m_shader = glCreateShader(shaderType);
     if (!m_shader)
     {
-        MR_LOG_ERROR(LogOpenGLShaders, "Failed to create shader object (type=0x%X)", shaderType);
+        OutputDebugStringA("OpenGL: Failed to create shader object\n");
     }
 }
 
@@ -173,15 +170,14 @@ bool FOpenGLShader::CompileFromSource(const char* source, int32 sourceLength)
     {
         m_compiled = true;
         m_errorMessage.Empty();
-        MR_LOG_DEBUG(LogOpenGLShaders, "Shader compiled successfully: %s", *m_debugName);
+        OutputDebugStringA("OpenGL: Debug\n");
         return true;
     }
     else
     {
         m_compiled = false;
         m_errorMessage = GetInfoLog();
-        MR_LOG_ERROR(LogOpenGLShaders, "Shader compilation failed: %s\n%s", 
-                     *m_debugName, *m_errorMessage);
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
 }
@@ -228,15 +224,14 @@ bool FOpenGLShader::LoadFromSPIRV(const uint8* binary, uint32 binarySize, const 
     {
         m_compiled = true;
         m_errorMessage.Empty();
-        MR_LOG_DEBUG(LogOpenGLShaders, "SPIR-V shader loaded successfully: %s", *m_debugName);
+        OutputDebugStringA("OpenGL: Debug\n");
         return true;
     }
     else
     {
         m_compiled = false;
         m_errorMessage = GetInfoLog();
-        MR_LOG_ERROR(LogOpenGLShaders, "SPIR-V shader specialization failed: %s\n%s", 
-                     *m_debugName, *m_errorMessage);
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
 }
@@ -247,7 +242,12 @@ void FOpenGLShader::SetDebugName(const FString& name)
     
     if (glObjectLabel && m_shader && !name.IsEmpty())
     {
-        glObjectLabel(GL_SHADER, m_shader, -1, TCHAR_TO_ANSI(*name));
+        // Convert FString (wide) to narrow string for OpenGL
+        const wchar_t* wstr = *name;
+        size_t len = wcslen(wstr);
+        std::string narrowStr(len, '\0');
+        for (size_t i = 0; i < len; ++i) narrowStr[i] = static_cast<char>(wstr[i]);
+        glObjectLabel(GL_SHADER, m_shader, -1, narrowStr.c_str());
     }
 }
 
@@ -388,7 +388,7 @@ FOpenGLProgram::FOpenGLProgram()
     m_program = glCreateProgram();
     if (!m_program)
     {
-        MR_LOG_ERROR(LogOpenGLShaders, "Failed to create program object");
+        OutputDebugStringA("OpenGL: Error\n");
     }
 }
 
@@ -451,15 +451,14 @@ bool FOpenGLProgram::Link()
         m_linked = true;
         m_errorMessage.Empty();
         m_uniformLocationCache.Empty();  // Clear cache on re-link
-        MR_LOG_DEBUG(LogOpenGLShaders, "Program linked successfully: %s", *m_debugName);
+        OutputDebugStringA("OpenGL: Debug\n");
         return true;
     }
     else
     {
         m_linked = false;
         m_errorMessage = GetInfoLog();
-        MR_LOG_ERROR(LogOpenGLShaders, "Program linking failed: %s\n%s", 
-                     *m_debugName, *m_errorMessage);
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
 }
@@ -480,7 +479,12 @@ void FOpenGLProgram::SetDebugName(const FString& name)
     
     if (glObjectLabel && m_program && !name.IsEmpty())
     {
-        glObjectLabel(GL_PROGRAM, m_program, -1, TCHAR_TO_ANSI(*name));
+        // Convert FString (wide) to narrow string for OpenGL
+        const wchar_t* wstr = *name;
+        size_t len = wcslen(wstr);
+        std::string narrowStr(len, '\0');
+        for (size_t i = 0; i < len; ++i) narrowStr[i] = static_cast<char>(wstr[i]);
+        glObjectLabel(GL_PROGRAM, m_program, -1, narrowStr.c_str());
     }
 }
 
@@ -573,8 +577,7 @@ GLint FOpenGLProgram::GetUniformLocation(const char* name)
     
     if (location < 0)
     {
-        MR_LOG_WARNING(LogOpenGLShaders, "Uniform '%s' not found in program '%s'", 
-                       name, *m_debugName);
+        OutputDebugStringA("OpenGL: Warning\n");
     }
     
     return location;
@@ -614,8 +617,7 @@ void FOpenGLProgram::UniformBlockBinding(const char* blockName, GLuint bindingPo
     }
     else
     {
-        MR_LOG_WARNING(LogOpenGLShaders, "Uniform block '%s' not found in program '%s'", 
-                       blockName, *m_debugName);
+        OutputDebugStringA("OpenGL: Warning\n");
     }
 }
 

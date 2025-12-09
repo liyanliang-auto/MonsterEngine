@@ -59,7 +59,7 @@ namespace MonsterRender {
         
         // Setup RHI
         RHI::RHICreateInfo rhiCreateInfo;
-        rhiCreateInfo.preferredBackend = RHI::ERHIBackend::Vulkan;
+        rhiCreateInfo.preferredBackend = m_config.preferredBackend;
         rhiCreateInfo.enableValidation = m_config.enableValidation;
         rhiCreateInfo.enableDebugMarkers = m_config.enableDebugMarkers;
         rhiCreateInfo.applicationName = m_config.name;

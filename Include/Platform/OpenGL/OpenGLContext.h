@@ -14,10 +14,16 @@
 
 #include "Core/CoreMinimal.h"
 #include "Platform/OpenGL/OpenGLDefinitions.h"
+#include "Containers/String.h"
+#include "Containers/Array.h"
 
 // Note: Windows.h is already included via OpenGLDefinitions.h
 
 namespace MonsterEngine::OpenGL {
+
+// Use MonsterEngine types
+using MonsterEngine::FString;
+using MonsterEngine::TArray;
 
 // ============================================================================
 // WGL Constants

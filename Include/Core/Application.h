@@ -3,6 +3,7 @@
 #include "Core/CoreMinimal.h"
 #include "Core/Window.h"
 #include "Engine.h"
+#include "RHI/IRHISwapChain.h"  // For ERHIBackend
 
 namespace MonsterRender {
     
@@ -20,6 +21,9 @@ namespace MonsterRender {
         bool enableVSync = true;
         bool enableValidation = true;
         bool enableDebugMarkers = true;
+        
+        // RHI backend selection (None = auto-select best available)
+        RHI::ERHIBackend preferredBackend = RHI::ERHIBackend::None;
         
         ApplicationConfig() {
             windowProperties.title = name;

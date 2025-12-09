@@ -7,7 +7,7 @@
 
 #include "Platform/OpenGL/OpenGLContext.h"
 #include "Platform/OpenGL/OpenGLFunctions.h"
-#include "Core/HAL/LogMacros.h"
+#include "Core/Logging/LogMacros.h"
 
 #if PLATFORM_WINDOWS
     #include "Windows/AllowWindowsPlatformTypes.h"
@@ -88,20 +88,17 @@ static void APIENTRY OpenGLDebugCallback(
         case GL_DEBUG_TYPE_OTHER:               typeStr = "Other"; break;
     }
     
-    // Log based on severity
+    // Log based on severity using OutputDebugString
+    char buffer[1024];
+    snprintf(buffer, sizeof(buffer), "OpenGL [%s/%s]: %s\n", sourceStr, typeStr, message);
+    
     switch (severity)
     {
         case GL_DEBUG_SEVERITY_HIGH:
-            MR_LOG_ERROR(LogOpenGLContext, "[GL %s/%s] %s", sourceStr, typeStr, message);
-            break;
         case GL_DEBUG_SEVERITY_MEDIUM:
-            MR_LOG_WARNING(LogOpenGLContext, "[GL %s/%s] %s", sourceStr, typeStr, message);
-            break;
         case GL_DEBUG_SEVERITY_LOW:
-            MR_LOG_INFO(LogOpenGLContext, "[GL %s/%s] %s", sourceStr, typeStr, message);
-            break;
         case GL_DEBUG_SEVERITY_NOTIFICATION:
-            MR_LOG_DEBUG(LogOpenGLContext, "[GL %s/%s] %s", sourceStr, typeStr, message);
+            OutputDebugStringA(buffer);
             break;
     }
 }
@@ -138,20 +135,19 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
 {
     if (m_initialized)
     {
-        MR_LOG_WARNING(LogOpenGLContext, "OpenGL context already initialized");
+        OutputDebugStringA("OpenGL: Warning\n");
         return true;
     }
     
     m_config = config;
     
-    MR_LOG_INFO(LogOpenGLContext, "Initializing OpenGL %d.%d context...", 
-                config.majorVersion, config.minorVersion);
+    OutputDebugStringA("OpenGL: Info\n");
 
 #if PLATFORM_WINDOWS
     // Step 1: Create dummy window and context to load WGL extensions
     if (!InitializeWGLExtensions())
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to initialize WGL extensions");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
@@ -163,14 +159,14 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
     m_mainContext.deviceContext = GetDC(m_mainContext.windowHandle);
     if (!m_mainContext.deviceContext)
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to get device context for window");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
     // Set pixel format
     if (!SetPixelFormat(m_mainContext.deviceContext, config))
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to set pixel format");
+        OutputDebugStringA("OpenGL: Error\n");
         ReleaseDC(m_mainContext.windowHandle, m_mainContext.deviceContext);
         return false;
     }
@@ -178,7 +174,7 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
     // Create OpenGL 4.6 core profile context
     if (!CreateCoreContext(config))
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to create OpenGL core context");
+        OutputDebugStringA("OpenGL: Error\n");
         ReleaseDC(m_mainContext.windowHandle, m_mainContext.deviceContext);
         return false;
     }
@@ -186,7 +182,7 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
     // Make context current
     if (!wglMakeCurrent(m_mainContext.deviceContext, m_mainContext.openGLContext))
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to make OpenGL context current");
+        OutputDebugStringA("OpenGL: Error\n");
         wglDeleteContext(m_mainContext.openGLContext);
         ReleaseDC(m_mainContext.windowHandle, m_mainContext.deviceContext);
         return false;
@@ -195,7 +191,7 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
     // Load OpenGL functions
     if (!LoadOpenGLFunctions())
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to load OpenGL functions");
+        OutputDebugStringA("OpenGL: Error\n");
         wglMakeCurrent(nullptr, nullptr);
         wglDeleteContext(m_mainContext.openGLContext);
         ReleaseDC(m_mainContext.windowHandle, m_mainContext.deviceContext);
@@ -237,16 +233,16 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
     
     m_initialized = true;
     
-    MR_LOG_INFO(LogOpenGLContext, "OpenGL context initialized successfully");
-    MR_LOG_INFO(LogOpenGLContext, "  Version: %s", *m_versionString);
-    MR_LOG_INFO(LogOpenGLContext, "  Vendor: %s", *m_vendorString);
-    MR_LOG_INFO(LogOpenGLContext, "  Renderer: %s", *m_rendererString);
-    MR_LOG_INFO(LogOpenGLContext, "  GLSL: %s", *m_glslVersionString);
+    OutputDebugStringA("OpenGL: Info\n");
+    OutputDebugStringA("OpenGL: Info\n");
+    OutputDebugStringA("OpenGL: Info\n");
+    OutputDebugStringA("OpenGL: Info\n");
+    OutputDebugStringA("OpenGL: Info\n");
     
     return true;
     
 #else
-    MR_LOG_ERROR(LogOpenGLContext, "OpenGL context creation not implemented for this platform");
+    OutputDebugStringA("OpenGL: Error\n");
     return false;
 #endif
 }
@@ -258,7 +254,7 @@ void FOpenGLContextManager::Shutdown()
         return;
     }
     
-    MR_LOG_INFO(LogOpenGLContext, "Shutting down OpenGL context...");
+    OutputDebugStringA("OpenGL: Info\n");
 
 #if PLATFORM_WINDOWS
     // Delete VAO
@@ -292,7 +288,7 @@ void FOpenGLContextManager::Shutdown()
     m_initialized = false;
     m_extensions.Empty();
     
-    MR_LOG_INFO(LogOpenGLContext, "OpenGL context shutdown complete");
+    OutputDebugStringA("OpenGL: Info\n");
 }
 
 bool FOpenGLContextManager::MakeCurrent()
@@ -404,14 +400,14 @@ bool FOpenGLContextManager::InitializeWGLExtensions()
     int pixelFormat = ChoosePixelFormat(m_dummyDC, &pfd);
     if (!pixelFormat)
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to choose pixel format for dummy context");
+        OutputDebugStringA("OpenGL: Error\n");
         DestroyDummyWindow();
         return false;
     }
     
     if (!::SetPixelFormat(m_dummyDC, pixelFormat, &pfd))
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to set pixel format for dummy context");
+        OutputDebugStringA("OpenGL: Error\n");
         DestroyDummyWindow();
         return false;
     }
@@ -420,7 +416,7 @@ bool FOpenGLContextManager::InitializeWGLExtensions()
     m_dummyContext = wglCreateContext(m_dummyDC);
     if (!m_dummyContext)
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to create dummy OpenGL context");
+        OutputDebugStringA("OpenGL: Error\n");
         DestroyDummyWindow();
         return false;
     }
@@ -428,7 +424,7 @@ bool FOpenGLContextManager::InitializeWGLExtensions()
     // Make it current
     if (!wglMakeCurrent(m_dummyDC, m_dummyContext))
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to make dummy context current");
+        OutputDebugStringA("OpenGL: Error\n");
         wglDeleteContext(m_dummyContext);
         DestroyDummyWindow();
         return false;
@@ -442,7 +438,7 @@ bool FOpenGLContextManager::InitializeWGLExtensions()
     
     if (!wglCreateContextAttribsARB)
     {
-        MR_LOG_ERROR(LogOpenGLContext, "wglCreateContextAttribsARB not available - OpenGL 4.6 not supported");
+        OutputDebugStringA("OpenGL: Error\n");
         wglMakeCurrent(nullptr, nullptr);
         wglDeleteContext(m_dummyContext);
         DestroyDummyWindow();
@@ -454,7 +450,7 @@ bool FOpenGLContextManager::InitializeWGLExtensions()
     wglDeleteContext(m_dummyContext);
     m_dummyContext = nullptr;
     
-    MR_LOG_DEBUG(LogOpenGLContext, "WGL extensions loaded successfully");
+    OutputDebugStringA("OpenGL: Debug\n");
     return true;
 }
 
@@ -475,7 +471,7 @@ bool FOpenGLContextManager::CreateDummyWindow()
         
         if (!RegisterClassExW(&wc))
         {
-            MR_LOG_ERROR(LogOpenGLContext, "Failed to register dummy window class");
+            OutputDebugStringA("OpenGL: Error\n");
             return false;
         }
         classRegistered = true;
@@ -495,14 +491,14 @@ bool FOpenGLContextManager::CreateDummyWindow()
     
     if (!m_dummyWindow)
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to create dummy window");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
     m_dummyDC = GetDC(m_dummyWindow);
     if (!m_dummyDC)
     {
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to get DC for dummy window");
+        OutputDebugStringA("OpenGL: Error\n");
         DestroyWindow(m_dummyWindow);
         m_dummyWindow = nullptr;
         return false;
@@ -581,7 +577,7 @@ bool FOpenGLContextManager::CreateCoreContext(const FOpenGLContextConfig& config
 {
     if (!wglCreateContextAttribsARB)
     {
-        MR_LOG_ERROR(LogOpenGLContext, "wglCreateContextAttribsARB not available");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
@@ -608,15 +604,11 @@ bool FOpenGLContextManager::CreateCoreContext(const FOpenGLContextConfig& config
     
     if (!m_mainContext.openGLContext)
     {
-        DWORD error = GetLastError();
-        MR_LOG_ERROR(LogOpenGLContext, "Failed to create OpenGL %d.%d context (error: 0x%08X)",
-                     config.majorVersion, config.minorVersion, error);
+        OutputDebugStringA("OpenGL: Failed to create context\n");
         return false;
     }
     
-    MR_LOG_DEBUG(LogOpenGLContext, "Created OpenGL %d.%d %s context",
-                 config.majorVersion, config.minorVersion,
-                 config.coreProfile ? "core" : "compatibility");
+    OutputDebugStringA("OpenGL: Debug\n");
     
     return true;
 }
@@ -640,11 +632,11 @@ void FOpenGLContextManager::InitializeDebugOutput()
             glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
         }
         
-        MR_LOG_INFO(LogOpenGLContext, "OpenGL debug output enabled");
+        OutputDebugStringA("OpenGL: Info\n");
     }
     else
     {
-        MR_LOG_WARNING(LogOpenGLContext, "OpenGL debug output not available");
+        OutputDebugStringA("OpenGL: Warning\n");
     }
 }
 
@@ -679,7 +671,7 @@ void FOpenGLContextManager::QueryCapabilities()
         }
     }
     
-    MR_LOG_DEBUG(LogOpenGLContext, "Found %d OpenGL extensions", m_extensions.Num());
+    OutputDebugStringA("OpenGL: Extensions loaded\n");
 }
 
 } // namespace MonsterEngine::OpenGL

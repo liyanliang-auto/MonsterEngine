@@ -147,22 +147,22 @@ inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Ve
 #define MR_LOG(CategoryName, Verbosity, Format, ...) \
     do { \
         /* Compile-time check: is this verbosity level compiled in? */ \
-        if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= COMPILED_IN_MINIMUM_VERBOSITY) \
+        if constexpr ((::MonsterRender::ELogVerbosity::Verbosity & ::MonsterRender::ELogVerbosity::VerbosityMask) <= COMPILED_IN_MINIMUM_VERBOSITY) \
         { \
             /* Compile-time check: is this verbosity level within category's compile-time limit? */ \
-            if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= decltype(CategoryName)::CompileTimeVerbosity) \
+            if constexpr ((::MonsterRender::ELogVerbosity::Verbosity & ::MonsterRender::ELogVerbosity::VerbosityMask) <= decltype(CategoryName)::CompileTimeVerbosity) \
             { \
                 /* Runtime check: is this verbosity level currently enabled? */ \
-                if (!CategoryName.IsSuppressed(MonsterRender::ELogVerbosity::Verbosity)) \
+                if (!CategoryName.IsSuppressed(::MonsterRender::ELogVerbosity::Verbosity)) \
                 { \
                     /* Handle Fatal specially */ \
-                    if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) == MonsterRender::ELogVerbosity::Fatal) \
+                    if constexpr ((::MonsterRender::ELogVerbosity::Verbosity & ::MonsterRender::ELogVerbosity::VerbosityMask) == ::MonsterRender::ELogVerbosity::Fatal) \
                     { \
-                        MonsterRender::Private::FatalLogInternal(CategoryName, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
+                        ::MonsterRender::Private::FatalLogInternal(CategoryName, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
                     } \
                     else \
                     { \
-                        MonsterRender::Private::LogInternal(CategoryName, MonsterRender::ELogVerbosity::Verbosity, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
+                        ::MonsterRender::Private::LogInternal(CategoryName, ::MonsterRender::ELogVerbosity::Verbosity, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
                     } \
                 } \
             } \
@@ -181,15 +181,15 @@ inline void LogInternal(const FLogCategoryBase& Category, ELogVerbosity::Type Ve
  */
 #define MR_CLOG(Condition, CategoryName, Verbosity, Format, ...) \
     do { \
-        if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= COMPILED_IN_MINIMUM_VERBOSITY) \
+        if constexpr ((::MonsterRender::ELogVerbosity::Verbosity & ::MonsterRender::ELogVerbosity::VerbosityMask) <= COMPILED_IN_MINIMUM_VERBOSITY) \
         { \
-            if constexpr ((MonsterRender::ELogVerbosity::Verbosity & MonsterRender::ELogVerbosity::VerbosityMask) <= decltype(CategoryName)::CompileTimeVerbosity) \
+            if constexpr ((::MonsterRender::ELogVerbosity::Verbosity & ::MonsterRender::ELogVerbosity::VerbosityMask) <= decltype(CategoryName)::CompileTimeVerbosity) \
             { \
-                if (!CategoryName.IsSuppressed(MonsterRender::ELogVerbosity::Verbosity)) \
+                if (!CategoryName.IsSuppressed(::MonsterRender::ELogVerbosity::Verbosity)) \
                 { \
                     if (Condition) \
                     { \
-                        MonsterRender::Private::LogInternal(CategoryName, MonsterRender::ELogVerbosity::Verbosity, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
+                        ::MonsterRender::Private::LogInternal(CategoryName, ::MonsterRender::ELogVerbosity::Verbosity, __FILE__, __LINE__, Format, ##__VA_ARGS__); \
                     } \
                 } \
             } \
@@ -224,9 +224,9 @@ namespace Private {
 } // namespace Private
 } // namespace MonsterRender
 
-#define MR_LOG_TRACE(Message)   MR_LOG(LogTemp, VeryVerbose, "%s", MonsterRender::Private::ToLogString(Message))
-#define MR_LOG_DEBUG(Message)   MR_LOG(LogTemp, Verbose, "%s", MonsterRender::Private::ToLogString(Message))
-#define MR_LOG_INFO(Message)    MR_LOG(LogTemp, Log, "%s", MonsterRender::Private::ToLogString(Message))
-#define MR_LOG_WARNING(Message) MR_LOG(LogTemp, Warning, "%s", MonsterRender::Private::ToLogString(Message))
-#define MR_LOG_ERROR(Message)   MR_LOG(LogTemp, Error, "%s", MonsterRender::Private::ToLogString(Message))
-#define MR_LOG_FATAL(Message)   MR_LOG(LogTemp, Fatal, "%s", MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_TRACE(Message)   MR_LOG(LogTemp, VeryVerbose, "%s", ::MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_DEBUG(Message)   MR_LOG(LogTemp, Verbose, "%s", ::MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_INFO(Message)    MR_LOG(LogTemp, Log, "%s", ::MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_WARNING(Message) MR_LOG(LogTemp, Warning, "%s", ::MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_ERROR(Message)   MR_LOG(LogTemp, Error, "%s", ::MonsterRender::Private::ToLogString(Message))
+#define MR_LOG_FATAL(Message)   MR_LOG(LogTemp, Fatal, "%s", ::MonsterRender::Private::ToLogString(Message))

@@ -17,6 +17,19 @@ namespace MonsterEngine::OpenGL {
 
 using namespace MonsterRender::RHI;
 
+// Helper to convert FString (wide) to std::string (narrow)
+static std::string FStringToStdString(const FString& str)
+{
+    if (str.IsEmpty()) return "";
+    const wchar_t* wstr = *str;
+    size_t len = wcslen(wstr);
+    std::string result(len, '\0');
+    for (size_t i = 0; i < len; ++i) {
+        result[i] = static_cast<char>(wstr[i]); // Simple ASCII conversion
+    }
+    return result;
+}
+
 // ============================================================================
 // FOpenGLDevice Implementation
 // ============================================================================
@@ -34,16 +47,16 @@ bool FOpenGLDevice::Initialize(void* windowHandle, const FOpenGLContextConfig& c
 {
     if (m_initialized)
     {
-        MR_LOG_WARNING(LogOpenGLDevice, "OpenGL device already initialized");
+        OutputDebugStringA("OpenGL: Warning\n");
         return true;
     }
     
-    MR_LOG_INFO(LogOpenGLDevice, "Initializing OpenGL device...");
+    OutputDebugStringA("OpenGL: Info\n");
     
     // Initialize OpenGL context
     if (!m_contextManager.Initialize(windowHandle, config))
     {
-        MR_LOG_ERROR(LogOpenGLDevice, "Failed to initialize OpenGL context");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
@@ -66,9 +79,9 @@ bool FOpenGLDevice::Initialize(void* windowHandle, const FOpenGLContextConfig& c
     
     m_initialized = true;
     
-    MR_LOG_INFO(LogOpenGLDevice, "OpenGL device initialized successfully");
-    MR_LOG_INFO(LogOpenGLDevice, "  Device: %s", *m_capabilities.deviceName);
-    MR_LOG_INFO(LogOpenGLDevice, "  Vendor: %s", *m_capabilities.vendorName);
+    OutputDebugStringA("OpenGL: Info\n");
+    OutputDebugStringA("OpenGL: Info\n");
+    OutputDebugStringA("OpenGL: Info\n");
     
     return true;
 }
@@ -80,7 +93,7 @@ void FOpenGLDevice::Shutdown()
         return;
     }
     
-    MR_LOG_INFO(LogOpenGLDevice, "Shutting down OpenGL device...");
+    OutputDebugStringA("OpenGL: Info\n");
     
     // Wait for GPU to finish
     waitForIdle();
@@ -96,7 +109,7 @@ void FOpenGLDevice::Shutdown()
     
     m_initialized = false;
     
-    MR_LOG_INFO(LogOpenGLDevice, "OpenGL device shutdown complete");
+    OutputDebugStringA("OpenGL: Info\n");
 }
 
 const RHIDeviceCapabilities& FOpenGLDevice::getCapabilities() const
@@ -120,7 +133,7 @@ TSharedPtr<IRHIVertexShader> FOpenGLDevice::createVertexShader(MonsterRender::TS
     
     if (!shader->InitFromBytecode(bytecode))
     {
-        MR_LOG_ERROR("Failed to create vertex shader");
+        OutputDebugStringA("OpenGL: Error\n");
         return nullptr;
     }
     
@@ -133,7 +146,7 @@ TSharedPtr<IRHIPixelShader> FOpenGLDevice::createPixelShader(MonsterRender::TSpa
     
     if (!shader->InitFromBytecode(bytecode))
     {
-        MR_LOG_ERROR("Failed to create pixel shader");
+        OutputDebugStringA("OpenGL: Error\n");
         return nullptr;
     }
     
@@ -146,7 +159,7 @@ TSharedPtr<IRHIPipelineState> FOpenGLDevice::createPipelineState(const PipelineS
     
     if (!pipeline->IsValid())
     {
-        MR_LOG_ERROR("Failed to create pipeline state");
+        OutputDebugStringA("OpenGL: Error\n");
         return nullptr;
     }
     
@@ -294,7 +307,7 @@ void FOpenGLDevice::SetRenderTargets(MonsterRender::TSpan<FOpenGLTexture*> color
     
     if (!m_currentFramebuffer->IsComplete())
     {
-        MR_LOG_ERROR(LogOpenGLDevice, "Framebuffer is not complete!");
+        OutputDebugStringA("OpenGL: Error\n");
     }
 }
 
@@ -321,9 +334,9 @@ TSharedPtr<FOpenGLSampler> FOpenGLDevice::CreateSamplerGL(const FSamplerDesc& de
 
 void FOpenGLDevice::QueryCapabilities()
 {
-    // Get strings
-    m_capabilities.deviceName = m_contextManager.GetRendererString();
-    m_capabilities.vendorName = m_contextManager.GetVendorString();
+    // Get strings (convert FString to std::string)
+    m_capabilities.deviceName = FStringToStdString(m_contextManager.GetRendererString());
+    m_capabilities.vendorName = FStringToStdString(m_contextManager.GetVendorString());
     
     // Query limits
     GLint value = 0;
@@ -371,12 +384,7 @@ void FOpenGLDevice::QueryCapabilities()
         m_capabilities.dedicatedVideoMemory = static_cast<uint64>(vboFreeMemKB[0]) * 1024;
     }
     
-    MR_LOG_DEBUG(LogOpenGLDevice, "Device capabilities:");
-    MR_LOG_DEBUG(LogOpenGLDevice, "  Max texture 2D size: %u", m_capabilities.maxTexture2DSize);
-    MR_LOG_DEBUG(LogOpenGLDevice, "  Max texture 3D size: %u", m_capabilities.maxTexture3DSize);
-    MR_LOG_DEBUG(LogOpenGLDevice, "  Max render targets: %u", m_capabilities.maxRenderTargets);
-    MR_LOG_DEBUG(LogOpenGLDevice, "  Max vertex attributes: %u", m_capabilities.maxVertexInputAttributes);
-    MR_LOG_DEBUG(LogOpenGLDevice, "  Video memory: %llu MB", m_capabilities.dedicatedVideoMemory / (1024 * 1024));
+    OutputDebugStringA("OpenGL: Device capabilities queried\n");
 }
 
 void FOpenGLDevice::CreateDefaultResources()
@@ -391,7 +399,7 @@ void FOpenGLDevice::CreateDefaultResources()
     defaultTexDesc.height = 1;
     defaultTexDesc.format = EPixelFormat::R8G8B8A8_UNORM;
     defaultTexDesc.usage = EResourceUsage::ShaderResource;
-    defaultTexDesc.debugName = TEXT("DefaultWhiteTexture");
+    defaultTexDesc.debugName = "DefaultWhiteTexture";
     
     uint32 whitePixel = 0xFFFFFFFF;
     defaultTexDesc.initialData = &whitePixel;
@@ -416,7 +424,7 @@ TSharedPtr<FOpenGLDevice> CreateOpenGLDevice(void* windowHandle, const FOpenGLCo
     
     if (!device->Initialize(windowHandle, config))
     {
-        MR_LOG_ERROR(LogOpenGLDevice, "Failed to create OpenGL device");
+        OutputDebugStringA("OpenGL: Error\n");
         return nullptr;
     }
     

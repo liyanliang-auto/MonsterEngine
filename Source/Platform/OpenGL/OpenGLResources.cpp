@@ -7,7 +7,7 @@
 
 #include "Platform/OpenGL/OpenGLResources.h"
 #include "Platform/OpenGL/OpenGLFunctions.h"
-#include "Core/HAL/LogMacros.h"
+#include "Core/Logging/LogMacros.h"
 
 // Define log category
 DEFINE_LOG_CATEGORY_STATIC(LogOpenGLResources, Log, All);
@@ -28,7 +28,7 @@ FOpenGLBuffer::FOpenGLBuffer(const BufferDesc& desc)
     
     if (!CreateBuffer(nullptr))
     {
-        MR_LOG_ERROR(LogOpenGLResources, "Failed to create OpenGL buffer: %s", *desc.debugName);
+        OutputDebugStringA("OpenGL: Error\n");
     }
 }
 
@@ -55,7 +55,7 @@ void* FOpenGLBuffer::map()
     
     if (!m_desc.cpuAccessible)
     {
-        MR_LOG_WARNING(LogOpenGLResources, "Attempting to map non-CPU-accessible buffer: %s", *m_debugName);
+        OutputDebugStringA("OpenGL: Warning\n");
         return nullptr;
     }
     
@@ -71,7 +71,7 @@ void* FOpenGLBuffer::map()
     
     if (!m_mappedPtr)
     {
-        MR_LOG_ERROR(LogOpenGLResources, "Failed to map buffer: %s", *m_debugName);
+        OutputDebugStringA("OpenGL: Error\n");
     }
     
     return m_mappedPtr;
@@ -98,8 +98,7 @@ void FOpenGLBuffer::UpdateData(const void* data, uint32 size, uint32 offset)
     
     if (offset + size > m_desc.size)
     {
-        MR_LOG_ERROR(LogOpenGLResources, "Buffer update out of bounds: %s (offset=%u, size=%u, bufferSize=%u)",
-                     *m_debugName, offset, size, m_desc.size);
+        OutputDebugStringA("OpenGL: Error\n");
         return;
     }
     
@@ -128,7 +127,7 @@ bool FOpenGLBuffer::CreateBuffer(const void* initialData)
     glGenBuffers(1, &m_buffer);
     if (!m_buffer)
     {
-        MR_LOG_ERROR(LogOpenGLResources, "glGenBuffers failed");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
@@ -169,13 +168,12 @@ bool FOpenGLBuffer::CreateBuffer(const void* initialData)
     GL_CHECK("CreateBuffer");
     
     // Set debug label
-    if (glObjectLabel && !m_debugName.IsEmpty())
+    if (glObjectLabel && !m_debugName.empty())
     {
-        glObjectLabel(GL_BUFFER, m_buffer, -1, TCHAR_TO_ANSI(*m_debugName));
+        glObjectLabel(GL_BUFFER, m_buffer, -1, m_debugName.c_str());
     }
     
-    MR_LOG_DEBUG(LogOpenGLResources, "Created buffer: %s (size=%u, target=0x%X)", 
-                 *m_debugName, m_desc.size, m_target);
+    OutputDebugStringA("OpenGL: Debug\n");
     
     return true;
 }
@@ -227,7 +225,7 @@ FOpenGLTexture::FOpenGLTexture(const TextureDesc& desc)
     
     if (!CreateTexture(desc.initialData, desc.initialDataSize))
     {
-        MR_LOG_ERROR(LogOpenGLResources, "Failed to create OpenGL texture: %s", *desc.debugName);
+        OutputDebugStringA("OpenGL: Error\n");
     }
 }
 
@@ -296,7 +294,7 @@ bool FOpenGLTexture::CreateTexture(const void* initialData, uint32 dataSize)
     glGenTextures(1, &m_texture);
     if (!m_texture)
     {
-        MR_LOG_ERROR(LogOpenGLResources, "glGenTextures failed");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
@@ -336,7 +334,7 @@ bool FOpenGLTexture::CreateTexture(const void* initialData, uint32 dataSize)
             break;
             
         default:
-            MR_LOG_ERROR(LogOpenGLResources, "Unsupported texture target: 0x%X", m_target);
+            OutputDebugStringA("OpenGL: Error\n");
             return false;
     }
     
@@ -356,13 +354,12 @@ bool FOpenGLTexture::CreateTexture(const void* initialData, uint32 dataSize)
     }
     
     // Set debug label
-    if (glObjectLabel && !m_debugName.IsEmpty())
+    if (glObjectLabel && !m_debugName.empty())
     {
-        glObjectLabel(GL_TEXTURE, m_texture, -1, TCHAR_TO_ANSI(*m_debugName));
+        glObjectLabel(GL_TEXTURE, m_texture, -1, m_debugName.c_str());
     }
     
-    MR_LOG_DEBUG(LogOpenGLResources, "Created texture: %s (%ux%ux%u, format=0x%X)", 
-                 *m_debugName, m_desc.width, m_desc.height, m_desc.depth, m_internalFormat);
+    OutputDebugStringA("OpenGL: Debug\n");
     
     return true;
 }
@@ -498,8 +495,7 @@ void FOpenGLTexture::ConvertPixelFormat(EPixelFormat format,
             break;
             
         default:
-            MR_LOG_WARNING(LogOpenGLResources, "Unknown pixel format: %d, defaulting to RGBA8", 
-                          static_cast<int>(format));
+            OutputDebugStringA("OpenGL: Warning\n");
             internalFormat = GL_RGBA8;
             glFormat = GL_RGBA;
             glType = GL_UNSIGNED_BYTE;
@@ -516,7 +512,7 @@ FOpenGLSampler::FOpenGLSampler(const FSamplerDesc& desc)
 {
     if (!CreateSampler())
     {
-        MR_LOG_ERROR(LogOpenGLResources, "Failed to create OpenGL sampler");
+        OutputDebugStringA("OpenGL: Error\n");
     }
 }
 
@@ -660,7 +656,7 @@ void FOpenGLFramebuffer::SetColorAttachment(uint32 index, FOpenGLTexture* textur
 {
     if (index >= MaxColorAttachments)
     {
-        MR_LOG_ERROR(LogOpenGLResources, "Color attachment index out of range: %u", index);
+        OutputDebugStringA("OpenGL: Error\n");
         return;
     }
     
