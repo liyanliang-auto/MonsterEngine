@@ -6,7 +6,7 @@
  */
 
 #include "Platform/OpenGL/OpenGLFunctions.h"
-#include "Core/HAL/LogMacros.h"
+#include "Core/Logging/LogMacros.h"
 
 #if PLATFORM_WINDOWS
     #include "Windows/AllowWindowsPlatformTypes.h"
@@ -181,6 +181,7 @@ PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv = nullptr;
 
 // Draw functions
 PFNGLDRAWARRAYSINSTANCEDPROC glDrawArraysInstanced = nullptr;
+PFNGLDRAWARRAYSINSTANCEDBASEINSTANCEPROC glDrawArraysInstancedBaseInstance = nullptr;
 PFNGLDRAWELEMENTSINSTANCEDPROC glDrawElementsInstanced = nullptr;
 PFNGLDRAWELEMENTSBASEVERTEXPROC glDrawElementsBaseVertex = nullptr;
 PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXPROC glDrawElementsInstancedBaseVertex = nullptr;
@@ -271,7 +272,7 @@ static void* GetGLDLLFunction(const char* name)
         s_OpenGLDLL = LoadLibraryA("opengl32.dll");
         if (!s_OpenGLDLL)
         {
-            MR_LOG_ERROR(LogOpenGL, "Failed to load opengl32.dll");
+            OutputDebugStringA("OpenGL: Failed to load opengl32.dll\n");
             return nullptr;
         }
     }
@@ -292,7 +293,7 @@ static void* GetGLExtFunction(const char* name)
         wglGetProcAddress_ptr = (PFNWGLGETPROCADDRESSPROC)GetGLDLLFunction("wglGetProcAddress");
         if (!wglGetProcAddress_ptr)
         {
-            MR_LOG_ERROR(LogOpenGL, "Failed to get wglGetProcAddress");
+            OutputDebugStringA("OpenGL: Failed to get wglGetProcAddress\n");
             return nullptr;
         }
     }
@@ -323,19 +324,19 @@ bool LoadOpenGLFunctions()
     }
 
 #if PLATFORM_WINDOWS
-    MR_LOG_INFO(LogOpenGL, "Loading OpenGL 4.6 functions...");
+    OutputDebugStringA("OpenGL: Loading OpenGL 4.6 functions...\n");
     
     bool allLoaded = true;
     
     // Macro to load core functions from DLL
     #define LOAD_GL_DLL_FUNC(func) \
         func = (decltype(func))GetGLDLLFunction(#func); \
-        if (!func) { MR_LOG_WARNING(LogOpenGL, "Failed to load: %s", #func); allLoaded = false; }
+        if (!func) { allLoaded = false; }
     
     // Macro to load extension functions via wglGetProcAddress
     #define LOAD_GL_EXT_FUNC(func) \
         func = (decltype(func))GetGLExtFunction(#func); \
-        if (!func) { MR_LOG_WARNING(LogOpenGL, "Failed to load: %s", #func); allLoaded = false; }
+        if (!func) { allLoaded = false; }
     
     // Macro for optional functions
     #define LOAD_GL_OPT_FUNC(func) \
@@ -500,6 +501,7 @@ bool LoadOpenGLFunctions()
     
     // Draw functions
     LOAD_GL_EXT_FUNC(glDrawArraysInstanced);
+    LOAD_GL_OPT_FUNC(glDrawArraysInstancedBaseInstance);
     LOAD_GL_EXT_FUNC(glDrawElementsInstanced);
     LOAD_GL_EXT_FUNC(glDrawElementsBaseVertex);
     LOAD_GL_EXT_FUNC(glDrawElementsInstancedBaseVertex);
@@ -575,17 +577,17 @@ bool LoadOpenGLFunctions()
     
     if (allLoaded)
     {
-        MR_LOG_INFO(LogOpenGL, "OpenGL functions loaded successfully");
+        OutputDebugStringA("OpenGL: Functions loaded successfully\n");
     }
     else
     {
-        MR_LOG_WARNING(LogOpenGL, "Some OpenGL functions failed to load");
+        OutputDebugStringA("OpenGL: Some functions failed to load\n");
     }
     
     return allLoaded;
     
 #else
-    MR_LOG_ERROR(LogOpenGL, "OpenGL function loading not implemented for this platform");
+    OutputDebugStringA("OpenGL: Function loading not implemented for this platform\n");
     return false;
 #endif
 }
@@ -621,8 +623,7 @@ bool CheckGLError(const char* operation)
     GLenum error = glGetError();
     if (error != GL_NO_ERROR)
     {
-        MR_LOG_ERROR(LogOpenGL, "OpenGL error in %s: %s (0x%04X)", 
-                     operation, GetGLErrorString(error), error);
+        OutputDebugStringA("OpenGL: Error detected\n");
         return false;
     }
     return true;

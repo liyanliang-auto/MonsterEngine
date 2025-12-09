@@ -25,19 +25,19 @@ FOpenGLSwapChain::FOpenGLSwapChain(FOpenGLDevice* device, const SwapChainDesc& d
 {
     m_desc = desc;
     
-    MR_LOG_INFO("Creating OpenGL SwapChain");
+    OutputDebugStringA("OpenGL: Info\n");
     
     // Create depth buffer
     if (!CreateDepthBuffer())
     {
-        MR_LOG_ERROR("Failed to create depth buffer");
+        OutputDebugStringA("OpenGL: Error\n");
         return;
     }
     
     // Create backbuffer texture wrapper
     if (!CreateBackBufferTexture())
     {
-        MR_LOG_ERROR("Failed to create backbuffer texture");
+        OutputDebugStringA("OpenGL: Error\n");
         return;
     }
     
@@ -46,12 +46,12 @@ FOpenGLSwapChain::FOpenGLSwapChain(FOpenGLDevice* device, const SwapChainDesc& d
     
     m_initialized = true;
     
-    MR_LOG_INFO("OpenGL SwapChain created successfully");
+    OutputDebugStringA("OpenGL: Info\n");
 }
 
 FOpenGLSwapChain::~FOpenGLSwapChain()
 {
-    MR_LOG_INFO("Destroying OpenGL SwapChain");
+    OutputDebugStringA("OpenGL: Info\n");
     
     DestroyDepthBuffer();
     
@@ -113,7 +113,7 @@ bool FOpenGLSwapChain::Resize(uint32 newWidth, uint32 newHeight)
         return true;
     }
     
-    MR_LOG_INFO("Resizing SwapChain");
+    OutputDebugStringA("OpenGL: Info\n");
     
     m_desc.width = newWidth;
     m_desc.height = newHeight;
@@ -122,7 +122,7 @@ bool FOpenGLSwapChain::Resize(uint32 newWidth, uint32 newHeight)
     DestroyDepthBuffer();
     if (!CreateDepthBuffer())
     {
-        MR_LOG_ERROR("Failed to recreate depth buffer");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
@@ -137,7 +137,7 @@ void FOpenGLSwapChain::SetVSync(bool enabled)
     m_vsyncEnabled = enabled;
     m_device->GetContextManager().SetVSync(enabled ? 1 : 0);
     
-    MR_LOG_DEBUG(enabled ? "VSync enabled" : "VSync disabled");
+    OutputDebugStringA("OpenGL: Debug\n");
 }
 
 bool FOpenGLSwapChain::IsVSyncEnabled() const
@@ -204,7 +204,7 @@ bool FOpenGLSwapChain::CreateDepthBuffer()
     // Note: For the default framebuffer, depth is typically handled by the pixel format
     // This renderbuffer is for reference/compatibility
     
-    MR_LOG_DEBUG("Created depth renderbuffer");
+    OutputDebugStringA("OpenGL: Debug\n");
     
     return true;
 }

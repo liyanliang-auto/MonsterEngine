@@ -37,6 +37,10 @@ private:
         // Re-enable validation for debugging
         config.enableValidation = true;
         config.enableDebugMarkers = true;
+        // Select RHI backend: None = auto-select, Vulkan, OpenGL
+        // Use None for auto-selection (Vulkan preferred on Windows)
+        // Change to RHI::ERHIBackend::OpenGL to test OpenGL backend
+        config.preferredBackend = RHI::ERHIBackend::None;
         return config;
     }
     

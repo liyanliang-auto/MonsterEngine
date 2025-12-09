@@ -35,7 +35,7 @@ void FOpenGLCommandList::begin()
 {
     if (m_recording)
     {
-        MR_LOG_WARNING("Command list already recording");
+        OutputDebugStringA("OpenGL: Warning\n");
         return;
     }
     
@@ -65,7 +65,7 @@ void FOpenGLCommandList::end()
 {
     if (!m_recording)
     {
-        MR_LOG_WARNING("Command list not recording");
+        OutputDebugStringA("OpenGL: Warning\n");
         return;
     }
     
@@ -307,7 +307,7 @@ void FOpenGLCommandList::drawInstanced(uint32 vertexCountPerInstance, uint32 ins
         }
         else
         {
-            MR_LOG_WARNING("glDrawArraysInstancedBaseInstance not available");
+            OutputDebugStringA("OpenGL: Warning\n");
             glDrawArraysInstanced(m_primitiveTopology, startVertexLocation, 
                                  vertexCountPerInstance, instanceCount);
         }
@@ -573,7 +573,7 @@ void FOpenGLCommandList::UpdateFramebuffer()
     
     if (!m_framebuffer->IsComplete())
     {
-        MR_LOG_ERROR("Framebuffer is not complete!");
+        OutputDebugStringA("OpenGL: Error\n");
     }
 }
 

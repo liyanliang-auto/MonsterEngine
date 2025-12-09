@@ -61,7 +61,7 @@ FOpenGLPipelineState::FOpenGLPipelineState(const PipelineStateDesc& desc)
     }
     else
     {
-        MR_LOG_ERROR(LogOpenGLPipeline, "Failed to create pipeline state: %s", *desc.debugName);
+        OutputDebugStringA("OpenGL: Error\n");
     }
 }
 
@@ -102,13 +102,13 @@ bool FOpenGLPipelineState::CreateProgram()
     
     if (!vertexShader || !vertexShader->GetShader() || !vertexShader->GetShader()->IsCompiled())
     {
-        MR_LOG_ERROR(LogOpenGLPipeline, "Invalid vertex shader");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
     if (!pixelShader || !pixelShader->GetShader() || !pixelShader->GetShader()->IsCompiled())
     {
-        MR_LOG_ERROR(LogOpenGLPipeline, "Invalid pixel shader");
+        OutputDebugStringA("OpenGL: Error\n");
         return false;
     }
     
@@ -120,9 +120,9 @@ bool FOpenGLPipelineState::CreateProgram()
     const auto& layout = m_desc.vertexLayout;
     for (const auto& attr : layout.attributes)
     {
-        if (!attr.semanticName.IsEmpty())
+        if (!attr.semanticName.empty())
         {
-            m_program->BindAttribLocation(attr.location, TCHAR_TO_ANSI(*attr.semanticName));
+            m_program->BindAttribLocation(attr.location, attr.semanticName.c_str());
         }
     }
     

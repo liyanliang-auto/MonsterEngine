@@ -4,6 +4,7 @@
 // Platform-specific includes
 #if PLATFORM_WINDOWS
     #include "Platform/Vulkan/VulkanDevice.h"
+    #include "Platform/OpenGL/OpenGLDevice.h"
 #endif
 
 namespace MonsterRender::RHI {
@@ -42,7 +43,22 @@ namespace MonsterRender::RHI {
                 break;
                 
             case ERHIBackend::OpenGL:
-                MR_LOG_WARNING("OpenGL backend not yet implemented");
+                if (isBackendAvailable(ERHIBackend::OpenGL)) {
+                    #if PLATFORM_WINDOWS
+                    auto openglDevice = MakeUnique<MonsterEngine::OpenGL::FOpenGLDevice>();
+                    MonsterEngine::OpenGL::FOpenGLContextConfig glConfig;
+                    glConfig.majorVersion = 4;
+                    glConfig.minorVersion = 6;
+                    glConfig.coreProfile = true;
+                    glConfig.debugContext = createInfo.enableValidation;
+                    if (openglDevice->Initialize(createInfo.windowHandle, glConfig)) {
+                        MR_LOG_INFO("Successfully created OpenGL RHI device");
+                        return std::move(openglDevice);
+                    } else {
+                        MR_LOG_ERROR("Failed to initialize OpenGL device");
+                    }
+                    #endif
+                }
                 break;
                 
             case ERHIBackend::Metal:
@@ -111,8 +127,12 @@ namespace MonsterRender::RHI {
                 #endif
                 
             case ERHIBackend::OpenGL:
-                // TODO: Check OpenGL availability
+                #if PLATFORM_WINDOWS
+                // OpenGL is generally available on Windows
+                return true;
+                #else
                 return false;
+                #endif
                 
             case ERHIBackend::Metal:
                 #if defined(__APPLE__)

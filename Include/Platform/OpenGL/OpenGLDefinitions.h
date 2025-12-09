@@ -387,6 +387,7 @@ constexpr GLenum GL_DEBUG_SEVERITY_HIGH = 0x9146;
 constexpr GLenum GL_DEBUG_SEVERITY_MEDIUM = 0x9147;
 constexpr GLenum GL_DEBUG_SEVERITY_LOW = 0x9148;
 constexpr GLenum GL_DEBUG_SEVERITY_NOTIFICATION = 0x826B;
+constexpr GLenum GL_DONT_CARE = 0x1100;
 
 // Error codes
 constexpr GLenum GL_NO_ERROR = 0;
@@ -401,6 +402,34 @@ constexpr GLenum GL_INVALID_FRAMEBUFFER_OPERATION = 0x0506;
 // SPIR-V support (GL 4.6)
 constexpr GLenum GL_SHADER_BINARY_FORMAT_SPIR_V = 0x9551;
 constexpr GLenum GL_SPIR_V_BINARY = 0x9552;
+
+// Object label identifiers (for glObjectLabel)
+constexpr GLenum GL_BUFFER = 0x82E0;
+constexpr GLenum GL_SHADER = 0x82E1;
+constexpr GLenum GL_PROGRAM = 0x82E2;
+constexpr GLenum GL_VERTEX_ARRAY = 0x8074;
+constexpr GLenum GL_QUERY = 0x82E3;
+constexpr GLenum GL_PROGRAM_PIPELINE = 0x82E4;
+constexpr GLenum GL_TRANSFORM_FEEDBACK = 0x8E22;
+constexpr GLenum GL_SAMPLER = 0x82E6;
+// GL_RENDERBUFFER already defined above
+constexpr GLenum GL_TEXTURE = 0x1702;
+constexpr GLenum GL_NONE = 0;
+
+// Texture parameters (additional)
+constexpr GLenum GL_TEXTURE_LOD_BIAS = 0x8501;
+constexpr GLenum GL_TEXTURE_BORDER_COLOR = 0x1004;
+// GL_TEXTURE_COMPARE_MODE and GL_TEXTURE_COMPARE_FUNC already defined above
+constexpr GLenum GL_COMPARE_REF_TO_TEXTURE = 0x884E;
+
+// Data types
+constexpr GLenum GL_UNSIGNED_INT_24_8 = 0x84FA;
+
+// Special values
+constexpr GLuint GL_INVALID_INDEX = 0xFFFFFFFF;
+
+// String conversion macro (for compatibility)
+#define TCHAR_TO_ANSI(str) (str)
 
 // Memory barrier bits
 constexpr GLbitfield GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT = 0x00000001;

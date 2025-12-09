@@ -179,6 +179,7 @@ typedef void (APIENTRY* PFNGLUNIFORMMATRIX4FVPROC)(GLint location, GLsizei count
 
 // Draw functions (extended)
 typedef void (APIENTRY* PFNGLDRAWARRAYSINSTANCEDPROC)(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
+typedef void (APIENTRY* PFNGLDRAWARRAYSINSTANCEDBASEINSTANCEPROC)(GLenum mode, GLint first, GLsizei count, GLsizei instancecount, GLuint baseinstance);
 typedef void (APIENTRY* PFNGLDRAWELEMENTSINSTANCEDPROC)(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount);
 typedef void (APIENTRY* PFNGLDRAWELEMENTSBASEVERTEXPROC)(GLenum mode, GLsizei count, GLenum type, const void* indices, GLint basevertex);
 typedef void (APIENTRY* PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXPROC)(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLint basevertex);
@@ -408,6 +409,7 @@ extern PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv;
 
 // Draw functions
 extern PFNGLDRAWARRAYSINSTANCEDPROC glDrawArraysInstanced;
+extern PFNGLDRAWARRAYSINSTANCEDBASEINSTANCEPROC glDrawArraysInstancedBaseInstance;
 extern PFNGLDRAWELEMENTSINSTANCEDPROC glDrawElementsInstanced;
 extern PFNGLDRAWELEMENTSBASEVERTEXPROC glDrawElementsBaseVertex;
 extern PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXPROC glDrawElementsInstancedBaseVertex;
