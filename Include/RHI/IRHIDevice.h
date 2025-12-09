@@ -54,6 +54,11 @@ namespace MonsterRender::RHI {
          */
         virtual const RHIDeviceCapabilities& getCapabilities() const = 0;
         
+        /**
+         * Get the RHI backend type (Vulkan, OpenGL, etc.)
+         */
+        virtual ERHIBackend getBackendType() const = 0;
+        
         // Resource creation
         /**
          * Create a buffer

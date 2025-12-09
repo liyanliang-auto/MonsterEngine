@@ -1,8 +1,13 @@
 #include "Core/Application.h"
 #include "CubeRenderer.h"
 #include "Core/Log.h"
+#include "RHI/RHI.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/OpenGL/OpenGLDevice.h"
+#include "Platform/OpenGL/OpenGLContext.h"
+#include "Platform/OpenGL/OpenGLFunctions.h"
+#include "Platform/OpenGL/OpenGLDefinitions.h"
 
 using namespace MonsterRender;
 
@@ -40,7 +45,7 @@ private:
         // Select RHI backend: None = auto-select, Vulkan, OpenGL
         // Use None for auto-selection (Vulkan preferred on Windows)
         // Change to RHI::ERHIBackend::OpenGL to test OpenGL backend
-        config.preferredBackend = RHI::ERHIBackend::None;
+        config.preferredBackend = RHI::ERHIBackend::OpenGL;
         return config;
     }
     
@@ -104,34 +109,81 @@ private:
         
         if (!m_cubeRenderer) return;
         
-        auto* vulkanDevice = static_cast<MonsterRender::RHI::Vulkan::VulkanDevice*>(device);
-        auto* context = vulkanDevice->getCommandListContext();
-        if (!context) return;
+        RHI::ERHIBackend backend = device->getBackendType();
         
-        auto* cmdList = device->getImmediateCommandList();
-        if (!cmdList) return;
-        
-        // Prepare for new frame
-        context->prepareForNewFrame();
-        
-        // Begin command recording
-        cmdList->begin();
-        
-        // Set render targets (swapchain)
-        TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
-        cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
-        
-        // Render cube
-        m_cubeRenderer->render(cmdList, m_lastFrameTime);
-        
-        // End render pass
-        cmdList->endRenderPass();
-        
-        // End command recording
-        cmdList->end();
-        
-        // Present frame
-        device->present();
+        if (backend == RHI::ERHIBackend::OpenGL) {
+            // OpenGL rendering path
+            using namespace MonsterEngine::OpenGL;
+            
+            // Debug: count frames
+            static int frameCount = 0;
+            if (frameCount++ % 60 == 0) {
+                MR_LOG_INFO("OpenGL frame: " + std::to_string(frameCount));
+            }
+            
+            // Use GLFW's OpenGL context (already current from window creation)
+            // Bind default framebuffer (backbuffer)
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            
+            // Set viewport to window size
+            int width = getEngine()->getWindowWidth();
+            int height = getEngine()->getWindowHeight();
+            glViewport(0, 0, width, height);
+            
+            // Clear the screen with a dark teal color
+            glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            
+            // Check for OpenGL errors
+            GLenum err = glGetError();
+            if (err != GL_NO_ERROR) {
+                MR_LOG_ERROR("OpenGL error after clear: " + std::to_string(err));
+            }
+            
+            // Enable depth testing
+            glEnable(GL_DEPTH_TEST);
+            glDepthFunc(GL_LESS);
+            
+            auto* cmdList = device->getImmediateCommandList();
+            if (cmdList) {
+                // Render cube using OpenGL command list
+                m_cubeRenderer->render(cmdList, m_lastFrameTime);
+            }
+            
+            // Present frame using GLFW swap buffers
+            getWindow()->swapBuffers();
+        }
+        else {
+            // Vulkan rendering path
+            auto* vulkanDevice = static_cast<MonsterRender::RHI::Vulkan::VulkanDevice*>(device);
+            auto* context = vulkanDevice->getCommandListContext();
+            if (!context) return;
+            
+            auto* cmdList = device->getImmediateCommandList();
+            if (!cmdList) return;
+            
+            // Prepare for new frame
+            context->prepareForNewFrame();
+            
+            // Begin command recording
+            cmdList->begin();
+            
+            // Set render targets (swapchain)
+            TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
+            cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+            
+            // Render cube
+            m_cubeRenderer->render(cmdList, m_lastFrameTime);
+            
+            // End render pass
+            cmdList->endRenderPass();
+            
+            // End command recording
+            cmdList->end();
+            
+            // Present frame
+            device->present();
+        }
     }
     
     void onWindowResize(uint32 width, uint32 height) override {

@@ -11,6 +11,11 @@
 #include "Platform/Vulkan/VulkanCommandListContext.h"  // For submitCommands
 #include "Platform/Vulkan/VulkanCommandBuffer.h"  // For FVulkanCommandBufferManager
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
+#include "Platform/OpenGL/OpenGLDevice.h"
+#include "Platform/OpenGL/OpenGLResources.h"
+#include "Platform/OpenGL/OpenGLFunctions.h"
+#include "Platform/OpenGL/OpenGLDefinitions.h"  // For GL_TEXTURE_2D, GL_RGBA, etc.
+#include "RHI/RHI.h"  // For ERHIBackend
 #include "Renderer/FTextureStreamingManager.h"
 #include <algorithm>
 #include <cstring>
@@ -371,6 +376,7 @@ bool FTextureLoader::UploadTextureData(
     stagingDesc.size = totalSize;
     stagingDesc.usage = RHI::CopySrc;  // Source for transfer operations
     stagingDesc.memoryUsage = RHI::EMemoryUsage::Upload;  // CPU-writable, GPU-readable
+    stagingDesc.cpuAccessible = true;  // Required for buffer mapping
     stagingDesc.debugName = "Texture Staging Buffer";
     
     TSharedPtr<IRHIBuffer> stagingBuffer = Device->createBuffer(stagingDesc);
@@ -414,84 +420,125 @@ bool FTextureLoader::UploadTextureData(
     
     MR_LOG_DEBUG("Recording texture upload commands...");
     
-    // Cast to Vulkan RHI command list (UE5-style immediate command list)
-    // Note: We use FVulkanRHICommandListImmediate, NOT the old VulkanCommandList
-    auto* vulkanCmdList = static_cast<FVulkanRHICommandListImmediate*>(CommandList);
+    // Check backend type and use appropriate upload method
+    ERHIBackend backend = Device->getBackendType();
     
-    // Begin command recording if not already recording
-    bool wasRecording = vulkanCmdList->isRecording();
-    if (!wasRecording) {
-        vulkanCmdList->begin();
+    if (backend == ERHIBackend::OpenGL) {
+        // ============================================================================
+        // OpenGL texture upload - direct glTexSubImage2D
+        // ============================================================================
+        MR_LOG_DEBUG("Using OpenGL texture upload path");
+        
+        auto* glTexture = static_cast<MonsterEngine::OpenGL::FOpenGLTexture*>(Texture.get());
+        if (!glTexture) {
+            MR_LOG_ERROR("Failed to cast texture to OpenGL texture");
+            return false;
+        }
+        
+        // Bind texture and upload each mip level directly
+        glTexture->Bind(0);
+        
+        offset = 0;
+        for (uint32 mipLevel = 0; mipLevel < TextureData.MipLevels; ++mipLevel) {
+            uint32 mipWidth = (std::max)(1u, TextureData.Width >> mipLevel);
+            uint32 mipHeight = (std::max)(1u, TextureData.Height >> mipLevel);
+            const uint8* mipData = TextureData.MipData[mipLevel];
+            
+            MR_LOG_DEBUG("Uploading mip level " + std::to_string(mipLevel) + 
+                         ": " + std::to_string(mipWidth) + "x" + std::to_string(mipHeight));
+            
+            // Upload mip level data directly using glTexSubImage2D
+            using namespace MonsterEngine::OpenGL;
+            glTexSubImage2D(GL_TEXTURE_2D, mipLevel, 0, 0, mipWidth, mipHeight,
+                           GL_RGBA, GL_UNSIGNED_BYTE, mipData);
+            
+            offset += TextureData.MipSizes[mipLevel];
+        }
+        
+        // Unbind texture
+        MonsterEngine::OpenGL::glBindTexture(MonsterEngine::OpenGL::GL_TEXTURE_2D, 0);
+        
+        MR_LOG_INFO("OpenGL texture uploaded successfully");
     }
-    
-    // Transition texture from UNDEFINED to TRANSFER_DST_OPTIMAL
-    MR_LOG_DEBUG("Transitioning texture layout: UNDEFINED -> TRANSFER_DST_OPTIMAL");
-    vulkanCmdList->transitionTextureLayoutSimple(
-        Texture,
-        VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-    );
-    
-    // Copy each mip level from staging buffer to texture
-    offset = 0;
-    for (uint32 mipLevel = 0; mipLevel < TextureData.MipLevels; ++mipLevel) {
-        uint32 mipWidth = (std::max)(1u, TextureData.Width >> mipLevel);
-        uint32 mipHeight = (std::max)(1u, TextureData.Height >> mipLevel);
+    else {
+        // ============================================================================
+        // Vulkan texture upload - command buffer based
+        // ============================================================================
+        MR_LOG_DEBUG("Using Vulkan texture upload path");
         
-        MR_LOG_DEBUG("Copying mip level " + std::to_string(mipLevel) + 
-                     ": " + std::to_string(mipWidth) + "x" + std::to_string(mipHeight));
+        // Cast to Vulkan RHI command list (UE5-style immediate command list)
+        auto* vulkanCmdList = static_cast<FVulkanRHICommandListImmediate*>(CommandList);
         
-        vulkanCmdList->copyBufferToTexture(
-            stagingBuffer,
-            offset,
+        // Begin command recording if not already recording
+        bool wasRecording = vulkanCmdList->isRecording();
+        if (!wasRecording) {
+            vulkanCmdList->begin();
+        }
+        
+        // Transition texture from UNDEFINED to TRANSFER_DST_OPTIMAL
+        MR_LOG_DEBUG("Transitioning texture layout: UNDEFINED -> TRANSFER_DST_OPTIMAL");
+        vulkanCmdList->transitionTextureLayoutSimple(
             Texture,
-            mipLevel,
-            0, // array layer
-            mipWidth,
-            mipHeight,
-            1  // depth
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
         );
         
-        offset += TextureData.MipSizes[mipLevel];
-    }
-    
-    // Transition texture from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
-    MR_LOG_DEBUG("Transitioning texture layout: TRANSFER_DST_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL");
-    vulkanCmdList->transitionTextureLayoutSimple(
-        Texture,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    );
-    
-    // End command recording if we started it
-    if (!wasRecording) {
-        vulkanCmdList->end();
-    }
-    
-    // ============================================================================
-    // Step 4: Submit command list and wait for completion
-    // ============================================================================
-    
-    MR_LOG_DEBUG("Submitting texture upload commands...");
-    
-    // CRITICAL: Submit the command buffer to GPU queue
-    // The end() function only ends recording, it does NOT submit to GPU!
-    // We need to explicitly submit the commands for the layout transitions to take effect.
-    auto* vulkanDevice = static_cast<VulkanDevice*>(Device);
-    if (vulkanDevice && vulkanDevice->getCommandListContext()) {
-        // Submit without semaphores (synchronous upload)
-        vulkanDevice->getCommandListContext()->submitCommands(nullptr, 0, nullptr, 0);
-    }
-    
-    // Wait for GPU to complete (synchronous upload)
-    MR_LOG_DEBUG("Waiting for GPU to complete texture upload...");
-    Device->waitForIdle();
-    
-    // CRITICAL: After waitForIdle, refresh command buffer for next use
-    // This resets the command buffer state AND updates the context's m_cmdBuffer pointer
-    // Use refreshCommandBuffer() instead of prepareForNewFrame() to avoid acquiring swapchain image
-    if (vulkanDevice && vulkanDevice->getCommandListContext()) {
-        vulkanDevice->getCommandListContext()->refreshCommandBuffer();
+        // Copy each mip level from staging buffer to texture
+        offset = 0;
+        for (uint32 mipLevel = 0; mipLevel < TextureData.MipLevels; ++mipLevel) {
+            uint32 mipWidth = (std::max)(1u, TextureData.Width >> mipLevel);
+            uint32 mipHeight = (std::max)(1u, TextureData.Height >> mipLevel);
+            
+            MR_LOG_DEBUG("Copying mip level " + std::to_string(mipLevel) + 
+                         ": " + std::to_string(mipWidth) + "x" + std::to_string(mipHeight));
+            
+            vulkanCmdList->copyBufferToTexture(
+                stagingBuffer,
+                offset,
+                Texture,
+                mipLevel,
+                0, // array layer
+                mipWidth,
+                mipHeight,
+                1  // depth
+            );
+            
+            offset += TextureData.MipSizes[mipLevel];
+        }
+        
+        // Transition texture from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
+        MR_LOG_DEBUG("Transitioning texture layout: TRANSFER_DST_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL");
+        vulkanCmdList->transitionTextureLayoutSimple(
+            Texture,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        );
+        
+        // End command recording if we started it
+        if (!wasRecording) {
+            vulkanCmdList->end();
+        }
+        
+        // ============================================================================
+        // Step 4: Submit command list and wait for completion
+        // ============================================================================
+        
+        MR_LOG_DEBUG("Submitting texture upload commands...");
+        
+        // CRITICAL: Submit the command buffer to GPU queue
+        auto* vulkanDevice = static_cast<VulkanDevice*>(Device);
+        if (vulkanDevice && vulkanDevice->getCommandListContext()) {
+            vulkanDevice->getCommandListContext()->submitCommands(nullptr, 0, nullptr, 0);
+        }
+        
+        // Wait for GPU to complete (synchronous upload)
+        MR_LOG_DEBUG("Waiting for GPU to complete texture upload...");
+        Device->waitForIdle();
+        
+        // CRITICAL: After waitForIdle, refresh command buffer for next use
+        if (vulkanDevice && vulkanDevice->getCommandListContext()) {
+            vulkanDevice->getCommandListContext()->refreshCommandBuffer();
+        }
     }
     
     // ============================================================================

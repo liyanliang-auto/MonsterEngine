@@ -35,6 +35,9 @@ namespace MonsterRender {
         // Initialize window factory
         WindowFactory::initialize();
         
+        // Set RHI backend in window properties for proper window creation
+        m_config.windowProperties.rhiBackend = m_config.preferredBackend;
+        
         // Create window
         m_window = WindowFactory::createWindow(m_config.windowProperties);
         if (!m_window) {

@@ -572,7 +572,10 @@ namespace MonsterRender {
         pipelineDesc.debugName = "Cube Pipeline State";
         
         MR_LOG_INFO("Creating pipeline state...");
+        MR_LOG_INFO("  - Vertex shader valid: " + std::to_string(m_vertexShader != nullptr));
+        MR_LOG_INFO("  - Pixel shader valid: " + std::to_string(m_pixelShader != nullptr));
         m_pipelineState = m_device->createPipelineState(pipelineDesc);
+        MR_LOG_INFO("Pipeline state creation returned");
         if (!m_pipelineState) {
             MR_LOG_ERROR("Failed to create pipeline state");
             return false;
