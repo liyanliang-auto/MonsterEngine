@@ -50,6 +50,7 @@ public:
     
     // IRHIDevice interface
     virtual const MonsterRender::RHI::RHIDeviceCapabilities& getCapabilities() const override;
+    virtual MonsterRender::RHI::ERHIBackend getBackendType() const override { return MonsterRender::RHI::ERHIBackend::OpenGL; }
     
     virtual TSharedPtr<MonsterRender::RHI::IRHIBuffer> createBuffer(
         const MonsterRender::RHI::BufferDesc& desc) override;

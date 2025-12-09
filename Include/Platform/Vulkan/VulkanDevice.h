@@ -56,6 +56,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // IRHIDevice interface
         const RHIDeviceCapabilities& getCapabilities() const override;
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
         
         TSharedPtr<IRHIBuffer> createBuffer(const BufferDesc& desc) override;
         TSharedPtr<IRHITexture> createTexture(const TextureDesc& desc) override;

@@ -47,17 +47,37 @@ bool FOpenGLDevice::Initialize(void* windowHandle, const FOpenGLContextConfig& c
 {
     if (m_initialized)
     {
-        OutputDebugStringA("OpenGL: Warning\n");
+        OutputDebugStringA("OpenGL: Warning - already initialized\n");
         return true;
     }
     
-    OutputDebugStringA("OpenGL: Info\n");
+    OutputDebugStringA("OpenGL: Initializing device...\n");
     
-    // Initialize OpenGL context
-    if (!m_contextManager.Initialize(windowHandle, config))
-    {
-        OutputDebugStringA("OpenGL: Error\n");
-        return false;
+    // Check if there's already an OpenGL context (e.g., from GLFW)
+    // If so, just load the function pointers without creating a new context
+    bool contextExists = false;
+    
+#if PLATFORM_WINDOWS
+    HGLRC currentContext = wglGetCurrentContext();
+    if (currentContext != nullptr) {
+        OutputDebugStringA("OpenGL: Using existing OpenGL context from GLFW\n");
+        contextExists = true;
+        
+        // Load OpenGL functions using the existing context
+        if (!LoadOpenGLFunctions()) {
+            OutputDebugStringA("OpenGL: Failed to load OpenGL functions\n");
+            return false;
+        }
+    }
+#endif
+    
+    if (!contextExists) {
+        // Initialize OpenGL context (create new one)
+        if (!m_contextManager.Initialize(windowHandle, config))
+        {
+            OutputDebugStringA("OpenGL: Failed to initialize context manager\n");
+            return false;
+        }
     }
     
     // Query capabilities
@@ -73,15 +93,12 @@ bool FOpenGLDevice::Initialize(void* windowHandle, const FOpenGLContextConfig& c
     m_currentFramebuffer = MakeUnique<FOpenGLFramebuffer>();
     
     // Get initial backbuffer size
-    // For now, we'll need to set this from the window
     m_backbufferWidth = 1280;
     m_backbufferHeight = 720;
     
     m_initialized = true;
     
-    OutputDebugStringA("OpenGL: Info\n");
-    OutputDebugStringA("OpenGL: Info\n");
-    OutputDebugStringA("OpenGL: Info\n");
+    OutputDebugStringA("OpenGL: Device initialized successfully\n");
     
     return true;
 }
@@ -119,11 +136,15 @@ const RHIDeviceCapabilities& FOpenGLDevice::getCapabilities() const
 
 TSharedPtr<IRHIBuffer> FOpenGLDevice::createBuffer(const BufferDesc& desc)
 {
+    // Ensure OpenGL context is current before creating resources
+    m_contextManager.MakeCurrent();
     return MakeShared<FOpenGLBuffer>(desc);
 }
 
 TSharedPtr<IRHITexture> FOpenGLDevice::createTexture(const TextureDesc& desc)
 {
+    // Ensure OpenGL context is current before creating resources
+    m_contextManager.MakeCurrent();
     return MakeShared<FOpenGLTexture>(desc);
 }
 

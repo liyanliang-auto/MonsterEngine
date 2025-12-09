@@ -291,10 +291,17 @@ bool FOpenGLTexture::IsRenderTarget() const
 
 bool FOpenGLTexture::CreateTexture(const void* initialData, uint32 dataSize)
 {
+    // Check if required OpenGL functions are loaded
+    if (!glGenTextures || !glBindTexture || !glTexStorage2D || !glTexSubImage2D)
+    {
+        OutputDebugStringA("OpenGL: Required texture functions not loaded!\n");
+        return false;
+    }
+    
     glGenTextures(1, &m_texture);
     if (!m_texture)
     {
-        OutputDebugStringA("OpenGL: Error\n");
+        OutputDebugStringA("OpenGL: Failed to generate texture\n");
         return false;
     }
     

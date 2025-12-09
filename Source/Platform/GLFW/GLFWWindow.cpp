@@ -348,8 +348,22 @@ namespace MonsterRender::Platform::GLFW {
             return false;
         }
         
-        // Configure GLFW window hints
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // We're using Vulkan, not OpenGL
+        // Configure GLFW window hints based on RHI backend
+        if (properties.rhiBackend == RHI::ERHIBackend::OpenGL) {
+            // For OpenGL, let GLFW create a basic OpenGL context
+            // This ensures the window has proper pixel format for OpenGL rendering
+            // We'll create our own WGL context later, but the window needs OpenGL support
+            glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+            glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+            glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+            glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
+            MR_LOG_INFO("Creating GLFW window with OpenGL context hints");
+        } else {
+            // For Vulkan or other backends, use NO_API
+            glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        }
         glfwWindowHint(GLFW_RESIZABLE, properties.resizable ? GLFW_TRUE : GLFW_FALSE);
         glfwWindowHint(GLFW_DECORATED, properties.decorated ? GLFW_TRUE : GLFW_FALSE);
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); // Start hidden, show after setup
@@ -373,6 +387,12 @@ namespace MonsterRender::Platform::GLFW {
         
         // Store this instance in GLFW window user pointer
         glfwSetWindowUserPointer(m_window, this);
+        
+        // Make OpenGL context current (required for OpenGL rendering)
+        if (properties.rhiBackend == RHI::ERHIBackend::OpenGL) {
+            glfwMakeContextCurrent(m_window);
+            MR_LOG_INFO("Made GLFW OpenGL context current");
+        }
         
         // Setup callbacks
         setupCallbacks();
@@ -433,9 +453,10 @@ namespace MonsterRender::Platform::GLFW {
     }
     
     void GLFWWindow::swapBuffers() {
-        // For Vulkan, we don't use GLFW's buffer swapping
-        // This will be handled by the Vulkan swap chain
-        // Keep this method for interface compatibility
+        // Swap front and back buffers for OpenGL rendering
+        if (m_window) {
+            glfwSwapBuffers(m_window);
+        }
     }
     
     void GLFWWindow::setTitle(const String& title) {

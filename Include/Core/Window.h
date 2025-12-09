@@ -2,6 +2,7 @@
 
 #include "Core/CoreMinimal.h"
 #include "Core/Input.h"
+#include "RHI/IRHISwapChain.h"  // For ERHIBackend
 
 namespace MonsterRender {
     
@@ -16,6 +17,7 @@ namespace MonsterRender {
         bool resizable = true;
         bool vsync = true;
         bool decorated = true; // Window decorations (title bar, etc)
+        RHI::ERHIBackend rhiBackend = RHI::ERHIBackend::None;  // RHI backend for window creation
         
         WindowProperties() = default;
         WindowProperties(const String& inTitle, uint32 inWidth, uint32 inHeight)
