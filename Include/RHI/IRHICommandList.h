@@ -3,6 +3,7 @@
 #include "Core/CoreMinimal.h"
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHIResource.h"
+#include "RHI/RHIResources.h"
 
 namespace MonsterRender::RHI {
     
@@ -48,14 +49,36 @@ namespace MonsterRender::RHI {
         virtual void setPipelineState(TSharedPtr<IRHIPipelineState> pipelineState) = 0;
         
         /**
-         * Set vertex buffers
+         * Set vertex buffers (generic IRHIBuffer)
          */
         virtual void setVertexBuffers(uint32 startSlot, TSpan<TSharedPtr<IRHIBuffer>> vertexBuffers) = 0;
         
         /**
-         * Set index buffer
+         * Set index buffer (generic IRHIBuffer)
          */
         virtual void setIndexBuffer(TSharedPtr<IRHIBuffer> indexBuffer, bool is32Bit = true) = 0;
+        
+        /**
+         * Bind vertex buffer for rendering (UE5-style)
+         * @param StreamIndex Vertex stream index (0 for position, 1 for tangent, etc.)
+         * @param VertexBuffer Vertex buffer to bind
+         * @param Offset Offset in bytes from start of buffer
+         * @param Stride Stride between vertices in bytes
+         */
+        virtual void SetStreamSource(uint32 StreamIndex, TSharedPtr<FRHIVertexBuffer> VertexBuffer, 
+                                     uint32 Offset = 0, uint32 Stride = 0) {
+            // Default implementation - can be overridden by platform-specific command lists
+            (void)StreamIndex; (void)VertexBuffer; (void)Offset; (void)Stride;
+        }
+        
+        /**
+         * Bind index buffer for rendering (UE5-style)
+         * @param IndexBuffer Index buffer to bind
+         */
+        virtual void SetIndexBuffer(TSharedPtr<FRHIIndexBuffer> IndexBuffer) {
+            // Default implementation - can be overridden by platform-specific command lists
+            (void)IndexBuffer;
+        }
         
         /**
          * Set constant buffer (uniform buffer) at specified slot

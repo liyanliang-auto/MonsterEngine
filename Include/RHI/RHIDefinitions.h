@@ -74,6 +74,112 @@ namespace MonsterRender::RHI {
     constexpr EResourceUsage CopySrc = EResourceUsage::TransferSrc;
     constexpr EResourceUsage CopyDst = EResourceUsage::TransferDst;
     
+    /**
+     * @enum EBufferUsageFlags
+     * @brief Buffer usage flags (UE5-style)
+     * 
+     * Reference UE5: EBufferUsageFlags
+     */
+    enum class EBufferUsageFlags : uint32
+    {
+        None            = 0,
+        
+        /** The buffer will be written to once (immutable after creation) */
+        Static          = 1 << 0,
+        
+        /** The buffer will be written to occasionally, GPU read only, CPU write only */
+        Dynamic         = 1 << 1,
+        
+        /** The buffer's data will have a lifetime of one frame */
+        Volatile        = 1 << 2,
+        
+        /** Allows an unordered access view to be created for the buffer */
+        UnorderedAccess = 1 << 3,
+        
+        /** Create a byte address buffer */
+        ByteAddressBuffer = 1 << 4,
+        
+        /** Buffer that the GPU will use as a source for a copy */
+        SourceCopy      = 1 << 5,
+        
+        /** Create a buffer that can be bound as a stream output target */
+        StreamOutput    = 1 << 6,
+        
+        /** Create a buffer which contains the arguments used by DispatchIndirect or DrawIndirect */
+        DrawIndirect    = 1 << 7,
+        
+        /** Create a buffer that can be bound as a shader resource */
+        ShaderResource  = 1 << 8,
+        
+        /** Request that this buffer is directly CPU accessible */
+        KeepCPUAccessible = 1 << 9,
+        
+        /** Buffer should go in fast VRAM (hint only) */
+        FastVRAM        = 1 << 10,
+        
+        /** Vertex buffer type */
+        VertexBuffer    = 1 << 14,
+        
+        /** Index buffer type */
+        IndexBuffer     = 1 << 15,
+        
+        /** Structured buffer type */
+        StructuredBuffer = 1 << 16,
+        
+        // Helper bit-masks
+        AnyDynamic = (Dynamic | Volatile),
+    };
+    
+    // Enable bitwise operations for EBufferUsageFlags
+    inline constexpr EBufferUsageFlags operator|(EBufferUsageFlags lhs, EBufferUsageFlags rhs) {
+        return static_cast<EBufferUsageFlags>(static_cast<uint32>(lhs) | static_cast<uint32>(rhs));
+    }
+    
+    inline constexpr EBufferUsageFlags operator&(EBufferUsageFlags lhs, EBufferUsageFlags rhs) {
+        return static_cast<EBufferUsageFlags>(static_cast<uint32>(lhs) & static_cast<uint32>(rhs));
+    }
+    
+    inline constexpr EBufferUsageFlags& operator|=(EBufferUsageFlags& lhs, EBufferUsageFlags rhs) {
+        lhs = lhs | rhs;
+        return lhs;
+    }
+    
+    inline constexpr bool EnumHasAnyFlags(EBufferUsageFlags flags, EBufferUsageFlags contains) {
+        return (flags & contains) != EBufferUsageFlags::None;
+    }
+    
+    /**
+     * @struct FRHIResourceCreateInfo
+     * @brief Resource creation information (UE5-style)
+     * 
+     * Contains initial data and debug information for resource creation.
+     * Reference UE5: FRHIResourceCreateInfo
+     */
+    struct FRHIResourceCreateInfo
+    {
+        /** Debug name for the resource */
+        String DebugName;
+        
+        /** Initial data to upload to the resource (optional) */
+        const void* BulkData = nullptr;
+        
+        /** Size of the initial data in bytes */
+        uint32 BulkDataSize = 0;
+        
+        /** Constructor with debug name */
+        FRHIResourceCreateInfo() = default;
+        
+        explicit FRHIResourceCreateInfo(const String& InDebugName)
+            : DebugName(InDebugName)
+        {}
+        
+        FRHIResourceCreateInfo(const String& InDebugName, const void* InData, uint32 InDataSize)
+            : DebugName(InDebugName)
+            , BulkData(InData)
+            , BulkDataSize(InDataSize)
+        {}
+    };
+    
     // Buffer description
     struct BufferDesc {
         uint32 size = 0;
@@ -82,9 +188,36 @@ namespace MonsterRender::RHI {
         bool cpuAccessible = false;
         String debugName;
         
+        /** Stride for structured/vertex buffers */
+        uint32 stride = 0;
+        
+        /** Initial data (optional) */
+        const void* initialData = nullptr;
+        uint32 initialDataSize = 0;
+        
         BufferDesc() = default;
         BufferDesc(uint32 inSize, EResourceUsage inUsage, bool inCpuAccessible = false)
             : size(inSize), usage(inUsage), cpuAccessible(inCpuAccessible) {}
+        
+        /** Create a vertex buffer description */
+        static BufferDesc VertexBuffer(uint32 inSize, uint32 inStride, bool inCpuAccessible = false) {
+            BufferDesc desc;
+            desc.size = inSize;
+            desc.stride = inStride;
+            desc.usage = EResourceUsage::VertexBuffer;
+            desc.cpuAccessible = inCpuAccessible;
+            return desc;
+        }
+        
+        /** Create an index buffer description */
+        static BufferDesc IndexBuffer(uint32 inSize, bool b32Bit, bool inCpuAccessible = false) {
+            BufferDesc desc;
+            desc.size = inSize;
+            desc.stride = b32Bit ? 4 : 2;
+            desc.usage = EResourceUsage::IndexBuffer;
+            desc.cpuAccessible = inCpuAccessible;
+            return desc;
+        }
     };
     
     // Texture formats

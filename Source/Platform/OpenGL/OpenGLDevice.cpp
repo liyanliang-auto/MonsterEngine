@@ -204,6 +204,62 @@ TSharedPtr<IRHISampler> FOpenGLDevice::createSampler(const SamplerDesc& desc)
     return MakeShared<FOpenGLSampler>(glDesc);
 }
 
+// ========================================================================
+// UE5-style Vertex and Index Buffer Creation
+// ========================================================================
+
+TSharedPtr<FRHIVertexBuffer> FOpenGLDevice::CreateVertexBuffer(
+    uint32 Size,
+    EBufferUsageFlags Usage,
+    FRHIResourceCreateInfo& CreateInfo)
+{
+    MR_LOG_DEBUG("Creating OpenGL vertex buffer: " + CreateInfo.DebugName + 
+                 " (size: " + std::to_string(Size) + " bytes)");
+    
+    // Create the OpenGL vertex buffer
+    auto vertexBuffer = MakeShared<FOpenGLVertexBuffer>(Size, 0, Usage);
+    
+    // Initialize with optional initial data
+    if (!vertexBuffer->Initialize(CreateInfo.BulkData, CreateInfo.BulkDataSize))
+    {
+        MR_LOG_ERROR("Failed to create OpenGL vertex buffer: " + CreateInfo.DebugName);
+        return nullptr;
+    }
+    
+    // Set debug name
+    vertexBuffer->SetDebugName(CreateInfo.DebugName);
+    
+    MR_LOG_DEBUG("Successfully created OpenGL vertex buffer: " + CreateInfo.DebugName);
+    return vertexBuffer;
+}
+
+TSharedPtr<FRHIIndexBuffer> FOpenGLDevice::CreateIndexBuffer(
+    uint32 Stride,
+    uint32 Size,
+    EBufferUsageFlags Usage,
+    FRHIResourceCreateInfo& CreateInfo)
+{
+    MR_LOG_DEBUG("Creating OpenGL index buffer: " + CreateInfo.DebugName + 
+                 " (size: " + std::to_string(Size) + " bytes, " +
+                 (Stride == 4 ? "32-bit" : "16-bit") + " indices)");
+    
+    // Create the OpenGL index buffer
+    auto indexBuffer = MakeShared<FOpenGLIndexBuffer>(Stride, Size, Usage);
+    
+    // Initialize with optional initial data
+    if (!indexBuffer->Initialize(CreateInfo.BulkData, CreateInfo.BulkDataSize))
+    {
+        MR_LOG_ERROR("Failed to create OpenGL index buffer: " + CreateInfo.DebugName);
+        return nullptr;
+    }
+    
+    // Set debug name
+    indexBuffer->SetDebugName(CreateInfo.DebugName);
+    
+    MR_LOG_DEBUG("Successfully created OpenGL index buffer: " + CreateInfo.DebugName);
+    return indexBuffer;
+}
+
 TSharedPtr<IRHICommandList> FOpenGLDevice::createCommandList()
 {
     return MakeShared<FOpenGLCommandList>(this);
