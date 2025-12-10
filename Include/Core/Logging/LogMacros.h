@@ -34,10 +34,10 @@ namespace MonsterRender {
 #ifndef COMPILED_IN_MINIMUM_VERBOSITY
     #if defined(NDEBUG) || defined(MR_SHIPPING)
         // Release/Shipping: Only compile Fatal, Error, Warning, Display, Log
-        #define COMPILED_IN_MINIMUM_VERBOSITY ELogVerbosity::Log
+        #define COMPILED_IN_MINIMUM_VERBOSITY ::MonsterRender::ELogVerbosity::Log
     #else
         // Debug: Compile all verbosity levels
-        #define COMPILED_IN_MINIMUM_VERBOSITY ELogVerbosity::VeryVerbose
+        #define COMPILED_IN_MINIMUM_VERBOSITY ::MonsterRender::ELogVerbosity::VeryVerbose
     #endif
 #endif
 

@@ -230,6 +230,16 @@
     <ClCompile Include="Source\Platform\OpenGL\OpenGLDevice.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLCommandList.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLSwapChain.cpp" />
+    <ClCompile Include="Source\Engine\Scene.cpp" />
+    <ClCompile Include="Source\Engine\PrimitiveSceneInfo.cpp" />
+    <ClCompile Include="Source\Engine\PrimitiveSceneProxy.cpp" />
+    <ClCompile Include="Source\Engine\LightSceneInfo.cpp" />
+    <ClCompile Include="Source\Engine\LightSceneProxy.cpp" />
+    <ClCompile Include="Source\Engine\LightPrimitiveInteraction.cpp" />
+    <ClCompile Include="Source\Engine\Components\SceneComponent.cpp" />
+    <ClCompile Include="Source\Engine\Components\PrimitiveComponent.cpp" />
+    <ClCompile Include="Source\Engine\Components\LightComponent.cpp" />
+    <ClCompile Include="Source\Engine\Components\MeshComponent.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -341,6 +351,19 @@
     <ClInclude Include="Include\Platform\OpenGL\OpenGLSwapChain.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanSwapChain.h" />
     <ClInclude Include="Include\RHI\IRHISwapChain.h" />
+    <ClInclude Include="Include\Engine\SceneTypes.h" />
+    <ClInclude Include="Include\Engine\SceneInterface.h" />
+    <ClInclude Include="Include\Engine\Scene.h" />
+    <ClInclude Include="Include\Engine\PrimitiveSceneInfo.h" />
+    <ClInclude Include="Include\Engine\PrimitiveSceneProxy.h" />
+    <ClInclude Include="Include\Engine\LightSceneInfo.h" />
+    <ClInclude Include="Include\Engine\LightSceneProxy.h" />
+    <ClInclude Include="Include\Engine\LightPrimitiveInteraction.h" />
+    <ClInclude Include="Include\Engine\Octree.h" />
+    <ClInclude Include="Include\Engine\Components\SceneComponent.h" />
+    <ClInclude Include="Include\Engine\Components\PrimitiveComponent.h" />
+    <ClInclude Include="Include\Engine\Components\LightComponent.h" />
+    <ClInclude Include="Include\Engine\Components\MeshComponent.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
