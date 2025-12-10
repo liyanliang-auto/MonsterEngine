@@ -250,6 +250,7 @@
     <ClCompile Include="Source\Engine\Mesh\MeshLoader.cpp" />
     <ClCompile Include="Source\Engine\Mesh\OBJMeshLoader.cpp" />
     <ClCompile Include="Source\Engine\Mesh\GLTFMeshLoader.cpp" />
+    <ClCompile Include="Source\Renderer\LightUniformBuffer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -387,6 +388,8 @@
     <ClInclude Include="Include\Engine\Mesh\MeshBuilder.h" />
     <ClInclude Include="Include\Engine\Mesh\MeshLoader.h" />
     <ClInclude Include="Include\RHI\RHIResources.h" />
+    <ClInclude Include="Include\Renderer\LightShaderParameters.h" />
+    <ClInclude Include="Include\Renderer\LightUniformBuffer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
