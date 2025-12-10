@@ -245,6 +245,11 @@
     <ClCompile Include="Source\Engine\SceneVisibility.cpp" />
     <ClCompile Include="Source\Engine\SceneRenderer.cpp" />
     <ClCompile Include="Source\Engine\SceneOctree.cpp" />
+    <ClCompile Include="Source\Engine\Mesh\StaticMesh.cpp" />
+    <ClCompile Include="Source\Engine\Mesh\MeshBuilder.cpp" />
+    <ClCompile Include="Source\Engine\Mesh\MeshLoader.cpp" />
+    <ClCompile Include="Source\Engine\Mesh\OBJMeshLoader.cpp" />
+    <ClCompile Include="Source\Engine\Mesh\GLTFMeshLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -375,6 +380,13 @@
     <ClInclude Include="Include\Engine\SceneRenderer.h" />
     <ClInclude Include="Include\Engine\SceneOctree.h" />
     <ClInclude Include="Include\Engine\RenderCommandQueue.h" />
+    <ClInclude Include="Include\Engine\Mesh\PackedNormal.h" />
+    <ClInclude Include="Include\Engine\Mesh\VertexFactory.h" />
+    <ClInclude Include="Include\Engine\Mesh\StaticMeshVertex.h" />
+    <ClInclude Include="Include\Engine\Mesh\StaticMesh.h" />
+    <ClInclude Include="Include\Engine\Mesh\MeshBuilder.h" />
+    <ClInclude Include="Include\Engine\Mesh\MeshLoader.h" />
+    <ClInclude Include="Include\RHI\RHIResources.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

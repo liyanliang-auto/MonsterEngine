@@ -381,6 +381,60 @@ namespace MonsterRender::RHI::Vulkan {
         return sampler;
     }
     
+    // ========================================================================
+    // UE5-style Vertex and Index Buffer Creation
+    // ========================================================================
+    
+    TSharedPtr<FRHIVertexBuffer> VulkanDevice::CreateVertexBuffer(
+        uint32 Size,
+        EBufferUsageFlags Usage,
+        FRHIResourceCreateInfo& CreateInfo)
+    {
+        MR_LOG_DEBUG("Creating vertex buffer: " + CreateInfo.DebugName + 
+                     " (size: " + std::to_string(Size) + " bytes)");
+        
+        // Create the Vulkan vertex buffer
+        auto vertexBuffer = MakeShared<FVulkanVertexBuffer>(this, Size, 0, Usage);
+        
+        // Initialize with optional initial data
+        if (!vertexBuffer->Initialize(CreateInfo.BulkData, CreateInfo.BulkDataSize)) {
+            MR_LOG_ERROR("Failed to create vertex buffer: " + CreateInfo.DebugName);
+            return nullptr;
+        }
+        
+        // Set debug name
+        vertexBuffer->SetDebugName(CreateInfo.DebugName);
+        
+        MR_LOG_DEBUG("Successfully created vertex buffer: " + CreateInfo.DebugName);
+        return vertexBuffer;
+    }
+    
+    TSharedPtr<FRHIIndexBuffer> VulkanDevice::CreateIndexBuffer(
+        uint32 Stride,
+        uint32 Size,
+        EBufferUsageFlags Usage,
+        FRHIResourceCreateInfo& CreateInfo)
+    {
+        MR_LOG_DEBUG("Creating index buffer: " + CreateInfo.DebugName + 
+                     " (size: " + std::to_string(Size) + " bytes, " +
+                     (Stride == 4 ? "32-bit" : "16-bit") + " indices)");
+        
+        // Create the Vulkan index buffer
+        auto indexBuffer = MakeShared<FVulkanIndexBuffer>(this, Stride, Size, Usage);
+        
+        // Initialize with optional initial data
+        if (!indexBuffer->Initialize(CreateInfo.BulkData, CreateInfo.BulkDataSize)) {
+            MR_LOG_ERROR("Failed to create index buffer: " + CreateInfo.DebugName);
+            return nullptr;
+        }
+        
+        // Set debug name
+        indexBuffer->SetDebugName(CreateInfo.DebugName);
+        
+        MR_LOG_DEBUG("Successfully created index buffer: " + CreateInfo.DebugName);
+        return indexBuffer;
+    }
+    
     TSharedPtr<IRHICommandList> VulkanDevice::createCommandList() {
         auto commandList = MakeShared<VulkanCommandList>(this);
         if (!commandList->initialize()) {

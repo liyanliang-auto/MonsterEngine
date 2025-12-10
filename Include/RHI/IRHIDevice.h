@@ -2,6 +2,7 @@
 
 #include "Core/CoreMinimal.h"
 #include "RHI/RHIDefinitions.h"
+#include "RHI/RHIResources.h"
 #include "RHI/IRHIResource.h"
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHISwapChain.h"
@@ -59,14 +60,59 @@ namespace MonsterRender::RHI {
          */
         virtual ERHIBackend getBackendType() const = 0;
         
+        // ========================================================================
         // Resource creation
+        // ========================================================================
+        
         /**
-         * Create a buffer
+         * Create a generic buffer
+         * @param desc Buffer description
+         * @return Created buffer, or nullptr on failure
          */
         virtual TSharedPtr<IRHIBuffer> createBuffer(const BufferDesc& desc) = 0;
         
         /**
+         * Create a vertex buffer (UE5-style convenience method)
+         * 
+         * Creates a GPU buffer specifically for vertex data. The buffer can optionally
+         * be initialized with data at creation time.
+         * 
+         * @param Size Size of the buffer in bytes
+         * @param Usage Buffer usage flags (Static, Dynamic, etc.)
+         * @param CreateInfo Resource creation info with optional initial data
+         * @return Created vertex buffer, or nullptr on failure
+         * 
+         * Reference UE5: RHICreateVertexBuffer
+         */
+        virtual TSharedPtr<FRHIVertexBuffer> CreateVertexBuffer(
+            uint32 Size,
+            EBufferUsageFlags Usage,
+            FRHIResourceCreateInfo& CreateInfo) = 0;
+        
+        /**
+         * Create an index buffer (UE5-style convenience method)
+         * 
+         * Creates a GPU buffer specifically for index data. Supports both 16-bit
+         * and 32-bit indices.
+         * 
+         * @param Stride Index stride (2 for 16-bit, 4 for 32-bit)
+         * @param Size Size of the buffer in bytes
+         * @param Usage Buffer usage flags (Static, Dynamic, etc.)
+         * @param CreateInfo Resource creation info with optional initial data
+         * @return Created index buffer, or nullptr on failure
+         * 
+         * Reference UE5: RHICreateIndexBuffer
+         */
+        virtual TSharedPtr<FRHIIndexBuffer> CreateIndexBuffer(
+            uint32 Stride,
+            uint32 Size,
+            EBufferUsageFlags Usage,
+            FRHIResourceCreateInfo& CreateInfo) = 0;
+        
+        /**
          * Create a texture
+         * @param desc Texture description
+         * @return Created texture, or nullptr on failure
          */
         virtual TSharedPtr<IRHITexture> createTexture(const TextureDesc& desc) = 0;
         

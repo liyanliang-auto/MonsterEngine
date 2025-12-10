@@ -842,4 +842,383 @@ void FOpenGLVertexArray::SetAttributeDivisor(uint32 index, uint32 divisor)
     glVertexAttribDivisor(index, divisor);
 }
 
+// ============================================================================
+// FOpenGLVertexBuffer Implementation
+// ============================================================================
+
+FOpenGLVertexBuffer::FOpenGLVertexBuffer(uint32 InSize, uint32 InStride, EBufferUsageFlags InUsage)
+    : FRHIVertexBuffer(InSize, InStride)
+    , m_usageFlags(InUsage)
+{
+    m_usageHint = DetermineUsageHint();
+}
+
+FOpenGLVertexBuffer::~FOpenGLVertexBuffer()
+{
+    DestroyBuffer();
+}
+
+bool FOpenGLVertexBuffer::Initialize(const void* InitialData, uint32 DataSize)
+{
+    // Destroy existing buffer if any
+    DestroyBuffer();
+    
+    // Create new buffer
+    if (!CreateBuffer(InitialData, DataSize))
+    {
+        MR_LOG_ERROR("FOpenGLVertexBuffer: Failed to create buffer");
+        return false;
+    }
+    
+    MR_LOG_DEBUG("FOpenGLVertexBuffer: Created buffer (size: %u bytes)", GetSize());
+    return true;
+}
+
+bool FOpenGLVertexBuffer::CreateBuffer(const void* InitialData, uint32 DataSize)
+{
+    // Generate buffer
+    glGenBuffers(1, &m_buffer);
+    if (m_buffer == 0)
+    {
+        MR_LOG_ERROR("FOpenGLVertexBuffer: glGenBuffers failed");
+        return false;
+    }
+    
+    // Bind and allocate
+    Bind();
+    
+    // Determine if we should use immutable storage
+    bool bUseImmutableStorage = (glBufferStorage != nullptr) && 
+                                 !EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic);
+    
+    if (bUseImmutableStorage)
+    {
+        // Use immutable storage for static buffers
+        GLbitfield flags = 0;
+        
+        if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::KeepCPUAccessible))
+        {
+            flags |= GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
+        }
+        
+        if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic))
+        {
+            flags |= GL_DYNAMIC_STORAGE_BIT;
+        }
+        
+        glBufferStorage(GL_ARRAY_BUFFER, GetSize(), InitialData, flags);
+    }
+    else
+    {
+        // Use mutable storage for dynamic buffers
+        glBufferData(GL_ARRAY_BUFFER, GetSize(), InitialData, m_usageHint);
+    }
+    
+    GL_CHECK("FOpenGLVertexBuffer::CreateBuffer");
+    
+    // Set debug label
+    const String& debugName = GetDebugName();
+    if (glObjectLabel && !debugName.empty())
+    {
+        glObjectLabel(GL_BUFFER, m_buffer, static_cast<GLsizei>(debugName.length()), debugName.c_str());
+    }
+    
+    Unbind();
+    return true;
+}
+
+void FOpenGLVertexBuffer::DestroyBuffer()
+{
+    if (m_mappedData)
+    {
+        Unlock();
+    }
+    
+    if (m_buffer != 0)
+    {
+        glDeleteBuffers(1, &m_buffer);
+        m_buffer = 0;
+    }
+}
+
+void* FOpenGLVertexBuffer::Lock(uint32 Offset, uint32 InSize)
+{
+    if (m_mappedData)
+    {
+        MR_LOG_WARNING("FOpenGLVertexBuffer: Buffer already locked");
+        return m_mappedData;
+    }
+    
+    if (Offset + InSize > GetSize())
+    {
+        MR_LOG_ERROR("FOpenGLVertexBuffer: Lock range exceeds buffer size");
+        return nullptr;
+    }
+    
+    Bind();
+    
+    // Determine access flags
+    GLbitfield access = GL_MAP_WRITE_BIT;
+    
+    if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic))
+    {
+        // For dynamic buffers, invalidate the range to avoid synchronization
+        access |= GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT;
+    }
+    
+    m_mappedData = glMapBufferRange(GL_ARRAY_BUFFER, Offset, InSize, access);
+    
+    if (!m_mappedData)
+    {
+        MR_LOG_ERROR("FOpenGLVertexBuffer: glMapBufferRange failed");
+    }
+    
+    return m_mappedData;
+}
+
+void FOpenGLVertexBuffer::Unlock()
+{
+    if (!m_mappedData)
+    {
+        return;
+    }
+    
+    Bind();
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+    m_mappedData = nullptr;
+    Unbind();
+}
+
+void FOpenGLVertexBuffer::UpdateData(const void* Data, uint32 Size, uint32 Offset)
+{
+    if (!Data || Size == 0)
+    {
+        return;
+    }
+    
+    if (Offset + Size > GetSize())
+    {
+        MR_LOG_ERROR("FOpenGLVertexBuffer: UpdateData range exceeds buffer size");
+        return;
+    }
+    
+    Bind();
+    glBufferSubData(GL_ARRAY_BUFFER, Offset, Size, Data);
+    GL_CHECK("FOpenGLVertexBuffer::UpdateData");
+    Unbind();
+}
+
+void FOpenGLVertexBuffer::Bind() const
+{
+    glBindBuffer(GL_ARRAY_BUFFER, m_buffer);
+}
+
+void FOpenGLVertexBuffer::Unbind() const
+{
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+GLenum FOpenGLVertexBuffer::DetermineUsageHint() const
+{
+    if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic))
+    {
+        return GL_DYNAMIC_DRAW;
+    }
+    else if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Static))
+    {
+        return GL_STATIC_DRAW;
+    }
+    return GL_STREAM_DRAW;
+}
+
+// ============================================================================
+// FOpenGLIndexBuffer Implementation
+// ============================================================================
+
+FOpenGLIndexBuffer::FOpenGLIndexBuffer(uint32 InStride, uint32 InSize, EBufferUsageFlags InUsage)
+    : FRHIIndexBuffer(InSize, InStride == 4)  // InStride == 4 means 32-bit indices
+    , m_usageFlags(InUsage)
+{
+    m_usageHint = DetermineUsageHint();
+}
+
+FOpenGLIndexBuffer::~FOpenGLIndexBuffer()
+{
+    DestroyBuffer();
+}
+
+bool FOpenGLIndexBuffer::Initialize(const void* InitialData, uint32 DataSize)
+{
+    // Destroy existing buffer if any
+    DestroyBuffer();
+    
+    // Create new buffer
+    if (!CreateBuffer(InitialData, DataSize))
+    {
+        MR_LOG_ERROR("FOpenGLIndexBuffer: Failed to create buffer");
+        return false;
+    }
+    
+    MR_LOG_DEBUG("FOpenGLIndexBuffer: Created buffer (size: %u bytes, %s indices)",
+                 GetSize(), Is32Bit() ? "32-bit" : "16-bit");
+    return true;
+}
+
+bool FOpenGLIndexBuffer::CreateBuffer(const void* InitialData, uint32 DataSize)
+{
+    // Generate buffer
+    glGenBuffers(1, &m_buffer);
+    if (m_buffer == 0)
+    {
+        MR_LOG_ERROR("FOpenGLIndexBuffer: glGenBuffers failed");
+        return false;
+    }
+    
+    // Bind and allocate
+    Bind();
+    
+    // Determine if we should use immutable storage
+    bool bUseImmutableStorage = (glBufferStorage != nullptr) && 
+                                 !EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic);
+    
+    if (bUseImmutableStorage)
+    {
+        // Use immutable storage for static buffers
+        GLbitfield flags = 0;
+        
+        if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::KeepCPUAccessible))
+        {
+            flags |= GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
+        }
+        
+        if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic))
+        {
+            flags |= GL_DYNAMIC_STORAGE_BIT;
+        }
+        
+        glBufferStorage(GL_ELEMENT_ARRAY_BUFFER, GetSize(), InitialData, flags);
+    }
+    else
+    {
+        // Use mutable storage for dynamic buffers
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, GetSize(), InitialData, m_usageHint);
+    }
+    
+    GL_CHECK("FOpenGLIndexBuffer::CreateBuffer");
+    
+    // Set debug label
+    const String& debugName = GetDebugName();
+    if (glObjectLabel && !debugName.empty())
+    {
+        glObjectLabel(GL_BUFFER, m_buffer, static_cast<GLsizei>(debugName.length()), debugName.c_str());
+    }
+    
+    Unbind();
+    return true;
+}
+
+void FOpenGLIndexBuffer::DestroyBuffer()
+{
+    if (m_mappedData)
+    {
+        Unlock();
+    }
+    
+    if (m_buffer != 0)
+    {
+        glDeleteBuffers(1, &m_buffer);
+        m_buffer = 0;
+    }
+}
+
+void* FOpenGLIndexBuffer::Lock(uint32 Offset, uint32 InSize)
+{
+    if (m_mappedData)
+    {
+        MR_LOG_WARNING("FOpenGLIndexBuffer: Buffer already locked");
+        return m_mappedData;
+    }
+    
+    if (Offset + InSize > GetSize())
+    {
+        MR_LOG_ERROR("FOpenGLIndexBuffer: Lock range exceeds buffer size");
+        return nullptr;
+    }
+    
+    Bind();
+    
+    // Determine access flags
+    GLbitfield access = GL_MAP_WRITE_BIT;
+    
+    if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic))
+    {
+        // For dynamic buffers, invalidate the range to avoid synchronization
+        access |= GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT;
+    }
+    
+    m_mappedData = glMapBufferRange(GL_ELEMENT_ARRAY_BUFFER, Offset, InSize, access);
+    
+    if (!m_mappedData)
+    {
+        MR_LOG_ERROR("FOpenGLIndexBuffer: glMapBufferRange failed");
+    }
+    
+    return m_mappedData;
+}
+
+void FOpenGLIndexBuffer::Unlock()
+{
+    if (!m_mappedData)
+    {
+        return;
+    }
+    
+    Bind();
+    glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
+    m_mappedData = nullptr;
+    Unbind();
+}
+
+void FOpenGLIndexBuffer::UpdateData(const void* Data, uint32 Size, uint32 Offset)
+{
+    if (!Data || Size == 0)
+    {
+        return;
+    }
+    
+    if (Offset + Size > GetSize())
+    {
+        MR_LOG_ERROR("FOpenGLIndexBuffer: UpdateData range exceeds buffer size");
+        return;
+    }
+    
+    Bind();
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, Offset, Size, Data);
+    GL_CHECK("FOpenGLIndexBuffer::UpdateData");
+    Unbind();
+}
+
+void FOpenGLIndexBuffer::Bind() const
+{
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_buffer);
+}
+
+void FOpenGLIndexBuffer::Unbind() const
+{
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+}
+
+GLenum FOpenGLIndexBuffer::DetermineUsageHint() const
+{
+    if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic))
+    {
+        return GL_DYNAMIC_DRAW;
+    }
+    else if (EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Static))
+    {
+        return GL_STATIC_DRAW;
+    }
+    return GL_STREAM_DRAW;
+}
+
 } // namespace MonsterEngine::OpenGL

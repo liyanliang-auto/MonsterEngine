@@ -70,6 +70,18 @@ public:
     virtual TSharedPtr<MonsterRender::RHI::IRHISampler> createSampler(
         const MonsterRender::RHI::SamplerDesc& desc) override;
     
+    // UE5-style vertex and index buffer creation
+    virtual TSharedPtr<MonsterRender::RHI::FRHIVertexBuffer> CreateVertexBuffer(
+        uint32 Size,
+        MonsterRender::RHI::EBufferUsageFlags Usage,
+        MonsterRender::RHI::FRHIResourceCreateInfo& CreateInfo) override;
+    
+    virtual TSharedPtr<MonsterRender::RHI::FRHIIndexBuffer> CreateIndexBuffer(
+        uint32 Stride,
+        uint32 Size,
+        MonsterRender::RHI::EBufferUsageFlags Usage,
+        MonsterRender::RHI::FRHIResourceCreateInfo& CreateInfo) override;
+    
     virtual TSharedPtr<MonsterRender::RHI::IRHICommandList> createCommandList() override;
     
     virtual void executeCommandLists(

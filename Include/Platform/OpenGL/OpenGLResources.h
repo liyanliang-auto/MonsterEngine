@@ -9,6 +9,8 @@
 
 #include "Core/CoreMinimal.h"
 #include "RHI/IRHIResource.h"
+#include "RHI/RHIResources.h"
+#include "RHI/RHIDefinitions.h"
 #include "Platform/OpenGL/OpenGLDefinitions.h"
 
 namespace MonsterEngine::OpenGL {
@@ -86,6 +88,161 @@ private:
     GLenum m_usage = 0;
     void* m_mappedPtr = nullptr;
     bool m_persistentMapping = false;
+};
+
+// ============================================================================
+// OpenGL Vertex Buffer
+// ============================================================================
+
+/**
+ * @class FOpenGLVertexBuffer
+ * @brief OpenGL implementation of vertex buffer
+ * 
+ * Extends FRHIVertexBuffer with OpenGL-specific functionality.
+ * Manages GPU buffer allocation and data upload for vertex data.
+ * 
+ * Reference UE5: FOpenGLVertexBuffer
+ */
+class FOpenGLVertexBuffer : public MonsterRender::RHI::FRHIVertexBuffer
+{
+public:
+    /**
+     * Constructor
+     * @param InSize Buffer size in bytes
+     * @param InStride Vertex stride in bytes
+     * @param InUsage Buffer usage flags
+     */
+    FOpenGLVertexBuffer(uint32 InSize, uint32 InStride, MonsterRender::RHI::EBufferUsageFlags InUsage);
+    
+    virtual ~FOpenGLVertexBuffer();
+    
+    // Non-copyable, non-movable
+    FOpenGLVertexBuffer(const FOpenGLVertexBuffer&) = delete;
+    FOpenGLVertexBuffer& operator=(const FOpenGLVertexBuffer&) = delete;
+    
+    // FRHIBuffer interface
+    virtual void* Lock(uint32 Offset, uint32 InSize) override;
+    virtual void Unlock() override;
+    
+    /**
+     * Initialize the buffer with optional initial data
+     * @param InitialData Initial data to upload (can be nullptr)
+     * @param DataSize Size of initial data
+     * @return true if successful
+     */
+    bool Initialize(const void* InitialData = nullptr, uint32 DataSize = 0);
+    
+    /**
+     * Update buffer data (for dynamic buffers)
+     * @param Data Data to upload
+     * @param Size Size of data
+     * @param Offset Offset in buffer
+     */
+    void UpdateData(const void* Data, uint32 Size, uint32 Offset = 0);
+    
+    // OpenGL-specific accessors
+    GLuint GetGLBuffer() const { return m_buffer; }
+    bool IsValid() const { return m_buffer != 0; }
+    
+    /** Get buffer usage flags */
+    MonsterRender::RHI::EBufferUsageFlags GetUsageFlags() const { return m_usageFlags; }
+    
+    /** Bind this buffer as vertex buffer */
+    void Bind() const;
+    
+    /** Unbind vertex buffer */
+    void Unbind() const;
+    
+private:
+    bool CreateBuffer(const void* InitialData, uint32 DataSize);
+    void DestroyBuffer();
+    GLenum DetermineUsageHint() const;
+    
+private:
+    GLuint m_buffer = 0;
+    GLenum m_usageHint = 0;
+    void* m_mappedData = nullptr;
+    MonsterRender::RHI::EBufferUsageFlags m_usageFlags;
+    bool m_isPersistentMapped = false;
+};
+
+// ============================================================================
+// OpenGL Index Buffer
+// ============================================================================
+
+/**
+ * @class FOpenGLIndexBuffer
+ * @brief OpenGL implementation of index buffer
+ * 
+ * Extends FRHIIndexBuffer with OpenGL-specific functionality.
+ * Supports both 16-bit and 32-bit indices.
+ * 
+ * Reference UE5: FOpenGLIndexBuffer
+ */
+class FOpenGLIndexBuffer : public MonsterRender::RHI::FRHIIndexBuffer
+{
+public:
+    /**
+     * Constructor
+     * @param InStride Index stride (2 for 16-bit, 4 for 32-bit)
+     * @param InSize Buffer size in bytes
+     * @param InUsage Buffer usage flags
+     */
+    FOpenGLIndexBuffer(uint32 InStride, uint32 InSize, MonsterRender::RHI::EBufferUsageFlags InUsage);
+    
+    virtual ~FOpenGLIndexBuffer();
+    
+    // Non-copyable, non-movable
+    FOpenGLIndexBuffer(const FOpenGLIndexBuffer&) = delete;
+    FOpenGLIndexBuffer& operator=(const FOpenGLIndexBuffer&) = delete;
+    
+    // FRHIBuffer interface
+    virtual void* Lock(uint32 Offset, uint32 InSize) override;
+    virtual void Unlock() override;
+    
+    /**
+     * Initialize the buffer with optional initial data
+     * @param InitialData Initial data to upload (can be nullptr)
+     * @param DataSize Size of initial data
+     * @return true if successful
+     */
+    bool Initialize(const void* InitialData = nullptr, uint32 DataSize = 0);
+    
+    /**
+     * Update buffer data (for dynamic buffers)
+     * @param Data Data to upload
+     * @param Size Size of data
+     * @param Offset Offset in buffer
+     */
+    void UpdateData(const void* Data, uint32 Size, uint32 Offset = 0);
+    
+    // OpenGL-specific accessors
+    GLuint GetGLBuffer() const { return m_buffer; }
+    bool IsValid() const { return m_buffer != 0; }
+    
+    /** Get the OpenGL index type */
+    GLenum GetGLIndexType() const { return Is32Bit() ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT; }
+    
+    /** Get buffer usage flags */
+    MonsterRender::RHI::EBufferUsageFlags GetUsageFlags() const { return m_usageFlags; }
+    
+    /** Bind this buffer as element array buffer */
+    void Bind() const;
+    
+    /** Unbind element array buffer */
+    void Unbind() const;
+    
+private:
+    bool CreateBuffer(const void* InitialData, uint32 DataSize);
+    void DestroyBuffer();
+    GLenum DetermineUsageHint() const;
+    
+private:
+    GLuint m_buffer = 0;
+    GLenum m_usageHint = 0;
+    void* m_mappedData = nullptr;
+    MonsterRender::RHI::EBufferUsageFlags m_usageFlags;
+    bool m_isPersistentMapped = false;
 };
 
 // ============================================================================

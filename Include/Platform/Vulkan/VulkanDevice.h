@@ -65,6 +65,18 @@ namespace MonsterRender::RHI::Vulkan {
         TSharedPtr<IRHIPipelineState> createPipelineState(const PipelineStateDesc& desc) override;
         TSharedPtr<IRHISampler> createSampler(const SamplerDesc& desc) override;
         
+        // UE5-style vertex and index buffer creation
+        TSharedPtr<FRHIVertexBuffer> CreateVertexBuffer(
+            uint32 Size,
+            EBufferUsageFlags Usage,
+            FRHIResourceCreateInfo& CreateInfo) override;
+        
+        TSharedPtr<FRHIIndexBuffer> CreateIndexBuffer(
+            uint32 Stride,
+            uint32 Size,
+            EBufferUsageFlags Usage,
+            FRHIResourceCreateInfo& CreateInfo) override;
+        
         TSharedPtr<IRHICommandList> createCommandList() override;
         void executeCommandLists(TSpan<TSharedPtr<IRHICommandList>> commandLists) override;
         
