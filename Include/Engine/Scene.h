@@ -13,6 +13,8 @@
 
 #include "SceneInterface.h"
 #include "SceneTypes.h"
+#include "SceneOctree.h"
+#include "RenderCommandQueue.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
 #include "Containers/SparseArray.h"
@@ -25,7 +27,8 @@ class FPrimitiveSceneInfo;
 class FPrimitiveSceneProxy;
 class FLightSceneInfo;
 class FLightSceneProxy;
-class FLightSceneInfoCompact;
+class FConvexVolume;
+// Note: FScenePrimitiveOctree and FSceneLightOctree are type aliases defined in Octree.h
 
 /**
  * Compact representation of a light for efficient storage and iteration
@@ -298,6 +301,26 @@ public:
     /** The attachment groups in the scene. The map key is the attachment group's root primitive */
     TMap<FPrimitiveComponentId, FAttachmentGroupSceneInfo> AttachmentGroups;
 
+    // ========================================================================
+    // Spatial Acceleration Structures
+    // ========================================================================
+
+    /**
+     * Octree containing the primitives in the scene
+     * Used for efficient spatial queries during visibility culling
+     */
+    FScenePrimitiveOctree PrimitiveOctree;
+
+    /**
+     * Octree containing shadow-casting local lights in the scene
+     * Used for finding lights that affect primitives
+     */
+    FSceneLightOctree LocalShadowCastingLightOctree;
+
+    // ========================================================================
+    // Scene State Flags
+    // ========================================================================
+
     /** Indicates whether this scene requires hit proxy rendering */
     bool bRequiresHitProxies;
 
@@ -309,6 +332,44 @@ public:
 
     /** Number of uncached static lighting interactions */
     mutable int32 NumUncachedStaticLightingInteractions;
+
+    // ========================================================================
+    // Visibility Culling Methods
+    // ========================================================================
+
+public:
+    /**
+     * Find all primitives visible in the given frustum
+     * 
+     * This method uses the primitive octree for efficient frustum culling.
+     * It returns all primitives whose bounds intersect the view frustum.
+     * 
+     * @param Frustum The view frustum to cull against
+     * @param OutVisiblePrimitives Output array of visible primitives
+     */
+    void FindVisiblePrimitives(const FConvexVolume& Frustum, 
+                                TArray<FPrimitiveSceneInfo*>& OutVisiblePrimitives) const;
+
+    /**
+     * Find all lights affecting a primitive
+     * 
+     * @param PrimitiveSceneInfo The primitive to find lights for
+     * @param OutAffectingLights Output array of affecting lights
+     */
+    void FindLightsAffectingPrimitive(const FPrimitiveSceneInfo* PrimitiveSceneInfo,
+                                       TArray<FLightSceneInfo*>& OutAffectingLights) const;
+
+    /**
+     * Get the primitive octree for direct access
+     * @return Reference to the primitive octree
+     */
+    const FScenePrimitiveOctree& GetPrimitiveOctree() const { return PrimitiveOctree; }
+
+    /**
+     * Get the light octree for direct access
+     * @return Reference to the light octree
+     */
+    const FSceneLightOctree& GetLightOctree() const { return LocalShadowCastingLightOctree; }
 
 private:
     /** Next available primitive component ID */

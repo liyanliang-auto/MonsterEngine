@@ -10,6 +10,7 @@
 #include "Engine/PrimitiveSceneProxy.h"
 #include "Engine/LightSceneInfo.h"
 #include "Engine/LightSceneProxy.h"
+#include "Engine/ConvexVolume.h"
 #include "Engine/Components/PrimitiveComponent.h"
 #include "Engine/Components/LightComponent.h"
 #include "Core/Logging/LogMacros.h"
@@ -216,31 +217,43 @@ void FScene::AddPrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* PrimitiveSc
     }
 
     // Add to packed arrays
+    // The packed index is the position in the dense arrays for fast iteration
     int32 PackedIndex = Primitives.Num();
     PrimitiveSceneInfo->SetPackedIndex(PackedIndex);
 
+    // Add to the primitives array
     Primitives.Add(PrimitiveSceneInfo);
     
     FPrimitiveSceneProxy* Proxy = PrimitiveSceneInfo->GetProxy();
     if (Proxy)
     {
+        // Add transform to the packed transform array
         PrimitiveTransforms.Add(Proxy->GetLocalToWorld());
+        
+        // Add proxy to the packed proxy array
         PrimitiveSceneProxies.Add(Proxy);
         
+        // Create and add bounds info
         FPrimitiveBounds Bounds;
         Bounds.BoxSphereBounds = Proxy->GetBounds();
         Bounds.MinDrawDistance = Proxy->GetMinDrawDistance();
         Bounds.MaxDrawDistance = Proxy->GetMaxDrawDistance();
         PrimitiveBounds.Add(Bounds);
         
+        // Add flags and visibility info
         PrimitiveFlagsCompact.Add(FPrimitiveFlagsCompact(EPrimitiveFlags::Default));
         PrimitiveVisibilityIds.Add(FPrimitiveVisibilityId());
         PrimitiveOcclusionFlags.Add(EOcclusionFlags::CanBeOccluded);
         PrimitiveOcclusionBounds.Add(Proxy->GetBounds());
         PrimitiveComponentIds.Add(Proxy->GetPrimitiveComponentId());
+        
+        // Add to the primitive octree for spatial queries
+        // The octree enables efficient frustum culling and spatial lookups
+        uint32 OctreeId = AddPrimitiveToOctree(PrimitiveOctree, PrimitiveSceneInfo, Proxy->GetBounds());
+        PrimitiveSceneInfo->SetOctreeId(OctreeId);
     }
 
-    // Add to scene
+    // Finalize adding to scene (creates light interactions, etc.)
     PrimitiveSceneInfo->AddToScene();
 
     MR_LOG(LogScene, Verbose, "Primitive added at index %d, total primitives: %d",
@@ -260,10 +273,19 @@ void FScene::RemovePrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* Primitiv
         return;
     }
 
-    // Remove from scene
+    // Remove from the primitive octree first
+    // We need the bounds before we delete the proxy
+    FPrimitiveSceneProxy* Proxy = PrimitiveSceneInfo->GetProxy();
+    if (Proxy)
+    {
+        RemovePrimitiveFromOctree(PrimitiveOctree, PrimitiveSceneInfo, Proxy->GetBounds());
+    }
+
+    // Remove from scene (cleans up light interactions, etc.)
     PrimitiveSceneInfo->RemoveFromScene();
 
-    // Swap with last element and remove
+    // Swap with last element and remove (swap-and-pop for O(1) removal)
+    // This maintains dense packing of the arrays
     int32 LastIndex = Primitives.Num() - 1;
     if (PackedIndex != LastIndex)
     {
@@ -271,7 +293,7 @@ void FScene::RemovePrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* Primitiv
         FPrimitiveSceneInfo* MovedPrimitive = Primitives[LastIndex];
         MovedPrimitive->SetPackedIndex(PackedIndex);
 
-        // Swap in all arrays
+        // Swap in all packed arrays
         Primitives[PackedIndex] = Primitives[LastIndex];
         PrimitiveTransforms[PackedIndex] = PrimitiveTransforms[LastIndex];
         PrimitiveSceneProxies[PackedIndex] = PrimitiveSceneProxies[LastIndex];
@@ -283,7 +305,7 @@ void FScene::RemovePrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* Primitiv
         PrimitiveComponentIds[PackedIndex] = PrimitiveComponentIds[LastIndex];
     }
 
-    // Remove last element
+    // Remove last element from all packed arrays
     Primitives.RemoveAt(LastIndex);
     PrimitiveTransforms.RemoveAt(LastIndex);
     PrimitiveSceneProxies.RemoveAt(LastIndex);
@@ -295,7 +317,7 @@ void FScene::RemovePrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* Primitiv
     PrimitiveComponentIds.RemoveAt(LastIndex);
 
     // Delete scene info and proxy
-    delete PrimitiveSceneInfo->GetProxy();
+    delete Proxy;
     delete PrimitiveSceneInfo;
 
     MR_LOG(LogScene, Verbose, "Primitive removed, total primitives: %d", Primitives.Num());
@@ -444,13 +466,13 @@ void FScene::AddLightSceneInfo_RenderThread(FLightSceneInfo* LightSceneInfo)
         return;
     }
 
-    // Add to lights array
+    // Add to lights sparse array
     FLightSceneInfoCompact Compact;
     Compact.Init(LightSceneInfo);
     int32 Index = Lights.Add(Compact);
     LightSceneInfo->SetId(Index);
 
-    // Track directional lights
+    // Track directional lights separately (they affect all primitives)
     if (LightSceneInfo->GetLightType() == ELightType::Directional)
     {
         DirectionalLights.Add(LightSceneInfo);
@@ -461,8 +483,22 @@ void FScene::AddLightSceneInfo_RenderThread(FLightSceneInfo* LightSceneInfo)
             SimpleDirectionalLight = LightSceneInfo;
         }
     }
+    else
+    {
+        // Add local lights (point, spot) to the light octree for spatial queries
+        // This enables efficient light-primitive interaction detection
+        FLightSceneProxy* Proxy = LightSceneInfo->GetProxy();
+        if (Proxy && Proxy->CastsShadow())
+        {
+            // Create bounds from position and radius
+            FBoxSphereBounds LightBounds(Proxy->GetPosition(), 
+                                          FVector(Proxy->GetRadius()), 
+                                          Proxy->GetRadius());
+            AddLightToOctree(LocalShadowCastingLightOctree, LightSceneInfo, LightBounds);
+        }
+    }
 
-    // Add to scene
+    // Finalize adding to scene (creates primitive interactions, etc.)
     LightSceneInfo->AddToScene();
 
     MR_LOG(LogScene, Verbose, "Light added at index %d, total lights: %d",
@@ -477,29 +513,44 @@ void FScene::RemoveLightSceneInfo_RenderThread(FLightSceneInfo* LightSceneInfo)
     }
 
     int32 Id = LightSceneInfo->GetId();
+    FLightSceneProxy* Proxy = LightSceneInfo->GetProxy();
     
-    // Remove from scene
+    // Remove from the light octree first (for local lights)
+    if (LightSceneInfo->GetLightType() != ELightType::Directional)
+    {
+        if (Proxy && Proxy->CastsShadow())
+        {
+            // Create bounds from position and radius
+            FBoxSphereBounds LightBounds(Proxy->GetPosition(), 
+                                          FVector(Proxy->GetRadius()), 
+                                          Proxy->GetRadius());
+            RemoveLightFromOctree(LocalShadowCastingLightOctree, LightSceneInfo, LightBounds);
+        }
+    }
+    
+    // Remove from scene (cleans up primitive interactions, etc.)
     LightSceneInfo->RemoveFromScene();
 
-    // Remove from directional lights
+    // Remove from directional lights array
     if (LightSceneInfo->GetLightType() == ELightType::Directional)
     {
         DirectionalLights.Remove(LightSceneInfo);
         
+        // Update simple directional light reference
         if (SimpleDirectionalLight == LightSceneInfo)
         {
             SimpleDirectionalLight = DirectionalLights.Num() > 0 ? DirectionalLights[0] : nullptr;
         }
     }
 
-    // Remove from lights array
+    // Remove from lights sparse array
     if (Id >= 0 && Lights.IsValidIndex(Id))
     {
         Lights.RemoveAt(Id);
     }
 
     // Delete scene info and proxy
-    delete LightSceneInfo->GetProxy();
+    delete Proxy;
     delete LightSceneInfo;
 
     MR_LOG(LogScene, Verbose, "Light removed, total lights: %d", Lights.Num());
@@ -640,6 +691,51 @@ void FScene::Release()
     
     // For now, the destructor handles cleanup
     delete this;
+}
+
+// ============================================================================
+// Visibility Culling
+// ============================================================================
+
+void FScene::FindVisiblePrimitives(const FConvexVolume& Frustum, 
+                                    TArray<FPrimitiveSceneInfo*>& OutVisiblePrimitives) const
+{
+    // Use the scene octree helper for efficient frustum culling
+    // The octree performs hierarchical culling, only testing primitives
+    // in nodes that intersect the frustum
+    FSceneOctreeHelper::FindPrimitivesInFrustum(PrimitiveOctree, Frustum, OutVisiblePrimitives);
+    
+    MR_LOG(LogScene, Verbose, "FindVisiblePrimitives: found %d visible primitives out of %d total",
+           OutVisiblePrimitives.Num(), Primitives.Num());
+}
+
+void FScene::FindLightsAffectingPrimitive(const FPrimitiveSceneInfo* PrimitiveSceneInfo,
+                                           TArray<FLightSceneInfo*>& OutAffectingLights) const
+{
+    OutAffectingLights.Empty();
+    
+    if (!PrimitiveSceneInfo || !PrimitiveSceneInfo->GetProxy())
+    {
+        return;
+    }
+    
+    // Get the primitive's bounds
+    const FBoxSphereBounds& Bounds = PrimitiveSceneInfo->GetProxy()->GetBounds();
+    
+    // First, add all directional lights (they affect everything)
+    for (FLightSceneInfo* DirectionalLight : DirectionalLights)
+    {
+        if (DirectionalLight)
+        {
+            OutAffectingLights.Add(DirectionalLight);
+        }
+    }
+    
+    // Then use the scene octree helper to find local lights that affect this primitive
+    FSceneOctreeHelper::FindLightsAffectingBounds(LocalShadowCastingLightOctree, Bounds, OutAffectingLights);
+    
+    MR_LOG(LogScene, Verbose, "FindLightsAffectingPrimitive: found %d affecting lights",
+           OutAffectingLights.Num());
 }
 
 } // namespace MonsterEngine

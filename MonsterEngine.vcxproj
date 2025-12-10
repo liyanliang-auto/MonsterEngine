@@ -244,6 +244,7 @@
     <ClCompile Include="Source\Engine\SceneView.cpp" />
     <ClCompile Include="Source\Engine\SceneVisibility.cpp" />
     <ClCompile Include="Source\Engine\SceneRenderer.cpp" />
+    <ClCompile Include="Source\Engine\SceneOctree.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -372,6 +373,8 @@
     <ClInclude Include="Include\Engine\SceneView.h" />
     <ClInclude Include="Include\Engine\SceneVisibility.h" />
     <ClInclude Include="Include\Engine\SceneRenderer.h" />
+    <ClInclude Include="Include\Engine\SceneOctree.h" />
+    <ClInclude Include="Include\Engine\RenderCommandQueue.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
