@@ -14,7 +14,10 @@
 #include "SceneTypes.h"
 #include "Math/Box.h"
 #include "Math/Vector.h"
+#include "Math/Plane.h"
 #include "Containers/Array.h"
+
+#include <utility> // For std::move
 
 namespace MonsterEngine
 {
@@ -168,7 +171,7 @@ public:
         }
 
         // Redistribute elements to children
-        TArray<ElementType> OldElements = MoveTemp(Elements);
+        TArray<ElementType> OldElements = std::move(Elements);
         for (ElementType& Element : OldElements)
         {
             FBox ElementBounds = OctreeSemantics::GetBoundingBox(Element);
@@ -560,7 +563,16 @@ struct FPrimitiveSceneInfoCompact
     {
     }
 
-    explicit FPrimitiveSceneInfoCompact(FPrimitiveSceneInfo* InPrimitiveSceneInfo);
+    /**
+     * Constructor with primitive scene info
+     * @param InPrimitiveSceneInfo The primitive scene info to store
+     */
+    explicit FPrimitiveSceneInfoCompact(FPrimitiveSceneInfo* InPrimitiveSceneInfo)
+        : PrimitiveSceneInfo(InPrimitiveSceneInfo)
+        , OctreeId(0)
+    {
+        // Bounds will be set separately after construction
+    }
 
     FBox GetBoundingBox() const
     {
@@ -622,7 +634,16 @@ struct FLightSceneInfoCompactOctree
     {
     }
 
-    explicit FLightSceneInfoCompactOctree(FLightSceneInfo* InLightSceneInfo);
+    /**
+     * Constructor with light scene info
+     * @param InLightSceneInfo The light scene info to store
+     */
+    explicit FLightSceneInfoCompactOctree(FLightSceneInfo* InLightSceneInfo)
+        : LightSceneInfo(InLightSceneInfo)
+        , OctreeId(0)
+    {
+        // Bounds will be set separately after construction
+    }
 
     FBox GetBoundingBox() const
     {
