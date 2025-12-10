@@ -198,6 +198,12 @@ public:
     /** Get all primitive proxies */
     const TArray<FPrimitiveSceneProxy*>& GetPrimitiveSceneProxies() const { return PrimitiveSceneProxies; }
 
+    /** Get all lights (sparse array) */
+    const TSparseArray<FLightSceneInfoCompact>& GetLights() const { return Lights; }
+
+    /** Get directional lights */
+    const TArray<FLightSceneInfo*>& GetDirectionalLights() const { return DirectionalLights; }
+
 protected:
     // ========================================================================
     // Internal Methods

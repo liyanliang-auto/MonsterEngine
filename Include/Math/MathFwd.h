@@ -14,6 +14,17 @@
 #include <cstdint>
 #include <type_traits>
 
+// Define FORCEINLINE if not already defined
+#ifndef FORCEINLINE
+    #if defined(_MSC_VER)
+        #define FORCEINLINE __forceinline
+    #elif defined(__GNUC__) || defined(__clang__)
+        #define FORCEINLINE inline __attribute__((always_inline))
+    #else
+        #define FORCEINLINE inline
+    #endif
+#endif
+
 namespace MonsterEngine
 {
 namespace Math
@@ -87,6 +98,54 @@ using FSphere3d     = TSphere<double>;
 using FPlane        = TPlane<double>;
 using FPlane4f      = TPlane<float>;
 using FPlane4d      = TPlane<double>;
+
+// ============================================================================
+// Integer Point Types
+// ============================================================================
+
+/** 2D integer point */
+struct FIntPoint
+{
+    int32_t X;
+    int32_t Y;
+
+    FIntPoint() : X(0), Y(0) {}
+    FIntPoint(int32_t InX, int32_t InY) : X(InX), Y(InY) {}
+
+    FORCEINLINE FIntPoint operator+(const FIntPoint& Other) const { return FIntPoint(X + Other.X, Y + Other.Y); }
+    FORCEINLINE FIntPoint operator-(const FIntPoint& Other) const { return FIntPoint(X - Other.X, Y - Other.Y); }
+    FORCEINLINE FIntPoint operator*(int32_t Scale) const { return FIntPoint(X * Scale, Y * Scale); }
+    FORCEINLINE FIntPoint operator/(int32_t Divisor) const { return FIntPoint(X / Divisor, Y / Divisor); }
+
+    FORCEINLINE FIntPoint& operator+=(const FIntPoint& Other) { X += Other.X; Y += Other.Y; return *this; }
+    FORCEINLINE FIntPoint& operator-=(const FIntPoint& Other) { X -= Other.X; Y -= Other.Y; return *this; }
+
+    FORCEINLINE bool operator==(const FIntPoint& Other) const { return X == Other.X && Y == Other.Y; }
+    FORCEINLINE bool operator!=(const FIntPoint& Other) const { return X != Other.X || Y != Other.Y; }
+
+    static const FIntPoint ZeroValue;
+    static const FIntPoint NoneValue;
+};
+
+/** 3D integer vector */
+struct FIntVector
+{
+    int32_t X;
+    int32_t Y;
+    int32_t Z;
+
+    FIntVector() : X(0), Y(0), Z(0) {}
+    FIntVector(int32_t InX, int32_t InY, int32_t InZ) : X(InX), Y(InY), Z(InZ) {}
+
+    FORCEINLINE FIntVector operator+(const FIntVector& Other) const { return FIntVector(X + Other.X, Y + Other.Y, Z + Other.Z); }
+    FORCEINLINE FIntVector operator-(const FIntVector& Other) const { return FIntVector(X - Other.X, Y - Other.Y, Z - Other.Z); }
+
+    FORCEINLINE bool operator==(const FIntVector& Other) const { return X == Other.X && Y == Other.Y && Z == Other.Z; }
+    FORCEINLINE bool operator!=(const FIntVector& Other) const { return X != Other.X || Y != Other.Y || Z != Other.Z; }
+
+    static const FIntVector ZeroValue;
+    static const FIntVector NoneValue;
+};
 
 // ============================================================================
 // Type Traits for Math Types
@@ -166,6 +225,9 @@ using Math::FSphere3d;
 using Math::FPlane;
 using Math::FPlane4f;
 using Math::FPlane4d;
+
+using Math::FIntPoint;
+using Math::FIntVector;
 
 using Math::EForceInit;
 using Math::ForceInit;

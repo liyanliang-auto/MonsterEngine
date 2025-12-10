@@ -240,6 +240,10 @@
     <ClCompile Include="Source\Engine\Components\PrimitiveComponent.cpp" />
     <ClCompile Include="Source\Engine\Components\LightComponent.cpp" />
     <ClCompile Include="Source\Engine\Components\MeshComponent.cpp" />
+    <ClCompile Include="Source\Engine\ConvexVolume.cpp" />
+    <ClCompile Include="Source\Engine\SceneView.cpp" />
+    <ClCompile Include="Source\Engine\SceneVisibility.cpp" />
+    <ClCompile Include="Source\Engine\SceneRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -364,6 +368,10 @@
     <ClInclude Include="Include\Engine\Components\PrimitiveComponent.h" />
     <ClInclude Include="Include\Engine\Components\LightComponent.h" />
     <ClInclude Include="Include\Engine\Components\MeshComponent.h" />
+    <ClInclude Include="Include\Engine\ConvexVolume.h" />
+    <ClInclude Include="Include\Engine\SceneView.h" />
+    <ClInclude Include="Include\Engine\SceneVisibility.h" />
+    <ClInclude Include="Include\Engine\SceneRenderer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
