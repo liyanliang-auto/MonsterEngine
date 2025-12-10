@@ -326,6 +326,17 @@
     <ClInclude Include="Include\Core\Templates\UniquePtr.h">
       <Filter>头文件\Core\Templates</Filter>
     </ClInclude>
+    <ClInclude Include="Include\Renderer\LightShaderParameters.h">
+      <Filter>头文件\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Renderer\LightUniformBuffer.h">
+      <Filter>头文件\Renderer</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Source\Renderer\LightUniformBuffer.cpp">
+      <Filter>源文件\Renderer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="头文件\Core\Templates">
@@ -336,6 +347,12 @@
     </Filter>
     <Filter Include="头文件\Serialization">
       <UniqueIdentifier>{C3D4E5F6-A7B8-9012-CDEF-123456789012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Renderer">
+      <UniqueIdentifier>{D4E5F6A7-B8C9-0123-DEF0-234567890123}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Renderer">
+      <UniqueIdentifier>{E5F6A7B8-C9D0-1234-EF01-345678901234}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
