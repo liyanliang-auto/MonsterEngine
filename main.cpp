@@ -4,6 +4,7 @@
 #include "Containers/Map.h"
 #include "Containers/Set.h"
 #include "CubeSceneApplication.h"
+#include "Tests/CubeSceneRendererTest.h"
 
 // Test Suite Forward Declarations
 namespace MonsterRender {
@@ -75,6 +76,7 @@ int main(int argc, char** argv) {
     bool runSmartPointerTests = false;
     bool runAllTests = false;
     bool runCubeScene = false;  // Run CubeSceneApplication with lighting
+    bool runCubeSceneTest = false;  // Run CubeSceneRendererTest (pipeline integration test)
     
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
@@ -109,6 +111,9 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(argv[i], "--cube-scene") == 0 || strcmp(argv[i], "-cs") == 0) {
             runCubeScene = true;
+        }
+        else if (strcmp(argv[i], "--cube-scene-test") == 0 || strcmp(argv[i], "-cst") == 0) {
+            runCubeSceneTest = true;
         }
     }
     
@@ -240,6 +245,53 @@ int main(int argc, char** argv) {
         
         // Exit after tests
         return 0;
+    }
+    
+    // Run CubeSceneRendererTest if requested
+    if (runCubeSceneTest) {
+        MR_LOG(LogInit, Log, "Running CubeSceneRendererTest (pipeline integration test)...");
+        
+        // Create a simple application to get the RHI device
+        TUniquePtr<Application> testApp = createApplication();
+        if (!testApp) {
+            MR_LOG(LogInit, Error, "Failed to create test application");
+            return -1;
+        }
+        
+        // Initialize the application to get the device
+        if (!testApp->initialize()) {
+            MR_LOG(LogInit, Error, "Failed to initialize test application");
+            return -1;
+        }
+        
+        // Get the RHI device from the application
+        RHI::IRHIDevice* device = testApp->getDevice();
+        if (!device) {
+            MR_LOG(LogInit, Error, "Failed to get RHI device");
+            return -1;
+        }
+        
+        // Create and run the test
+        MonsterEngine::FCubeSceneRendererTest cubeTest;
+        cubeTest.SetCubeCount(1);
+        cubeTest.SetWindowDimensions(1280, 720);
+        
+        if (!cubeTest.Initialize(device)) {
+            MR_LOG(LogInit, Error, "Failed to initialize CubeSceneRendererTest");
+            testApp->shutdown();
+            return -1;
+        }
+        
+        // Run the test
+        bool testPassed = cubeTest.RunTest();
+        MR_LOG(LogInit, Log, "CubeSceneRendererTest %s", testPassed ? "PASSED" : "FAILED");
+        
+        // Cleanup
+        cubeTest.Shutdown();
+        testApp->shutdown();
+        
+        ShutdownLogging();
+        return testPassed ? 0 : -1;
     }
     
     // Create application instance

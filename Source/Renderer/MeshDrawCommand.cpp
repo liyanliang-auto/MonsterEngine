@@ -149,9 +149,8 @@ void FParallelMeshDrawCommandPass::ExecutePassSetupTask()
     
     bSetupTaskComplete = true;
     
-    MR_LOG_DEBUG(LogRenderer, "Pass %s setup complete: %d draw commands",
-                 EMeshPass::GetMeshPassName(TaskContext.PassType),
-                 TaskContext.VisibleMeshDrawCommands.Num());
+    MR_LOG(LogRenderer, Verbose, "Pass setup complete: %d draw commands",
+           TaskContext.VisibleMeshDrawCommands.Num());
 }
 
 void FParallelMeshDrawCommandPass::GenerateDynamicMeshDrawCommands()
@@ -239,9 +238,8 @@ void FParallelMeshDrawCommandPass::SortVisibleMeshDrawCommands()
         return A.SortKey < B.SortKey;
     });
     
-    MR_LOG_DEBUG(LogRenderer, "Sorted %d mesh draw commands for pass %s",
-                 TaskContext.VisibleMeshDrawCommands.Num(),
-                 EMeshPass::GetMeshPassName(TaskContext.PassType));
+    MR_LOG(LogRenderer, Verbose, "Sorted %d mesh draw commands",
+           TaskContext.VisibleMeshDrawCommands.Num());
 }
 
 void FParallelMeshDrawCommandPass::MergeMeshDrawCommands()
