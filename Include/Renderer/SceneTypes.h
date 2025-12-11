@@ -19,8 +19,19 @@
 #include "Math/Box.h"
 #include "Math/Sphere.h"
 #include "Math/Plane.h"
+#include <cmath>
 
 namespace MonsterEngine
+{
+
+namespace RHI
+{
+    class IRHIBuffer;
+    class IRHIPipelineState;
+}
+
+// Renderer namespace for low-level rendering scene types
+namespace Renderer
 {
 
 // Forward declarations
@@ -31,12 +42,6 @@ class FPrimitiveSceneInfo;
 class FPrimitiveSceneProxy;
 class FLightSceneInfo;
 class FLightSceneProxy;
-
-namespace RHI
-{
-    class IRHIBuffer;
-    class IRHIPipelineState;
-}
 
 // ============================================================================
 // Type Aliases
@@ -431,22 +436,81 @@ struct FConvexVolume
      * Build permuted planes for SIMD optimization
      * Arranges planes in SOA format for vectorized intersection tests
      */
-    void BuildPermutedPlanes();
+    void BuildPermutedPlanes()
+    {
+        // Build permuted planes for SIMD optimization
+        PermutedPlanes.Empty();
+        int32 NumPlanes = Planes.Num();
+        int32 NumGroups = (NumPlanes + 3) / 4;
+        PermutedPlanes.SetNum(NumGroups * 4);
+        
+        for (int32 i = 0; i < NumGroups * 4; ++i)
+        {
+            int32 PlaneIndex = (i < NumPlanes) ? i : NumPlanes - 1;
+            PermutedPlanes[i] = Planes[PlaneIndex];
+        }
+    }
     
     /**
      * Test if a point is inside the volume
      */
-    bool IntersectPoint(const Math::FVector& Point) const;
+    bool IntersectPoint(const Math::FVector& Point) const
+    {
+        for (int32 i = 0; i < Planes.Num(); ++i)
+        {
+            const Math::FPlane& Plane = Planes[i];
+            float Distance = Plane.X * Point.X + Plane.Y * Point.Y + Plane.Z * Point.Z - Plane.W;
+            if (Distance > 0.0f)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
     
     /**
      * Test if a sphere intersects the volume
      */
-    bool IntersectSphere(const Math::FVector& Center, float Radius) const;
+    bool IntersectSphere(const Math::FVector& Center, float Radius) const
+    {
+        for (int32 i = 0; i < Planes.Num(); ++i)
+        {
+            const Math::FPlane& Plane = Planes[i];
+            float Distance = Plane.X * Center.X + Plane.Y * Center.Y + Plane.Z * Center.Z - Plane.W;
+            if (Distance > Radius)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
     
     /**
      * Test if a box intersects the volume
      */
-    bool IntersectBox(const Math::FVector& Origin, const Math::FVector& Extent) const;
+    bool IntersectBox(const Math::FVector& Origin, const Math::FVector& Extent) const
+    {
+        for (int32 i = 0; i < Planes.Num(); ++i)
+        {
+            const Math::FPlane& Plane = Planes[i];
+            
+            // Calculate the effective radius of the box along the plane normal
+            float EffectiveRadius = 
+                std::abs(Plane.X * Extent.X) + 
+                std::abs(Plane.Y * Extent.Y) + 
+                std::abs(Plane.Z * Extent.Z);
+            
+            // Calculate distance from box center to plane
+            float Distance = Plane.X * Origin.X + Plane.Y * Origin.Y + Plane.Z * Origin.Z - Plane.W;
+            
+            // If the box is completely outside this plane, it's outside the volume
+            if (Distance > EffectiveRadius)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
     
     /**
      * Test if bounds intersect the volume
@@ -631,4 +695,5 @@ struct FMeshBatchAndRelevance
     }
 };
 
+} // namespace Renderer
 } // namespace MonsterEngine

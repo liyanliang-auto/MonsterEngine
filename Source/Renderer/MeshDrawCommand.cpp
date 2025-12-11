@@ -19,6 +19,8 @@ using namespace MonsterRender;
 
 namespace MonsterEngine
 {
+namespace Renderer
+{
 
 // ============================================================================
 // FMeshDrawCommand Implementation
@@ -422,4 +424,5 @@ void FShadowDepthPassMeshProcessor::AddMeshBatch(
     DrawCommand.CalculateSortKey();
 }
 
+} // namespace Renderer
 } // namespace MonsterEngine

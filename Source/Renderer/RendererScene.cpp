@@ -15,6 +15,8 @@ using namespace MonsterRender;
 
 namespace MonsterEngine
 {
+namespace Renderer
+{
 
 // ============================================================================
 // FPrimitiveSceneProxy Implementation
@@ -286,4 +288,5 @@ void FScene::EndFrame()
     // Any end-of-frame cleanup can go here
 }
 
+} // namespace Renderer
 } // namespace MonsterEngine

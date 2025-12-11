@@ -21,14 +21,7 @@
 namespace MonsterEngine
 {
 
-// Forward declarations
-class FScene;
-class FViewInfo;
-class FSceneViewState;
-class FFrustumCuller;
-class FOcclusionCuller;
-class FMeshElementCollector;
-
+// Forward declarations for RHI
 namespace RHI
 {
     class IRHIDevice;
@@ -36,6 +29,18 @@ namespace RHI
     class IRHITexture;
     class IRHIBuffer;
 }
+
+// Renderer namespace for low-level rendering classes
+namespace Renderer
+{
+
+// Forward declarations
+class FScene;
+class FViewInfo;
+class FSceneViewState;
+class FFrustumCuller;
+class FOcclusionCuller;
+class FMeshElementCollector;
 
 // ============================================================================
 // FMeshElementCollector - Mesh Element Collection Helper
@@ -586,4 +591,5 @@ protected:
     void RenderTranslucency(RHI::IRHICommandList& RHICmdList);
 };
 
+} // namespace Renderer
 } // namespace MonsterEngine

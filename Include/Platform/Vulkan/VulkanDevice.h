@@ -150,6 +150,9 @@ namespace MonsterRender::RHI::Vulkan {
         VkSemaphore getRenderFinishedSemaphore(uint32 frame) const {
             return frame < m_renderFinishedSemaphores.size() ? m_renderFinishedSemaphores[frame] : VK_NULL_HANDLE;
         }
+        VkFence getInFlightFence(uint32 frame) const {
+            return frame < m_inFlightFences.size() ? m_inFlightFences[frame] : VK_NULL_HANDLE;
+        }
         VkFramebuffer getCurrentFramebuffer() const;
         const VkExtent2D& getSwapchainExtent() const { return m_swapchainExtent; }
         VkFormat getSwapchainFormat() const { return m_swapchainImageFormat; }

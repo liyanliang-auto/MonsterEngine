@@ -17,11 +17,14 @@
 #include "Core/Application.h"
 #include "Core/Templates/SharedPointer.h"
 #include "RHI/RHI.h"
+#include "Math/MonsterMath.h"
+#include "Containers/Array.h"
 
 namespace MonsterEngine
 {
 
 // Forward declarations
+class FLightSceneInfo;
 class FScene;
 class FCameraManager;
 class ACubeActor;
@@ -29,6 +32,8 @@ class UDirectionalLightComponent;
 class UPointLightComponent;
 class FSceneViewFamily;
 class FForwardShadingRenderer;
+class FMaterial;
+class FMaterialInstance;
 
 } // namespace MonsterEngine
 
@@ -87,6 +92,21 @@ protected:
      * @param DeltaTime - Time since last frame
      */
     void updateCamera(float DeltaTime);
+
+    /**
+     * Render the cube with lighting
+     * @param cmdList - Command list to record commands
+     * @param viewMatrix - View matrix
+     * @param projectionMatrix - Projection matrix
+     * @param cameraPosition - Camera position for lighting
+     * @param lights - Array of affecting lights
+     */
+    void renderCube(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition,
+        const MonsterEngine::TArray<MonsterEngine::FLightSceneInfo*>& lights);
 
 protected:
     /** RHI device */

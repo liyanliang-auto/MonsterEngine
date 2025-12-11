@@ -27,17 +27,22 @@ using MonsterRender::RHI::Viewport;
 namespace MonsterEngine
 {
 
-// Forward declarations
-class FScene;
-class FSceneRenderer;
-class FSceneViewState;
-class FPrimitiveSceneInfo;
-
+// Forward declarations for RHI
 namespace RHI
 {
     class IRHITexture;
     class IRHIBuffer;
 }
+
+// Renderer namespace for low-level rendering classes
+namespace Renderer
+{
+
+// Forward declarations
+class FScene;
+class FSceneRenderer;
+class FSceneViewState;
+class FPrimitiveSceneInfo;
 
 // ============================================================================
 // FViewMatrices - View Transformation Matrices
@@ -675,4 +680,5 @@ struct FViewCommands
     }
 };
 
+} // namespace Renderer
 } // namespace MonsterEngine

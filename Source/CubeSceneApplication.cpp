@@ -18,10 +18,18 @@
 #include "Engine/SceneView.h"
 #include "Engine/SceneRenderer.h"
 #include "Engine/LightSceneInfo.h"
+// Material system includes - temporarily disabled due to compilation issues
+// TODO: Re-enable when Shader.h type conflicts are resolved
+// #include "Engine/Material/Material.h"
+// #include "Engine/Material/MaterialTypes.h"
 #include "Core/Logging/LogMacros.h"
 #include "Core/Color.h"
 #include "Math/MonsterMath.h"
 #include "Containers/SparseArray.h"
+#include "Platform/Vulkan/VulkanDevice.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/OpenGL/OpenGLFunctions.h"
+#include "Platform/OpenGL/OpenGLDefinitions.h"
 
 namespace MonsterRender
 {
@@ -131,12 +139,7 @@ void CubeSceneApplication::onRender()
         return;
     }
     
-    // Get command list
-    RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
-    if (!cmdList)
-    {
-        return;
-    }
+    RHI::ERHIBackend backend = m_device->getRHIBackend();
     
     // Get camera view info
     const FMinimalViewInfo& cameraView = m_cameraManager->GetCameraCacheView();
@@ -148,7 +151,7 @@ void CubeSceneApplication::onRender()
     FMatrix projectionMatrix = cameraView.CalculateProjectionMatrix();
     
     // Flip Y for Vulkan
-    if (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
+    if (backend == RHI::ERHIBackend::Vulkan)
     {
         projectionMatrix.M[1][1] *= -1.0f;
     }
@@ -160,7 +163,6 @@ void CubeSceneApplication::onRender()
     TArray<FLightSceneInfo*> lights;
     if (m_scene)
     {
-        // Get all lights from scene (TSparseArray)
         const TSparseArray<FLightSceneInfoCompact>& sceneLights = m_scene->GetLights();
         for (auto It = sceneLights.CreateConstIterator(); It; ++It)
         {
@@ -172,30 +174,97 @@ void CubeSceneApplication::onRender()
         }
     }
     
-    // Render cube using scene proxy
-    if (m_cubeActor)
+    if (backend == RHI::ERHIBackend::OpenGL)
     {
-        UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
-        if (meshComp)
+        // OpenGL rendering path
+        using namespace MonsterEngine::OpenGL;
+        
+        // Bind default framebuffer
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        
+        // Set viewport
+        glViewport(0, 0, m_windowWidth, m_windowHeight);
+        
+        // Clear screen
+        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
+        // Enable depth testing
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        
+        // Get command list and render
+        RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
+        if (cmdList)
         {
-            FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
-            FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
-            
-            if (cubeProxy)
-            {
-                // Initialize resources if needed
-                if (!cubeProxy->AreResourcesInitialized())
-                {
-                    cubeProxy->InitializeResources(m_device);
-                }
-                
-                // Update model matrix from actor transform
-                cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
-                
-                // Draw with lighting
-                cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
-            }
+            renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
         }
+        
+        // Swap buffers
+        getWindow()->swapBuffers();
+    }
+    else
+    {
+        // Vulkan rendering path
+        auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+        auto* context = vulkanDevice->getCommandListContext();
+        if (!context) return;
+        
+        RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
+        if (!cmdList) return;
+        
+        // Prepare for new frame
+        context->prepareForNewFrame();
+        
+        // Begin command recording
+        cmdList->begin();
+        
+        // Set render targets (swapchain)
+        TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
+        cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+        
+        // Render cube
+        renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+        
+        // End render pass
+        cmdList->endRenderPass();
+        
+        // End command recording
+        cmdList->end();
+        
+        // Present frame
+        m_device->present();
+    }
+}
+
+void CubeSceneApplication::renderCube(
+    RHI::IRHICommandList* cmdList,
+    const FMatrix& viewMatrix,
+    const FMatrix& projectionMatrix,
+    const FVector& cameraPosition,
+    const TArray<FLightSceneInfo*>& lights)
+{
+    if (!m_cubeActor) return;
+    
+    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+    if (!meshComp) return;
+    
+    FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+    FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+    
+    if (cubeProxy)
+    {
+        // Initialize resources if needed
+        if (!cubeProxy->AreResourcesInitialized())
+        {
+            cubeProxy->InitializeResources(m_device);
+        }
+        
+        // Update model matrix from actor transform
+        cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+        
+        // Draw with lighting
+        cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
     }
 }
 
@@ -283,6 +352,15 @@ bool CubeSceneApplication::initializeScene()
     {
         // Add primitive to scene
         m_scene->AddPrimitive(meshComp);
+        
+        // Pre-initialize GPU resources for the cube proxy
+        // This must be done before any render pass begins
+        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+        FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+        if (cubeProxy && m_device)
+        {
+            cubeProxy->InitializeResources(m_device);
+        }
     }
     
     // Create directional light (sun)
@@ -300,6 +378,9 @@ bool CubeSceneApplication::initializeScene()
     m_pointLight->SetAttenuationRadius(10.0f);
     m_scene->AddLight(m_pointLight);
     
+    // TODO: Material system integration - temporarily disabled due to Shader.h compilation issues
+    // Material system needs EShaderStage type conflict resolution before it can be used
+    // The cube currently uses FCubeSceneProxy's built-in shaders and textures
     MR_LOG(LogCubeSceneApp, Log, "Scene initialized with cube and lights");
     return true;
 }

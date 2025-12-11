@@ -23,12 +23,7 @@
 namespace MonsterEngine
 {
 
-// Forward declarations
-class FScene;
-class FViewInfo;
-class FPrimitiveSceneInfo;
-class FMeshPassProcessor;
-
+// Forward declarations for RHI
 namespace RHI
 {
     class IRHIDevice;
@@ -38,6 +33,16 @@ namespace RHI
     class IRHIVertexShader;
     class IRHIPixelShader;
 }
+
+// Renderer namespace for low-level rendering classes
+namespace Renderer
+{
+
+// Forward declarations
+class FScene;
+class FViewInfo;
+class FPrimitiveSceneInfo;
+class FMeshPassProcessor;
 
 // ============================================================================
 // FMeshDrawShaderBindings - Shader Parameter Bindings
@@ -668,4 +673,5 @@ public:
         TArray<FMeshDrawCommand>& OutMeshDrawCommands) override;
 };
 
+} // namespace Renderer
 } // namespace MonsterEngine

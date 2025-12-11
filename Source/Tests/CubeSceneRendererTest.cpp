@@ -14,6 +14,7 @@
 #include "Renderer/SceneVisibility.h"
 #include "Renderer/MeshDrawCommand.h"
 #include "Renderer/RenderQueue.h"
+
 #include "Core/Logging/Logging.h"
 #include "Core/ShaderCompiler.h"
 #include "RHI/IRHIDevice.h"
@@ -27,6 +28,9 @@
 #include <fstream>
 
 using namespace MonsterRender;
+
+// Use Renderer namespace types
+using namespace MonsterEngine::Renderer;
 
 // Use RHI types from MonsterRender namespace
 using RHIDevice = MonsterRender::RHI::IRHIDevice;

@@ -23,7 +23,22 @@
 namespace MonsterEngine
 {
 
-// Forward declarations
+// Forward declarations for RHI
+namespace RHI
+{
+    class IRHIDevice;
+    class IRHICommandList;
+}
+
+/**
+ * Renderer namespace contains low-level rendering scene classes
+ * that work directly with FPrimitiveSceneProxy instead of UPrimitiveComponent.
+ * This is separate from the Engine-level FScene which uses UPrimitiveComponent.
+ */
+namespace Renderer
+{
+
+// Forward declarations within Renderer namespace
 class FPrimitiveSceneInfo;
 class FPrimitiveSceneProxy;
 class FLightSceneInfo;
@@ -31,12 +46,6 @@ class FLightSceneProxy;
 class FSceneRenderer;
 class FViewInfo;
 class FMeshElementCollector;
-
-namespace RHI
-{
-    class IRHIDevice;
-    class IRHICommandList;
-}
 
 // ============================================================================
 // FPrimitiveSceneProxy - Primitive Rendering Proxy
@@ -655,4 +664,5 @@ private:
     void RemovePrimitiveFromArrays(FPrimitiveSceneInfo* PrimitiveSceneInfo);
 };
 
+} // namespace Renderer
 } // namespace MonsterEngine
