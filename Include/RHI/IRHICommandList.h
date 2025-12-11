@@ -105,6 +105,52 @@ namespace MonsterRender::RHI {
         
         // Render state
         /**
+         * Set depth-stencil state
+         * @param bDepthTestEnable Enable depth testing
+         * @param bDepthWriteEnable Enable depth writing
+         * @param CompareFunc Depth comparison function (0=Never, 1=Less, 2=Equal, 3=LessEqual, 4=Greater, 5=NotEqual, 6=GreaterEqual, 7=Always)
+         */
+        virtual void setDepthStencilState(bool bDepthTestEnable, bool bDepthWriteEnable, uint8 CompareFunc) {
+            // Default implementation - platforms override as needed
+            (void)bDepthTestEnable; (void)bDepthWriteEnable; (void)CompareFunc;
+        }
+        
+        /**
+         * Set blend state
+         * @param bBlendEnable Enable blending
+         * @param SrcColorBlend Source color blend factor
+         * @param DstColorBlend Destination color blend factor
+         * @param ColorBlendOp Color blend operation
+         * @param SrcAlphaBlend Source alpha blend factor
+         * @param DstAlphaBlend Destination alpha blend factor
+         * @param AlphaBlendOp Alpha blend operation
+         * @param ColorWriteMask Color write mask (RGBA bits)
+         */
+        virtual void setBlendState(bool bBlendEnable, 
+                                   uint8 SrcColorBlend, uint8 DstColorBlend, uint8 ColorBlendOp,
+                                   uint8 SrcAlphaBlend, uint8 DstAlphaBlend, uint8 AlphaBlendOp,
+                                   uint8 ColorWriteMask) {
+            // Default implementation - platforms override as needed
+            (void)bBlendEnable; (void)SrcColorBlend; (void)DstColorBlend; (void)ColorBlendOp;
+            (void)SrcAlphaBlend; (void)DstAlphaBlend; (void)AlphaBlendOp; (void)ColorWriteMask;
+        }
+        
+        /**
+         * Set rasterizer state
+         * @param FillMode Fill mode (0=Solid, 1=Wireframe)
+         * @param CullMode Cull mode (0=None, 1=Front, 2=Back)
+         * @param bFrontCounterClockwise Front face winding
+         * @param DepthBias Depth bias value
+         * @param SlopeScaledDepthBias Slope scaled depth bias
+         */
+        virtual void setRasterizerState(uint8 FillMode, uint8 CullMode, bool bFrontCounterClockwise,
+                                        float DepthBias, float SlopeScaledDepthBias) {
+            // Default implementation - platforms override as needed
+            (void)FillMode; (void)CullMode; (void)bFrontCounterClockwise;
+            (void)DepthBias; (void)SlopeScaledDepthBias;
+        }
+        
+        /**
          * Set viewport
          */
         virtual void setViewport(const Viewport& viewport) = 0;

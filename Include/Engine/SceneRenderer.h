@@ -30,8 +30,20 @@ class FSceneViewFamily;
 class FPrimitiveSceneInfo;
 class FPrimitiveSceneProxy;
 class FLightSceneInfo;
-class IRHICommandList;
-class IRHIDevice;
+
+} // namespace MonsterEngine
+
+// Forward declare RHI types in their proper namespace
+namespace MonsterRender { namespace RHI {
+    class IRHICommandList;
+    class IRHIDevice;
+}}
+
+namespace MonsterEngine
+{
+// Bring RHI types into MonsterEngine namespace for convenience
+using IRHICommandList = ::MonsterRender::RHI::IRHICommandList;
+using IRHIDevice = ::MonsterRender::RHI::IRHIDevice;
 
 // ============================================================================
 // Render Pass Types
@@ -387,9 +399,14 @@ protected:
 // Forward Shading Renderer
 // ============================================================================
 
+// Forward declaration
+class FForwardRenderer;
+
 /**
  * Forward shading renderer
- * Implements a forward rendering pipeline
+ * Implements a forward rendering pipeline using FForwardRenderer
+ * 
+ * Reference UE5: FMobileSceneRenderer
  */
 class FForwardShadingRenderer : public FSceneRenderer
 {
@@ -409,13 +426,22 @@ public:
      * @param RHICmdList - RHI command list
      */
     virtual void Render(IRHICommandList& RHICmdList) override;
+    
+    /**
+     * Get the forward renderer
+     * @return Pointer to the forward renderer
+     */
+    FForwardRenderer* GetForwardRenderer() const { return ForwardRenderer; }
 
 protected:
     /**
-     * Renders opaque objects with forward shading
+     * Renders opaque objects with forward shading (legacy path)
      * @param RHICmdList - RHI command list
      */
     virtual void RenderForwardOpaque(IRHICommandList& RHICmdList);
+    
+    /** Forward renderer instance */
+    FForwardRenderer* ForwardRenderer;
 };
 
 // ============================================================================
