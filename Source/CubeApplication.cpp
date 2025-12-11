@@ -234,6 +234,7 @@ private:
 //   - binding 0: uniform buffer (MVP matrices)
 //   - binding 1: sampler2D texture1 (container.jpg)
 //   - binding 2: sampler2D texture2 (awesomeface.png)
+// NOTE: To use CubeSceneApplication with lighting, see CubeSceneApplication.cpp
 TUniquePtr<Application> MonsterRender::createApplication() {
     return MakeUnique<CubeApplication>();
 }
