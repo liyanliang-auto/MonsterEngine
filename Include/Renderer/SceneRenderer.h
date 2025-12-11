@@ -64,9 +64,9 @@ public:
      */
     FMeshBatch& AllocateMesh()
     {
-        FMeshBatch& NewBatch = MeshBatches.AddDefaulted_GetRef();
+        int32 NewIndex = MeshBatches.Add(FMeshBatch());
         NumMeshBatches++;
-        return NewBatch;
+        return MeshBatches[NewIndex];
     }
     
     /**

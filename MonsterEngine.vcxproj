@@ -270,6 +270,7 @@
     <ClCompile Include="Source\Renderer\SceneVisibility.cpp" />
     <ClCompile Include="Source\Renderer\MeshDrawCommand.cpp" />
     <ClCompile Include="Source\Renderer\RenderQueue.cpp" />
+    <ClCompile Include="Source\Tests\CubeSceneRendererTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -429,6 +430,7 @@
     <ClInclude Include="Include\Renderer\SceneVisibility.h" />
     <ClInclude Include="Include\Renderer\MeshDrawCommand.h" />
     <ClInclude Include="Include\Renderer\RenderQueue.h" />
+    <ClInclude Include="Include\Tests\CubeSceneRendererTest.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
