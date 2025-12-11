@@ -355,6 +355,21 @@
     <ClCompile Include="Source\Renderer\ForwardShaderCompiler.cpp">
       <Filter>源文件\Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Engine\Camera\CameraTypes.cpp">
+      <Filter>源文件\Engine\Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Camera\CameraComponent.cpp">
+      <Filter>源文件\Engine\Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Camera\CameraModifier.cpp">
+      <Filter>源文件\Engine\Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Camera\CameraManager.cpp">
+      <Filter>源文件\Engine\Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Camera\CameraSceneViewHelper.cpp">
+      <Filter>源文件\Engine\Camera</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="头文件\Core\Templates">
@@ -371,6 +386,12 @@
     </Filter>
     <Filter Include="源文件\Renderer">
       <UniqueIdentifier>{E5F6A7B8-C9D0-1234-EF01-345678901234}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Engine\Camera">
+      <UniqueIdentifier>{F6A7B8C9-D0E1-2345-F012-456789012345}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Engine\Camera">
+      <UniqueIdentifier>{A7B8C9D0-E1F2-3456-0123-567890123456}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
