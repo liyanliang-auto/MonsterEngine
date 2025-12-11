@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -264,6 +264,13 @@
     <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp" />
     <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp" />
     <ClCompile Include="Source\CubeSceneApplication.cpp" />
+    <ClCompile Include="Source\Engine\Material\Material.cpp" />
+    <ClCompile Include="Source\Engine\Material\MaterialInstance.cpp" />
+    <ClCompile Include="Source\Engine\Material\MaterialInstanceDynamic.cpp" />
+    <ClCompile Include="Source\Engine\Material\MaterialInterface.cpp" />
+    <ClCompile Include="Source\Engine\Material\MaterialRenderProxy.cpp" />
+    <ClCompile Include="Source\Engine\Shader\ShaderManager.cpp" />
+    <ClCompile Include="Source\Engine\Shader\Shader.cpp" />
     <!-- Temporarily excluded - conflicts with Engine/Scene.cpp -->
     <ClCompile Include="Source\Renderer\RendererScene.cpp" />
     <ClCompile Include="Source\Renderer\RendererSceneView.cpp" />
@@ -456,3 +463,5 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
+
+

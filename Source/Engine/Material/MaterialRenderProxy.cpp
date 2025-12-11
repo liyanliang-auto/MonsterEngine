@@ -377,7 +377,7 @@ String FMaterialRenderProxy::GetDebugName() const
     {
         return m_material->GetDebugName();
     }
-    return TEXT("UnknownMaterial");
+    return "UnknownMaterial";
 }
 
 } // namespace MonsterEngine

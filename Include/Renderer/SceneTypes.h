@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 #pragma once
 
@@ -21,18 +21,22 @@
 #include "Math/Plane.h"
 #include <cmath>
 
-namespace MonsterEngine
-{
-
-namespace RHI
-{
+// Forward declarations for RHI types (in MonsterRender::RHI namespace)
+namespace MonsterRender { namespace RHI {
     class IRHIBuffer;
     class IRHIPipelineState;
-}
+}}
+
+namespace MonsterEngine
+{
 
 // Renderer namespace for low-level rendering scene types
 namespace Renderer
 {
+
+// Bring RHI types into scope
+using MonsterRender::RHI::IRHIBuffer;
+using MonsterRender::RHI::IRHIPipelineState;
 
 // Forward declarations
 class FScene;
@@ -598,13 +602,13 @@ struct FVisibleLightInfo
 struct FMeshBatch
 {
     /** Vertex buffer */
-    RHI::IRHIBuffer* VertexBuffer;
+    IRHIBuffer* VertexBuffer;
     
     /** Index buffer (optional) */
-    RHI::IRHIBuffer* IndexBuffer;
+    IRHIBuffer* IndexBuffer;
     
     /** Pipeline state */
-    RHI::IRHIPipelineState* PipelineState;
+    IRHIPipelineState* PipelineState;
     
     /** Number of vertices */
     uint32 NumVertices;
@@ -697,3 +701,4 @@ struct FMeshBatchAndRelevance
 
 } // namespace Renderer
 } // namespace MonsterEngine
+

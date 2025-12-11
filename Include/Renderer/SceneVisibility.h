@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 #pragma once
 
@@ -35,15 +35,15 @@ namespace MonsterRender { namespace RHI {
 namespace MonsterEngine
 {
 
-// Use RHI types from MonsterRender namespace
+// Renderer namespace for low-level rendering classes
+namespace Renderer
+{
+
+// Bring RHI types into scope
 using MonsterRender::RHI::IRHICommandList;
 using MonsterRender::RHI::IRHITexture;
 using MonsterRender::RHI::IRHIBuffer;
 using MonsterRender::RHI::IRHIDevice;
-
-// Renderer namespace for low-level rendering classes
-namespace Renderer
-{
 
 // Forward declarations
 class FScene;
@@ -643,3 +643,4 @@ private:
 
 } // namespace Renderer
 } // namespace MonsterEngine
+

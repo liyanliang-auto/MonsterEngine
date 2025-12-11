@@ -422,6 +422,7 @@ bool FTextureLoader::UploadTextureData(
     
     // Check backend type and use appropriate upload method
     ERHIBackend backend = Device->getBackendType();
+    MR_LOG_INFO("Texture upload backend: " + std::to_string(static_cast<int>(backend)));
     
     if (backend == ERHIBackend::OpenGL) {
         // ============================================================================
@@ -464,7 +465,7 @@ bool FTextureLoader::UploadTextureData(
         // ============================================================================
         // Vulkan texture upload - command buffer based
         // ============================================================================
-        MR_LOG_DEBUG("Using Vulkan texture upload path");
+        MR_LOG_INFO("Using Vulkan texture upload path");
         
         // Cast to Vulkan RHI command list (UE5-style immediate command list)
         auto* vulkanCmdList = static_cast<FVulkanRHICommandListImmediate*>(CommandList);
@@ -523,7 +524,7 @@ bool FTextureLoader::UploadTextureData(
         // Step 4: Submit command list and wait for completion
         // ============================================================================
         
-        MR_LOG_DEBUG("Submitting texture upload commands...");
+        MR_LOG_INFO("Submitting texture upload commands...");
         
         // CRITICAL: Submit the command buffer to GPU queue
         auto* vulkanDevice = static_cast<VulkanDevice*>(Device);

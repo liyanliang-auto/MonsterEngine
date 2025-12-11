@@ -18,16 +18,26 @@
 #include "Engine/SceneView.h"
 #include "Engine/SceneRenderer.h"
 #include "Engine/LightSceneInfo.h"
-// Material system includes - temporarily disabled due to compilation issues
-// TODO: Re-enable when Shader.h type conflicts are resolved
-// #include "Engine/Material/Material.h"
-// #include "Engine/Material/MaterialTypes.h"
+#include "Engine/Material/Material.h"
+#include "Engine/Material/MaterialTypes.h"
+#include "Renderer/SceneRenderer.h"
+#include "Renderer/SceneView.h"
+#include "Renderer/Scene.h"
+#include "Editor/ImGui/ImGuiContext.h"
+#include "Editor/ImGui/ImGuiRenderer.h"
+#include "Editor/ImGui/ImGuiInputHandler.h"
 #include "Core/Logging/LogMacros.h"
+
+// ImGui includes
+#include "imgui.h"
 #include "Core/Color.h"
 #include "Math/MonsterMath.h"
 #include "Containers/SparseArray.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/Vulkan/VulkanRHICommandList.h"
+#include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/OpenGL/OpenGLFunctions.h"
 #include "Platform/OpenGL/OpenGLDefinitions.h"
 
@@ -52,13 +62,34 @@ CubeSceneApplication::CubeSceneApplication()
     , m_directionalLight(nullptr)
     , m_pointLight(nullptr)
     , m_viewFamily(nullptr)
-    , m_renderer(nullptr)
+    , m_sceneView(nullptr)
+    , m_sceneRenderer(nullptr)
+    , m_bUseSceneRenderer(true)  // Enable FSceneRenderer for UE5-style rendering
     , m_windowWidth(1280)
     , m_windowHeight(720)
     , m_totalTime(0.0f)
     , m_cameraOrbitAngle(0.0f)
     , m_bOrbitCamera(false)
+    , m_bImGuiInitialized(false)
+    , m_deltaTime(0.0f)
+    , m_bShowSceneInfo(true)
+    , m_bShowCameraControl(true)
+    , m_bShowLightingControl(true)
+    , m_bShowDemoWindow(false)
+    , m_cubeRotationSpeed(1.0f)
+    , m_lightIntensity(1.0f)
+    , m_viewportTextureID(0)
+    , m_viewportWidth(800)
+    , m_viewportHeight(600)
+    , m_bShowViewport(true)
+    , m_bViewportNeedsResize(false)
+    , m_pendingViewportWidth(800)
+    , m_pendingViewportHeight(600)
+    , m_bViewportTextureReady(false)
 {
+    m_lightColor[0] = 1.0f;
+    m_lightColor[1] = 0.95f;
+    m_lightColor[2] = 0.9f;
 }
 
 CubeSceneApplication::~CubeSceneApplication()
@@ -103,12 +134,48 @@ void CubeSceneApplication::onInitialize()
         return;
     }
     
+    // Initialize FSceneRenderer for UE5-style rendering
+    if (m_bUseSceneRenderer)
+    {
+        if (!initializeSceneRenderer())
+        {
+            MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize FSceneRenderer, falling back to legacy rendering");
+            m_bUseSceneRenderer = false;
+        }
+    }
+    
+    // Initialize ImGui
+    if (!initializeImGui())
+    {
+        MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize ImGui, UI will be disabled");
+    }
+    
+    // Initialize viewport render target
+    if (!initializeViewportRenderTarget())
+    {
+        MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize viewport render target");
+    }
+    
     MR_LOG(LogCubeSceneApp, Log, "CubeSceneApplication initialized successfully");
 }
 
 void CubeSceneApplication::onUpdate(float32 deltaTime)
 {
     m_totalTime += deltaTime;
+    m_deltaTime = deltaTime;
+    
+    // Update cube rotation speed from UI
+    if (m_cubeActor)
+    {
+        m_cubeActor->SetRotationSpeed(m_cubeRotationSpeed);
+    }
+    
+    // Update light properties from UI
+    if (m_directionalLight)
+    {
+        m_directionalLight->SetIntensity(m_lightIntensity);
+        m_directionalLight->SetLightColor(FLinearColor(m_lightColor[0], m_lightColor[1], m_lightColor[2]));
+    }
     
     // Update camera
     updateCamera(deltaTime);
@@ -137,6 +204,21 @@ void CubeSceneApplication::onRender()
     if (!m_device || !m_scene || !m_cameraManager)
     {
         return;
+    }
+    
+    // Handle pending viewport resize - defer to next frame to avoid using uninitialized textures
+    // The resize will happen at the start of the next frame before rendering
+    if (m_bViewportNeedsResize)
+    {
+        // Wait for GPU to finish using old textures before destroying them
+        if (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
+        {
+            auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+            vulkanDevice->waitForIdle();
+        }
+        
+        resizeViewportRenderTarget(m_pendingViewportWidth, m_pendingViewportHeight);
+        m_bViewportNeedsResize = false;
     }
     
     RHI::ERHIBackend backend = m_device->getRHIBackend();
@@ -198,6 +280,9 @@ void CubeSceneApplication::onRender()
         if (cmdList)
         {
             renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+            
+            // Render ImGui overlay
+            renderImGui();
         }
         
         // Swap buffers
@@ -219,12 +304,33 @@ void CubeSceneApplication::onRender()
         // Begin command recording
         cmdList->begin();
         
+        // ================================================================
+        // Pass 1: Render scene to viewport render target
+        // NOTE: Viewport RTT rendering is temporarily disabled due to texture layout issues
+        // TODO: Fix texture layout tracking for all textures (cube textures, font texture, viewport RTT)
+        // ================================================================
+        // if (m_viewportColorTarget && m_viewportDepthTarget && !m_bViewportNeedsResize)
+        // {
+        //     float viewportAspect = static_cast<float>(m_viewportWidth) / static_cast<float>(m_viewportHeight);
+        //     FMatrix viewportProjection = FMatrix::MakePerspective(
+        //         cameraView.FOV,
+        //         viewportAspect,
+        //         cameraView.OrthoNearClipPlane > 0.0f ? cameraView.OrthoNearClipPlane : 0.1f,
+        //         cameraView.OrthoFarClipPlane > 0.0f ? cameraView.OrthoFarClipPlane : 100.0f
+        //     );
+        //     viewportProjection.M[1][1] *= -1.0f;
+        //     renderSceneToViewport(cmdList, viewMatrix, viewportProjection, cameraPosition);
+        // }
+        
+        // ================================================================
+        // Pass 2: Render ImGui to swapchain
+        // ================================================================
         // Set render targets (swapchain)
         TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
         cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
         
-        // Render cube
-        renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+        // Render ImGui overlay (which includes the viewport panel showing the RTT)
+        renderImGui();
         
         // End render pass
         cmdList->endRenderPass();
@@ -268,15 +374,173 @@ void CubeSceneApplication::renderCube(
     }
 }
 
+// ============================================================================
+// FSceneRenderer Rendering Path
+// ============================================================================
+
+void CubeSceneApplication::renderWithSceneRenderer(
+    RHI::IRHICommandList* cmdList,
+    const FMatrix& viewMatrix,
+    const FMatrix& projectionMatrix,
+    const FVector& cameraPosition)
+{
+    if (!m_sceneRenderer || !m_scene || !cmdList)
+    {
+        MR_LOG(LogCubeSceneApp, Warning, "renderWithSceneRenderer: Missing renderer, scene, or command list");
+        // Fall back to legacy path
+        TArray<FLightSceneInfo*> lights;
+        if (m_scene)
+        {
+            const TSparseArray<FLightSceneInfoCompact>& sceneLights = m_scene->GetLights();
+            for (auto It = sceneLights.CreateConstIterator(); It; ++It)
+            {
+                if (It->LightSceneInfo)
+                {
+                    lights.Add(It->LightSceneInfo);
+                }
+            }
+        }
+        renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+        return;
+    }
+    
+    MR_LOG(LogCubeSceneApp, Verbose, "Rendering with FSceneRenderer...");
+    
+    // Update renderer view family frame number
+    if (m_rendererViewFamily)
+    {
+        m_rendererViewFamily->FrameNumber++;
+        m_rendererViewFamily->DeltaWorldTimeSeconds = 0.016f;  // ~60fps
+    }
+    
+    // Ensure cube resources are initialized and update transform
+    if (m_cubeActor)
+    {
+        UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+        if (meshComp)
+        {
+            FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+            FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+            if (cubeProxy)
+            {
+                if (!cubeProxy->AreResourcesInitialized())
+                {
+                    cubeProxy->InitializeResources(m_device);
+                }
+                cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+            }
+        }
+    }
+    
+    // Render using FSceneRenderer (UE5-style pipeline)
+    // The renderer handles visibility, culling, and draw command generation
+    m_sceneRenderer->RenderThreadBegin(*cmdList);
+    m_sceneRenderer->Render(*cmdList);
+    m_sceneRenderer->RenderThreadEnd(*cmdList);
+    
+    // Also render the cube directly for now (until FSceneRenderer fully handles mesh drawing)
+    // This ensures we see the rotating cube while FSceneRenderer infrastructure is being built
+    TArray<FLightSceneInfo*> lights;
+    if (m_scene)
+    {
+        const TSparseArray<FLightSceneInfoCompact>& sceneLights = m_scene->GetLights();
+        for (auto It = sceneLights.CreateConstIterator(); It; ++It)
+        {
+            if (It->LightSceneInfo)
+            {
+                lights.Add(It->LightSceneInfo);
+            }
+        }
+    }
+    
+    if (m_cubeActor)
+    {
+        UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+        if (meshComp)
+        {
+            FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(meshComp->GetSceneProxy());
+            if (cubeProxy)
+            {
+                cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+            }
+        }
+    }
+    
+    MR_LOG(LogCubeSceneApp, Verbose, "FSceneRenderer render complete");
+}
+
+bool CubeSceneApplication::initializeSceneRenderer()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Initializing FSceneRenderer...");
+    
+    if (!m_scene)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Cannot initialize scene renderer: no scene");
+        return false;
+    }
+    
+    // Create Renderer::FSceneViewFamily for FSceneRenderer
+    if (!m_rendererViewFamily)
+    {
+        m_rendererViewFamily = new MonsterEngine::Renderer::FSceneViewFamily();
+        m_rendererViewFamily->Scene = nullptr;  // Renderer::FScene is different from Engine::FScene
+        m_rendererViewFamily->RenderTarget = nullptr;
+        m_rendererViewFamily->FrameNumber = 0;
+        m_rendererViewFamily->bDeferredShading = false;  // Use forward shading
+        m_rendererViewFamily->bRenderFog = false;
+        m_rendererViewFamily->bRenderPostProcessing = false;
+        m_rendererViewFamily->bRenderShadows = true;
+    }
+    
+    // Create FForwardShadingSceneRenderer
+    m_sceneRenderer = new MonsterEngine::Renderer::FForwardShadingSceneRenderer(m_rendererViewFamily);
+    if (!m_sceneRenderer)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create FSceneRenderer");
+        return false;
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "FSceneRenderer initialized successfully (Forward Shading)");
+    return true;
+}
+
 void CubeSceneApplication::onShutdown()
 {
     MR_LOG(LogCubeSceneApp, Log, "Shutting down CubeSceneApplication...");
     
-    // Clean up renderer
-    if (m_renderer)
+    // Unregister viewport texture from ImGui before shutdown
+    if (m_imguiRenderer && m_viewportTextureID != 0)
     {
-        delete m_renderer;
-        m_renderer = nullptr;
+        m_imguiRenderer->UnregisterTexture(static_cast<ImTextureID>(m_viewportTextureID));
+        m_viewportTextureID = 0;
+    }
+    
+    // Release viewport render targets
+    m_viewportColorTarget.Reset();
+    m_viewportDepthTarget.Reset();
+    
+    // Shutdown ImGui
+    shutdownImGui();
+    
+    // Clean up scene renderer
+    if (m_sceneRenderer)
+    {
+        delete m_sceneRenderer;
+        m_sceneRenderer = nullptr;
+    }
+    
+    // Clean up renderer view family
+    if (m_rendererViewFamily)
+    {
+        delete m_rendererViewFamily;
+        m_rendererViewFamily = nullptr;
+    }
+    
+    // Clean up scene view
+    if (m_sceneView)
+    {
+        delete m_sceneView;
+        m_sceneView = nullptr;
     }
     
     // Clean up view family
@@ -378,10 +642,27 @@ bool CubeSceneApplication::initializeScene()
     m_pointLight->SetAttenuationRadius(10.0f);
     m_scene->AddLight(m_pointLight);
     
-    // TODO: Material system integration - temporarily disabled due to Shader.h compilation issues
-    // Material system needs EShaderStage type conflict resolution before it can be used
-    // The cube currently uses FCubeSceneProxy's built-in shaders and textures
-    MR_LOG(LogCubeSceneApp, Log, "Scene initialized with cube and lights");
+    // Create and configure cube material
+    m_cubeMaterial = MakeShared<FMaterial>(FName("CubeMaterial"));
+    if (m_cubeMaterial)
+    {
+        // Set material properties
+        FMaterialProperties matProps;
+        matProps.BlendMode = EMaterialBlendMode::Opaque;
+        matProps.ShadingModel = EMaterialShadingModel::DefaultLit;
+        matProps.bTwoSided = false;
+        m_cubeMaterial->SetMaterialProperties(matProps);
+        
+        // Set default material parameters
+        m_cubeMaterial->SetDefaultVectorParameter(FName("BaseColor"), FLinearColor(0.8f, 0.6f, 0.4f, 1.0f));
+        m_cubeMaterial->SetDefaultScalarParameter(FName("Metallic"), 0.0f);
+        m_cubeMaterial->SetDefaultScalarParameter(FName("Roughness"), 0.5f);
+        m_cubeMaterial->SetDefaultScalarParameter(FName("Specular"), 0.5f);
+        
+        MR_LOG(LogCubeSceneApp, Log, "Cube material created with default parameters");
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Scene initialized with cube, lights, and material");
     return true;
 }
 
@@ -447,6 +728,585 @@ void CubeSceneApplication::updateCamera(float DeltaTime)
         
         m_cameraManager->SetCameraCachePOV(viewInfo);
     }
+}
+
+// ============================================================================
+// ImGui Integration
+// ============================================================================
+
+bool CubeSceneApplication::initializeImGui()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Initializing ImGui...");
+    
+    // Create ImGui context
+    m_imguiContext = MakeUnique<Editor::FImGuiContext>();
+    if (!m_imguiContext->Initialize())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to initialize ImGui context");
+        return false;
+    }
+    
+    // Create ImGui renderer
+    if (!m_device)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "No RHI device available for ImGui renderer");
+        return false;
+    }
+    
+    m_imguiRenderer = MakeUnique<Editor::FImGuiRenderer>();
+    if (!m_imguiRenderer->Initialize(m_device))
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to initialize ImGui renderer");
+        return false;
+    }
+    
+    // Create input handler
+    m_imguiInputHandler = MakeUnique<Editor::FImGuiInputHandler>(m_imguiContext.Get());
+    
+    // Set initial window size
+    if (getWindow())
+    {
+        m_imguiRenderer->OnWindowResize(getWindow()->getWidth(), getWindow()->getHeight());
+    }
+    
+    m_bImGuiInitialized = true;
+    MR_LOG(LogCubeSceneApp, Log, "ImGui initialized successfully");
+    
+    return true;
+}
+
+void CubeSceneApplication::shutdownImGui()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Shutting down ImGui...");
+    
+    m_bImGuiInitialized = false;
+    
+    // Shutdown in reverse order
+    m_imguiInputHandler.Reset();
+    
+    if (m_imguiRenderer)
+    {
+        m_imguiRenderer->Shutdown();
+        m_imguiRenderer.Reset();
+    }
+    
+    if (m_imguiContext)
+    {
+        m_imguiContext->Shutdown();
+        m_imguiContext.Reset();
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "ImGui shutdown complete");
+}
+
+void CubeSceneApplication::renderImGui()
+{
+    if (!m_bImGuiInitialized || !m_imguiContext || !m_imguiRenderer)
+    {
+        return;
+    }
+    
+    // Get window dimensions
+    uint32 width = getWindow() ? getWindow()->getWidth() : m_windowWidth;
+    uint32 height = getWindow() ? getWindow()->getHeight() : m_windowHeight;
+    
+    // Begin ImGui frame
+    m_imguiContext->BeginFrame(m_deltaTime, width, height);
+    
+    // Render main menu bar
+    if (ImGui::BeginMainMenuBar())
+    {
+        if (ImGui::BeginMenu("View"))
+        {
+            ImGui::MenuItem("Viewport", nullptr, &m_bShowViewport);
+            ImGui::Separator();
+            ImGui::MenuItem("Scene Info", nullptr, &m_bShowSceneInfo);
+            ImGui::MenuItem("Camera Control", nullptr, &m_bShowCameraControl);
+            ImGui::MenuItem("Lighting Control", nullptr, &m_bShowLightingControl);
+            ImGui::Separator();
+            ImGui::MenuItem("ImGui Demo", nullptr, &m_bShowDemoWindow);
+            ImGui::EndMenu();
+        }
+        
+        // Show FPS in menu bar
+        ImGui::Separator();
+        ImGui::Text("FPS: %.1f (%.3f ms)", 1.0f / m_deltaTime, m_deltaTime * 1000.0f);
+        
+        ImGui::EndMainMenuBar();
+    }
+    
+    // Render panels
+    if (m_bShowViewport)
+    {
+        renderViewportPanel();
+    }
+    
+    if (m_bShowSceneInfo)
+    {
+        renderSceneInfoPanel();
+    }
+    
+    if (m_bShowCameraControl)
+    {
+        renderCameraControlPanel();
+    }
+    
+    if (m_bShowLightingControl)
+    {
+        renderLightingControlPanel();
+    }
+    
+    // Render demo window if enabled
+    if (m_bShowDemoWindow)
+    {
+        ImGui::ShowDemoWindow(&m_bShowDemoWindow);
+    }
+    
+    // End ImGui frame
+    m_imguiContext->EndFrame();
+    
+    // Get draw data and render
+    ImDrawData* drawData = ImGui::GetDrawData();
+    if (drawData && m_device)
+    {
+        RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
+        if (cmdList)
+        {
+            m_imguiRenderer->RenderDrawData(cmdList, drawData);
+        }
+    }
+}
+
+void CubeSceneApplication::renderSceneInfoPanel()
+{
+    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Scene Info", &m_bShowSceneInfo))
+    {
+        ImGui::Text("Cube Scene Application");
+        ImGui::Separator();
+        
+        ImGui::Text("Total Time: %.2f s", m_totalTime);
+        ImGui::Text("Window: %u x %u", m_windowWidth, m_windowHeight);
+        
+        ImGui::Separator();
+        ImGui::Text("Rendering:");
+        ImGui::Text("  Backend: %s", m_device ? (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan ? "Vulkan" : "OpenGL") : "None");
+        ImGui::Text("  FSceneRenderer: %s", m_bUseSceneRenderer ? "Enabled" : "Disabled");
+        
+        ImGui::Separator();
+        ImGui::Text("Scene:");
+        ImGui::Text("  Cube Actor: %s", m_cubeActor ? "Active" : "None");
+        ImGui::Text("  Lights: %d", m_scene ? m_scene->GetLights().Num() : 0);
+    }
+    ImGui::End();
+}
+
+void CubeSceneApplication::renderCameraControlPanel()
+{
+    ImGui::SetNextWindowSize(ImVec2(300, 180), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Camera Control", &m_bShowCameraControl))
+    {
+        ImGui::Checkbox("Orbit Camera", &m_bOrbitCamera);
+        
+        if (m_cameraManager)
+        {
+            FMinimalViewInfo viewInfo = m_cameraManager->GetCameraCacheView();
+            
+            ImGui::Separator();
+            ImGui::Text("Camera Position:");
+            ImGui::Text("  X: %.2f  Y: %.2f  Z: %.2f", viewInfo.Location.X, viewInfo.Location.Y, viewInfo.Location.Z);
+            
+            ImGui::Separator();
+            float fov = viewInfo.FOV;
+            if (ImGui::SliderFloat("FOV", &fov, 30.0f, 120.0f))
+            {
+                viewInfo.FOV = fov;
+                m_cameraManager->SetCameraCachePOV(viewInfo);
+            }
+        }
+    }
+    ImGui::End();
+}
+
+void CubeSceneApplication::renderLightingControlPanel()
+{
+    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Lighting Control", &m_bShowLightingControl))
+    {
+        ImGui::Text("Cube Rotation");
+        ImGui::SliderFloat("Rotation Speed", &m_cubeRotationSpeed, 0.0f, 5.0f);
+        
+        ImGui::Separator();
+        ImGui::Text("Directional Light");
+        ImGui::SliderFloat("Intensity", &m_lightIntensity, 0.0f, 3.0f);
+        ImGui::ColorEdit3("Color", m_lightColor);
+    }
+    ImGui::End();
+}
+
+// ============================================================================
+// Input Events for ImGui
+// ============================================================================
+
+void CubeSceneApplication::onWindowResize(uint32 width, uint32 height)
+{
+    m_windowWidth = width;
+    m_windowHeight = height;
+    
+    // Update camera aspect ratio
+    if (m_cameraManager)
+    {
+        FMinimalViewInfo viewInfo = m_cameraManager->GetCameraCacheView();
+        viewInfo.AspectRatio = static_cast<float>(width) / static_cast<float>(height);
+        m_cameraManager->SetCameraCachePOV(viewInfo);
+    }
+    
+    // Update ImGui renderer
+    if (m_imguiRenderer)
+    {
+        m_imguiRenderer->OnWindowResize(width, height);
+    }
+}
+
+void CubeSceneApplication::onKeyPressed(EKey key)
+{
+    if (m_imguiInputHandler)
+    {
+        m_imguiInputHandler->OnKeyEvent(key, EInputAction::Pressed);
+    }
+    
+    // Handle application shortcuts
+    if (key == EKey::Escape)
+    {
+        requestExit();
+    }
+}
+
+void CubeSceneApplication::onKeyReleased(EKey key)
+{
+    if (m_imguiInputHandler)
+    {
+        m_imguiInputHandler->OnKeyEvent(key, EInputAction::Released);
+    }
+}
+
+void CubeSceneApplication::onMouseButtonPressed(EKey button, const MousePosition& position)
+{
+    if (m_imguiInputHandler)
+    {
+        m_imguiInputHandler->OnMouseButton(button, true);
+    }
+}
+
+void CubeSceneApplication::onMouseButtonReleased(EKey button, const MousePosition& position)
+{
+    if (m_imguiInputHandler)
+    {
+        m_imguiInputHandler->OnMouseButton(button, false);
+    }
+}
+
+void CubeSceneApplication::onMouseMoved(const MousePosition& position)
+{
+    if (m_imguiInputHandler)
+    {
+        m_imguiInputHandler->OnMouseMove(static_cast<float>(position.x), static_cast<float>(position.y));
+    }
+}
+
+void CubeSceneApplication::onMouseScrolled(float64 xOffset, float64 yOffset)
+{
+    if (m_imguiInputHandler)
+    {
+        m_imguiInputHandler->OnMouseScroll(static_cast<float>(xOffset), static_cast<float>(yOffset));
+    }
+}
+
+// ============================================================================
+// Viewport Render Target
+// ============================================================================
+
+bool CubeSceneApplication::initializeViewportRenderTarget()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Initializing viewport render target (%ux%u)...", m_viewportWidth, m_viewportHeight);
+    
+    if (!m_device)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Cannot create viewport render target: no device");
+        return false;
+    }
+    
+    // Create color render target texture
+    // Use B8G8R8A8_SRGB to match swapchain format for pipeline compatibility
+    RHI::TextureDesc colorDesc;
+    colorDesc.width = m_viewportWidth;
+    colorDesc.height = m_viewportHeight;
+    colorDesc.depth = 1;
+    colorDesc.mipLevels = 1;
+    colorDesc.arraySize = 1;
+    colorDesc.format = RHI::EPixelFormat::B8G8R8A8_SRGB;  // Match swapchain format
+    colorDesc.usage = RHI::EResourceUsage::RenderTarget | RHI::EResourceUsage::ShaderResource;
+    colorDesc.debugName = "Viewport Color Target";
+    
+    m_viewportColorTarget = m_device->createTexture(colorDesc);
+    if (!m_viewportColorTarget)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create viewport color target");
+        return false;
+    }
+    
+    // Create depth target texture
+    // Use D32_SFLOAT to match swapchain depth format for pipeline compatibility
+    RHI::TextureDesc depthDesc;
+    depthDesc.width = m_viewportWidth;
+    depthDesc.height = m_viewportHeight;
+    depthDesc.depth = 1;
+    depthDesc.mipLevels = 1;
+    depthDesc.arraySize = 1;
+    depthDesc.format = RHI::EPixelFormat::D32_FLOAT;  // Match swapchain depth format
+    depthDesc.usage = RHI::EResourceUsage::DepthStencil;
+    depthDesc.debugName = "Viewport Depth Target";
+    
+    m_viewportDepthTarget = m_device->createTexture(depthDesc);
+    if (!m_viewportDepthTarget)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create viewport depth target");
+        return false;
+    }
+    
+    // Register color target with ImGui renderer
+    if (m_imguiRenderer && m_viewportColorTarget)
+    {
+        m_viewportTextureID = static_cast<uint64>(m_imguiRenderer->RegisterTexture(m_viewportColorTarget));
+        MR_LOG(LogCubeSceneApp, Log, "Viewport texture registered with ImGui (ID: %llu)", m_viewportTextureID);
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Viewport render target initialized successfully");
+    return true;
+}
+
+void CubeSceneApplication::resizeViewportRenderTarget(uint32 Width, uint32 Height)
+{
+    if (Width == 0 || Height == 0)
+    {
+        return;
+    }
+    
+    if (Width == m_viewportWidth && Height == m_viewportHeight)
+    {
+        return;
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Resizing viewport render target to %ux%u", Width, Height);
+    
+    // Unregister old texture from ImGui
+    if (m_imguiRenderer && m_viewportTextureID != 0)
+    {
+        m_imguiRenderer->UnregisterTexture(static_cast<ImTextureID>(m_viewportTextureID));
+        m_viewportTextureID = 0;
+    }
+    
+    // Clear descriptor set cache to invalidate references to old textures
+    if (m_device && m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
+    {
+        auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+        auto* cache = vulkanDevice->GetDescriptorSetCache();
+        if (cache)
+        {
+            cache->ClearCache();
+        }
+    }
+    
+    // Release old textures
+    m_viewportColorTarget.Reset();
+    m_viewportDepthTarget.Reset();
+    
+    // Mark viewport texture as not ready until it's rendered to
+    m_bViewportTextureReady = false;
+    
+    // Update dimensions
+    m_viewportWidth = Width;
+    m_viewportHeight = Height;
+    
+    // Recreate render targets
+    initializeViewportRenderTarget();
+}
+
+void CubeSceneApplication::renderSceneToViewport(
+    RHI::IRHICommandList* cmdList,
+    const FMatrix& viewMatrix,
+    const FMatrix& projectionMatrix,
+    const FVector& cameraPosition)
+{
+    if (!cmdList || !m_viewportColorTarget || !m_viewportDepthTarget)
+    {
+        return;
+    }
+    
+    // Transition viewport textures to appropriate layouts before rendering
+    // This handles the case where textures are in UNDEFINED or SHADER_READ_ONLY layout
+    if (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
+    {
+        auto* vulkanCmdList = static_cast<RHI::Vulkan::FVulkanRHICommandListImmediate*>(cmdList);
+        if (vulkanCmdList)
+        {
+            // Get current layout from texture
+            auto* vulkanColorTarget = static_cast<RHI::Vulkan::VulkanTexture*>(m_viewportColorTarget.Get());
+            if (vulkanColorTarget)
+            {
+                VkImageLayout currentLayout = vulkanColorTarget->getCurrentLayout();
+                MR_LOG(LogCubeSceneApp, Log, "Viewport color target current layout: %d", static_cast<int>(currentLayout));
+                if (currentLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+                {
+                    MR_LOG(LogCubeSceneApp, Log, "Transitioning viewport color target to COLOR_ATTACHMENT_OPTIMAL");
+                    vulkanCmdList->transitionTextureLayoutSimple(
+                        m_viewportColorTarget,
+                        currentLayout,
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                    );
+                }
+            }
+            
+            // Also transition depth target if needed
+            auto* vulkanDepthTarget = static_cast<RHI::Vulkan::VulkanTexture*>(m_viewportDepthTarget.Get());
+            if (vulkanDepthTarget)
+            {
+                VkImageLayout currentLayout = vulkanDepthTarget->getCurrentLayout();
+                if (currentLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                {
+                    vulkanCmdList->transitionTextureLayoutSimple(
+                        m_viewportDepthTarget,
+                        currentLayout,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                    );
+                }
+            }
+        }
+    }
+    
+    // Set viewport render targets
+    TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
+    renderTargets.Add(m_viewportColorTarget);
+    cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), m_viewportDepthTarget);
+    
+    // Clear render targets
+    float clearColor[4] = { 0.1f, 0.1f, 0.15f, 1.0f };
+    cmdList->clearRenderTarget(m_viewportColorTarget, clearColor);
+    cmdList->clearDepthStencil(m_viewportDepthTarget, 1.0f, 0);
+    
+    // Set viewport
+    RHI::Viewport viewport(static_cast<float>(m_viewportWidth), static_cast<float>(m_viewportHeight));
+    cmdList->setViewport(viewport);
+    
+    // Gather lights from scene
+    TArray<FLightSceneInfo*> lights;
+    if (m_scene)
+    {
+        const TSparseArray<FLightSceneInfoCompact>& sceneLights = m_scene->GetLights();
+        for (auto It = sceneLights.CreateConstIterator(); It; ++It)
+        {
+            if (It->LightSceneInfo)
+            {
+                lights.Add(It->LightSceneInfo);
+            }
+        }
+    }
+    
+    // Render cube to viewport
+    if (m_cubeActor)
+    {
+        UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+        if (meshComp)
+        {
+            FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(meshComp->GetSceneProxy());
+            if (cubeProxy)
+            {
+                if (!cubeProxy->AreResourcesInitialized())
+                {
+                    cubeProxy->InitializeResources(m_device);
+                }
+                cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+                cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+            }
+        }
+    }
+    
+    // End render pass for viewport
+    cmdList->endRenderPass();
+    
+    // Transition viewport color target to SHADER_READ_ONLY_OPTIMAL for ImGui sampling
+    // This is required because the texture was used as a render target
+    if (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
+    {
+        auto* vulkanCmdList = static_cast<RHI::Vulkan::FVulkanRHICommandListImmediate*>(cmdList);
+        if (vulkanCmdList)
+        {
+            vulkanCmdList->transitionTextureLayoutSimple(
+                m_viewportColorTarget,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            );
+        }
+    }
+    
+    // Mark viewport texture as ready for display
+    m_bViewportTextureReady = true;
+}
+
+void CubeSceneApplication::renderViewportPanel()
+{
+    ImGui::SetNextWindowSize(ImVec2(820, 640), ImGuiCond_FirstUseEver);
+    
+    // Use window flags to allow resize
+    ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    
+    if (ImGui::Begin("Viewport", &m_bShowViewport, windowFlags))
+    {
+        // Get available content region size
+        ImVec2 contentSize = ImGui::GetContentRegionAvail();
+        uint32 newWidth = static_cast<uint32>(contentSize.x);
+        uint32 newHeight = static_cast<uint32>(contentSize.y);
+        
+        // Ensure minimum size
+        if (newWidth < 64) newWidth = 64;
+        if (newHeight < 64) newHeight = 64;
+        
+        // Note: Viewport resize is temporarily disabled due to descriptor set cache issues
+        // TODO: Fix descriptor set cache invalidation when textures are destroyed
+        // if (newWidth != m_viewportWidth || newHeight != m_viewportHeight)
+        // {
+        //     m_bViewportNeedsResize = true;
+        //     m_pendingViewportWidth = newWidth;
+        //     m_pendingViewportHeight = newHeight;
+        // }
+        
+        // Display the viewport texture only if it has been rendered to
+        if (m_viewportTextureID != 0 && m_bViewportTextureReady)
+        {
+            // Flip UV vertically for Vulkan
+            ImVec2 uv0(0.0f, 0.0f);
+            ImVec2 uv1(1.0f, 1.0f);
+            
+            if (m_device && m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
+            {
+                // Vulkan has inverted Y, so flip the texture
+                uv0 = ImVec2(0.0f, 1.0f);
+                uv1 = ImVec2(1.0f, 0.0f);
+            }
+            
+            ImGui::Image(static_cast<ImTextureID>(m_viewportTextureID), ImVec2(static_cast<float>(m_viewportWidth), static_cast<float>(m_viewportHeight)), uv0, uv1);
+        }
+        else
+        {
+            // Show placeholder while viewport texture is being initialized
+            ImGui::Text("Initializing viewport...");
+        }
+        
+        // Show viewport info
+        ImGui::SetCursorPos(ImVec2(10, 30));
+        ImGui::Text("Viewport: %ux%u", m_viewportWidth, m_viewportHeight);
+    }
+    ImGui::End();
 }
 
 } // namespace MonsterRender

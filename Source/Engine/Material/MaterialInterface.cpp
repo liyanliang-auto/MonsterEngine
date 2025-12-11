@@ -115,9 +115,11 @@ String FMaterialInterface::GetDebugName() const
 {
     if (m_materialName.IsValid())
     {
-        return m_materialName.ToString();
+        // Convert FString to std::string
+        FString NameStr = m_materialName.ToString();
+        return std::string(NameStr.begin(), NameStr.end());
     }
-    return TEXT("UnnamedMaterial");
+    return "UnnamedMaterial";
 }
 
 } // namespace MonsterEngine

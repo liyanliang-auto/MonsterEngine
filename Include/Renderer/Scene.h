@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 #pragma once
 
@@ -20,15 +20,14 @@
 #include "Math/Matrix.h"
 #include "Renderer/SceneTypes.h"
 
-namespace MonsterEngine
-{
-
-// Forward declarations for RHI
-namespace RHI
-{
+// Forward declarations for RHI types (in MonsterRender::RHI namespace)
+namespace MonsterRender { namespace RHI {
     class IRHIDevice;
     class IRHICommandList;
-}
+}}
+
+namespace MonsterEngine
+{
 
 /**
  * Renderer namespace contains low-level rendering scene classes
@@ -37,6 +36,10 @@ namespace RHI
  */
 namespace Renderer
 {
+
+// Bring RHI types into scope
+using MonsterRender::RHI::IRHIDevice;
+using MonsterRender::RHI::IRHICommandList;
 
 // Forward declarations within Renderer namespace
 class FPrimitiveSceneInfo;
@@ -666,3 +669,5 @@ private:
 
 } // namespace Renderer
 } // namespace MonsterEngine
+
+

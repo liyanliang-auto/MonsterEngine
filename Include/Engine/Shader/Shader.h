@@ -15,6 +15,7 @@
 #include "Core/Templates/SharedPointer.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
+#include "Containers/Name.h"
 
 // Forward declare RHI types
 namespace MonsterRender { namespace RHI {
@@ -22,7 +23,7 @@ namespace MonsterRender { namespace RHI {
     class IRHIShader;
     class IRHIVertexShader;
     class IRHIPixelShader;
-    enum class EShaderStage : uint8;
+    enum class EShaderStage : uint32;  // Must match RHIDefinitions.h
 }}
 
 namespace MonsterEngine
@@ -156,7 +157,7 @@ struct FShaderCompileOptions
     String SourcePath;
     
     /** Entry point function name */
-    String EntryPoint = TEXT("main");
+    String EntryPoint = "main";
     
     /** Shader stage */
     EShaderFrequency Frequency = EShaderFrequency::Vertex;
@@ -174,10 +175,10 @@ struct FShaderCompileOptions
     bool bOptimize = true;
     
     /** Target shader model (e.g., "5_0", "6_0") */
-    String ShaderModel = TEXT("5_0");
+    String ShaderModel = "5_0";
     
     /** Add a preprocessor definition */
-    void AddDefinition(const String& Name, const String& Value = TEXT("1"))
+    void AddDefinition(const String& Name, const String& Value = "1")
     {
         Definitions.Add(MakePair(Name, Value));
     }

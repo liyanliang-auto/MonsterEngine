@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 // MonsterEngine - Texture Loader (UE5-style)
 //
 // Reference: UE5 Engine/Source/Runtime/Engine/Classes/Engine/Texture.h
@@ -238,3 +238,4 @@ private:
 };
 
 } // namespace MonsterRender
+

@@ -33,14 +33,15 @@ namespace MonsterEngine
 // Character Type Definitions
 // ============================================================================
 
-/** Wide character type (platform-dependent) */
+/** Wide character type for FString (UE5 compatibility) */
+/** FString uses wchar_t internally for Unicode support */
 using TCHAR = wchar_t;
-
-/** ANSI character type */
-using ANSICHAR = char;
 
 /** Wide character type */
 using WIDECHAR = wchar_t;
+
+/** ANSI character type */
+using ANSICHAR = char;
 
 /** UTF-8 character type */
 using UTF8CHAR = char;
@@ -1103,8 +1104,14 @@ inline FString operator+(const TCHAR* Lhs, const FString& Rhs)
 // TEXT Macro
 // ============================================================================
 
+// TEXT macro - returns wide string for TCHAR (wchar_t) compatibility
+// Use ANSI_TEXT for narrow strings when working with std::string
 #ifndef TEXT
     #define TEXT(x) L##x
+#endif
+
+#ifndef ANSI_TEXT
+    #define ANSI_TEXT(x) x
 #endif
 
 } // namespace MonsterEngine

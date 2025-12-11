@@ -217,17 +217,24 @@ namespace MonsterRender::RHI::Vulkan {
             functions.vkDeviceWaitIdle(m_device);
             
             // Destroy synchronization objects
+            // Destroy per-frame sync objects
             for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-                if (m_imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
+                if (i < m_imageAvailableSemaphores.size() && m_imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
                     functions.vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
                 }
-                if (m_renderFinishedSemaphores[i] != VK_NULL_HANDLE) {
-                    functions.vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
-                }
-                if (m_inFlightFences[i] != VK_NULL_HANDLE) {
+                if (i < m_inFlightFences.size() && m_inFlightFences[i] != VK_NULL_HANDLE) {
                     functions.vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
                 }
             }
+            
+            // Destroy per-image render finished semaphores
+            for (size_t i = 0; i < m_perImageRenderFinishedSemaphores.size(); i++) {
+                if (m_perImageRenderFinishedSemaphores[i] != VK_NULL_HANDLE) {
+                    functions.vkDestroySemaphore(m_device, m_perImageRenderFinishedSemaphores[i], nullptr);
+                }
+            }
+            m_perImageRenderFinishedSemaphores.clear();
+            m_imagesInFlight.clear();
             
             // Clean up command lists and managers BEFORE destroying command pool
             // (command buffers must be freed before the pool is destroyed)
@@ -504,14 +511,11 @@ namespace MonsterRender::RHI::Vulkan {
         
         const auto& functions = VulkanAPI::getFunctions();
         
-        // Submit command buffer using new per-frame system (UE5 pattern)
-        // Use the current image index for semaphore selection to avoid conflicts
-        // when the same frame index wraps around before present completes
-        uint32 semaphoreIndex = m_currentImageIndex % MAX_FRAMES_IN_FLIGHT;
-        
-        if (m_commandListContext) {
+        // Submit command buffer using per-image semaphores (Vulkan best practice)
+        // Each swapchain image has its own render finished semaphore to avoid conflicts
+        if (m_commandListContext && m_currentImageIndex < m_perImageRenderFinishedSemaphores.size()) {
             VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
-            VkSemaphore signalSemaphores[] = {m_renderFinishedSemaphores[semaphoreIndex]};
+            VkSemaphore signalSemaphores[] = {m_perImageRenderFinishedSemaphores[m_currentImageIndex]};
             
             m_commandListContext->submitCommands(
                 waitSemaphores, 1,
@@ -519,11 +523,11 @@ namespace MonsterRender::RHI::Vulkan {
             );
         }
         
-        // Present using the image index that was acquired in prepareForNewFrame
+        // Present using the per-image semaphore
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         
-        VkSemaphore waitSemaphoresPresent[] = {m_renderFinishedSemaphores[semaphoreIndex]};
+        VkSemaphore waitSemaphoresPresent[] = {m_perImageRenderFinishedSemaphores[m_currentImageIndex]};
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = waitSemaphoresPresent;
         
@@ -542,10 +546,8 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_ERROR("Failed to present swapchain image! Result: " + std::to_string(result));
         }
         
-        // Wait for present queue to be idle to ensure semaphores are released
-        // This is a simple but effective synchronization approach
-        // TODO: Optimize with proper per-image fences for better parallelism
-        functions.vkQueueWaitIdle(m_presentQueue);
+        // Per-image fence tracking now handles synchronization
+        // No need for vkQueueWaitIdle - better parallelism achieved
         
         // Advance frame index AFTER present for next frame
         m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -1193,9 +1195,8 @@ namespace MonsterRender::RHI::Vulkan {
         
         const auto& functions = VulkanAPI::getFunctions();
         
-        // Resize vectors
+        // Resize per-frame vectors
         m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
         
         VkSemaphoreCreateInfo semaphoreInfo{};
@@ -1205,6 +1206,7 @@ namespace MonsterRender::RHI::Vulkan {
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start in signaled state
         
+        // Create per-frame synchronization objects
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             VkResult result;
             
@@ -1214,18 +1216,26 @@ namespace MonsterRender::RHI::Vulkan {
                 return false;
             }
             
-            result = functions.vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]);
-            if (result != VK_SUCCESS) {
-                MR_LOG_ERROR("Failed to create render finished semaphore! Result: " + std::to_string(result));
-                return false;
-            }
-            
             result = functions.vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlightFences[i]);
             if (result != VK_SUCCESS) {
                 MR_LOG_ERROR("Failed to create in-flight fence! Result: " + std::to_string(result));
                 return false;
             }
         }
+        
+        // Create per-image render finished semaphores (one per swapchain image)
+        // This ensures each image has its own semaphore to avoid conflicts
+        m_perImageRenderFinishedSemaphores.resize(m_swapchainImages.size());
+        for (size_t i = 0; i < m_swapchainImages.size(); i++) {
+            VkResult result = functions.vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_perImageRenderFinishedSemaphores[i]);
+            if (result != VK_SUCCESS) {
+                MR_LOG_ERROR("Failed to create per-image render finished semaphore! Result: " + std::to_string(result));
+                return false;
+            }
+        }
+        
+        // Initialize per-image fence tracking array
+        m_imagesInFlight.resize(m_swapchainImages.size(), VK_NULL_HANDLE);
         
         MR_LOG_INFO("Synchronization objects created successfully");
         return true;

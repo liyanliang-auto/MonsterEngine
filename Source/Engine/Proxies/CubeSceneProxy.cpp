@@ -15,6 +15,7 @@
 #include "Core/Color.h"
 #include "Renderer/FTextureLoader.h"
 #include "Math/MonsterMath.h"
+#include "Platform/Vulkan/VulkanTexture.h"
 #include <cstring>
 #include <fstream>
 #include <vector>
@@ -518,6 +519,28 @@ bool FCubeSceneProxy::LoadTextures()
         {
             MR_LOG(LogCubeSceneProxy, Warning, "Failed to load awesomeface texture, creating placeholder");
             Texture2 = CreatePlaceholderTexture(Device, 256, false);
+        }
+    }
+    
+    // Set texture layouts to SHADER_READ_ONLY_OPTIMAL for Vulkan
+    // This is needed because texture loading may not set the correct layout
+    if (Device->getRHIBackend() == MonsterRender::RHI::ERHIBackend::Vulkan)
+    {
+        if (Texture1)
+        {
+            auto* vulkanTex1 = static_cast<MonsterRender::RHI::Vulkan::VulkanTexture*>(Texture1.Get());
+            if (vulkanTex1)
+            {
+                vulkanTex1->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }
+        }
+        if (Texture2)
+        {
+            auto* vulkanTex2 = static_cast<MonsterRender::RHI::Vulkan::VulkanTexture*>(Texture2.Get());
+            if (vulkanTex2)
+            {
+                vulkanTex2->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }
         }
     }
     

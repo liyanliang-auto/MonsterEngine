@@ -729,7 +729,23 @@ namespace MonsterRender::RHI::Vulkan {
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        
+        // Determine aspect mask based on texture format
+        EPixelFormat format = texture->getDesc().format;
+        if (format == EPixelFormat::D32_FLOAT || 
+            format == EPixelFormat::D24_UNORM_S8_UINT || 
+            format == EPixelFormat::D32_FLOAT_S8_UINT ||
+            format == EPixelFormat::D16_UNORM) {
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            // Add stencil aspect if format has stencil
+            if (format == EPixelFormat::D24_UNORM_S8_UINT || 
+                format == EPixelFormat::D32_FLOAT_S8_UINT) {
+                barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            }
+        } else {
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        }
+        
         barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.levelCount = texture->getDesc().mipLevels;
         barrier.subresourceRange.baseArrayLayer = 0;
@@ -752,7 +768,7 @@ namespace MonsterRender::RHI::Vulkan {
         // Update texture's current layout
         vulkanTexture->setCurrentLayout(newLayout);
         
-        MR_LOG_DEBUG("Transitioned texture layout: " + 
+        MR_LOG_INFO("Transitioned texture layout: " + 
                     std::to_string(oldLayout) + " -> " + std::to_string(newLayout));
     }
     

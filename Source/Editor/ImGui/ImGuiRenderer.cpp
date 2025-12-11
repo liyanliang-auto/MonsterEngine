@@ -9,6 +9,7 @@
 #include "Core/Logging/LogMacros.h"
 #include "Core/ShaderCompiler.h"
 #include "RHI/RHIResources.h"
+#include "Platform/Vulkan/VulkanTexture.h"
 
 // ImGui includes
 #include "imgui.h"
@@ -46,6 +47,7 @@ FImGuiRenderer::FImGuiRenderer()
     , WindowWidth(1280)
     , WindowHeight(720)
     , bInitialized(false)
+    , NextTextureID(1)  // Start from 1, 0 is reserved for font texture
 {
     MR_LOG(LogImGuiRenderer, Log, "FImGuiRenderer created");
 }
@@ -233,10 +235,31 @@ void FImGuiRenderer::RenderDrawData(MonsterRender::RHI::IRHICommandList* CmdList
                 scissor.bottom = static_cast<int32>(clipMax.y);
                 CmdList->setScissorRect(scissor);
 
-                // Bind texture
-                // Note: pcmd->TextureId contains the texture handle
-                // For now, we always use the font texture
-                CmdList->setShaderResource(0, FontTexture);
+                // Bind texture based on TextureId
+                // TextureId 0 = font texture, other IDs are registered custom textures
+                // Note: ImGui shader uses binding = 1 for texture (binding = 0 is uniform buffer)
+                ImTextureID texId = pcmd->GetTexID();
+                uint64 textureIdValue = static_cast<uint64>(texId);
+                
+                if (textureIdValue == 0)
+                {
+                    // Use font texture at binding slot 1
+                    CmdList->setShaderResource(1, FontTexture);
+                }
+                else
+                {
+                    // Look up registered texture
+                    auto* foundTexture = RegisteredTextures.Find(textureIdValue);
+                    if (foundTexture && *foundTexture)
+                    {
+                        CmdList->setShaderResource(1, *foundTexture);
+                    }
+                    else
+                    {
+                        // Fallback to font texture if not found
+                        CmdList->setShaderResource(1, FontTexture);
+                    }
+                }
 
                 // Draw indexed
                 CmdList->drawIndexed(
@@ -309,6 +332,19 @@ bool FImGuiRenderer::CreateFontTexture()
 
     // Store texture ID in ImGui
     io.Fonts->SetTexID(reinterpret_cast<ImTextureID>(FontTexture.Get()));
+
+    // Transition font texture to SHADER_READ_ONLY_OPTIMAL layout
+    // This is needed because the texture was created with initial data but layout is UNDEFINED
+    if (RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan)
+    {
+        auto* vulkanTexture = static_cast<MonsterRender::RHI::Vulkan::VulkanTexture*>(FontTexture.Get());
+        if (vulkanTexture)
+        {
+            // Set the layout to SHADER_READ_ONLY_OPTIMAL since the texture upload already handled the transition
+            vulkanTexture->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            MR_LOG(LogImGuiRenderer, Log, "Font texture layout set to SHADER_READ_ONLY_OPTIMAL");
+        }
+    }
 
     MR_LOG(LogImGuiRenderer, Log, "Font texture created (%dx%d)", width, height);
     return true;
@@ -578,6 +614,65 @@ void FImGuiRenderer::SetupRenderState(MonsterRender::RHI::IRHICommandList* CmdLi
     // Set viewport
     MonsterRender::RHI::Viewport viewport(DrawData->DisplaySize.x, DrawData->DisplaySize.y);
     CmdList->setViewport(viewport);
+}
+
+// ============================================================================
+// Texture Registration for ImGui::Image
+// ============================================================================
+
+ImTextureID FImGuiRenderer::RegisterTexture(TSharedPtr<MonsterRender::RHI::IRHITexture> Texture)
+{
+    if (!Texture)
+    {
+        MR_LOG(LogImGuiRenderer, Warning, "Attempted to register null texture");
+        return static_cast<ImTextureID>(0);
+    }
+
+    // Assign a unique ID to this texture
+    uint64 textureId = NextTextureID++;
+    RegisteredTextures.Add(textureId, Texture);
+
+    MR_LOG(LogImGuiRenderer, Log, "Registered texture with ID %llu", textureId);
+
+    return static_cast<ImTextureID>(textureId);
+}
+
+void FImGuiRenderer::UnregisterTexture(ImTextureID TextureID)
+{
+    uint64 textureIdValue = static_cast<uint64>(TextureID);
+    
+    if (textureIdValue == 0)
+    {
+        MR_LOG(LogImGuiRenderer, Warning, "Cannot unregister font texture (ID 0)");
+        return;
+    }
+
+    if (RegisteredTextures.Remove(textureIdValue) > 0)
+    {
+        MR_LOG(LogImGuiRenderer, Log, "Unregistered texture with ID %llu", textureIdValue);
+    }
+    else
+    {
+        MR_LOG(LogImGuiRenderer, Warning, "Texture ID %llu not found in registry", textureIdValue);
+    }
+}
+
+TSharedPtr<MonsterRender::RHI::IRHITexture> FImGuiRenderer::GetTextureByID(ImTextureID TextureID) const
+{
+    uint64 textureIdValue = static_cast<uint64>(TextureID);
+    
+    if (textureIdValue == 0)
+    {
+        return FontTexture;
+    }
+
+    const auto* foundTexture = RegisteredTextures.Find(textureIdValue);
+    if (foundTexture)
+    {
+        return *foundTexture;
+    }
+
+    return nullptr;
 }
 
 } // namespace Editor

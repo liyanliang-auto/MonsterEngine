@@ -248,6 +248,12 @@ using MonsterEngine::TMap;
         void Reset(uint64 FrameNumber);
         
         /**
+         * Clear all cached descriptor sets
+         * Should be called when resources are destroyed/recreated
+         */
+        void ClearCache();
+        
+        /**
          * Get cache statistics
          */
         struct FStats {
