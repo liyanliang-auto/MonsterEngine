@@ -43,7 +43,7 @@ FScene::FScene()
     : FrameNumber(0)
     , NextComponentId(1)
 {
-    MR_LOG_INFO(LogRenderer, "FScene created");
+    MR_LOG(LogRenderer, Log, "FScene (Renderer) created");
 }
 
 FScene::~FScene()
@@ -68,7 +68,7 @@ FScene::~FScene()
     }
     Lights.Empty();
     
-    MR_LOG_INFO(LogRenderer, "FScene destroyed");
+    MR_LOG(LogRenderer, Log, "FScene (Renderer) destroyed");
 }
 
 // ============================================================================
@@ -79,7 +79,7 @@ FPrimitiveSceneInfo* FScene::AddPrimitive(FPrimitiveSceneProxy* Proxy)
 {
     if (!Proxy)
     {
-        MR_LOG_WARNING(LogRenderer, "Attempted to add null primitive proxy to scene");
+        MR_LOG(LogRenderer, Warning, "Attempted to add null primitive proxy to scene");
         return nullptr;
     }
     
@@ -92,7 +92,7 @@ FPrimitiveSceneInfo* FScene::AddPrimitive(FPrimitiveSceneProxy* Proxy)
     // Add to scene arrays
     AddPrimitiveToArrays(PrimitiveSceneInfo);
     
-    MR_LOG_DEBUG(LogRenderer, "Added primitive to scene, index: %d, total primitives: %d",
+    MR_LOG(LogRenderer, Verbose, "Added primitive to scene, index: %d, total primitives: %d",
                  PrimitiveSceneInfo->GetIndex(), Primitives.Num());
     
     return PrimitiveSceneInfo;
@@ -102,14 +102,14 @@ void FScene::RemovePrimitive(FPrimitiveSceneInfo* PrimitiveSceneInfo)
 {
     if (!PrimitiveSceneInfo)
     {
-        MR_LOG_WARNING(LogRenderer, "Attempted to remove null primitive from scene");
+        MR_LOG(LogRenderer, Warning, "Attempted to remove null primitive from scene");
         return;
     }
     
     int32 Index = PrimitiveSceneInfo->GetIndex();
     if (Index == INDEX_NONE || Index >= Primitives.Num())
     {
-        MR_LOG_WARNING(LogRenderer, "Invalid primitive index for removal: %d", Index);
+        MR_LOG(LogRenderer, Warning, "Invalid primitive index for removal: %d", Index);
         return;
     }
     
@@ -119,7 +119,7 @@ void FScene::RemovePrimitive(FPrimitiveSceneInfo* PrimitiveSceneInfo)
     // Delete the scene info
     delete PrimitiveSceneInfo;
     
-    MR_LOG_DEBUG(LogRenderer, "Removed primitive from scene, remaining primitives: %d", Primitives.Num());
+    MR_LOG(LogRenderer, Verbose, "Removed primitive from scene, remaining primitives: %d", Primitives.Num());
 }
 
 void FScene::UpdatePrimitiveTransform(FPrimitiveSceneInfo* PrimitiveSceneInfo, 
@@ -214,7 +214,7 @@ FLightSceneInfo* FScene::AddLight(FLightSceneProxy* Proxy)
 {
     if (!Proxy)
     {
-        MR_LOG_WARNING(LogRenderer, "Attempted to add null light proxy to scene");
+        MR_LOG(LogRenderer, Warning, "Attempted to add null light proxy to scene");
         return nullptr;
     }
     
@@ -228,7 +228,7 @@ FLightSceneInfo* FScene::AddLight(FLightSceneProxy* Proxy)
     // Add to lights array
     Lights.Add(LightSceneInfo);
     
-    MR_LOG_DEBUG(LogRenderer, "Added light to scene, id: %d, total lights: %d",
+    MR_LOG(LogRenderer, Verbose, "Added light to scene, id: %d, total lights: %d",
                  NewId, Lights.Num());
     
     return LightSceneInfo;
@@ -238,14 +238,14 @@ void FScene::RemoveLight(FLightSceneInfo* LightSceneInfo)
 {
     if (!LightSceneInfo)
     {
-        MR_LOG_WARNING(LogRenderer, "Attempted to remove null light from scene");
+        MR_LOG(LogRenderer, Warning, "Attempted to remove null light from scene");
         return;
     }
     
     int32 Id = LightSceneInfo->GetId();
     if (Id == INDEX_NONE || Id >= Lights.Num())
     {
-        MR_LOG_WARNING(LogRenderer, "Invalid light id for removal: %d", Id);
+        MR_LOG(LogRenderer, Warning, "Invalid light id for removal: %d", Id);
         return;
     }
     
@@ -269,7 +269,7 @@ void FScene::RemoveLight(FLightSceneInfo* LightSceneInfo)
     // Delete the scene info
     delete LightSceneInfo;
     
-    MR_LOG_DEBUG(LogRenderer, "Removed light from scene, remaining lights: %d", Lights.Num());
+    MR_LOG(LogRenderer, Verbose, "Removed light from scene, remaining lights: %d", Lights.Num());
 }
 
 // ============================================================================

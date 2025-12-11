@@ -12,6 +12,7 @@
 #include "Renderer/Scene.h"
 #include "Renderer/SceneVisibility.h"
 #include "Core/Logging/Logging.h"
+#include "Math/MathFunctions.h"
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHIDevice.h"
 
@@ -39,19 +40,19 @@ FSceneRenderer::FSceneRenderer(const FSceneViewFamily* InViewFamily)
         Scene = ViewFamily.Scene;
     }
     
-    MR_LOG_DEBUG(LogRenderer, "FSceneRenderer created");
+    MR_LOG(LogRenderer, Verbose, "FSceneRenderer created");
 }
 
 FSceneRenderer::~FSceneRenderer()
 {
-    MR_LOG_DEBUG(LogRenderer, "FSceneRenderer destroyed");
+    MR_LOG(LogRenderer, Verbose, "FSceneRenderer destroyed");
 }
 
 FSceneRenderer* FSceneRenderer::CreateSceneRenderer(const FSceneViewFamily* InViewFamily)
 {
     if (!InViewFamily)
     {
-        MR_LOG_ERROR(LogRenderer, "Cannot create scene renderer with null view family");
+        MR_LOG(LogRenderer, Error, "Cannot create scene renderer with null view family");
         return nullptr;
     }
     
@@ -74,7 +75,7 @@ void FSceneRenderer::RenderThreadBegin(RHI::IRHICommandList& RHICmdList)
     // Compute family size
     ComputeFamilySize();
     
-    MR_LOG_DEBUG(LogRenderer, "RenderThreadBegin: %d views, family size: %dx%d",
+    MR_LOG(LogRenderer, Verbose, "RenderThreadBegin: %d views, family size: %dx%d",
                  Views.Num(), FamilySize.X, FamilySize.Y);
 }
 
@@ -83,7 +84,7 @@ void FSceneRenderer::RenderThreadEnd(RHI::IRHICommandList& RHICmdList)
     // Cleanup after rendering
     MeshCollector.ClearMeshes();
     
-    MR_LOG_DEBUG(LogRenderer, "RenderThreadEnd");
+    MR_LOG(LogRenderer, Verbose, "RenderThreadEnd");
 }
 
 void FSceneRenderer::PrepareViewRectsForRendering(RHI::IRHICommandList& RHICmdList)
@@ -127,8 +128,8 @@ void FSceneRenderer::ComputeFamilySize()
         int32 ViewRight = static_cast<int32>(View.ViewRect.x + View.ViewRect.width);
         int32 ViewBottom = static_cast<int32>(View.ViewRect.y + View.ViewRect.height);
         
-        FamilySize.X = Math::Max(FamilySize.X, ViewRight);
-        FamilySize.Y = Math::Max(FamilySize.Y, ViewBottom);
+        FamilySize.X = Math::FMath::Max(FamilySize.X, ViewRight);
+        FamilySize.Y = Math::FMath::Max(FamilySize.Y, ViewBottom);
     }
 }
 
@@ -154,21 +155,21 @@ void FSceneRenderer::PreVisibilityFrameSetup()
         }
     }
     
-    MR_LOG_DEBUG(LogRenderer, "PreVisibilityFrameSetup complete");
+    MR_LOG(LogRenderer, Verbose, "PreVisibilityFrameSetup complete");
 }
 
 void FSceneRenderer::ComputeViewVisibility(RHI::IRHICommandList& RHICmdList)
 {
     if (!Scene)
     {
-        MR_LOG_WARNING(LogRenderer, "ComputeViewVisibility: No scene");
+        MR_LOG(LogRenderer, Warning, "ComputeViewVisibility: No scene");
         return;
     }
     
     int32 NumPrimitives = Scene->GetNumPrimitives();
     if (NumPrimitives == 0)
     {
-        MR_LOG_DEBUG(LogRenderer, "ComputeViewVisibility: No primitives in scene");
+        MR_LOG(LogRenderer, Verbose, "ComputeViewVisibility: No primitives in scene");
         return;
     }
     
@@ -198,7 +199,7 @@ void FSceneRenderer::ComputeViewVisibility(RHI::IRHICommandList& RHICmdList)
         // Mark visibility as computed
         View.bVisibilityComputed = true;
         
-        MR_LOG_DEBUG(LogRenderer, "View %d visibility: %d primitives, %d frustum culled, %d distance culled",
+        MR_LOG(LogRenderer, Verbose, "View %d visibility: %d primitives, %d frustum culled, %d distance culled",
                      ViewIndex, NumPrimitives, NumFrustumCulled, NumDistanceCulled);
     }
 }
@@ -260,7 +261,7 @@ void FSceneRenderer::ComputeLightVisibility()
         }
     }
     
-    MR_LOG_DEBUG(LogRenderer, "ComputeLightVisibility: %d visible lights out of %d",
+    MR_LOG(LogRenderer, Verbose, "ComputeLightVisibility: %d visible lights out of %d",
                  VisibleLightInfos.Num(), NumLights);
 }
 
@@ -281,7 +282,7 @@ void FSceneRenderer::PostVisibilityFrameSetup()
         }
     }
     
-    MR_LOG_DEBUG(LogRenderer, "PostVisibilityFrameSetup complete");
+    MR_LOG(LogRenderer, Verbose, "PostVisibilityFrameSetup complete");
 }
 
 // ============================================================================
@@ -452,7 +453,7 @@ void FSceneRenderer::GatherDynamicMeshElements()
         }
     }
     
-    MR_LOG_DEBUG(LogRenderer, "GatherDynamicMeshElements: collected %d mesh batches",
+    MR_LOG(LogRenderer, Verbose, "GatherDynamicMeshElements: collected %d mesh batches",
                  MeshCollector.GetNumMeshBatches());
 }
 
@@ -490,13 +491,13 @@ void FSceneRenderer::SetupMeshPass(FViewInfo& View, FViewCommands& ViewCommands)
 void FSceneRenderer::InitDynamicShadows()
 {
     // Initialize shadow data structures
-    MR_LOG_DEBUG(LogRenderer, "InitDynamicShadows");
+    MR_LOG(LogRenderer, Verbose, "InitDynamicShadows");
 }
 
 void FSceneRenderer::GatherShadowPrimitives()
 {
     // Gather primitives that cast shadows
-    MR_LOG_DEBUG(LogRenderer, "GatherShadowPrimitives");
+    MR_LOG(LogRenderer, Verbose, "GatherShadowPrimitives");
 }
 
 // ============================================================================
@@ -528,7 +529,7 @@ bool FSceneRenderer::ShouldRenderTranslucency() const
 void FSceneRenderer::RenderFinish(RHI::IRHICommandList& RHICmdList)
 {
     // Cleanup after rendering
-    MR_LOG_DEBUG(LogRenderer, "RenderFinish");
+    MR_LOG(LogRenderer, Verbose, "RenderFinish");
 }
 
 // ============================================================================
@@ -545,17 +546,17 @@ FDeferredShadingSceneRenderer::FDeferredShadingSceneRenderer(const FSceneViewFam
     , bUseBloom(true)
     , bUseToneMapping(true)
 {
-    MR_LOG_DEBUG(LogRenderer, "FDeferredShadingSceneRenderer created");
+    MR_LOG(LogRenderer, Verbose, "FDeferredShadingSceneRenderer created");
 }
 
 FDeferredShadingSceneRenderer::~FDeferredShadingSceneRenderer()
 {
-    MR_LOG_DEBUG(LogRenderer, "FDeferredShadingSceneRenderer destroyed");
+    MR_LOG(LogRenderer, Verbose, "FDeferredShadingSceneRenderer destroyed");
 }
 
 void FDeferredShadingSceneRenderer::Render(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "FDeferredShadingSceneRenderer::Render begin");
+    MR_LOG(LogRenderer, Verbose, "FDeferredShadingSceneRenderer::Render begin");
     
     // Pre-visibility setup
     PreVisibilityFrameSetup();
@@ -619,12 +620,12 @@ void FDeferredShadingSceneRenderer::Render(RHI::IRHICommandList& RHICmdList)
     // Finish rendering
     RenderFinish(RHICmdList);
     
-    MR_LOG_DEBUG(LogRenderer, "FDeferredShadingSceneRenderer::Render end");
+    MR_LOG(LogRenderer, Verbose, "FDeferredShadingSceneRenderer::Render end");
 }
 
 void FDeferredShadingSceneRenderer::RenderHitProxies(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderHitProxies");
+    MR_LOG(LogRenderer, Verbose, "RenderHitProxies");
 }
 
 bool FDeferredShadingSceneRenderer::ShouldRenderVelocities() const
@@ -639,61 +640,61 @@ bool FDeferredShadingSceneRenderer::ShouldRenderPrePass() const
 
 void FDeferredShadingSceneRenderer::RenderPrePass(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderPrePass");
+    MR_LOG(LogRenderer, Verbose, "RenderPrePass");
     // Render depth-only pass for early-Z optimization
 }
 
 void FDeferredShadingSceneRenderer::RenderBasePass(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderBasePass");
+    MR_LOG(LogRenderer, Verbose, "RenderBasePass");
     // Render GBuffer fill pass
 }
 
 void FDeferredShadingSceneRenderer::RenderLights(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderLights: %d visible lights", VisibleLightInfos.Num());
+    MR_LOG(LogRenderer, Verbose, "RenderLights: %d visible lights", VisibleLightInfos.Num());
     // Render deferred lighting
 }
 
 void FDeferredShadingSceneRenderer::RenderTranslucency(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderTranslucency");
+    MR_LOG(LogRenderer, Verbose, "RenderTranslucency");
     // Render translucent objects
 }
 
 void FDeferredShadingSceneRenderer::RenderAmbientOcclusion(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderAmbientOcclusion");
+    MR_LOG(LogRenderer, Verbose, "RenderAmbientOcclusion");
     // Render SSAO
 }
 
 void FDeferredShadingSceneRenderer::RenderSkyAtmosphere(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderSkyAtmosphere");
+    MR_LOG(LogRenderer, Verbose, "RenderSkyAtmosphere");
     // Render sky and atmosphere
 }
 
 void FDeferredShadingSceneRenderer::RenderFog(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderFog");
+    MR_LOG(LogRenderer, Verbose, "RenderFog");
     // Render volumetric fog
 }
 
 void FDeferredShadingSceneRenderer::RenderPostProcessing(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderPostProcessing");
+    MR_LOG(LogRenderer, Verbose, "RenderPostProcessing");
     // Render post processing effects
 }
 
 void FDeferredShadingSceneRenderer::RenderShadowDepthMaps(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderShadowDepthMaps");
+    MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps");
     // Render shadow depth maps
 }
 
 void FDeferredShadingSceneRenderer::RenderShadowProjections(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderShadowProjections");
+    MR_LOG(LogRenderer, Verbose, "RenderShadowProjections");
     // Render shadow projections
 }
 
@@ -704,17 +705,17 @@ void FDeferredShadingSceneRenderer::RenderShadowProjections(RHI::IRHICommandList
 FForwardShadingSceneRenderer::FForwardShadingSceneRenderer(const FSceneViewFamily* InViewFamily)
     : FSceneRenderer(InViewFamily)
 {
-    MR_LOG_DEBUG(LogRenderer, "FForwardShadingSceneRenderer created");
+    MR_LOG(LogRenderer, Verbose, "FForwardShadingSceneRenderer created");
 }
 
 FForwardShadingSceneRenderer::~FForwardShadingSceneRenderer()
 {
-    MR_LOG_DEBUG(LogRenderer, "FForwardShadingSceneRenderer destroyed");
+    MR_LOG(LogRenderer, Verbose, "FForwardShadingSceneRenderer destroyed");
 }
 
 void FForwardShadingSceneRenderer::Render(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "FForwardShadingSceneRenderer::Render begin");
+    MR_LOG(LogRenderer, Verbose, "FForwardShadingSceneRenderer::Render begin");
     
     // Pre-visibility setup
     PreVisibilityFrameSetup();
@@ -741,7 +742,7 @@ void FForwardShadingSceneRenderer::Render(RHI::IRHICommandList& RHICmdList)
     // Finish rendering
     RenderFinish(RHICmdList);
     
-    MR_LOG_DEBUG(LogRenderer, "FForwardShadingSceneRenderer::Render end");
+    MR_LOG(LogRenderer, Verbose, "FForwardShadingSceneRenderer::Render end");
 }
 
 bool FForwardShadingSceneRenderer::ShouldRenderVelocities() const
@@ -756,13 +757,13 @@ bool FForwardShadingSceneRenderer::ShouldRenderPrePass() const
 
 void FForwardShadingSceneRenderer::RenderForwardPass(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderForwardPass");
+    MR_LOG(LogRenderer, Verbose, "RenderForwardPass");
     // Render forward shading pass
 }
 
 void FForwardShadingSceneRenderer::RenderTranslucency(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG_DEBUG(LogRenderer, "RenderTranslucency (Forward)");
+    MR_LOG(LogRenderer, Verbose, "RenderTranslucency (Forward)");
     // Render translucent objects
 }
 

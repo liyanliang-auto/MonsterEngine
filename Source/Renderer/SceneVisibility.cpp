@@ -13,6 +13,7 @@
 #include "Renderer/SceneView.h"
 #include "Core/Logging/Logging.h"
 #include "Math/MathUtility.h"
+#include "Math/MathFunctions.h"
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHIDevice.h"
 
@@ -63,7 +64,7 @@ int32 FFrustumCuller::CullPrimitives(const FScene* Scene, FViewInfo& View,
     for (int32 TaskIndex = 0; TaskIndex < NumTasks; ++TaskIndex)
     {
         int32 StartIndex = TaskIndex * PrimitivesPerTask;
-        int32 EndIndex = Math::Min(StartIndex + PrimitivesPerTask, NumPrimitives);
+        int32 EndIndex = Math::FMath::Min(StartIndex + PrimitivesPerTask, NumPrimitives);
         
         int32 NumCulled = 0;
         CullPrimitiveRange(Scene, View, Flags, StartIndex, EndIndex, NumCulled);
@@ -145,9 +146,9 @@ bool FFrustumCuller::IntersectBox8Plane(const Math::FVector& Origin, const Math:
         
         // Calculate the effective radius (push-out distance)
         float EffectiveRadius = 
-            Math::Abs(Plane.X) * Extent.X +
-            Math::Abs(Plane.Y) * Extent.Y +
-            Math::Abs(Plane.Z) * Extent.Z;
+            Math::FMath::Abs(Plane.X) * Extent.X +
+            Math::FMath::Abs(Plane.Y) * Extent.Y +
+            Math::FMath::Abs(Plane.Z) * Extent.Z;
         
         // If the box is completely outside this plane, it's not visible
         if (Distance > EffectiveRadius)
@@ -168,9 +169,9 @@ bool FFrustumCuller::IntersectBoxPlanes(const Math::FVector& Origin, const Math:
         
         float Distance = Plane.X * Origin.X + Plane.Y * Origin.Y + Plane.Z * Origin.Z - Plane.W;
         float EffectiveRadius = 
-            Math::Abs(Plane.X) * Extent.X +
-            Math::Abs(Plane.Y) * Extent.Y +
-            Math::Abs(Plane.Z) * Extent.Z;
+            Math::FMath::Abs(Plane.X) * Extent.X +
+            Math::FMath::Abs(Plane.Y) * Extent.Y +
+            Math::FMath::Abs(Plane.Z) * Extent.Z;
         
         if (Distance > EffectiveRadius)
         {
@@ -247,7 +248,7 @@ int32 FDistanceCuller::CullPrimitives(const FScene* Scene, FViewInfo& View)
         else if (bMayBeFading)
         {
             // Mark as potentially fading for LOD transitions
-            View.PotentiallyFadingPrimitiveMap[PrimitiveIndex] = true;
+            View.PotentiallyFadingPrimitiveMap.SetBit(PrimitiveIndex, true);
         }
     }
     
@@ -306,7 +307,7 @@ float FDistanceCuller::GetViewDistanceScale()
 
 void FDistanceCuller::SetViewDistanceScale(float Scale)
 {
-    ViewDistanceScale = Math::Max(0.0f, Scale);
+    ViewDistanceScale = Math::FMath::Max(0.0f, Scale);
 }
 
 // ============================================================================
@@ -325,13 +326,13 @@ FOcclusionQueryPool::~FOcclusionQueryPool()
     Shutdown();
 }
 
-void FOcclusionQueryPool::Initialize(RHI::IRHIDevice* InDevice, int32 InitialSize)
+void FOcclusionQueryPool::Initialize(IRHIDevice* InDevice, int32 InitialSize)
 {
     Device = InDevice;
     
     if (!Device)
     {
-        MR_LOG_WARNING(LogRenderer, "FOcclusionQueryPool::Initialize: No device");
+        MR_LOG(LogRenderer, Warning, "FOcclusionQueryPool::Initialize: No device");
         return;
     }
     
@@ -348,7 +349,7 @@ void FOcclusionQueryPool::Initialize(RHI::IRHIDevice* InDevice, int32 InitialSiz
     PoolSize = InitialSize;
     NumAllocatedQueries = 0;
     
-    MR_LOG_DEBUG(LogRenderer, "FOcclusionQueryPool initialized with %d queries", InitialSize);
+    MR_LOG(LogRenderer, Verbose, "FOcclusionQueryPool initialized with %d queries", InitialSize);
 }
 
 void FOcclusionQueryPool::Shutdown()
@@ -413,7 +414,7 @@ FOcclusionCuller::~FOcclusionCuller()
     Shutdown();
 }
 
-void FOcclusionCuller::Initialize(RHI::IRHIDevice* InDevice, EOcclusionMethod Method)
+void FOcclusionCuller::Initialize(IRHIDevice* InDevice, EOcclusionMethod Method)
 {
     Device = InDevice;
     OcclusionMethod = Method;
@@ -423,7 +424,7 @@ void FOcclusionCuller::Initialize(RHI::IRHIDevice* InDevice, EOcclusionMethod Me
         QueryPool.Initialize(Device, 1024);
     }
     
-    MR_LOG_INFO(LogRenderer, "FOcclusionCuller initialized with method: %d", static_cast<int>(Method));
+    MR_LOG(LogRenderer, Log, "FOcclusionCuller initialized with method: %d", static_cast<int>(Method));
 }
 
 void FOcclusionCuller::Shutdown()
@@ -441,14 +442,14 @@ void FOcclusionCuller::Shutdown()
     Device = nullptr;
 }
 
-void FOcclusionCuller::BeginOcclusionCulling(RHI::IRHICommandList& RHICmdList, FViewInfo& View)
+void FOcclusionCuller::BeginOcclusionCulling(IRHICommandList& RHICmdList, FViewInfo& View)
 {
     CurrentFrame = View.Family ? View.Family->FrameNumber : 0;
     PendingQueries.Empty();
 }
 
 int32 FOcclusionCuller::CullPrimitives(const FScene* Scene, FViewInfo& View, 
-                                       RHI::IRHICommandList& RHICmdList)
+                                       IRHICommandList& RHICmdList)
 {
     if (!Scene || OcclusionMethod == EOcclusionMethod::None)
     {
@@ -501,13 +502,13 @@ int32 FOcclusionCuller::CullPrimitives(const FScene* Scene, FViewInfo& View,
     return NumCulled;
 }
 
-void FOcclusionCuller::EndOcclusionCulling(RHI::IRHICommandList& RHICmdList)
+void FOcclusionCuller::EndOcclusionCulling(IRHICommandList& RHICmdList)
 {
     // Read back query results
     ReadbackOcclusionResults(RHICmdList);
 }
 
-void FOcclusionCuller::SubmitOcclusionQuery(RHI::IRHICommandList& RHICmdList, int32 PrimitiveIndex,
+void FOcclusionCuller::SubmitOcclusionQuery(IRHICommandList& RHICmdList, int32 PrimitiveIndex,
                                             const FBoxSphereBounds& Bounds)
 {
     if (PrimitiveIndex < 0 || PrimitiveIndex >= OcclusionHistory.Num())
@@ -529,7 +530,7 @@ void FOcclusionCuller::SubmitOcclusionQuery(RHI::IRHICommandList& RHICmdList, in
     PendingQueries.Add(PrimitiveIndex);
 }
 
-void FOcclusionCuller::ReadbackOcclusionResults(RHI::IRHICommandList& RHICmdList)
+void FOcclusionCuller::ReadbackOcclusionResults(IRHICommandList& RHICmdList)
 {
     // Read back results from pending queries
     for (int32 PrimitiveIndex : PendingQueries)
@@ -570,7 +571,7 @@ bool FOcclusionCuller::IsPrimitiveOccluded(int32 PrimitiveIndex, uint32 InCurren
     return false;
 }
 
-void FOcclusionCuller::BuildHZB(RHI::IRHICommandList& RHICmdList, RHI::IRHITexture* DepthTexture)
+void FOcclusionCuller::BuildHZB(IRHICommandList& RHICmdList, IRHITexture* DepthTexture)
 {
     if (!DepthTexture)
     {
@@ -580,7 +581,7 @@ void FOcclusionCuller::BuildHZB(RHI::IRHICommandList& RHICmdList, RHI::IRHITextu
     // Build hierarchical Z-buffer from depth texture
     // This involves downsampling the depth buffer and taking the max depth at each level
     
-    MR_LOG_DEBUG(LogRenderer, "BuildHZB");
+    MR_LOG(LogRenderer, Verbose, "BuildHZB");
 }
 
 bool FOcclusionCuller::TestHZB(const FBoxSphereBounds& Bounds, const Math::FMatrix& ViewProjectionMatrix) const
@@ -612,7 +613,7 @@ FSceneVisibility::~FSceneVisibility()
     Shutdown();
 }
 
-void FSceneVisibility::Initialize(RHI::IRHIDevice* Device)
+void FSceneVisibility::Initialize(IRHIDevice* Device)
 {
     // Initialize occlusion culler if enabled
     if (bOcclusionCullingEnabled)
@@ -620,8 +621,8 @@ void FSceneVisibility::Initialize(RHI::IRHIDevice* Device)
         OcclusionCuller.Initialize(Device, FOcclusionCuller::EOcclusionMethod::HardwareQueries);
     }
     
-    MR_LOG_INFO(LogRenderer, "FSceneVisibility initialized (Frustum: %d, Distance: %d, Occlusion: %d)",
-                bFrustumCullingEnabled, bDistanceCullingEnabled, bOcclusionCullingEnabled);
+    MR_LOG(LogRenderer, Log, "FSceneVisibility initialized (Frustum: %d, Distance: %d, Occlusion: %d)",
+           bFrustumCullingEnabled, bDistanceCullingEnabled, bOcclusionCullingEnabled);
 }
 
 void FSceneVisibility::Shutdown()
@@ -630,7 +631,7 @@ void FSceneVisibility::Shutdown()
 }
 
 void FSceneVisibility::ComputeViewVisibility(const FScene* Scene, FViewInfo& View, 
-                                             RHI::IRHICommandList& RHICmdList)
+                                             IRHICommandList& RHICmdList)
 {
     if (!Scene)
     {
@@ -663,7 +664,7 @@ void FSceneVisibility::ComputeViewVisibility(const FScene* Scene, FViewInfo& Vie
         int32 NumFrustumCulled = FrustumCuller.CullPrimitives(Scene, View, Flags);
         TotalCulled += NumFrustumCulled;
         
-        MR_LOG_DEBUG(LogRenderer, "Frustum culling: %d primitives culled", NumFrustumCulled);
+        MR_LOG(LogRenderer, Verbose, "Frustum culling: %d primitives culled", NumFrustumCulled);
     }
     
     // Step 2: Distance culling
@@ -672,7 +673,7 @@ void FSceneVisibility::ComputeViewVisibility(const FScene* Scene, FViewInfo& Vie
         int32 NumDistanceCulled = DistanceCuller.CullPrimitives(Scene, View);
         TotalCulled += NumDistanceCulled;
         
-        MR_LOG_DEBUG(LogRenderer, "Distance culling: %d primitives culled", NumDistanceCulled);
+        MR_LOG(LogRenderer, Verbose, "Distance culling: %d primitives culled", NumDistanceCulled);
     }
     
     // Step 3: Occlusion culling
@@ -683,15 +684,15 @@ void FSceneVisibility::ComputeViewVisibility(const FScene* Scene, FViewInfo& Vie
         OcclusionCuller.EndOcclusionCulling(RHICmdList);
         TotalCulled += NumOcclusionCulled;
         
-        MR_LOG_DEBUG(LogRenderer, "Occlusion culling: %d primitives culled", NumOcclusionCulled);
+        MR_LOG(LogRenderer, Verbose, "Occlusion culling: %d primitives culled", NumOcclusionCulled);
     }
     
     // Mark visibility as computed
     View.bVisibilityComputed = true;
     
     int32 NumVisible = NumPrimitives - TotalCulled;
-    MR_LOG_DEBUG(LogRenderer, "Visibility complete: %d visible, %d culled out of %d total",
-                 NumVisible, TotalCulled, NumPrimitives);
+    MR_LOG(LogRenderer, Verbose, "Visibility complete: %d visible, %d culled out of %d total",
+           NumVisible, TotalCulled, NumPrimitives);
 }
 
 } // namespace MonsterEngine

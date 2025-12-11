@@ -24,20 +24,27 @@
 #include "Math/Sphere.h"
 #include "Renderer/SceneTypes.h"
 
+// Forward declarations for RHI types
+namespace MonsterRender { namespace RHI {
+    class IRHICommandList;
+    class IRHITexture;
+    class IRHIBuffer;
+    class IRHIDevice;
+}}
+
 namespace MonsterEngine
 {
+
+// Use RHI types from MonsterRender namespace
+using MonsterRender::RHI::IRHICommandList;
+using MonsterRender::RHI::IRHITexture;
+using MonsterRender::RHI::IRHIBuffer;
+using MonsterRender::RHI::IRHIDevice;
 
 // Forward declarations
 class FScene;
 class FViewInfo;
 class FPrimitiveSceneInfo;
-
-namespace RHI
-{
-    class IRHICommandList;
-    class IRHITexture;
-    class IRHIBuffer;
-}
 
 // ============================================================================
 // FPrimitiveCullingFlags - Culling Configuration Flags
@@ -268,7 +275,7 @@ public:
      * @param Device The RHI device
      * @param InitialSize Initial number of queries to allocate
      */
-    void Initialize(RHI::IRHIDevice* Device, int32 InitialSize = 256);
+    void Initialize(IRHIDevice* Device, int32 InitialSize = 256);
     
     /**
      * Shutdown and release all queries
@@ -299,7 +306,7 @@ public:
     
 private:
     /** RHI device */
-    RHI::IRHIDevice* Device;
+    IRHIDevice* Device;
     
     /** Pool of query objects (platform-specific handles) */
     TArray<void*> QueryPool;
@@ -422,7 +429,7 @@ public:
      * @param Device The RHI device
      * @param Method The occlusion method to use
      */
-    void Initialize(RHI::IRHIDevice* Device, EOcclusionMethod Method = EOcclusionMethod::HardwareQueries);
+    void Initialize(IRHIDevice* Device, EOcclusionMethod Method = EOcclusionMethod::HardwareQueries);
     
     /**
      * Shutdown and cleanup
@@ -434,7 +441,7 @@ public:
      * @param RHICmdList The command list
      * @param View The view
      */
-    void BeginOcclusionCulling(RHI::IRHICommandList& RHICmdList, FViewInfo& View);
+    void BeginOcclusionCulling(IRHICommandList& RHICmdList, FViewInfo& View);
     
     /**
      * Perform occlusion culling
@@ -443,13 +450,13 @@ public:
      * @param RHICmdList The command list
      * @return Number of primitives culled
      */
-    int32 CullPrimitives(const FScene* Scene, FViewInfo& View, RHI::IRHICommandList& RHICmdList);
+    int32 CullPrimitives(const FScene* Scene, FViewInfo& View, IRHICommandList& RHICmdList);
     
     /**
      * End occlusion culling for a frame
      * @param RHICmdList The command list
      */
-    void EndOcclusionCulling(RHI::IRHICommandList& RHICmdList);
+    void EndOcclusionCulling(IRHICommandList& RHICmdList);
     
     /**
      * Submit an occlusion query for a primitive
@@ -457,14 +464,14 @@ public:
      * @param PrimitiveIndex Index of the primitive
      * @param Bounds Primitive bounds
      */
-    void SubmitOcclusionQuery(RHI::IRHICommandList& RHICmdList, int32 PrimitiveIndex, 
+    void SubmitOcclusionQuery(IRHICommandList& RHICmdList, int32 PrimitiveIndex, 
                              const FBoxSphereBounds& Bounds);
     
     /**
      * Read back occlusion query results
      * @param RHICmdList The command list
      */
-    void ReadbackOcclusionResults(RHI::IRHICommandList& RHICmdList);
+    void ReadbackOcclusionResults(IRHICommandList& RHICmdList);
     
     /**
      * Check if a primitive is occluded based on history
@@ -498,7 +505,7 @@ public:
      * @param RHICmdList The command list
      * @param DepthTexture The scene depth texture
      */
-    void BuildHZB(RHI::IRHICommandList& RHICmdList, RHI::IRHITexture* DepthTexture);
+    void BuildHZB(IRHICommandList& RHICmdList, IRHITexture* DepthTexture);
     
     /**
      * Test a bounds against the HZB
@@ -510,7 +517,7 @@ public:
     
 private:
     /** RHI device */
-    RHI::IRHIDevice* Device;
+    IRHIDevice* Device;
     
     /** Occlusion query pool */
     FOcclusionQueryPool QueryPool;
@@ -522,7 +529,7 @@ private:
     TArray<int32> PendingQueries;
     
     /** HZB texture */
-    RHI::IRHITexture* HZBTexture;
+    IRHITexture* HZBTexture;
     
     /** HZB mip levels */
     int32 HZBMipLevels;
@@ -565,7 +572,7 @@ public:
      * Initialize the visibility system
      * @param Device The RHI device
      */
-    void Initialize(RHI::IRHIDevice* Device);
+    void Initialize(IRHIDevice* Device);
     
     /**
      * Shutdown the visibility system
@@ -578,7 +585,7 @@ public:
      * @param View The view
      * @param RHICmdList The command list
      */
-    void ComputeViewVisibility(const FScene* Scene, FViewInfo& View, RHI::IRHICommandList& RHICmdList);
+    void ComputeViewVisibility(const FScene* Scene, FViewInfo& View, IRHICommandList& RHICmdList);
     
     /**
      * Get the frustum culler
