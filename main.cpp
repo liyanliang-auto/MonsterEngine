@@ -4,8 +4,9 @@
 #include "Containers/Map.h"
 #include "Containers/Set.h"
 #include "CubeSceneApplication.h"
-// CubeSceneRendererTest temporarily excluded due to linker errors
-// #include "Tests/CubeSceneRendererTest.h"
+// CubeSceneRendererTest - now using MonsterEngine::Renderer namespace
+#include "Tests/CubeSceneRendererTest.h"
+#include "Tests/CubeSceneRendererTestApp.h"
 
 // ImGui Test Application Forward Declaration
 MonsterEngine::TUniquePtr<MonsterRender::Application> createImGuiTestApplication();
@@ -266,10 +267,19 @@ int main(int argc, char** argv) {
         return 0;
     }
     
-    // CubeSceneRendererTest temporarily disabled due to linker errors with Scene system
+    // CubeSceneRendererTest - uses MonsterEngine::Renderer namespace
+    // Run as Application with proper RHI device initialization
     if (runCubeSceneTest) {
-        MR_LOG(LogInit, Warning, "CubeSceneRendererTest is temporarily disabled due to linker errors");
-        MR_LOG(LogInit, Log, "Use --imgui-test or -imgui to run the ImGui test application instead");
+        MR_LOG(LogInit, Log, "Running CubeSceneRendererTestApp...");
+        auto cubeSceneTestApp = CreateCubeSceneRendererTestApp();
+        if (cubeSceneTestApp) {
+            int32 exitCode = cubeSceneTestApp->run();
+            cubeSceneTestApp->shutdown();
+            cubeSceneTestApp.reset();
+            ShutdownLogging();
+            return exitCode;
+        }
+        MR_LOG(LogInit, Error, "Failed to create CubeSceneRendererTestApp");
         ShutdownLogging();
         return -1;
     }

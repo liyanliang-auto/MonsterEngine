@@ -18,6 +18,8 @@ using namespace MonsterRender;
 
 namespace MonsterEngine
 {
+namespace Renderer
+{
 
 // ============================================================================
 // FRenderQueue Implementation
@@ -480,4 +482,5 @@ void FRenderQueueManager::ClearAll()
     }
 }
 
+} // namespace Renderer
 } // namespace MonsterEngine

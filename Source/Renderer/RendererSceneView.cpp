@@ -22,6 +22,8 @@
 
 namespace MonsterEngine
 {
+namespace Renderer
+{
 
 // ============================================================================
 // FSceneView Implementation
@@ -181,64 +183,7 @@ bool FViewInfo::IsDistanceCulled(float DistanceSquared, float MinDrawDistance,
     return false;
 }
 
-// ============================================================================
-// FConvexVolume Implementation
-// ============================================================================
-
-void FConvexVolume::BuildPermutedPlanes()
-{
-    // Build permuted planes for SIMD-optimized intersection tests
-    // Arrange planes in SOA (Structure of Arrays) format
-    
-    int32 NumPlanes = Planes.Num();
-    
-    // Pad to multiple of 4 for SIMD
-    int32 PaddedCount = ((NumPlanes + 3) / 4) * 4;
-    
-    PermutedPlanes.SetNum(PaddedCount * 2); // X,Y,Z,W for each set of 4 planes
-    
-    // For 6-plane frustum, we create 8 permuted planes (2 sets of 4)
-    if (NumPlanes == 6)
-    {
-        // First 4 planes
-        for (int32 i = 0; i < 4 && i < NumPlanes; ++i)
-        {
-            PermutedPlanes[i] = Planes[i];
-        }
-        
-        // Remaining planes (padded with degenerate planes)
-        for (int32 i = 4; i < 8; ++i)
-        {
-            if (i < NumPlanes)
-            {
-                PermutedPlanes[i] = Planes[i];
-            }
-            else
-            {
-                // Degenerate plane that always passes
-                PermutedPlanes[i] = Math::FPlane(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-        }
-    }
-    else
-    {
-        // General case - just copy planes
-        for (int32 i = 0; i < PaddedCount; ++i)
-        {
-            if (i < NumPlanes)
-            {
-                PermutedPlanes[i] = Planes[i];
-            }
-            else
-            {
-                PermutedPlanes[i] = Math::FPlane(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-        }
-    }
-}
-
-// Note: FConvexVolume::IntersectPoint, IntersectSphere, IntersectBox are defined
-// inline in Engine/ConvexVolume.h - do not redefine them here
+// Note: FConvexVolume methods are now defined inline in Renderer/SceneTypes.h
 
 // ============================================================================
 // FBoxSphereBounds Implementation
@@ -271,4 +216,5 @@ FBoxSphereBounds FBoxSphereBounds::TransformBy(const Math::FMatrix& M) const
     return FBoxSphereBounds(TransformedOrigin, TransformedExtent, TransformedRadius);
 }
 
+} // namespace Renderer
 } // namespace MonsterEngine

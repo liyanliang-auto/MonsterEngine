@@ -21,15 +21,20 @@
 namespace MonsterEngine
 {
 
-// Forward declarations
-class FScene;
-class FViewInfo;
-
+// Forward declarations for RHI
 namespace RHI
 {
     class IRHIDevice;
     class IRHICommandList;
 }
+
+// Renderer namespace for low-level rendering classes
+namespace Renderer
+{
+
+// Forward declarations
+class FScene;
+class FViewInfo;
 
 // ============================================================================
 // ERenderQueuePriority - Render Queue Priority
@@ -497,4 +502,5 @@ private:
     TArray<FRenderQueue> RenderQueues;
 };
 
+} // namespace Renderer
 } // namespace MonsterEngine

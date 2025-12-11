@@ -504,28 +504,14 @@ namespace MonsterRender::RHI::Vulkan {
         
         const auto& functions = VulkanAPI::getFunctions();
         
-        // Begin new frame for descriptor set allocator
-        if (m_descriptorSetAllocator) {
-            m_descriptorSetAllocator->beginFrame(m_currentFrame);
-        }
-        
-        // Reset descriptor set cache for new frame (UE5-style frame-local caching)
-        if (m_descriptorSetCache) {
-            m_descriptorSetCache->Reset(m_currentFrame);
-        }
-        
-        // Garbage collect stale descriptor set layouts
-        if (m_descriptorSetLayoutCache) {
-            m_descriptorSetLayoutCache->GarbageCollect(m_currentFrame, 120);
-        }
-        
-        // NOTE: vkAcquireNextImageKHR is now called in FVulkanCommandListContext::prepareForNewFrame()
-        // to ensure the correct framebuffer is used when setRenderTargets is called
-        
         // Submit command buffer using new per-frame system (UE5 pattern)
+        // Use the current image index for semaphore selection to avoid conflicts
+        // when the same frame index wraps around before present completes
+        uint32 semaphoreIndex = m_currentImageIndex % MAX_FRAMES_IN_FLIGHT;
+        
         if (m_commandListContext) {
             VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
-            VkSemaphore signalSemaphores[] = {m_renderFinishedSemaphores[m_currentFrame]};
+            VkSemaphore signalSemaphores[] = {m_renderFinishedSemaphores[semaphoreIndex]};
             
             m_commandListContext->submitCommands(
                 waitSemaphores, 1,
@@ -537,9 +523,9 @@ namespace MonsterRender::RHI::Vulkan {
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         
-        VkSemaphore signalSemaphores[] = {m_renderFinishedSemaphores[m_currentFrame]};
+        VkSemaphore waitSemaphoresPresent[] = {m_renderFinishedSemaphores[semaphoreIndex]};
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = signalSemaphores;
+        presentInfo.pWaitSemaphores = waitSemaphoresPresent;
         
         VkSwapchainKHR swapChains[] = {m_swapchain};
         presentInfo.swapchainCount = 1;
@@ -556,7 +542,28 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_ERROR("Failed to present swapchain image! Result: " + std::to_string(result));
         }
         
+        // Wait for present queue to be idle to ensure semaphores are released
+        // This is a simple but effective synchronization approach
+        // TODO: Optimize with proper per-image fences for better parallelism
+        functions.vkQueueWaitIdle(m_presentQueue);
+        
+        // Advance frame index AFTER present for next frame
         m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        
+        // Begin new frame for descriptor set allocator (for next frame)
+        if (m_descriptorSetAllocator) {
+            m_descriptorSetAllocator->beginFrame(m_currentFrame);
+        }
+        
+        // Reset descriptor set cache for new frame (UE5-style frame-local caching)
+        if (m_descriptorSetCache) {
+            m_descriptorSetCache->Reset(m_currentFrame);
+        }
+        
+        // Garbage collect stale descriptor set layouts
+        if (m_descriptorSetLayoutCache) {
+            m_descriptorSetLayoutCache->GarbageCollect(m_currentFrame, 120);
+        }
     }
     
     void VulkanDevice::getMemoryStats(uint64& usedBytes, uint64& availableBytes) {

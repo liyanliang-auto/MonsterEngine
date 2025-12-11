@@ -338,6 +338,66 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_DEBUG("Command buffer submitted to GPU");
     }
     
+    void FVulkanCommandBufferManager::submitActiveCmdBufferWithFence(
+        VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
+        VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount,
+        VkFence fence) {
+        
+        if (!m_activeCmdBuffer || !m_activeCmdBuffer->hasEnded()) {
+            MR_LOG_ERROR("Cannot submit command buffer - not ended");
+            return;
+        }
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        VkQueue queue = getQueue();
+        VkDevice device = m_device->getLogicalDevice();
+        
+        // Check fence status before submission - it MUST be unsignaled
+        if (fence != VK_NULL_HANDLE) {
+            VkResult fenceStatus = functions.vkGetFenceStatus(device, fence);
+            if (fenceStatus == VK_SUCCESS) {
+                // Fence is signaled - this is an error, reset it
+                MR_LOG_WARNING("submitActiveCmdBufferWithFence: Fence is SIGNALED before submit, resetting...");
+                functions.vkResetFences(device, 1, &fence);
+            }
+        }
+        
+        // Prepare submit info
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        
+        // Wait semaphores
+        TArray<VkPipelineStageFlags> waitStages;
+        if (waitSemaphoreCount > 0) {
+            waitStages.resize(waitSemaphoreCount, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+            submitInfo.waitSemaphoreCount = waitSemaphoreCount;
+            submitInfo.pWaitSemaphores = waitSemaphores;
+            submitInfo.pWaitDstStageMask = waitStages.data();
+        }
+        
+        // Command buffers
+        VkCommandBuffer cmdBuffer = m_activeCmdBuffer->getHandle();
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &cmdBuffer;
+        
+        // Signal semaphores
+        if (signalSemaphoreCount > 0) {
+            submitInfo.signalSemaphoreCount = signalSemaphoreCount;
+            submitInfo.pSignalSemaphores = signalSemaphores;
+        }
+        
+        // Submit to queue with the provided fence (for frame synchronization)
+        VkResult result = functions.vkQueueSubmit(queue, 1, &submitInfo, fence);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to submit command buffer with fence: " + std::to_string(result));
+            return;
+        }
+        
+        m_activeCmdBuffer->markSubmitted();
+        
+        MR_LOG_DEBUG("Command buffer submitted to GPU with external fence");
+    }
+    
     void FVulkanCommandBufferManager::waitForCmdBuffer(FVulkanCmdBuffer* cmdBuffer, float timeInSecondsToWait) {
         if (!cmdBuffer) {
             return;
@@ -358,41 +418,30 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanCommandBufferManager::prepareForNewActiveCommandBuffer() {
-        MR_LOG_INFO("===== prepareForNewActiveCommandBuffer() START =====");
-        
         // Advance to next frame in ring buffer
         m_currentBufferIndex = (m_currentBufferIndex + 1) % NUM_FRAMES_IN_FLIGHT;
         m_activeCmdBuffer = m_cmdBuffers[m_currentBufferIndex].get();
         
-        MR_LOG_INFO("  Switching to buffer index: " + std::to_string(m_currentBufferIndex));
-        MR_LOG_INFO("  CmdBuffer handle: " + std::to_string(reinterpret_cast<uint64>(m_activeCmdBuffer->getHandle())));
-        
-        // Wait for this command buffer to finish if still executing
-        if (m_activeCmdBuffer->isSubmitted()) {
-            MR_LOG_INFO("  Buffer is still submitted, waiting for fence...");
-            waitForCmdBuffer(m_activeCmdBuffer, 1.0f);
-        }
-        
-        // Refresh fence status
-        m_activeCmdBuffer->refreshFenceStatus();
+        // NOTE: When using external fence (in-flight fence) for frame synchronization,
+        // the command buffer's own fence is NOT used. The frame synchronization is handled
+        // by FVulkanCommandListContext::acquireNextSwapchainImage() which waits on the
+        // in-flight fence before acquiring the next swapchain image.
+        // 
+        // Therefore, we skip waiting on the command buffer's fence here and just reset
+        // the command buffer directly. The in-flight fence ensures GPU work is complete.
         
         // Reset command buffer for reuse
         const auto& functions = VulkanAPI::getFunctions();
         VkCommandBuffer cmdBuffer = m_activeCmdBuffer->getHandle();
         
-        MR_LOG_INFO("  Calling vkResetCommandBuffer...");
         VkResult result = functions.vkResetCommandBuffer(cmdBuffer, 0);
         if (result != VK_SUCCESS) {
             MR_LOG_ERROR("vkResetCommandBuffer FAILED with result: " + std::to_string(result));
             return;
         }
-        MR_LOG_INFO("  vkResetCommandBuffer succeeded");
         
-        // CRITICAL: Update internal state to ReadyForBegin after reset
-        MR_LOG_INFO("  Calling markAsReadyForBegin()...");
+        // Update internal state to ReadyForBegin after reset
         m_activeCmdBuffer->markAsReadyForBegin();
-        
-        MR_LOG_INFO("===== prepareForNewActiveCommandBuffer() END =====");
     }
     
     VkQueue FVulkanCommandBufferManager::getQueue() const {

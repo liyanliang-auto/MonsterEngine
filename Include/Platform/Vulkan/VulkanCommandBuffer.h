@@ -159,6 +159,14 @@ namespace MonsterRender::RHI::Vulkan {
                                    VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount);
         
         /**
+         * Submit the active command buffer with a specific fence for frame synchronization
+         * @param fence External fence to signal on completion (e.g., in-flight fence)
+         */
+        void submitActiveCmdBufferWithFence(VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
+                                            VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount,
+                                            VkFence fence);
+        
+        /**
          * Wait for a specific command buffer to complete (UE5: WaitForCmdBuffer())
          */
         void waitForCmdBuffer(FVulkanCmdBuffer* cmdBuffer, float timeInSecondsToWait = 1.0f);

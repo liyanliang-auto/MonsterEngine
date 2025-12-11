@@ -21,6 +21,8 @@ using namespace MonsterRender;
 
 namespace MonsterEngine
 {
+namespace Renderer
+{
 
 // ============================================================================
 // Static Member Initialization
@@ -695,4 +697,5 @@ void FSceneVisibility::ComputeViewVisibility(const FScene* Scene, FViewInfo& Vie
            NumVisible, TotalCulled, NumPrimitives);
 }
 
+} // namespace Renderer
 } // namespace MonsterEngine

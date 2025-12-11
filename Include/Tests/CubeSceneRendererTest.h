@@ -42,15 +42,18 @@ namespace RHI
 namespace MonsterEngine
 {
 
-// Forward declarations
-class FScene;
-class FSceneRenderer;
-class FViewInfo;
-class FPrimitiveSceneProxy;
-class FPrimitiveSceneInfo;
-class FRenderQueue;
-struct FSceneViewFamily;
-struct FMeshBatch;
+// Forward declarations from Renderer namespace
+namespace Renderer
+{
+    class FScene;
+    class FSceneRenderer;
+    class FViewInfo;
+    class FPrimitiveSceneProxy;
+    class FPrimitiveSceneInfo;
+    class FRenderQueue;
+    struct FSceneViewFamily;
+    struct FMeshBatch;
+}
 
 /**
  * @class FCubeSceneRendererTest
@@ -255,16 +258,16 @@ private:
     MonsterRender::RHI::IRHIDevice* Device;
 
     /** Scene manager */
-    FScene* Scene;
+    Renderer::FScene* Scene;
 
     /** Scene renderer */
-    FSceneRenderer* SceneRenderer;
+    Renderer::FSceneRenderer* SceneRenderer;
 
     /** Render queue */
-    FRenderQueue* RenderQueue;
+    Renderer::FRenderQueue* RenderQueue;
 
     /** View family */
-    FSceneViewFamily* ViewFamily;
+    Renderer::FSceneViewFamily* ViewFamily;
 
     // ========================================================================
     // GPU Resources (Shared)
@@ -302,10 +305,10 @@ private:
     // ========================================================================
 
     /** Cube primitive proxies */
-    TArray<FPrimitiveSceneProxy*> CubeProxies;
+    TArray<Renderer::FPrimitiveSceneProxy*> CubeProxies;
 
     /** Cube primitive scene infos */
-    TArray<FPrimitiveSceneInfo*> CubeSceneInfos;
+    TArray<Renderer::FPrimitiveSceneInfo*> CubeSceneInfos;
 
     /** Cube positions */
     TArray<Math::FVector> CubePositions;

@@ -20,6 +20,8 @@ using namespace MonsterRender;
 
 namespace MonsterEngine
 {
+namespace Renderer
+{
 
 // ============================================================================
 // FSceneRenderer Implementation
@@ -767,4 +769,5 @@ void FForwardShadingSceneRenderer::RenderTranslucency(RHI::IRHICommandList& RHIC
     // Render translucent objects
 }
 
+} // namespace Renderer
 } // namespace MonsterEngine

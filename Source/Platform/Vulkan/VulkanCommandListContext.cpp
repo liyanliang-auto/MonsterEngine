@@ -115,6 +115,21 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Use frame-specific semaphore for synchronization
         uint32 currentFrame = m_device->getCurrentFrame();
+        
+        // CRITICAL: Wait for this frame's in-flight fence before reusing its resources
+        // This ensures the previous frame using this slot has completed GPU work
+        VkFence inFlightFence = m_device->getInFlightFence(currentFrame);
+        if (inFlightFence != VK_NULL_HANDLE) {
+            // Always wait for the fence - it ensures previous frame's present has completed
+            VkResult waitResult = functions.vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+            if (waitResult != VK_SUCCESS && waitResult != VK_TIMEOUT) {
+                MR_LOG_ERROR("acquireNextSwapchainImage: Failed to wait for in-flight fence: " + std::to_string(waitResult));
+                return false;
+            }
+            // Reset the fence for this frame's use
+            functions.vkResetFences(device, 1, &inFlightFence);
+        }
+        
         VkSemaphore imageAvailableSemaphore = m_device->getImageAvailableSemaphore(currentFrame);
         
         uint32 imageIndex = 0;
@@ -163,10 +178,15 @@ namespace MonsterRender::RHI::Vulkan {
         VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
         VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount) {
         
-        if (m_manager) {
-            m_manager->submitActiveCmdBuffer(
+        if (m_manager && m_device) {
+            // Use the in-flight fence for this frame to enable proper frame synchronization
+            uint32 currentFrame = m_device->getCurrentFrame();
+            VkFence inFlightFence = m_device->getInFlightFence(currentFrame);
+            
+            m_manager->submitActiveCmdBufferWithFence(
                 waitSemaphores, waitSemaphoreCount,
-                signalSemaphores, signalSemaphoreCount
+                signalSemaphores, signalSemaphoreCount,
+                inFlightFence
             );
         }
     }

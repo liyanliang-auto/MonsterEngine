@@ -41,6 +41,10 @@ using MonsterRender::RHI::IRHITexture;
 using MonsterRender::RHI::IRHIBuffer;
 using MonsterRender::RHI::IRHIDevice;
 
+// Renderer namespace for low-level rendering classes
+namespace Renderer
+{
+
 // Forward declarations
 class FScene;
 class FViewInfo;
@@ -637,4 +641,5 @@ private:
     bool bOcclusionCullingEnabled;
 };
 
+} // namespace Renderer
 } // namespace MonsterEngine
