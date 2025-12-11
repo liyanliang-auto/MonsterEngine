@@ -254,6 +254,11 @@
     <ClCompile Include="Source\Renderer\RenderPass.cpp" />
     <ClCompile Include="Source\Renderer\ForwardRenderPasses.cpp" />
     <ClCompile Include="Source\Renderer\ForwardShaderCompiler.cpp" />
+    <ClCompile Include="Source\Engine\Camera\CameraTypes.cpp" />
+    <ClCompile Include="Source\Engine\Camera\CameraComponent.cpp" />
+    <ClCompile Include="Source\Engine\Camera\CameraModifier.cpp" />
+    <ClCompile Include="Source\Engine\Camera\CameraManager.cpp" />
+    <ClCompile Include="Source\Engine\Camera\CameraSceneViewHelper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -396,6 +401,11 @@
     <ClInclude Include="Include\Renderer\RenderPass.h" />
     <ClInclude Include="Include\Renderer\ForwardRenderPasses.h" />
     <ClInclude Include="Include\Renderer\ForwardShaderCompiler.h" />
+    <ClInclude Include="Include\Engine\Camera\CameraTypes.h" />
+    <ClInclude Include="Include\Engine\Camera\CameraComponent.h" />
+    <ClInclude Include="Include\Engine\Camera\CameraModifier.h" />
+    <ClInclude Include="Include\Engine\Camera\CameraManager.h" />
+    <ClInclude Include="Include\Engine\Camera\CameraSceneViewHelper.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
