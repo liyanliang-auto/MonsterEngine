@@ -3,6 +3,7 @@
 #include "Containers/Array.h"
 #include "Containers/Map.h"
 #include "Containers/Set.h"
+#include "CubeSceneApplication.h"
 
 // Test Suite Forward Declarations
 namespace MonsterRender {
@@ -73,6 +74,7 @@ int main(int argc, char** argv) {
     bool runContainerTests = false;
     bool runSmartPointerTests = false;
     bool runAllTests = false;
+    bool runCubeScene = false;  // Run CubeSceneApplication with lighting
     
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
@@ -104,6 +106,9 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
+        }
+        else if (strcmp(argv[i], "--cube-scene") == 0 || strcmp(argv[i], "-cs") == 0) {
+            runCubeScene = true;
         }
     }
     
@@ -238,7 +243,13 @@ int main(int argc, char** argv) {
     }
     
     // Create application instance
-    auto app = createApplication();
+    TUniquePtr<Application> app;
+    if (runCubeScene) {
+        MR_LOG(LogInit, Log, "Running CubeSceneApplication with lighting...");
+        app = MakeUnique<CubeSceneApplication>();
+    } else {
+        app = createApplication();
+    }
     if (!app) {
         printf("Failed to create application");
         return -1;

@@ -370,6 +370,21 @@
     <ClCompile Include="Source\Engine\Camera\CameraSceneViewHelper.cpp">
       <Filter>源文件\Engine\Camera</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Engine\Actor.cpp">
+      <Filter>源文件\Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Actors\CubeActor.cpp">
+      <Filter>源文件\Engine\Actors</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp">
+      <Filter>源文件\Engine\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp">
+      <Filter>源文件\Engine\Proxies</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\CubeSceneApplication.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="头文件\Core\Templates">
@@ -392,6 +407,27 @@
     </Filter>
     <Filter Include="源文件\Engine\Camera">
       <UniqueIdentifier>{A7B8C9D0-E1F2-3456-0123-567890123456}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Engine\Actors">
+      <UniqueIdentifier>{B8C9D0E1-F2A3-4567-1234-678901234567}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Engine\Actors">
+      <UniqueIdentifier>{C9D0E1F2-A3B4-5678-2345-789012345678}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Engine\Proxies">
+      <UniqueIdentifier>{D0E1F2A3-B4C5-6789-3456-890123456789}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Engine\Proxies">
+      <UniqueIdentifier>{E1F2A3B4-C5D6-7890-4567-901234567890}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Engine\Components">
+      <UniqueIdentifier>{F2A3B4C5-D6E7-8901-5678-012345678901}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Engine\Components">
+      <UniqueIdentifier>{A3B4C5D6-E7F8-9012-6789-123456789012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Engine">
+      <UniqueIdentifier>{B4C5D6E7-F8A9-0123-7890-234567890123}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

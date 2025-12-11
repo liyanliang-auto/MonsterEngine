@@ -293,6 +293,18 @@ public:
      */
     APlayerController* GetOwningPlayerController() const { return PCOwner; }
 
+    /**
+     * Set the camera cache POV (public for demo/testing)
+     * @param InPOV POV to cache
+     */
+    void SetCameraCachePOV(const FMinimalViewInfo& InPOV);
+    
+    /**
+     * Set the last frame camera cache POV
+     * @param InPOV POV to cache
+     */
+    void SetLastFrameCameraCachePOV(const FMinimalViewInfo& InPOV);
+
 protected:
     // ========================================================================
     // Protected Methods
@@ -328,18 +340,6 @@ protected:
      */
     virtual void AssignViewTarget(AActor* NewTarget, FViewTarget& VT, 
                                   FViewTargetTransitionParams TransitionParams = FViewTargetTransitionParams());
-    
-    /**
-     * Set the camera cache POV
-     * @param InPOV POV to cache
-     */
-    void SetCameraCachePOV(const FMinimalViewInfo& InPOV);
-    
-    /**
-     * Set the last frame camera cache POV
-     * @param InPOV POV to cache
-     */
-    void SetLastFrameCameraCachePOV(const FMinimalViewInfo& InPOV);
 
 protected:
     // ========================================================================
