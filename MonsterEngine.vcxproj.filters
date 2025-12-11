@@ -332,9 +332,27 @@
     <ClInclude Include="Include\Renderer\LightUniformBuffer.h">
       <Filter>头文件\Renderer</Filter>
     </ClInclude>
+    <ClInclude Include="Include\Renderer\RenderPass.h">
+      <Filter>头文件\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Renderer\ForwardRenderPasses.h">
+      <Filter>头文件\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Renderer\ForwardShaderCompiler.h">
+      <Filter>头文件\Renderer</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\Renderer\LightUniformBuffer.cpp">
+      <Filter>源文件\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Renderer\RenderPass.cpp">
+      <Filter>源文件\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Renderer\ForwardRenderPasses.cpp">
+      <Filter>源文件\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Renderer\ForwardShaderCompiler.cpp">
       <Filter>源文件\Renderer</Filter>
     </ClCompile>
   </ItemGroup>

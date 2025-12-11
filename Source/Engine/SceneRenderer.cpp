@@ -11,8 +11,14 @@
 #include "Engine/PrimitiveSceneProxy.h"
 #include "Engine/LightSceneInfo.h"
 #include "Engine/LightSceneProxy.h"
+#include "Renderer/ForwardRenderPasses.h"
+#include "Renderer/RenderPass.h"
+#include "RHI/IRHICommandList.h"
 #include "Containers/SparseArray.h"
 #include "Core/Logging/LogMacros.h"
+
+// Use RHI namespace
+using namespace MonsterRender::RHI;
 
 namespace MonsterEngine
 {
@@ -588,13 +594,26 @@ void FDeferredShadingRenderer::RenderSSR(IRHICommandList& RHICmdList)
 
 FForwardShadingRenderer::FForwardShadingRenderer(FScene* InScene, const FSceneViewFamily& InViewFamily)
     : FSceneRenderer(InScene, InViewFamily)
+    , ForwardRenderer(nullptr)
 {
     MR_LOG(LogSceneRenderer, Verbose, "ForwardShadingRenderer created");
+    
+    // Create and initialize the forward renderer
+    ForwardRenderer = new FForwardRenderer();
+    ForwardRenderer->Initialize();
 }
 
 FForwardShadingRenderer::~FForwardShadingRenderer()
 {
     MR_LOG(LogSceneRenderer, Verbose, "ForwardShadingRenderer destroyed");
+    
+    // Cleanup forward renderer
+    if (ForwardRenderer)
+    {
+        ForwardRenderer->Shutdown();
+        delete ForwardRenderer;
+        ForwardRenderer = nullptr;
+    }
 }
 
 void FForwardShadingRenderer::Render(IRHICommandList& RHICmdList)
@@ -617,20 +636,55 @@ void FForwardShadingRenderer::Render(IRHICommandList& RHICmdList)
     // Sort primitives
     SortPrimitives();
 
-    // Forward rendering pipeline
-    RenderDepthPrepass(RHICmdList);
-    RenderShadowDepths(RHICmdList);
-    RenderForwardOpaque(RHICmdList);
-    RenderTranslucency(RHICmdList);
-    RenderPostProcess(RHICmdList);
+    // Use FForwardRenderer for the actual rendering
+    if (ForwardRenderer)
+    {
+        // Render each view
+        for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+        {
+            FViewInfo& ViewInfo = Views[ViewIndex];
+            
+            // Setup render pass context
+            FRenderPassContext Context;
+            Context.Scene = Scene;
+            Context.View = &ViewInfo;
+            Context.ViewIndex = ViewIndex;
+            Context.RHICmdList = &RHICmdList;
+            Context.FrameNumber = FrameNumber;
+            
+            // Set viewport from view
+            Context.ViewportX = ViewInfo.ViewRect.Min.X;
+            Context.ViewportY = ViewInfo.ViewRect.Min.Y;
+            Context.ViewportWidth = ViewInfo.ViewRect.Width();
+            Context.ViewportHeight = ViewInfo.ViewRect.Height();
+            
+            // Set visible primitives
+            Context.VisibleOpaquePrimitives = &ViewInfo.VisibleStaticPrimitives;
+            Context.VisibleTransparentPrimitives = &ViewInfo.VisibleTranslucentPrimitives;
+            Context.VisibleLights = &ViewInfo.VisibleLights;
+            
+            // Render using forward renderer
+            ForwardRenderer->Render(Context);
+        }
+    }
+    else
+    {
+        // Fallback to legacy rendering path
+        RenderDepthPrepass(RHICmdList);
+        RenderShadowDepths(RHICmdList);
+        RenderForwardOpaque(RHICmdList);
+        RenderTranslucency(RHICmdList);
+        RenderPostProcess(RHICmdList);
+    }
 
     MR_LOG(LogSceneRenderer, Verbose, "Forward frame %u rendered", FrameNumber);
 }
 
 void FForwardShadingRenderer::RenderForwardOpaque(IRHICommandList& RHICmdList)
 {
-    MR_LOG(LogSceneRenderer, Verbose, "Rendering forward opaque");
+    MR_LOG(LogSceneRenderer, Verbose, "Rendering forward opaque (legacy path)");
     
+    // Legacy forward shading path - used as fallback
     // Forward shading renders lighting in a single pass per object
     // Each object is lit by all affecting lights in its shader
     
@@ -638,11 +692,7 @@ void FForwardShadingRenderer::RenderForwardOpaque(IRHICommandList& RHICmdList)
     {
         FViewInfo& ViewInfo = Views[ViewIndex];
         
-        // In a real implementation:
-        // 1. Set up light data uniform buffer
-        // 2. For each primitive, bind appropriate shader
-        // 3. Draw with all lights evaluated in pixel shader
-        
+        // Generate and submit draw commands
         TArray<FMeshDrawCommand> DrawCommands;
         GenerateDrawCommands(ViewIndex, ERenderPass::BasePass, DrawCommands);
         SubmitDrawCommands(RHICmdList, DrawCommands);

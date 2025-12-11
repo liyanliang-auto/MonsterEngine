@@ -251,6 +251,9 @@
     <ClCompile Include="Source\Engine\Mesh\OBJMeshLoader.cpp" />
     <ClCompile Include="Source\Engine\Mesh\GLTFMeshLoader.cpp" />
     <ClCompile Include="Source\Renderer\LightUniformBuffer.cpp" />
+    <ClCompile Include="Source\Renderer\RenderPass.cpp" />
+    <ClCompile Include="Source\Renderer\ForwardRenderPasses.cpp" />
+    <ClCompile Include="Source\Renderer\ForwardShaderCompiler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Application.h" />
@@ -390,6 +393,9 @@
     <ClInclude Include="Include\RHI\RHIResources.h" />
     <ClInclude Include="Include\Renderer\LightShaderParameters.h" />
     <ClInclude Include="Include\Renderer\LightUniformBuffer.h" />
+    <ClInclude Include="Include\Renderer\RenderPass.h" />
+    <ClInclude Include="Include\Renderer\ForwardRenderPasses.h" />
+    <ClInclude Include="Include\Renderer\ForwardShaderCompiler.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

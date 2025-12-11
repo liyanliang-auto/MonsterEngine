@@ -36,11 +36,16 @@
 #include <condition_variable>
 #include <utility>
 
+// Forward declare RHI types in their proper namespace
+namespace MonsterRender { namespace RHI {
+    class IRHICommandList;
+}}
+
 namespace MonsterEngine
 {
 
-// Forward declarations
-class IRHICommandList;
+// Bring RHI types into MonsterEngine namespace
+using IRHICommandList = ::MonsterRender::RHI::IRHICommandList;
 
 /**
  * Context passed to render commands during execution

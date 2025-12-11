@@ -131,6 +131,35 @@ namespace MonsterEngine
 // Note: Non-member operators are defined in their respective header files
 
 // ============================================================================
+// Cross-Type Constructor Implementations
+// These must be defined after all types are fully declared
+// ============================================================================
+
+namespace MonsterEngine
+{
+namespace Math
+{
+
+// TVector constructor from TVector4 (W is ignored)
+template<typename T>
+FORCEINLINE TVector<T>::TVector(const TVector4<T>& V)
+    : X(V.X), Y(V.Y), Z(V.Z)
+{
+    DiagnosticCheckNaN();
+}
+
+// TVector constructor from TVector2 (Z = 0)
+template<typename T>
+FORCEINLINE TVector<T>::TVector(const TVector2<T>& V)
+    : X(V.X), Y(V.Y), Z(T(0))
+{
+    DiagnosticCheckNaN();
+}
+
+} // namespace Math
+} // namespace MonsterEngine
+
+// ============================================================================
 // Version Information
 // ============================================================================
 

@@ -471,25 +471,27 @@ MR_NODISCARD FORCEINLINE TVector4<T> operator*(T Scale, const TVector4<T>& V)
 
 // ============================================================================
 // TVector Constructor from TVector4
+// Note: Implementation moved to Vector.h to avoid circular dependency issues
 // ============================================================================
 
-template<typename T>
-FORCEINLINE TVector<T>::TVector(const TVector4<T>& V)
-    : X(V.X), Y(V.Y), Z(V.Z)
-{
-    DiagnosticCheckNaN();
-}
+// template<typename T>
+// FORCEINLINE TVector<T>::TVector(const TVector4<T>& V)
+//     : X(V.X), Y(V.Y), Z(V.Z)
+// {
+//     DiagnosticCheckNaN();
+// }
 
 // ============================================================================
 // TVector Constructor from TVector2
+// Note: Implementation moved to Vector.h to avoid circular dependency issues
 // ============================================================================
 
-template<typename T>
-FORCEINLINE TVector<T>::TVector(const TVector2<T>& V)
-    : X(V.X), Y(V.Y), Z(T(0))
-{
-    DiagnosticCheckNaN();
-}
+// template<typename T>
+// FORCEINLINE TVector<T>::TVector(const TVector2<T>& V)
+//     : X(V.X), Y(V.Y), Z(T(0))
+// {
+//     DiagnosticCheckNaN();
+// }
 
 } // namespace Math
 } // namespace MonsterEngine
