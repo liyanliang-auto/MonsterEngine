@@ -116,18 +116,15 @@ namespace MonsterRender::RHI::Vulkan {
         // Use frame-specific semaphore for synchronization
         uint32 currentFrame = m_device->getCurrentFrame();
         
-        // CRITICAL: Wait for this frame's in-flight fence before reusing its resources
+        // Wait for this frame's in-flight fence before reusing its resources
         // This ensures the previous frame using this slot has completed GPU work
         VkFence inFlightFence = m_device->getInFlightFence(currentFrame);
         if (inFlightFence != VK_NULL_HANDLE) {
-            // Always wait for the fence - it ensures previous frame's present has completed
             VkResult waitResult = functions.vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
             if (waitResult != VK_SUCCESS && waitResult != VK_TIMEOUT) {
                 MR_LOG_ERROR("acquireNextSwapchainImage: Failed to wait for in-flight fence: " + std::to_string(waitResult));
                 return false;
             }
-            // Reset the fence for this frame's use
-            functions.vkResetFences(device, 1, &inFlightFence);
         }
         
         VkSemaphore imageAvailableSemaphore = m_device->getImageAvailableSemaphore(currentFrame);
@@ -148,6 +145,24 @@ namespace MonsterRender::RHI::Vulkan {
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             MR_LOG_ERROR("acquireNextSwapchainImage: Failed to acquire image: " + std::to_string(result));
             return false;
+        }
+        
+        // Check if a previous frame is still using this image
+        // If so, wait for that frame's fence to complete
+        VkFence imageInFlightFence = m_device->getImageInFlightFence(imageIndex);
+        if (imageInFlightFence != VK_NULL_HANDLE) {
+            VkResult waitResult = functions.vkWaitForFences(device, 1, &imageInFlightFence, VK_TRUE, UINT64_MAX);
+            if (waitResult != VK_SUCCESS && waitResult != VK_TIMEOUT) {
+                MR_LOG_WARNING("acquireNextSwapchainImage: Failed to wait for image-in-flight fence");
+            }
+        }
+        
+        // Mark this image as being used by the current frame's fence
+        m_device->setImageInFlightFence(imageIndex, inFlightFence);
+        
+        // Reset the in-flight fence for this frame's use (after all waits are done)
+        if (inFlightFence != VK_NULL_HANDLE) {
+            functions.vkResetFences(device, 1, &inFlightFence);
         }
         
         m_device->setCurrentImageIndex(imageIndex);

@@ -58,8 +58,8 @@ public:
     virtual FMaterial* GetMaterial() override;
     virtual const FMaterial* GetMaterial() const override;
     
-    virtual FMaterialInterface* GetParent() override { return m_parent.Get(); }
-    virtual const FMaterialInterface* GetParent() const override { return m_parent.Get(); }
+    virtual FMaterialInterface* GetParent() override { return m_parent.Pin().Get(); }
+    virtual const FMaterialInterface* GetParent() const override { return m_parent.Pin().Get(); }
     
     virtual bool IsMaterialInstance() const override { return true; }
     

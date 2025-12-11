@@ -115,7 +115,7 @@ public:
      */
     TSharedPtr<FVertexShader> CompileVertexShader(
         const String& SourcePath,
-        const String& EntryPoint = TEXT("main"),
+        const String& EntryPoint = "main",
         const TArray<TPair<String, String>>& Definitions = TArray<TPair<String, String>>());
     
     /**
@@ -127,7 +127,7 @@ public:
      */
     TSharedPtr<FPixelShader> CompilePixelShader(
         const String& SourcePath,
-        const String& EntryPoint = TEXT("main"),
+        const String& EntryPoint = "main",
         const TArray<TPair<String, String>>& Definitions = TArray<TPair<String, String>>());
     
     /**

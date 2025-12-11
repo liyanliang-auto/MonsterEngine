@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 #pragma once
 
@@ -20,23 +20,30 @@
 #include "Renderer/SceneTypes.h"
 #include "RHI/RHIDefinitions.h"
 
-namespace MonsterEngine
-{
-
-// Forward declarations for RHI
-namespace RHI
-{
+// Forward declarations for RHI types (in MonsterRender::RHI namespace)
+namespace MonsterRender { namespace RHI {
     class IRHIDevice;
     class IRHICommandList;
     class IRHIBuffer;
     class IRHIPipelineState;
     class IRHIVertexShader;
     class IRHIPixelShader;
-}
+}}
+
+namespace MonsterEngine
+{
 
 // Renderer namespace for low-level rendering classes
 namespace Renderer
 {
+
+// Bring RHI types into scope
+using MonsterRender::RHI::IRHIDevice;
+using MonsterRender::RHI::IRHICommandList;
+using MonsterRender::RHI::IRHIBuffer;
+using MonsterRender::RHI::IRHIPipelineState;
+using MonsterRender::RHI::IRHIVertexShader;
+using MonsterRender::RHI::IRHIPixelShader;
 
 // Forward declarations
 class FScene;
@@ -58,7 +65,7 @@ class FMeshPassProcessor;
 struct FMeshDrawShaderBindings
 {
     /** Uniform buffer bindings */
-    TArray<RHI::IRHIBuffer*> UniformBuffers;
+    TArray<IRHIBuffer*> UniformBuffers;
     
     /** Shader resource view bindings */
     TArray<void*> ShaderResourceViews;
@@ -74,7 +81,7 @@ struct FMeshDrawShaderBindings
      * @param Slot Binding slot
      * @param Buffer The uniform buffer
      */
-    void SetUniformBuffer(int32 Slot, RHI::IRHIBuffer* Buffer)
+    void SetUniformBuffer(int32 Slot, IRHIBuffer* Buffer)
     {
         if (Slot >= UniformBuffers.Num())
         {
@@ -121,17 +128,17 @@ struct FMeshDrawCommand
     // ========================================================================
     
     /** Cached pipeline state object */
-    RHI::IRHIPipelineState* CachedPipelineState;
+    IRHIPipelineState* CachedPipelineState;
     
     // ========================================================================
     // Vertex/Index Buffers
     // ========================================================================
     
     /** Vertex buffer */
-    RHI::IRHIBuffer* VertexBuffer;
+    IRHIBuffer* VertexBuffer;
     
     /** Index buffer (nullptr for non-indexed draws) */
-    RHI::IRHIBuffer* IndexBuffer;
+    IRHIBuffer* IndexBuffer;
     
     /** Vertex buffer offset in bytes */
     uint32 VertexBufferOffset;
@@ -237,7 +244,7 @@ struct FMeshDrawCommand
      * Submit this draw command to a command list
      * @param RHICmdList The command list
      */
-    void SubmitDraw(RHI::IRHICommandList& RHICmdList) const;
+    void SubmitDraw(IRHICommandList& RHICmdList) const;
     
     /**
      * Calculate the sort key for this draw command
@@ -455,7 +462,7 @@ public:
      * Build rendering commands from visible mesh draw commands
      * @param RHICmdList The command list
      */
-    void BuildRenderingCommands(RHI::IRHICommandList& RHICmdList);
+    void BuildRenderingCommands(IRHICommandList& RHICmdList);
     
     /**
      * Sort visible mesh draw commands
@@ -475,7 +482,7 @@ public:
      * Dispatch draw commands to the command list
      * @param RHICmdList The command list
      */
-    void DispatchDraw(RHI::IRHICommandList& RHICmdList);
+    void DispatchDraw(IRHICommandList& RHICmdList);
     
     /**
      * Get the number of draws
@@ -675,3 +682,5 @@ public:
 
 } // namespace Renderer
 } // namespace MonsterEngine
+
+

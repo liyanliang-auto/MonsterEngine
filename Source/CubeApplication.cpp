@@ -230,11 +230,14 @@ private:
 };
 
 // Application creation function - required by the application framework
-// CubeRenderer uses:
-//   - binding 0: uniform buffer (MVP matrices)
-//   - binding 1: sampler2D texture1 (container.jpg)
-//   - binding 2: sampler2D texture2 (awesomeface.png)
-// NOTE: To use CubeSceneApplication with lighting, see CubeSceneApplication.cpp
+// Default: CubeSceneApplication with ImGui UI, lighting, and FSceneRenderer
+// Alternative: CubeApplication for basic textured cube demo
+#include "CubeSceneApplication.h"
+
 TUniquePtr<Application> MonsterRender::createApplication() {
-    return MakeUnique<CubeApplication>();
+    // Use CubeSceneApplication as default (with ImGui, lighting, viewport)
+    return MakeUnique<CubeSceneApplication>();
+    
+    // Uncomment below to use basic CubeApplication instead:
+    // return MakeUnique<CubeApplication>();
 }

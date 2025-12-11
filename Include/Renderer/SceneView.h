@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 #pragma once
 
@@ -24,19 +24,22 @@
 
 using MonsterRender::RHI::Viewport;
 
-namespace MonsterEngine
-{
-
-// Forward declarations for RHI
-namespace RHI
-{
+// Forward declarations for RHI types (in MonsterRender::RHI namespace)
+namespace MonsterRender { namespace RHI {
     class IRHITexture;
     class IRHIBuffer;
-}
+}}
+
+namespace MonsterEngine
+{
 
 // Renderer namespace for low-level rendering classes
 namespace Renderer
 {
+
+// Bring RHI types into scope
+using MonsterRender::RHI::IRHITexture;
+using MonsterRender::RHI::IRHIBuffer;
 
 // Forward declarations
 class FScene;
@@ -207,7 +210,7 @@ struct FSceneViewFamily
     FScene* Scene;
     
     /** Render target texture */
-    RHI::IRHITexture* RenderTarget;
+    IRHITexture* RenderTarget;
     
     /** Frame number */
     uint32 FrameNumber;
@@ -682,3 +685,5 @@ struct FViewCommands
 
 } // namespace Renderer
 } // namespace MonsterEngine
+
+

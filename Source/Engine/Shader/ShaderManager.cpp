@@ -31,8 +31,8 @@ FShaderManager::FShaderManager()
     , m_failedCompilations(0)
 {
     // Set default shader directory
-    m_shaderDirectory = TEXT("Shaders");
-    m_cacheDirectory = TEXT("ShaderCache");
+    m_shaderDirectory = "Shaders";
+    m_cacheDirectory = "ShaderCache";
 }
 
 FShaderManager::~FShaderManager()
@@ -71,7 +71,7 @@ bool FShaderManager::Initialize(MonsterRender::RHI::IRHIDevice* Device)
     
     // Add default include paths
     AddIncludePath(m_shaderDirectory);
-    AddIncludePath(m_shaderDirectory + TEXT("/Common"));
+    AddIncludePath(m_shaderDirectory + "/Common");
     
     // Create default shaders
     if (!CreateDefaultShaders())
@@ -245,14 +245,14 @@ TSharedPtr<FShader> FShaderManager::CompileShaderInternal(const FShaderCompileOp
     }
     
     // Extract name from path
-    FName ShaderName = FName(*Options.SourcePath);
+    FName ShaderName = FName(Options.SourcePath.c_str());
     Shader->SetShaderName(ShaderName);
     
     // Compile
     if (!Shader->Compile(m_device, Options))
     {
         m_failedCompilations++;
-        MR_LOG_ERROR("FShaderManager: Failed to compile shader '%s'", *Options.SourcePath);
+        MR_LOG_ERROR("FShaderManager: Failed to compile shader");
         return nullptr;
     }
     
@@ -386,7 +386,7 @@ bool FShaderManager::RecompileShader(const FName& Name)
     TSharedPtr<FShader> NewShader = CompileShaderInternal(Options);
     if (!NewShader)
     {
-        MR_LOG_ERROR("FShaderManager: Failed to recompile shader '%s'", *Name.ToString());
+        MR_LOG_ERROR("FShaderManager: Failed to recompile shader");
         return false;
     }
     
@@ -502,7 +502,7 @@ String FShaderManager::ResolveShaderPath(const String& RelativePath) const
     }
     
     // Combine with shader directory
-    return m_shaderDirectory + TEXT("/") + RelativePath;
+    return m_shaderDirectory + "/" + RelativePath;
 }
 
 void FShaderManager::AddIncludePath(const String& Path)
@@ -552,7 +552,7 @@ String FShaderManager::GetCacheFilePath(const String& SourcePath, const FShaderC
 {
     // Generate cache file name based on source path and options hash
     // TODO: Implement proper cache path generation
-    return m_cacheDirectory + TEXT("/") + SourcePath + TEXT(".spv");
+    return m_cacheDirectory + "/" + SourcePath + ".spv";
 }
 
 } // namespace MonsterEngine

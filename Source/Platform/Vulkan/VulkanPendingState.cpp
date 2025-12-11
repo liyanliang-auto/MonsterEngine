@@ -89,8 +89,17 @@ namespace MonsterRender::RHI::Vulkan {
         
         if (m_pendingPipeline != pipeline) {
             m_pendingPipeline = pipeline;
+            
+            // Clear all resource bindings when switching pipelines to avoid descriptor set mismatch
+            // Different pipelines may have different descriptor set layouts
+            m_textures.clear();
+            m_uniformBuffers.clear();
+            
+            // Also invalidate current descriptor set since pipeline changed
+            m_currentDescriptorSet = VK_NULL_HANDLE;
+            
             MR_LOG_DEBUG("FVulkanPendingState::setGraphicsPipeline: Set pipeline (handle: " + 
-                        std::to_string(reinterpret_cast<uint64>(vkPipeline)) + ")");
+                        std::to_string(reinterpret_cast<uint64>(vkPipeline)) + "), cleared all bindings");
         }
     }
     

@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 #pragma once
 
@@ -18,21 +18,26 @@
 #include "Renderer/SceneView.h"
 #include "Renderer/Scene.h"
 
-namespace MonsterEngine
-{
-
-// Forward declarations for RHI
-namespace RHI
-{
+// Forward declarations for RHI types (in MonsterRender::RHI namespace)
+namespace MonsterRender { namespace RHI {
     class IRHIDevice;
     class IRHICommandList;
     class IRHITexture;
     class IRHIBuffer;
-}
+}}
+
+namespace MonsterEngine
+{
 
 // Renderer namespace for low-level rendering classes
 namespace Renderer
 {
+
+// Bring RHI types into scope
+using MonsterRender::RHI::IRHIDevice;
+using MonsterRender::RHI::IRHICommandList;
+using MonsterRender::RHI::IRHITexture;
+using MonsterRender::RHI::IRHIBuffer;
 
 // Forward declarations
 class FScene;
@@ -150,13 +155,13 @@ public:
      * Main render function - must be implemented by derived classes
      * @param RHICmdList The command list to record rendering commands
      */
-    virtual void Render(RHI::IRHICommandList& RHICmdList) = 0;
+    virtual void Render(IRHICommandList& RHICmdList) = 0;
     
     /**
      * Render hit proxies for editor picking
      * @param RHICmdList The command list
      */
-    virtual void RenderHitProxies(RHI::IRHICommandList& RHICmdList) {}
+    virtual void RenderHitProxies(IRHICommandList& RHICmdList) {}
     
     /**
      * Whether velocities should be rendered
@@ -181,19 +186,19 @@ public:
      * Called at the beginning of rendering on the render thread
      * @param RHICmdList The command list
      */
-    void RenderThreadBegin(RHI::IRHICommandList& RHICmdList);
+    void RenderThreadBegin(IRHICommandList& RHICmdList);
     
     /**
      * Called at the end of rendering on the render thread
      * @param RHICmdList The command list
      */
-    void RenderThreadEnd(RHI::IRHICommandList& RHICmdList);
+    void RenderThreadEnd(IRHICommandList& RHICmdList);
     
     /**
      * Prepare view rectangles for rendering
      * @param RHICmdList The command list
      */
-    void PrepareViewRectsForRendering(RHI::IRHICommandList& RHICmdList);
+    void PrepareViewRectsForRendering(IRHICommandList& RHICmdList);
     
     // ========================================================================
     // Visibility Computation
@@ -208,7 +213,7 @@ public:
      * Compute visibility for all views
      * @param RHICmdList The command list
      */
-    void ComputeViewVisibility(RHI::IRHICommandList& RHICmdList);
+    void ComputeViewVisibility(IRHICommandList& RHICmdList);
     
     /**
      * Compute light visibility
@@ -322,7 +327,7 @@ protected:
      * @param View The view to cull for
      * @param RHICmdList The command list
      */
-    void OcclusionCull(FViewInfo& View, RHI::IRHICommandList& RHICmdList);
+    void OcclusionCull(FViewInfo& View, IRHICommandList& RHICmdList);
     
     /**
      * Perform distance culling for a view
@@ -363,7 +368,7 @@ protected:
      * Finish rendering and cleanup
      * @param RHICmdList The command list
      */
-    void RenderFinish(RHI::IRHICommandList& RHICmdList);
+    void RenderFinish(IRHICommandList& RHICmdList);
     
 protected:
     // ========================================================================
@@ -447,8 +452,8 @@ public:
     // FSceneRenderer Interface
     // ========================================================================
     
-    virtual void Render(RHI::IRHICommandList& RHICmdList) override;
-    virtual void RenderHitProxies(RHI::IRHICommandList& RHICmdList) override;
+    virtual void Render(IRHICommandList& RHICmdList) override;
+    virtual void RenderHitProxies(IRHICommandList& RHICmdList) override;
     virtual bool ShouldRenderVelocities() const override;
     virtual bool ShouldRenderPrePass() const override;
     
@@ -461,49 +466,49 @@ protected:
      * Render the depth prepass
      * @param RHICmdList The command list
      */
-    void RenderPrePass(RHI::IRHICommandList& RHICmdList);
+    void RenderPrePass(IRHICommandList& RHICmdList);
     
     /**
      * Render the base pass (GBuffer fill)
      * @param RHICmdList The command list
      */
-    void RenderBasePass(RHI::IRHICommandList& RHICmdList);
+    void RenderBasePass(IRHICommandList& RHICmdList);
     
     /**
      * Render lighting
      * @param RHICmdList The command list
      */
-    void RenderLights(RHI::IRHICommandList& RHICmdList);
+    void RenderLights(IRHICommandList& RHICmdList);
     
     /**
      * Render translucent objects
      * @param RHICmdList The command list
      */
-    void RenderTranslucency(RHI::IRHICommandList& RHICmdList);
+    void RenderTranslucency(IRHICommandList& RHICmdList);
     
     /**
      * Render ambient occlusion
      * @param RHICmdList The command list
      */
-    void RenderAmbientOcclusion(RHI::IRHICommandList& RHICmdList);
+    void RenderAmbientOcclusion(IRHICommandList& RHICmdList);
     
     /**
      * Render sky atmosphere
      * @param RHICmdList The command list
      */
-    void RenderSkyAtmosphere(RHI::IRHICommandList& RHICmdList);
+    void RenderSkyAtmosphere(IRHICommandList& RHICmdList);
     
     /**
      * Render fog
      * @param RHICmdList The command list
      */
-    void RenderFog(RHI::IRHICommandList& RHICmdList);
+    void RenderFog(IRHICommandList& RHICmdList);
     
     /**
      * Render post processing
      * @param RHICmdList The command list
      */
-    void RenderPostProcessing(RHI::IRHICommandList& RHICmdList);
+    void RenderPostProcessing(IRHICommandList& RHICmdList);
     
     // ========================================================================
     // Shadow Rendering
@@ -513,13 +518,13 @@ protected:
      * Render shadow depth maps
      * @param RHICmdList The command list
      */
-    void RenderShadowDepthMaps(RHI::IRHICommandList& RHICmdList);
+    void RenderShadowDepthMaps(IRHICommandList& RHICmdList);
     
     /**
      * Render shadow projections
      * @param RHICmdList The command list
      */
-    void RenderShadowProjections(RHI::IRHICommandList& RHICmdList);
+    void RenderShadowProjections(IRHICommandList& RHICmdList);
     
 protected:
     // ========================================================================
@@ -573,7 +578,7 @@ public:
     // FSceneRenderer Interface
     // ========================================================================
     
-    virtual void Render(RHI::IRHICommandList& RHICmdList) override;
+    virtual void Render(IRHICommandList& RHICmdList) override;
     virtual bool ShouldRenderVelocities() const override;
     virtual bool ShouldRenderPrePass() const override;
     
@@ -582,14 +587,16 @@ protected:
      * Render the main forward pass
      * @param RHICmdList The command list
      */
-    void RenderForwardPass(RHI::IRHICommandList& RHICmdList);
+    void RenderForwardPass(IRHICommandList& RHICmdList);
     
     /**
      * Render translucent objects
      * @param RHICmdList The command list
      */
-    void RenderTranslucency(RHI::IRHICommandList& RHICmdList);
+    void RenderTranslucency(IRHICommandList& RHICmdList);
 };
 
 } // namespace Renderer
 } // namespace MonsterEngine
+
+

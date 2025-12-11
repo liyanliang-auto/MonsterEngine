@@ -108,6 +108,18 @@ FORCEINLINE uint32 GetTypeHash(const TPair<KeyType, ValueType>& Pair)
     return HashCombineFast(GetTypeHash(Pair.Key), GetTypeHash(Pair.Value));
 }
 
+/**
+ * Helper function to create a TPair (similar to std::make_pair)
+ * Reference UE5: MakeTuple pattern
+ */
+template<typename KeyType, typename ValueType>
+FORCEINLINE TPair<typename std::decay<KeyType>::type, typename std::decay<ValueType>::type>
+MakePair(KeyType&& Key, ValueType&& Value)
+{
+    return TPair<typename std::decay<KeyType>::type, typename std::decay<ValueType>::type>(
+        std::forward<KeyType>(Key), std::forward<ValueType>(Value));
+}
+
 // ============================================================================
 // TDefaultMapKeyFuncs
 // ============================================================================

@@ -93,6 +93,18 @@ namespace MonsterEngine {
     // String types
     using String = std::string;
     using StringView = std::string_view;
+    
+    // Span type (C++20 std::span wrapper)
+    template<typename T>
+    using TSpan = std::span<T>;
+    
+    // Optional type
+    template<typename T>
+    using TOptional = std::optional<T>;
+    
+    // Function type
+    template<typename T>
+    using TFunction = std::function<T>;
 }
 
 

@@ -7,6 +7,7 @@
 #include "Engine/Material/Material.h"
 #include "Engine/Material/MaterialRenderProxy.h"
 #include "Core/Logging/LogMacros.h"
+#include "Math/MonsterMath.h"
 
 namespace MonsterEngine
 {
@@ -212,7 +213,7 @@ void FMaterialInstanceDynamic::InterpolateParameters(FMaterialInstance* SourceA,
             
             // Interpolate and set
             float InterpolatedValue = FMath::Lerp(ValueA, ValueB, Alpha);
-            SetScalarParameterValue(ParamA.ParameterInfo, InterpolatedValue);
+            SetScalarParameterValue(ParamA.ParameterInfo.Name, InterpolatedValue);
         }
     }
     
@@ -236,7 +237,7 @@ void FMaterialInstanceDynamic::InterpolateParameters(FMaterialInstance* SourceA,
             
             // Interpolate and set
             FLinearColor InterpolatedValue = FLinearColor::LerpUsingHSV(ValueA, ValueB, Alpha);
-            SetVectorParameterValue(ParamA.ParameterInfo, InterpolatedValue);
+            SetVectorParameterValue(ParamA.ParameterInfo.Name, InterpolatedValue);
         }
     }
     
@@ -246,7 +247,7 @@ void FMaterialInstanceDynamic::InterpolateParameters(FMaterialInstance* SourceA,
     {
         for (const auto& Param : TextureSource->GetTextureParameterOverrides())
         {
-            SetTextureParameterValue(Param.ParameterInfo, Param.ParameterValue);
+            SetTextureParameterValue(Param.ParameterInfo.Name, Param.ParameterValue);
         }
     }
     
@@ -269,19 +270,19 @@ void FMaterialInstanceDynamic::CopyParameterOverrides(FMaterialInstance* Source)
     // Copy scalar overrides
     for (const auto& Param : Source->GetScalarParameterOverrides())
     {
-        SetScalarParameterValue(Param.ParameterInfo, Param.ParameterValue);
+        SetScalarParameterValue(Param.ParameterInfo.Name, Param.ParameterValue);
     }
     
     // Copy vector overrides
     for (const auto& Param : Source->GetVectorParameterOverrides())
     {
-        SetVectorParameterValue(Param.ParameterInfo, Param.ParameterValue);
+        SetVectorParameterValue(Param.ParameterInfo.Name, Param.ParameterValue);
     }
     
     // Copy texture overrides
     for (const auto& Param : Source->GetTextureParameterOverrides())
     {
-        SetTextureParameterValue(Param.ParameterInfo, Param.ParameterValue);
+        SetTextureParameterValue(Param.ParameterInfo.Name, Param.ParameterValue);
     }
     
     EndBatchUpdate();
@@ -306,7 +307,7 @@ void FMaterialInstanceDynamic::CopyScalarAndVectorParameters(FMaterialInterface*
             float Value;
             if (Source->GetScalarParameterValue(Param.ParameterInfo, Value))
             {
-                SetScalarParameterValue(Param.ParameterInfo, Value);
+                SetScalarParameterValue(Param.ParameterInfo.Name, Value);
             }
         }
         
@@ -316,7 +317,7 @@ void FMaterialInstanceDynamic::CopyScalarAndVectorParameters(FMaterialInterface*
             FLinearColor Value;
             if (Source->GetVectorParameterValue(Param.ParameterInfo, Value))
             {
-                SetVectorParameterValue(Param.ParameterInfo, Value);
+                SetVectorParameterValue(Param.ParameterInfo.Name, Value);
             }
         }
     }

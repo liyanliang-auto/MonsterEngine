@@ -31,11 +31,27 @@ class ACubeActor;
 class UDirectionalLightComponent;
 class UPointLightComponent;
 class FSceneViewFamily;
-class FForwardShadingRenderer;
+class FSceneView;
 class FMaterial;
 class FMaterialInstance;
 
 } // namespace MonsterEngine
+
+// Forward declarations for Renderer namespace (in MonsterEngine)
+namespace MonsterEngine { namespace Renderer {
+    class FSceneRenderer;
+    class FForwardShadingSceneRenderer;
+    class FScene;
+    struct FSceneViewFamily;
+    struct FViewInfo;
+}}
+
+// Forward declarations for Editor namespace (ImGui)
+namespace MonsterEngine { namespace Editor {
+    class FImGuiContext;
+    class FImGuiRenderer;
+    class FImGuiInputHandler;
+}}
 
 namespace MonsterRender
 {
@@ -60,6 +76,15 @@ public:
     virtual void onUpdate(float32 deltaTime) override;
     virtual void onRender() override;
     virtual void onShutdown() override;
+    virtual void onWindowResize(uint32 width, uint32 height) override;
+
+    // Input events for ImGui
+    virtual void onKeyPressed(EKey key) override;
+    virtual void onKeyReleased(EKey key) override;
+    virtual void onMouseButtonPressed(EKey button, const MousePosition& position) override;
+    virtual void onMouseButtonReleased(EKey button, const MousePosition& position) override;
+    virtual void onMouseMoved(const MousePosition& position) override;
+    virtual void onMouseScrolled(float64 xOffset, float64 yOffset) override;
 
     /**
      * Set the window dimensions
@@ -94,7 +119,7 @@ protected:
     void updateCamera(float DeltaTime);
 
     /**
-     * Render the cube with lighting
+     * Render the cube with lighting (legacy path)
      * @param cmdList - Command list to record commands
      * @param viewMatrix - View matrix
      * @param projectionMatrix - Projection matrix
@@ -107,6 +132,87 @@ protected:
         const MonsterEngine::Math::FMatrix& projectionMatrix,
         const MonsterEngine::Math::FVector& cameraPosition,
         const MonsterEngine::TArray<MonsterEngine::FLightSceneInfo*>& lights);
+
+    /**
+     * Render using FSceneRenderer (UE5-style rendering pipeline)
+     * @param cmdList - Command list to record commands
+     * @param viewMatrix - View matrix
+     * @param projectionMatrix - Projection matrix
+     * @param cameraPosition - Camera position
+     */
+    void renderWithSceneRenderer(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
+
+    /**
+     * Initialize the scene renderer
+     * @return True if successful
+     */
+    bool initializeSceneRenderer();
+
+    /**
+     * Initialize ImGui for UI rendering
+     * @return True if successful
+     */
+    bool initializeImGui();
+
+    /**
+     * Shutdown ImGui
+     */
+    void shutdownImGui();
+
+    /**
+     * Render ImGui interface
+     */
+    void renderImGui();
+
+    /**
+     * Render the scene info panel
+     */
+    void renderSceneInfoPanel();
+
+    /**
+     * Render the camera control panel
+     */
+    void renderCameraControlPanel();
+
+    /**
+     * Render the lighting control panel
+     */
+    void renderLightingControlPanel();
+
+    /**
+     * Render the 3D viewport panel
+     */
+    void renderViewportPanel();
+
+    /**
+     * Initialize render target texture for viewport
+     * @return True if successful
+     */
+    bool initializeViewportRenderTarget();
+
+    /**
+     * Resize viewport render target
+     * @param Width New width
+     * @param Height New height
+     */
+    void resizeViewportRenderTarget(uint32 Width, uint32 Height);
+
+    /**
+     * Render scene to viewport render target
+     * @param cmdList Command list
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     */
+    void renderSceneToViewport(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
 
 protected:
     /** RHI device */
@@ -127,11 +233,23 @@ protected:
     /** Point light component */
     MonsterEngine::UPointLightComponent* m_pointLight;
 
-    /** Scene view family */
+    /** Scene view family (Engine namespace - for camera) */
     MonsterEngine::FSceneViewFamily* m_viewFamily;
 
-    /** Forward renderer */
-    MonsterEngine::FForwardShadingRenderer* m_renderer;
+    /** Scene view for rendering (Engine namespace) */
+    MonsterEngine::FSceneView* m_sceneView;
+
+    /** Renderer view family (Renderer namespace - for FSceneRenderer) */
+    MonsterEngine::Renderer::FSceneViewFamily* m_rendererViewFamily = nullptr;
+
+    /** Scene renderer (UE5-style) */
+    MonsterEngine::Renderer::FSceneRenderer* m_sceneRenderer = nullptr;
+
+    /** Flag to use FSceneRenderer for rendering */
+    bool m_bUseSceneRenderer;
+
+    /** Cube material */
+    MonsterEngine::TSharedPtr<MonsterEngine::FMaterial> m_cubeMaterial;
 
     /** Window dimensions */
     uint32 m_windowWidth;
@@ -145,6 +263,80 @@ protected:
 
     /** Whether to orbit camera */
     bool m_bOrbitCamera;
+
+    // ========================================================================
+    // ImGui Members
+    // ========================================================================
+
+    /** ImGui context */
+    MonsterEngine::TUniquePtr<MonsterEngine::Editor::FImGuiContext> m_imguiContext;
+
+    /** ImGui renderer */
+    MonsterEngine::TUniquePtr<MonsterEngine::Editor::FImGuiRenderer> m_imguiRenderer;
+
+    /** ImGui input handler */
+    MonsterEngine::TUniquePtr<MonsterEngine::Editor::FImGuiInputHandler> m_imguiInputHandler;
+
+    /** Whether ImGui is initialized */
+    bool m_bImGuiInitialized;
+
+    /** Delta time for ImGui */
+    float m_deltaTime;
+
+    // ========================================================================
+    // UI State
+    // ========================================================================
+
+    /** Show scene info panel */
+    bool m_bShowSceneInfo;
+
+    /** Show camera control panel */
+    bool m_bShowCameraControl;
+
+    /** Show lighting control panel */
+    bool m_bShowLightingControl;
+
+    /** Show ImGui demo window */
+    bool m_bShowDemoWindow;
+
+    /** Cube rotation speed */
+    float m_cubeRotationSpeed;
+
+    /** Light intensity */
+    float m_lightIntensity;
+
+    /** Light color */
+    float m_lightColor[3];
+
+    // ========================================================================
+    // Viewport Render Target
+    // ========================================================================
+
+    /** Viewport render target texture (color) */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_viewportColorTarget;
+
+    /** Viewport depth target texture */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_viewportDepthTarget;
+
+    /** ImGui texture ID for viewport */
+    uint64 m_viewportTextureID;
+
+    /** Viewport dimensions */
+    uint32 m_viewportWidth;
+    uint32 m_viewportHeight;
+
+    /** Show viewport panel */
+    bool m_bShowViewport;
+
+    /** Viewport needs resize */
+    bool m_bViewportNeedsResize;
+
+    /** New viewport size (pending resize) */
+    uint32 m_pendingViewportWidth;
+    uint32 m_pendingViewportHeight;
+
+    /** Viewport texture is ready for display (has been rendered to at least once) */
+    bool m_bViewportTextureReady;
 };
 
 } // namespace MonsterRender

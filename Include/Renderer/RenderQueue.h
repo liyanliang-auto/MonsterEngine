@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 #pragma once
 
@@ -18,19 +18,22 @@
 #include "Renderer/SceneTypes.h"
 #include "Renderer/MeshDrawCommand.h"
 
-namespace MonsterEngine
-{
-
-// Forward declarations for RHI
-namespace RHI
-{
+// Forward declarations for RHI types (in MonsterRender::RHI namespace)
+namespace MonsterRender { namespace RHI {
     class IRHIDevice;
     class IRHICommandList;
-}
+}}
+
+namespace MonsterEngine
+{
 
 // Renderer namespace for low-level rendering classes
 namespace Renderer
 {
+
+// Bring RHI types into scope
+using MonsterRender::RHI::IRHIDevice;
+using MonsterRender::RHI::IRHICommandList;
 
 // Forward declarations
 class FScene;
@@ -232,7 +235,7 @@ public:
      * Initialize the render queue
      * @param Device The RHI device
      */
-    void Initialize(RHI::IRHIDevice* Device);
+    void Initialize(IRHIDevice* Device);
     
     /**
      * Shutdown and cleanup
@@ -331,14 +334,14 @@ public:
      * Execute all queued draw calls
      * @param RHICmdList The command list
      */
-    void Execute(RHI::IRHICommandList& RHICmdList);
+    void Execute(IRHICommandList& RHICmdList);
     
     /**
      * Execute draw calls for a specific pass
      * @param RHICmdList The command list
      * @param PassType The pass type to execute
      */
-    void ExecutePass(RHI::IRHICommandList& RHICmdList, EMeshPass::Type PassType);
+    void ExecutePass(IRHICommandList& RHICmdList, EMeshPass::Type PassType);
     
     /**
      * Execute draw calls for a specific pass and priority
@@ -346,7 +349,7 @@ public:
      * @param PassType The pass type
      * @param Priority The priority level
      */
-    void ExecutePassPriority(RHI::IRHICommandList& RHICmdList, 
+    void ExecutePassPriority(IRHICommandList& RHICmdList, 
                             EMeshPass::Type PassType, 
                             ERenderQueuePriority Priority);
     
@@ -420,11 +423,11 @@ private:
     /**
      * Submit a draw command to the command list
      */
-    void SubmitDrawCommand(RHI::IRHICommandList& RHICmdList, const FMeshDrawCommand& DrawCommand);
+    void SubmitDrawCommand(IRHICommandList& RHICmdList, const FMeshDrawCommand& DrawCommand);
     
 private:
     /** RHI device */
-    RHI::IRHIDevice* Device;
+    IRHIDevice* Device;
     
     /** Items per pass */
     TStaticArray<TArray<FRenderQueueItem>, EMeshPass::Num> PassItems;
@@ -441,7 +444,7 @@ private:
     int32 NumStateChanges;
     
     /** Last used pipeline state (for tracking state changes) */
-    RHI::IRHIPipelineState* LastPipelineState;
+    IRHIPipelineState* LastPipelineState;
 };
 
 // ============================================================================
@@ -465,7 +468,7 @@ public:
      * Initialize the manager
      * @param Device The RHI device
      */
-    void Initialize(RHI::IRHIDevice* Device);
+    void Initialize(IRHIDevice* Device);
     
     /**
      * Shutdown the manager
@@ -496,7 +499,7 @@ public:
     
 private:
     /** RHI device */
-    RHI::IRHIDevice* Device;
+    IRHIDevice* Device;
     
     /** Render queues per view */
     TArray<FRenderQueue> RenderQueues;
@@ -504,3 +507,5 @@ private:
 
 } // namespace Renderer
 } // namespace MonsterEngine
+
+

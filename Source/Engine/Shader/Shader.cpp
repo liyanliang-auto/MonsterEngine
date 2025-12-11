@@ -105,7 +105,7 @@ bool FShader::Compile(MonsterRender::RHI::IRHIDevice* Device, const FShaderCompi
     // Add definitions
     for (const auto& Def : Options.Definitions)
     {
-        CompileOptions.definitions.Add(Def.Key + TEXT("=") + Def.Value);
+        CompileOptions.definitions.Add(Def.Key + "=" + Def.Value);
     }
     
     // Compile shader
@@ -114,7 +114,7 @@ bool FShader::Compile(MonsterRender::RHI::IRHIDevice* Device, const FShaderCompi
     
     if (Bytecode.empty())
     {
-        MR_LOG_ERROR("FShader::Compile: Failed to compile shader '%s'", *Options.SourcePath);
+        MR_LOG_ERROR("FShader::Compile: Failed to compile shader");
         m_isValid = false;
         return false;
     }
@@ -173,7 +173,7 @@ bool FShader::CreateFromBytecode(MonsterRender::RHI::IRHIDevice* Device,
         return false;
     }
     
-    if (Bytecode.IsEmpty())
+    if (Bytecode.empty())
     {
         MR_LOG_ERROR("FShader::CreateFromBytecode: Bytecode is empty");
         return false;
@@ -183,8 +183,8 @@ bool FShader::CreateFromBytecode(MonsterRender::RHI::IRHIDevice* Device,
     
     // Store bytecode
     m_bytecode.Empty();
-    m_bytecode.Reserve(Bytecode.Num());
-    for (int32 i = 0; i < Bytecode.Num(); ++i)
+    m_bytecode.Reserve(static_cast<int32>(Bytecode.size()));
+    for (size_t i = 0; i < Bytecode.size(); ++i)
     {
         m_bytecode.Add(Bytecode[i]);
     }

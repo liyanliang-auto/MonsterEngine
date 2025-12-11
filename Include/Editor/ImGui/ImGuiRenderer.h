@@ -15,7 +15,11 @@
 #include "Core/CoreMinimal.h"
 #include "Core/CoreTypes.h"
 #include "Core/Templates/SharedPointer.h"
+#include "Containers/Map.h"
 #include "RHI/RHI.h"
+
+// Include ImGui header for ImTextureID type
+#include "imgui.h"
 
 // Forward declarations for ImGui types
 struct ImDrawData;
@@ -83,6 +87,26 @@ public:
      * @return Shared pointer to font texture
      */
     TSharedPtr<MonsterRender::RHI::IRHITexture> GetFontTexture() const { return FontTexture; }
+
+    /**
+     * Register a texture for use with ImGui::Image
+     * @param Texture The texture to register
+     * @return ImTextureID that can be used with ImGui::Image
+     */
+    ImTextureID RegisterTexture(TSharedPtr<MonsterRender::RHI::IRHITexture> Texture);
+
+    /**
+     * Unregister a previously registered texture
+     * @param TextureID The ImTextureID returned from RegisterTexture
+     */
+    void UnregisterTexture(ImTextureID TextureID);
+
+    /**
+     * Get texture by ImTextureID
+     * @param TextureID The ImTextureID
+     * @return The texture, or nullptr if not found
+     */
+    TSharedPtr<MonsterRender::RHI::IRHITexture> GetTextureByID(ImTextureID TextureID) const;
 
 private:
     /**
@@ -186,6 +210,16 @@ private:
 
     /** Initialization flag */
     bool bInitialized;
+
+    // ========================================================================
+    // Texture Registry for ImGui::Image
+    // ========================================================================
+
+    /** Map of registered textures by ID */
+    TMap<uint64, TSharedPtr<MonsterRender::RHI::IRHITexture>> RegisteredTextures;
+
+    /** Next available texture ID */
+    uint64 NextTextureID;
 };
 
 } // namespace Editor

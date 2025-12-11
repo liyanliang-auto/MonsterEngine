@@ -147,12 +147,24 @@ namespace MonsterRender::RHI::Vulkan {
         VkSemaphore getImageAvailableSemaphore(uint32 frame) const { 
             return frame < m_imageAvailableSemaphores.size() ? m_imageAvailableSemaphores[frame] : VK_NULL_HANDLE; 
         }
-        VkSemaphore getRenderFinishedSemaphore(uint32 frame) const {
-            return frame < m_renderFinishedSemaphores.size() ? m_renderFinishedSemaphores[frame] : VK_NULL_HANDLE;
+        // Get per-image render finished semaphore (indexed by image index, not frame)
+        VkSemaphore getRenderFinishedSemaphore(uint32 imageIndex) const {
+            return imageIndex < m_perImageRenderFinishedSemaphores.size() ? m_perImageRenderFinishedSemaphores[imageIndex] : VK_NULL_HANDLE;
         }
         VkFence getInFlightFence(uint32 frame) const {
             return frame < m_inFlightFences.size() ? m_inFlightFences[frame] : VK_NULL_HANDLE;
         }
+        
+        // Per-image fence tracking for better parallelism
+        VkFence getImageInFlightFence(uint32 imageIndex) const {
+            return imageIndex < m_imagesInFlight.size() ? m_imagesInFlight[imageIndex] : VK_NULL_HANDLE;
+        }
+        void setImageInFlightFence(uint32 imageIndex, VkFence fence) {
+            if (imageIndex < m_imagesInFlight.size()) {
+                m_imagesInFlight[imageIndex] = fence;
+            }
+        }
+        
         VkFramebuffer getCurrentFramebuffer() const;
         const VkExtent2D& getSwapchainExtent() const { return m_swapchainExtent; }
         VkFormat getSwapchainFormat() const { return m_swapchainImageFormat; }
@@ -246,10 +258,16 @@ namespace MonsterRender::RHI::Vulkan {
         // Memory manager (UE5-style sub-allocation)
         TUniquePtr<FVulkanMemoryManager> m_memoryManager;
         
-        // Synchronization
+        // Synchronization - per-frame resources (MAX_FRAMES_IN_FLIGHT)
         TArray<VkSemaphore> m_imageAvailableSemaphores;
-        TArray<VkSemaphore> m_renderFinishedSemaphores;
         TArray<VkFence> m_inFlightFences;
+        
+        // Per-image semaphores - indexed by swapchain image index (not frame index)
+        // This ensures each image has its own render finished semaphore
+        std::vector<VkSemaphore> m_perImageRenderFinishedSemaphores;
+        
+        // Per-image fence tracking - maps swapchain image index to the fence that's rendering to it
+        std::vector<VkFence> m_imagesInFlight;
         
         // Memory properties
         VkPhysicalDeviceMemoryProperties m_memoryProperties{};

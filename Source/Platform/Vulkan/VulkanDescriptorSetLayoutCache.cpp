@@ -395,6 +395,18 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_DEBUG("FVulkanDescriptorSetCache: Reset for frame " + std::to_string(FrameNumber));
     }
 
+    void FVulkanDescriptorSetCache::ClearCache() {
+        std::lock_guard<std::mutex> Lock(CacheMutex);
+        
+        // Clear all cached descriptor sets
+        FrameCache.Empty();
+        Stats.CurrentCacheSize = 0;
+        Stats.CacheHits = 0;
+        Stats.CacheMisses = 0;
+        
+        MR_LOG_INFO("FVulkanDescriptorSetCache: Cache cleared");
+    }
+
     FVulkanDescriptorSetCache::FStats FVulkanDescriptorSetCache::GetStats() const {
         std::lock_guard<std::mutex> Lock(CacheMutex);
         return Stats;

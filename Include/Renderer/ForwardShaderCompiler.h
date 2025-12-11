@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 #pragma once
 
@@ -298,3 +298,4 @@ protected:
 };
 
 } // namespace MonsterEngine
+

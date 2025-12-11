@@ -47,7 +47,7 @@ FMaterialInstance::~FMaterialInstance()
 
 FMaterial* FMaterialInstance::GetMaterial()
 {
-    if (FMaterialInterface* Parent = m_parent.Get())
+    if (FMaterialInterface* Parent = m_parent.Pin().Get())
     {
         return Parent->GetMaterial();
     }
@@ -56,7 +56,7 @@ FMaterial* FMaterialInstance::GetMaterial()
 
 const FMaterial* FMaterialInstance::GetMaterial() const
 {
-    if (const FMaterialInterface* Parent = m_parent.Get())
+    if (const FMaterialInterface* Parent = m_parent.Pin().Get())
     {
         return Parent->GetMaterial();
     }
@@ -168,7 +168,7 @@ const FMaterialProperties& FMaterialInstance::GetMaterialProperties() const
         return m_propertyOverrides;
     }
     
-    if (const FMaterialInterface* Parent = m_parent.Get())
+    if (const FMaterialInterface* Parent = m_parent.Pin().Get())
     {
         return Parent->GetMaterialProperties();
     }
@@ -206,7 +206,7 @@ bool FMaterialInstance::GetScalarParameterValue(const FMaterialParameterInfo& Pa
     }
     
     // Then check parent
-    if (const FMaterialInterface* Parent = m_parent.Get())
+    if (const FMaterialInterface* Parent = m_parent.Pin().Get())
     {
         return Parent->GetScalarParameterValue(ParameterInfo, OutValue);
     }
@@ -225,7 +225,7 @@ bool FMaterialInstance::GetVectorParameterValue(const FMaterialParameterInfo& Pa
     }
     
     // Then check parent
-    if (const FMaterialInterface* Parent = m_parent.Get())
+    if (const FMaterialInterface* Parent = m_parent.Pin().Get())
     {
         return Parent->GetVectorParameterValue(ParameterInfo, OutValue);
     }
@@ -244,7 +244,7 @@ bool FMaterialInstance::GetTextureParameterValue(const FMaterialParameterInfo& P
     }
     
     // Then check parent
-    if (const FMaterialInterface* Parent = m_parent.Get())
+    if (const FMaterialInterface* Parent = m_parent.Pin().Get())
     {
         return Parent->GetTextureParameterValue(ParameterInfo, OutValue);
     }
@@ -255,7 +255,7 @@ bool FMaterialInstance::GetTextureParameterValue(const FMaterialParameterInfo& P
 void FMaterialInstance::GetUsedTextures(TArray<FTexture*>& OutTextures) const
 {
     // Get parent textures first
-    if (const FMaterialInterface* Parent = m_parent.Get())
+    if (const FMaterialInterface* Parent = m_parent.Pin().Get())
     {
         Parent->GetUsedTextures(OutTextures);
     }
