@@ -116,7 +116,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;PLATFORM_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Include;$(VULKAN_SDK)\Include;$(GLFW_DIR)\include;$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Include;$(ProjectDir)3rd-party\imgui;$(VULKAN_SDK)\Include;$(GLFW_DIR)\include;$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -264,15 +264,33 @@
     <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp" />
     <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp" />
     <ClCompile Include="Source\CubeSceneApplication.cpp" />
-    <ClCompile Include="Source\Renderer\Scene.cpp" />
-    <ClCompile Include="Source\Renderer\SceneView.cpp" />
-    <ClCompile Include="Source\Renderer\SceneRenderer.cpp" />
-    <ClCompile Include="Source\Renderer\SceneVisibility.cpp" />
-    <ClCompile Include="Source\Renderer\MeshDrawCommand.cpp" />
-    <ClCompile Include="Source\Renderer\RenderQueue.cpp" />
-    <ClCompile Include="Source\Tests\CubeSceneRendererTest.cpp" />
+    <!-- Temporarily excluded - conflicts with Engine/Scene.cpp -->
+    <!-- <ClCompile Include="Source\Renderer\Scene.cpp" /> -->
+    <!-- <ClCompile Include="Source\Renderer\SceneView.cpp" /> -->
+    <!-- <ClCompile Include="Source\Renderer\SceneRenderer.cpp" /> -->
+    <!-- <ClCompile Include="Source\Renderer\SceneVisibility.cpp" /> -->
+    <!-- <ClCompile Include="Source\Renderer\MeshDrawCommand.cpp" /> -->
+    <!-- <ClCompile Include="Source\Renderer\RenderQueue.cpp" /> -->
+    <!-- <ClCompile Include="Source\Tests\CubeSceneRendererTest.cpp" /> -->
+    <!-- ImGui Source Files -->
+    <ClCompile Include="3rd-party\imgui\imgui.cpp" />
+    <ClCompile Include="3rd-party\imgui\imgui_demo.cpp" />
+    <ClCompile Include="3rd-party\imgui\imgui_draw.cpp" />
+    <ClCompile Include="3rd-party\imgui\imgui_tables.cpp" />
+    <ClCompile Include="3rd-party\imgui\imgui_widgets.cpp" />
+    <!-- Editor Module Source Files -->
+    <ClCompile Include="Source\Editor\ImGui\ImGuiContext.cpp" />
+    <ClCompile Include="Source\Editor\ImGui\ImGuiRenderer.cpp" />
+    <ClCompile Include="Source\Editor\ImGui\ImGuiInputHandler.cpp" />
+    <ClCompile Include="Source\Editor\EditorApplication.cpp" />
+    <ClCompile Include="Source\ImGuiTestApplication.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Editor Headers -->
+    <ClInclude Include="Include\Editor\EditorApplication.h" />
+    <ClInclude Include="Include\Editor\ImGui\ImGuiContext.h" />
+    <ClInclude Include="Include\Editor\ImGui\ImGuiRenderer.h" />
+    <ClInclude Include="Include\Editor\ImGui\ImGuiInputHandler.h" />
     <ClInclude Include="Include\Core\Application.h" />
     <ClInclude Include="Include\Core\Assert.h" />
     <ClInclude Include="Include\Core\CoreMinimal.h" />

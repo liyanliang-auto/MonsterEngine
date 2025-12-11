@@ -12,6 +12,13 @@
 #include "Renderer/Scene.h"
 #include "Core/Logging/LogMacros.h"
 #include "Math/MathUtility.h"
+#include "Math/MathFunctions.h"
+#include "Math/Vector2D.h"
+
+// Define SMALL_NUMBER if not defined
+#ifndef SMALL_NUMBER
+#define SMALL_NUMBER (1.e-8f)
+#endif
 
 namespace MonsterEngine
 {
@@ -124,11 +131,11 @@ bool FSceneView::DeprojectScreenToWorld(const Math::FVector2D& ScreenPosition,
     Math::FVector4 FarPoint(NdcX, NdcY, 1.0f, 1.0f);
     
     // Transform to world space
-    Math::FVector4 WorldNear = ViewMatrices.InvViewProjectionMatrix.TransformVector4(NearPoint);
-    Math::FVector4 WorldFar = ViewMatrices.InvViewProjectionMatrix.TransformVector4(FarPoint);
+    Math::FVector4 WorldNear = ViewMatrices.InvViewProjectionMatrix.TransformFVector4(NearPoint);
+    Math::FVector4 WorldFar = ViewMatrices.InvViewProjectionMatrix.TransformFVector4(FarPoint);
     
     // Perspective divide
-    if (Math::Abs(WorldNear.W) < SMALL_NUMBER || Math::Abs(WorldFar.W) < SMALL_NUMBER)
+    if (Math::FMath::Abs(WorldNear.W) < SMALL_NUMBER || Math::FMath::Abs(WorldFar.W) < SMALL_NUMBER)
     {
         return false;
     }
@@ -230,48 +237,8 @@ void FConvexVolume::BuildPermutedPlanes()
     }
 }
 
-bool FConvexVolume::IntersectPoint(const Math::FVector& Point) const
-{
-    for (const Math::FPlane& Plane : Planes)
-    {
-        if (Plane.PlaneDot(Point) > 0.0f)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool FConvexVolume::IntersectSphere(const Math::FVector& Center, float Radius) const
-{
-    for (const Math::FPlane& Plane : Planes)
-    {
-        if (Plane.PlaneDot(Center) > Radius)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool FConvexVolume::IntersectBox(const Math::FVector& Origin, const Math::FVector& Extent) const
-{
-    for (const Math::FPlane& Plane : Planes)
-    {
-        // Calculate the effective radius of the box projected onto the plane normal
-        float EffectiveRadius = 
-            Math::Abs(Plane.X * Extent.X) +
-            Math::Abs(Plane.Y * Extent.Y) +
-            Math::Abs(Plane.Z * Extent.Z);
-        
-        // Check if the box is completely outside this plane
-        if (Plane.PlaneDot(Origin) > EffectiveRadius)
-        {
-            return false;
-        }
-    }
-    return true;
-}
+// Note: FConvexVolume::IntersectPoint, IntersectSphere, IntersectBox are defined
+// inline in Engine/ConvexVolume.h - do not redefine them here
 
 // ============================================================================
 // FBoxSphereBounds Implementation
@@ -280,16 +247,17 @@ bool FConvexVolume::IntersectBox(const Math::FVector& Origin, const Math::FVecto
 FBoxSphereBounds FBoxSphereBounds::TransformBy(const Math::FMatrix& M) const
 {
     // Transform the origin
-    Math::FVector TransformedOrigin = M.TransformPosition(Origin);
+    Math::FVector4 TransformedOrigin4 = M.TransformPosition(Origin);
+    Math::FVector TransformedOrigin(TransformedOrigin4.X, TransformedOrigin4.Y, TransformedOrigin4.Z);
     
     // Transform the extent (need to handle rotation properly)
     // For a proper implementation, we'd need to transform all 8 corners
     // and compute the new AABB. For now, use a conservative estimate.
     
     // Get the absolute values of the rotation matrix columns
-    Math::FVector AbsX(Math::Abs(M.M[0][0]), Math::Abs(M.M[0][1]), Math::Abs(M.M[0][2]));
-    Math::FVector AbsY(Math::Abs(M.M[1][0]), Math::Abs(M.M[1][1]), Math::Abs(M.M[1][2]));
-    Math::FVector AbsZ(Math::Abs(M.M[2][0]), Math::Abs(M.M[2][1]), Math::Abs(M.M[2][2]));
+    Math::FVector AbsX(Math::FMath::Abs(M.M[0][0]), Math::FMath::Abs(M.M[0][1]), Math::FMath::Abs(M.M[0][2]));
+    Math::FVector AbsY(Math::FMath::Abs(M.M[1][0]), Math::FMath::Abs(M.M[1][1]), Math::FMath::Abs(M.M[1][2]));
+    Math::FVector AbsZ(Math::FMath::Abs(M.M[2][0]), Math::FMath::Abs(M.M[2][1]), Math::FMath::Abs(M.M[2][2]));
     
     // Compute the new extent
     Math::FVector TransformedExtent;

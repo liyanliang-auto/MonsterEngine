@@ -377,7 +377,8 @@ namespace MonsterRender::RHI {
         UInt1,      // R32_UINT
         UInt2,      // R32G32_UINT
         UInt3,      // R32G32B32_UINT
-        UInt4       // R32G32B32A32_UINT
+        UInt4,      // R32G32B32A32_UINT
+        UByte4Norm  // R8G8B8A8_UNORM - for vertex colors
     };
     
     // Vertex attribute description

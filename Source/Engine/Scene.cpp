@@ -200,14 +200,7 @@ FPrimitiveSceneInfo* FScene::GetPrimitiveSceneInfo(int32 PrimitiveIndex)
     return nullptr;
 }
 
-FPrimitiveSceneInfo* FScene::GetPrimitive(int32 Index) const
-{
-    if (Index >= 0 && Index < Primitives.Num())
-    {
-        return Primitives[Index];
-    }
-    return nullptr;
-}
+// Note: FScene::GetPrimitive is defined inline in Renderer/Scene.h
 
 void FScene::AddPrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* PrimitiveSceneInfo)
 {

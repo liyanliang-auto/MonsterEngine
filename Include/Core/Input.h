@@ -19,8 +19,11 @@ namespace MonsterRender {
         // Function keys
         F1 = 290, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
         
-        // Arrow keys
-        Left = 263, Right, Up, Down,
+        // Arrow keys (GLFW key codes)
+        Right = 262,
+        Left = 263,
+        Down = 264,
+        Up = 265,
         
         // Special keys
         Escape = 256,
