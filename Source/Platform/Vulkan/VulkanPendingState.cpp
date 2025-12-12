@@ -121,6 +121,9 @@ namespace MonsterRender::RHI::Vulkan {
                 vb.offset = offset;
                 m_vertexBuffersDirty = true;
             }
+        } else {
+            MR_LOG_ERROR("setVertexBuffer: binding " + std::to_string(binding) + 
+                        " out of range (max=" + std::to_string(m_vertexBuffers.size()) + ")");
         }
     }
     
@@ -144,13 +147,78 @@ namespace MonsterRender::RHI::Vulkan {
         }
     }
     
-    void FVulkanPendingState::setTexture(uint32 slot, VkImageView imageView, VkSampler sampler) {
+    void FVulkanPendingState::setTexture(uint32 slot, VkImageView imageView, VkSampler sampler,
+                                         VkImage image, uint32 mipLevels, uint32 arrayLayers) {
         auto& binding = m_textures[slot];
         if (binding.imageView != imageView || binding.sampler != sampler) {
             binding.imageView = imageView;
             binding.sampler = sampler;
+            binding.image = image;
+            binding.mipLevels = mipLevels;
+            binding.arrayLayers = arrayLayers;
             m_descriptorsDirty = true;
             MR_LOG_DEBUG("FVulkanPendingState::setTexture: slot=" + std::to_string(slot));
+        }
+    }
+    
+    void FVulkanPendingState::transitionTexturesForShaderRead() {
+        // Execute layout transitions for all bound textures BEFORE render pass begins
+        // This is required because Vulkan validation layer tracks layout per-command-buffer
+        // and textures uploaded in a different command buffer need explicit transitions
+        
+        if (!m_cmdBuffer || m_cmdBuffer->getHandle() == VK_NULL_HANDLE) {
+            return;
+        }
+        
+        if (m_textures.empty()) {
+            return;
+        }
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        VkCommandBuffer cmdBuffer = m_cmdBuffer->getHandle();
+        
+        TArray<VkImageMemoryBarrier> barriers;
+        barriers.reserve(m_textures.size());
+        
+        for (auto& pair : m_textures) {
+            auto& binding = pair.second;
+            if (binding.image == VK_NULL_HANDLE) {
+                continue;
+            }
+            
+            VkImageMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            // Use UNDEFINED as oldLayout - tells Vulkan we don't care about previous contents
+            // The actual data was already uploaded in a previous command buffer
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = binding.image;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = binding.mipLevels;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = binding.arrayLayers;
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            
+            barriers.push_back(barrier);
+        }
+        
+        if (!barriers.empty()) {
+            functions.vkCmdPipelineBarrier(
+                cmdBuffer,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                static_cast<uint32>(barriers.size()), barriers.data()
+            );
+            
+            MR_LOG_DEBUG("transitionTexturesForShaderRead: Transitioned " + 
+                        std::to_string(barriers.size()) + " textures to SHADER_READ_ONLY_OPTIMAL");
         }
     }
     
@@ -179,7 +247,7 @@ namespace MonsterRender::RHI::Vulkan {
         if (m_pendingPipeline && m_pendingPipeline != m_currentPipeline) {
             VkPipeline pipeline = m_pendingPipeline->getPipeline();
             if (pipeline != VK_NULL_HANDLE) {
-                MR_LOG_DEBUG("prepareForDraw: Binding pipeline (handle: " + 
+                MR_LOG_INFO("prepareForDraw: Binding NEW pipeline (handle: " + 
                             std::to_string(reinterpret_cast<uint64>(pipeline)) + ")");
                 functions.vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                 m_currentPipeline = m_pendingPipeline;
@@ -191,7 +259,8 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_ERROR("prepareForDraw: No pipeline set at all!");
             return false; // Cannot draw without pipeline
         } else if (m_currentPipeline) {
-            MR_LOG_DEBUG("prepareForDraw: Using cached pipeline");
+            MR_LOG_INFO("prepareForDraw: Using CACHED pipeline (handle: " + 
+                       std::to_string(reinterpret_cast<uint64>(m_currentPipeline->getPipeline())) + ")");
         }
         
         // CRITICAL: Viewport and Scissor are REQUIRED for drawing
@@ -212,9 +281,10 @@ namespace MonsterRender::RHI::Vulkan {
             vkViewport.minDepth = m_pendingViewport.minDepth;
             vkViewport.maxDepth = m_pendingViewport.maxDepth;
             
-            MR_LOG_DEBUG("prepareForDraw: Setting viewport (" + 
-                        std::to_string(m_pendingViewport.width) + "x" + 
-                        std::to_string(m_pendingViewport.height) + ")");
+            MR_LOG_INFO("prepareForDraw: vkCmdSetViewport(x=" + std::to_string(vkViewport.x) +
+                        ", y=" + std::to_string(vkViewport.y) + 
+                        ", w=" + std::to_string(vkViewport.width) + 
+                        ", h=" + std::to_string(vkViewport.height) + ")");
             functions.vkCmdSetViewport(cmdBuffer, 0, 1, &vkViewport);
             m_viewportDirty = false;
         }
@@ -239,11 +309,17 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Apply vertex buffers if dirty - use std::vector for Vulkan API compatibility
+        MR_LOG_INFO("prepareForDraw: m_vertexBuffersDirty=" + std::string(m_vertexBuffersDirty ? "true" : "false") +
+                   ", m_vertexBuffers.size()=" + std::to_string(m_vertexBuffers.size()));
         if (m_vertexBuffersDirty) {
             std::vector<VkBuffer> buffers;
             std::vector<VkDeviceSize> offsets;
             
-            for (const auto& vb : m_vertexBuffers) {
+            MR_LOG_INFO("prepareForDraw: Checking vertex buffers...");
+            for (size_t i = 0; i < m_vertexBuffers.size(); ++i) {
+                const auto& vb = m_vertexBuffers[i];
+                MR_LOG_INFO("  VB[" + std::to_string(i) + "]: buffer=" + 
+                           std::to_string(reinterpret_cast<uint64>(vb.buffer)));
                 if (vb.buffer != VK_NULL_HANDLE) {
                     buffers.push_back(vb.buffer);
                     offsets.push_back(vb.offset);
@@ -251,13 +327,14 @@ namespace MonsterRender::RHI::Vulkan {
             }
             
             if (!buffers.empty()) {
-                MR_LOG_DEBUG("prepareForDraw: Binding " + std::to_string(buffers.size()) + " vertex buffer(s)");
+                MR_LOG_DEBUG("prepareForDraw: Binding " + std::to_string(buffers.size()) + 
+                           " vertex buffer(s)");
                 functions.vkCmdBindVertexBuffers(cmdBuffer, 0, 
                                                 static_cast<uint32>(buffers.size()),
                                                 buffers.data(), offsets.data());
                 m_vertexBuffersDirty = false;
             } else {
-                MR_LOG_WARNING("prepareForDraw: Vertex buffers marked dirty but no valid buffers found");
+                MR_LOG_ERROR("prepareForDraw: Vertex buffers marked dirty but no valid buffers found!");
             }
         }
         

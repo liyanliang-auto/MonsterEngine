@@ -540,6 +540,22 @@ bool FTextureLoader::UploadTextureData(
         if (vulkanDevice && vulkanDevice->getCommandListContext()) {
             vulkanDevice->getCommandListContext()->refreshCommandBuffer();
         }
+        
+        // Register texture for per-command-buffer layout transitions
+        // This is needed because Vulkan validation layer tracks layout per-command-buffer
+        auto* vulkanTexture = static_cast<VulkanTexture*>(Texture.Get());
+        MR_LOG_INFO("Registering texture for layout transition: vulkanDevice=" + 
+                   std::to_string(vulkanDevice != nullptr) + ", vulkanTexture=" + 
+                   std::to_string(vulkanTexture != nullptr));
+        if (vulkanDevice && vulkanTexture) {
+            VkImage image = vulkanTexture->getImage();
+            MR_LOG_INFO("Registering texture image: " + std::to_string(reinterpret_cast<uint64>(image)));
+            vulkanDevice->registerTextureForLayoutTransition(
+                image,
+                TextureData.MipLevels,
+                1  // array layers
+            );
+        }
     }
     
     // ============================================================================

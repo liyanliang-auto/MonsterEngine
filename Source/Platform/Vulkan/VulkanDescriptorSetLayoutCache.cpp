@@ -477,11 +477,6 @@ namespace MonsterRender::RHI::Vulkan {
                 continue;
             }
             
-            MR_LOG_INFO("UpdateDescriptorSet: Adding image at slot " + std::to_string(Slot) +
-                       ", imageView=" + std::to_string(reinterpret_cast<uint64>(Binding.ImageView)) +
-                       ", sampler=" + std::to_string(reinterpret_cast<uint64>(Binding.Sampler)) +
-                       ", layout=" + std::to_string(static_cast<int>(Binding.ImageLayout)));
-            
             VkDescriptorImageInfo& ImageInfo = ImageInfos.emplace_back();
             ImageInfo.imageView = Binding.ImageView;
             ImageInfo.sampler = Binding.Sampler;
@@ -519,7 +514,6 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Execute updates
         if (!Writes.empty()) {
-            MR_LOG_INFO("UpdateDescriptorSet: Executing " + std::to_string(Writes.size()) + " descriptor writes");
             Functions.vkUpdateDescriptorSets(VkDev, static_cast<uint32>(Writes.size()), 
                                              Writes.data(), 0, nullptr);
         } else {

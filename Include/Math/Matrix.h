@@ -544,30 +544,31 @@ public:
     /** Create a look-at matrix */
     MR_NODISCARD static TMatrix<T> MakeLookAt(const TVector<T>& Eye, const TVector<T>& Target, const TVector<T>& Up)
     {
-        TVector<T> ZAxis = (Target - Eye).GetSafeNormal();
-        TVector<T> XAxis = TVector<T>::CrossProduct(Up, ZAxis).GetSafeNormal();
-        TVector<T> YAxis = TVector<T>::CrossProduct(ZAxis, XAxis);
+        // Forward direction (from eye to target, then negated for right-handed coordinate system)
+        TVector<T> Forward = (Eye - Target).GetSafeNormal();  // Points away from target
+        TVector<T> Right = TVector<T>::CrossProduct(Up, Forward).GetSafeNormal();
+        TVector<T> UpVec = TVector<T>::CrossProduct(Forward, Right);
 
         TMatrix<T> Result;
-        Result.M[0][0] = XAxis.X; Result.M[0][1] = YAxis.X; Result.M[0][2] = ZAxis.X; Result.M[0][3] = T(0);
-        Result.M[1][0] = XAxis.Y; Result.M[1][1] = YAxis.Y; Result.M[1][2] = ZAxis.Y; Result.M[1][3] = T(0);
-        Result.M[2][0] = XAxis.Z; Result.M[2][1] = YAxis.Z; Result.M[2][2] = ZAxis.Z; Result.M[2][3] = T(0);
-        Result.M[3][0] = -TVector<T>::DotProduct(XAxis, Eye);
-        Result.M[3][1] = -TVector<T>::DotProduct(YAxis, Eye);
-        Result.M[3][2] = -TVector<T>::DotProduct(ZAxis, Eye);
+        Result.M[0][0] = Right.X;   Result.M[0][1] = UpVec.X;  Result.M[0][2] = Forward.X; Result.M[0][3] = T(0);
+        Result.M[1][0] = Right.Y;   Result.M[1][1] = UpVec.Y;  Result.M[1][2] = Forward.Y; Result.M[1][3] = T(0);
+        Result.M[2][0] = Right.Z;   Result.M[2][1] = UpVec.Z;  Result.M[2][2] = Forward.Z; Result.M[2][3] = T(0);
+        Result.M[3][0] = -TVector<T>::DotProduct(Right, Eye);
+        Result.M[3][1] = -TVector<T>::DotProduct(UpVec, Eye);
+        Result.M[3][2] = -TVector<T>::DotProduct(Forward, Eye);
         Result.M[3][3] = T(1);
 
         return Result;
     }
 
-    /** Create a perspective projection matrix */
+    /** Create a perspective projection matrix for Vulkan (Y-down, Z [0,1]) */
     MR_NODISCARD static TMatrix<T> MakePerspective(T FovY, T AspectRatio, T NearZ, T FarZ)
     {
         const T TanHalfFov = std::tan(FovY * T(0.5));
 
         TMatrix<T> Result(ForceInit);
         Result.M[0][0] = T(1) / (AspectRatio * TanHalfFov);
-        Result.M[1][1] = T(1) / TanHalfFov;
+        Result.M[1][1] = -T(1) / TanHalfFov;  // Negative for Vulkan Y-down NDC
         Result.M[2][2] = FarZ / (FarZ - NearZ);
         Result.M[2][3] = T(1);
         Result.M[3][2] = -(FarZ * NearZ) / (FarZ - NearZ);

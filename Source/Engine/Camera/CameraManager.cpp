@@ -472,6 +472,11 @@ void FCameraManager::SetCameraCachePOV(const FMinimalViewInfo& InPOV)
     CameraCache.POV = InPOV;
 }
 
+void FCameraManager::SetViewTargetPOV(const FMinimalViewInfo& InPOV)
+{
+    ViewTarget.POV = InPOV;
+}
+
 void FCameraManager::SetLastFrameCameraCachePOV(const FMinimalViewInfo& InPOV)
 {
     LastFrameCameraCache.POV = InPOV;

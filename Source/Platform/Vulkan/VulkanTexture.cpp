@@ -222,6 +222,11 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
+        MR_LOG_INFO("VulkanTexture: Created imageView=" + std::to_string(reinterpret_cast<uint64>(m_imageView)) +
+                   ", image=" + std::to_string(reinterpret_cast<uint64>(m_image)) +
+                   ", format=" + std::to_string(static_cast<int>(m_format)) +
+                   ", size=" + std::to_string(m_desc.width) + "x" + std::to_string(m_desc.height));
+        
         return true;
     }
     

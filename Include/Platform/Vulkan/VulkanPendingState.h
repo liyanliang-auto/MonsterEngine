@@ -73,14 +73,24 @@ namespace MonsterRender::RHI::Vulkan {
         
         /**
          * Set texture at binding slot (UE5: SetShaderTexture())
+         * @param image VkImage handle for layout transitions
+         * @param mipLevels Number of mip levels for barrier
+         * @param arrayLayers Number of array layers for barrier
          */
-        void setTexture(uint32 slot, VkImageView imageView, VkSampler sampler);
+        void setTexture(uint32 slot, VkImageView imageView, VkSampler sampler,
+                       VkImage image = VK_NULL_HANDLE, uint32 mipLevels = 1, uint32 arrayLayers = 1);
         
         /**
          * Prepare for draw call - ensure all pending state is applied (UE5: PrepareForDraw())
          * @return true if ready to draw, false if critical state is missing
          */
         bool prepareForDraw();
+        
+        /**
+         * Execute texture layout transitions before render pass begins
+         * Must be called BEFORE vkCmdBeginRenderPass
+         */
+        void transitionTexturesForShaderRead();
         
         /**
          * Get current pipeline state
@@ -153,6 +163,9 @@ namespace MonsterRender::RHI::Vulkan {
         struct TextureBinding {
             VkImageView imageView = VK_NULL_HANDLE;
             VkSampler sampler = VK_NULL_HANDLE;
+            VkImage image = VK_NULL_HANDLE;  // For layout transitions
+            uint32 mipLevels = 1;
+            uint32 arrayLayers = 1;
         };
         std::map<uint32, TextureBinding> m_textures;
         

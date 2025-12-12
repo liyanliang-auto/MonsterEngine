@@ -10,6 +10,7 @@
 #include "Core/ShaderCompiler.h"
 #include "RHI/RHIResources.h"
 #include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanDevice.h"
 
 // ImGui includes
 #include "imgui.h"
@@ -238,8 +239,15 @@ void FImGuiRenderer::RenderDrawData(MonsterRender::RHI::IRHICommandList* CmdList
                 // Bind texture based on TextureId
                 // TextureId 0 = font texture, other IDs are registered custom textures
                 // Note: ImGui shader uses binding = 1 for texture (binding = 0 is uniform buffer)
-                ImTextureID texId = pcmd->GetTexID();
-                uint64 textureIdValue = static_cast<uint64>(texId);
+                // ImGui 1.92+: TexRef contains either _TexData (font atlas) or _TexID (user texture)
+                uint64 textureIdValue = 0;
+                if (pcmd->TexRef._TexData != nullptr) {
+                    // Font atlas texture - use 0 to indicate font texture
+                    textureIdValue = 0;
+                } else {
+                    // User texture - use _TexID directly (our registered ID)
+                    textureIdValue = static_cast<uint64>(pcmd->TexRef._TexID);
+                }
                 
                 if (textureIdValue == 0)
                 {
@@ -252,11 +260,13 @@ void FImGuiRenderer::RenderDrawData(MonsterRender::RHI::IRHICommandList* CmdList
                     auto* foundTexture = RegisteredTextures.Find(textureIdValue);
                     if (foundTexture && *foundTexture)
                     {
+                        MR_LOG(LogImGuiRenderer, Log, "Using registered texture ID %llu for ImGui draw", textureIdValue);
                         CmdList->setShaderResource(1, *foundTexture);
                     }
                     else
                     {
                         // Fallback to font texture if not found
+                        MR_LOG(LogImGuiRenderer, Warning, "Texture ID %llu not found, using font texture", textureIdValue);
                         CmdList->setShaderResource(1, FontTexture);
                     }
                 }
@@ -333,16 +343,22 @@ bool FImGuiRenderer::CreateFontTexture()
     // Store texture ID in ImGui
     io.Fonts->SetTexID(reinterpret_cast<ImTextureID>(FontTexture.Get()));
 
-    // Transition font texture to SHADER_READ_ONLY_OPTIMAL layout
-    // This is needed because the texture was created with initial data but layout is UNDEFINED
+    // Register font texture for per-command-buffer layout transitions
+    // This is needed because Vulkan validation layer tracks layout per-command-buffer
     if (RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan)
     {
         auto* vulkanTexture = static_cast<MonsterRender::RHI::Vulkan::VulkanTexture*>(FontTexture.Get());
-        if (vulkanTexture)
+        auto* vulkanDevice = static_cast<MonsterRender::RHI::Vulkan::VulkanDevice*>(Device);
+        if (vulkanTexture && vulkanDevice)
         {
-            // Set the layout to SHADER_READ_ONLY_OPTIMAL since the texture upload already handled the transition
             vulkanTexture->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            MR_LOG(LogImGuiRenderer, Log, "Font texture layout set to SHADER_READ_ONLY_OPTIMAL");
+            vulkanDevice->registerTextureForLayoutTransition(
+                vulkanTexture->getImage(),
+                1,  // mip levels
+                1   // array layers
+            );
+            MR_LOG(LogImGuiRenderer, Log, "Font texture registered for layout transition, image=0x%llx", 
+                   reinterpret_cast<uint64>(vulkanTexture->getImage()));
         }
     }
 

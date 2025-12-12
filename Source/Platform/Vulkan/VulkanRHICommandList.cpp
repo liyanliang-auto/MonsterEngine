@@ -128,8 +128,8 @@ namespace MonsterRender::RHI::Vulkan {
         // UE5: FVulkanPendingState::SetGraphicsPipeline()
         if (m_context->getPendingState()) {
             m_context->getPendingState()->setGraphicsPipeline(vulkanPipeline);
-            MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setPipelineState: Pipeline state set (handle: " + 
-                        std::to_string(reinterpret_cast<uint64>(pipeline)) + ")");
+            MR_LOG_INFO("setPipelineState: Set pipeline '" + vulkanPipeline->getDesc().debugName + 
+                        "' (handle: " + std::to_string(reinterpret_cast<uint64>(pipeline)) + ")");
         } else {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::setPipelineState: No pending state available");
         }
@@ -285,13 +285,12 @@ namespace MonsterRender::RHI::Vulkan {
                             ", sampler=" + std::to_string(reinterpret_cast<uint64>(sampler)) +
                             ", currentLayout=" + std::to_string(static_cast<int>(currentLayout)));
                 
-                // Verify texture is in correct layout for shader read
-                if (currentLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-                    MR_LOG_WARNING("setShaderResource: Texture layout is " + std::to_string(static_cast<int>(currentLayout)) +
-                                  ", expected SHADER_READ_ONLY_OPTIMAL (5)");
-                }
+                // Pass VkImage handle for layout transitions before render pass
+                VkImage image = vulkanTexture->getImage();
+                uint32 mipLevels = texture->getDesc().mipLevels;
+                uint32 arrayLayers = texture->getDesc().arraySize;
                 
-                m_context->getPendingState()->setTexture(slot, imageView, sampler);
+                m_context->getPendingState()->setTexture(slot, imageView, sampler, image, mipLevels, arrayLayers);
             } else {
                 MR_LOG_ERROR("setShaderResource: Failed to cast texture to VulkanTexture for slot " + std::to_string(slot));
             }

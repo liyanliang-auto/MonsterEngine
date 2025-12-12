@@ -333,6 +333,12 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
+        MR_LOG_INFO("CreateFramebuffer: " + std::to_string(Key.Width) + "x" + std::to_string(Key.Height) +
+                   ", attachments=" + std::to_string(Key.NumAttachments) +
+                   ", colorView=" + std::to_string(reinterpret_cast<uint64>(Key.Attachments[0])) +
+                   ", depthView=" + std::to_string(reinterpret_cast<uint64>(Key.NumAttachments > 1 ? Key.Attachments[1] : VK_NULL_HANDLE)) +
+                   ", renderPass=" + std::to_string(reinterpret_cast<uint64>(Key.RenderPass)));
+        
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = Key.RenderPass;
@@ -390,9 +396,11 @@ namespace MonsterRender::RHI::Vulkan {
         layout.StencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         
         // Final layout
+        // For RTT, use SHADER_READ_ONLY_OPTIMAL since the texture will be sampled later
+        // For swapchain, use PRESENT_SRC_KHR for presentation
         layout.ColorFinalLayout = bIsSwapchain ? 
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : 
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         
         return layout;
     }

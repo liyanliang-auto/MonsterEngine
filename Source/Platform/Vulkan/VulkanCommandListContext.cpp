@@ -178,6 +178,12 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_INFO("    Calling m_cmdBuffer->begin()...");
             m_cmdBuffer->begin();
             MR_LOG_INFO("    m_cmdBuffer->begin() returned");
+            
+            // Execute texture layout transitions for this command buffer
+            // This is needed because Vulkan validation layer tracks layout per-command-buffer
+            if (m_device && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
+                m_device->executeTextureLayoutTransitions(m_cmdBuffer->getHandle());
+            }
         } else {
             MR_LOG_ERROR("    m_cmdBuffer is NULL!");
         }
@@ -296,16 +302,25 @@ namespace MonsterRender::RHI::Vulkan {
                 layout.DepthStencilFormat = m_device->getVulkanDepthFormat();
             }
             
-            auto* renderPassCache = m_device->GetRenderPassCache();
-            if (renderPassCache) {
-                renderPass = renderPassCache->GetOrCreateRenderPass(layout);
-            }
+            // Use RTT-specific render pass with SHADER_READ_ONLY_OPTIMAL initial layout
+            // This matches the layout after ImGui sampling in the previous frame
+            // finalLayout is also SHADER_READ_ONLY_OPTIMAL, ready for ImGui sampling
+            renderPass = m_device->getRTTRenderPass();
+            MR_LOG_INFO("RTT: Using device render pass=" + std::to_string(reinterpret_cast<uint64>(renderPass)) +
+                       ", extent=" + std::to_string(renderExtent.width) + "x" + std::to_string(renderExtent.height));
             
             // Get or create framebuffer from cache
             if (renderPass != VK_NULL_HANDLE) {
-                VkImageView depthView = rtInfo.DepthStencilTarget ? 
-                    rtInfo.DepthStencilTarget->getImageView() : 
-                    m_device->getDepthImageView();
+                VkImageView depthView = VK_NULL_HANDLE;
+                if (rtInfo.DepthStencilTarget) {
+                    depthView = rtInfo.DepthStencilTarget->getImageView();
+                    MR_LOG_INFO("RTT: Using custom depth target, view=" + 
+                               std::to_string(reinterpret_cast<uint64>(depthView)));
+                } else if (m_device->hasDepthBuffer()) {
+                    // WARNING: Device depth buffer may have different size than RTT!
+                    depthView = m_device->getDepthImageView();
+                    MR_LOG_WARNING("RTT: Using device depth buffer (may cause size mismatch!)");
+                }
                     
                 FVulkanFramebufferKey fbKey = rtInfo.BuildFramebufferKey(renderPass, depthView);
                 fbKey.Width = renderExtent.width;
@@ -325,10 +340,22 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // ================================================================
+        // Pre-render pass texture layout transitions
+        // Must be done BEFORE vkCmdBeginRenderPass
+        // ================================================================
+        if (m_pendingState) {
+            m_pendingState->transitionTexturesForShaderRead();
+        }
+        
+        // ================================================================
         // Begin render pass
         // ================================================================
         
         if (renderPass != VK_NULL_HANDLE && framebuffer != VK_NULL_HANDLE) {
+            MR_LOG_INFO("beginRenderPass: renderPass=" + std::to_string(reinterpret_cast<uint64>(renderPass)) +
+                       ", framebuffer=" + std::to_string(reinterpret_cast<uint64>(framebuffer)) +
+                       ", extent=" + std::to_string(renderExtent.width) + "x" + std::to_string(renderExtent.height));
+            
             VkRenderPassBeginInfo renderPassBeginInfo{};
             renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             renderPassBeginInfo.renderPass = renderPass;
@@ -338,7 +365,7 @@ namespace MonsterRender::RHI::Vulkan {
             
             // Clear values: color + depth
             TArray<VkClearValue> clearValues(numClearValues);
-            clearValues[0].color = {{0.2f, 0.3f, 0.3f, 1.0f}}; // Background color
+            clearValues[0].color = {{1.0f, 0.0f, 0.0f, 1.0f}}; // DEBUG: Bright red for visibility
             if (numClearValues > 1) {
                 clearValues[1].depthStencil = {1.0f, 0}; // Clear depth to 1.0 (far)
             }
@@ -401,6 +428,8 @@ namespace MonsterRender::RHI::Vulkan {
                    std::to_string(reinterpret_cast<uint64>(functions.vkCmdDraw)));
         
         // Call vkCmdDraw
+        MR_LOG_INFO("  vkCmdDraw(vertexCount=" + std::to_string(vertexCount) + 
+                   ", startVertex=" + std::to_string(startVertexLocation) + ")");
         functions.vkCmdDraw(cmdBufferHandle, vertexCount, 1, startVertexLocation, 0);
         
         MR_LOG_INFO("  vkCmdDraw completed");

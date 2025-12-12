@@ -168,36 +168,37 @@ namespace MonsterRender::RHI::Vulkan {
             const auto& functions = VulkanAPI::getFunctions();
             VkDevice device = m_device->getDevice();
             
-            // Destroy buffer first
-            if (m_buffer != VK_NULL_HANDLE) {
-                functions.vkDestroyBuffer(device, m_buffer, nullptr);
-                m_buffer = VK_NULL_HANDLE;
+            // Unmap memory first if mapped
+            if (m_mappedData != nullptr) {
+                if (m_usesMemoryManager) {
+                    if (!m_allocation.MappedPointer) {
+                        functions.vkUnmapMemory(device, m_deviceMemory);
+                    }
+                } else {
+                    functions.vkUnmapMemory(device, m_deviceMemory);
+                }
+                m_mappedData = nullptr;
+                m_persistentMapped = false;
             }
             
-            // Free memory using memory manager if applicable
+            // Use deferred destruction to avoid destroying resources still in use by GPU
             if (m_usesMemoryManager) {
                 auto* memoryManager = m_device->getMemoryManager();
                 if (memoryManager && m_allocation.DeviceMemory != VK_NULL_HANDLE) {
-                    // Unmap if manually mapped (manager doesn't track this)
-                    if (m_mappedData != nullptr && !m_allocation.MappedPointer) {
-                        functions.vkUnmapMemory(device, m_deviceMemory);
+                    // For memory manager allocations, defer buffer destruction only
+                    // Memory manager handles its own memory lifecycle
+                    if (m_buffer != VK_NULL_HANDLE) {
+                        m_device->deferBufferDestruction(m_buffer, VK_NULL_HANDLE);
+                        m_buffer = VK_NULL_HANDLE;
                     }
-                    
                     memoryManager->Free(m_allocation);
-                    m_mappedData = nullptr;
-                    m_persistentMapped = false;
                     m_usesMemoryManager = false;
                 }
             } else {
-                // Direct allocation path
-                if (m_mappedData != nullptr) {
-                    functions.vkUnmapMemory(device, m_deviceMemory);
-                    m_mappedData = nullptr;
-                    m_persistentMapped = false;
-                }
-                
-                if (m_deviceMemory != VK_NULL_HANDLE) {
-                    functions.vkFreeMemory(device, m_deviceMemory, nullptr);
+                // Direct allocation path - defer both buffer and memory destruction
+                if (m_buffer != VK_NULL_HANDLE || m_deviceMemory != VK_NULL_HANDLE) {
+                    m_device->deferBufferDestruction(m_buffer, m_deviceMemory);
+                    m_buffer = VK_NULL_HANDLE;
                     m_deviceMemory = VK_NULL_HANDLE;
                 }
             }

@@ -151,6 +151,12 @@ public:
      */
     const FMinimalViewInfo& GetLastFrameCameraCacheView() const;
     
+    /**
+     * Set the view target POV directly
+     * @param InPOV The POV to set
+     */
+    void SetViewTargetPOV(const FMinimalViewInfo& InPOV);
+    
     // ========================================================================
     // Camera Modifiers
     // ========================================================================
