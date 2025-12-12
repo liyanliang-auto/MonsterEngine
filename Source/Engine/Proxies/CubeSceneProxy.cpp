@@ -618,6 +618,23 @@ void FCubeSceneProxy::UpdateTransformBuffer(
     // Model matrix from local to world transform
     FMatrix ModelMatrix = GetLocalToWorld();
     
+    // DEBUG: Log matrix values - all 4 rows of View matrix
+    MR_LOG(LogCubeSceneProxy, Log, "UpdateTransformBuffer:");
+    MR_LOG(LogCubeSceneProxy, Log, "  Model[0]: %.2f, %.2f, %.2f, %.2f", 
+           ModelMatrix.M[0][0], ModelMatrix.M[0][1], ModelMatrix.M[0][2], ModelMatrix.M[0][3]);
+    MR_LOG(LogCubeSceneProxy, Log, "  View[0]: %.2f, %.2f, %.2f, %.2f",
+           ViewMatrix.M[0][0], ViewMatrix.M[0][1], ViewMatrix.M[0][2], ViewMatrix.M[0][3]);
+    MR_LOG(LogCubeSceneProxy, Log, "  View[1]: %.2f, %.2f, %.2f, %.2f",
+           ViewMatrix.M[1][0], ViewMatrix.M[1][1], ViewMatrix.M[1][2], ViewMatrix.M[1][3]);
+    MR_LOG(LogCubeSceneProxy, Log, "  View[2]: %.2f, %.2f, %.2f, %.2f",
+           ViewMatrix.M[2][0], ViewMatrix.M[2][1], ViewMatrix.M[2][2], ViewMatrix.M[2][3]);
+    MR_LOG(LogCubeSceneProxy, Log, "  View[3]: %.2f, %.2f, %.2f, %.2f",
+           ViewMatrix.M[3][0], ViewMatrix.M[3][1], ViewMatrix.M[3][2], ViewMatrix.M[3][3]);
+    MR_LOG(LogCubeSceneProxy, Log, "  Proj[0]: %.2f, %.2f, %.2f, %.2f",
+           ProjectionMatrix.M[0][0], ProjectionMatrix.M[0][1], ProjectionMatrix.M[0][2], ProjectionMatrix.M[0][3]);
+    MR_LOG(LogCubeSceneProxy, Log, "  CameraPos: %.2f, %.2f, %.2f",
+           CameraPosition.X, CameraPosition.Y, CameraPosition.Z);
+    
     MatrixToFloatArray(ModelMatrix, UBO.Model);
     
     // View and projection matrices

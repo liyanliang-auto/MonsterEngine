@@ -36,7 +36,6 @@ layout(location = 3) in vec3 fragViewPos;
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    // Simple color based on normal direction for debugging
-    vec3 normalColor = normalize(fragNormal) * 0.5 + 0.5;
-    outColor = vec4(normalColor, 1.0);
+    // DEBUG: Output bright green to verify fragment shader is executing
+    outColor = vec4(0.0, 1.0, 0.0, 1.0);
 }

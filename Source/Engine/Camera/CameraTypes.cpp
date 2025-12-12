@@ -141,7 +141,11 @@ FMatrix FMinimalViewInfo::CalculateProjectionMatrix() const
     {
         // Perspective projection matrix
         const float NearPlane = GetFinalPerspectiveNearClipPlane();
+        const float FarPlane = 100000.0f;
         const float FOVRadians = FMath::DegreesToRadians(FOV);
+        
+        MR_LOG(LogCameraTypes, Log, "CalculateProjectionMatrix: FOV=%.1f deg (%.3f rad), AspectRatio=%.3f, Near=%.3f, Far=%.1f",
+               FOV, FOVRadians, AspectRatio, NearPlane, FarPlane);
         
         // Create perspective projection matrix
         // Note: MakePerspective expects full FOV in radians, not half FOV
@@ -149,8 +153,19 @@ FMatrix FMinimalViewInfo::CalculateProjectionMatrix() const
             FOVRadians,
             AspectRatio,
             NearPlane,
-            100000.0f  // Far plane (large value for reversed-Z)
+            FarPlane
         );
+        
+        // DEBUG: Log full projection matrix
+        MR_LOG(LogCameraTypes, Log, "ProjectionMatrix:");
+        MR_LOG(LogCameraTypes, Log, "  [0]: %.4f, %.4f, %.4f, %.4f", 
+               ProjectionMatrix.M[0][0], ProjectionMatrix.M[0][1], ProjectionMatrix.M[0][2], ProjectionMatrix.M[0][3]);
+        MR_LOG(LogCameraTypes, Log, "  [1]: %.4f, %.4f, %.4f, %.4f",
+               ProjectionMatrix.M[1][0], ProjectionMatrix.M[1][1], ProjectionMatrix.M[1][2], ProjectionMatrix.M[1][3]);
+        MR_LOG(LogCameraTypes, Log, "  [2]: %.4f, %.4f, %.4f, %.4f",
+               ProjectionMatrix.M[2][0], ProjectionMatrix.M[2][1], ProjectionMatrix.M[2][2], ProjectionMatrix.M[2][3]);
+        MR_LOG(LogCameraTypes, Log, "  [3]: %.4f, %.4f, %.4f, %.4f",
+               ProjectionMatrix.M[3][0], ProjectionMatrix.M[3][1], ProjectionMatrix.M[3][2], ProjectionMatrix.M[3][3]);
     }
     
     // Apply off-center projection offset if needed
