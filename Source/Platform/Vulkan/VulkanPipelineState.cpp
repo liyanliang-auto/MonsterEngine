@@ -59,16 +59,24 @@ namespace MonsterRender::RHI::Vulkan
             return false;
         }
 
-        // Use device's render pass instead of creating our own (UE5 pattern)
-        // Pipeline's render pass must match the render pass used in command buffer
-        m_renderPass = m_device->getRenderPass();
+        // Use RTT render pass for pipeline compatibility with render-to-texture
+        // Both RTT and main render pass have compatible attachment formats
+        // RTT render pass: initialLayout=SHADER_READ_ONLY, finalLayout=SHADER_READ_ONLY
+        // Main render pass: initialLayout=UNDEFINED, finalLayout=PRESENT_SRC
+        // Vulkan allows pipelines to be used with compatible render passes
+        m_renderPass = m_device->getRTTRenderPass();
         if (m_renderPass == VK_NULL_HANDLE)
         {
-            MR_LOG_ERROR("Device render pass is null");
+            // Fallback to device render pass if RTT render pass not available
+            m_renderPass = m_device->getRenderPass();
+        }
+        if (m_renderPass == VK_NULL_HANDLE)
+        {
+            MR_LOG_ERROR("No render pass available for pipeline");
             return false;
         }
 
-        MR_LOG_DEBUG("Using device render pass for pipeline compatibility");
+        MR_LOG_DEBUG("Using RTT render pass for pipeline");
 
         // Create graphics pipeline
         if (!createGraphicsPipeline())
@@ -159,7 +167,12 @@ namespace MonsterRender::RHI::Vulkan
             return false;
         }
 
-        MR_LOG_DEBUG("Created " + std::to_string(m_shaderStages.size()) + " shader stages");
+        MR_LOG_INFO("Created " + std::to_string(m_shaderStages.size()) + " shader stages:");
+        for (size_t i = 0; i < m_shaderStages.size(); ++i) {
+            MR_LOG_INFO("  Stage[" + std::to_string(i) + "]: type=" + 
+                       std::to_string(m_shaderStages[i].stage) + ", module=" +
+                       std::to_string(reinterpret_cast<uint64>(m_shaderStages[i].module)));
+        }
         return true;
     }
 
@@ -261,6 +274,9 @@ namespace MonsterRender::RHI::Vulkan
         {
             if (bindings.empty())
                 continue;
+
+            MR_LOG_DEBUG("createPipelineLayout: Creating descriptor set layout for set " + 
+                       std::to_string(setIndex) + " with " + std::to_string(bindings.size()) + " bindings");
 
             VkDescriptorSetLayoutCreateInfo layoutInfo{};
             layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -437,8 +453,13 @@ namespace MonsterRender::RHI::Vulkan
         VkVertexInputBindingDescription bindingDescription = createVertexInputBinding();
         std::vector<VkVertexInputAttributeDescription> attributeDescriptions = createVertexInputAttributes();
 
-        MR_LOG_DEBUG("Vertex input: " + std::to_string(attributeDescriptions.size()) +
+        MR_LOG_INFO("Vertex input: " + std::to_string(attributeDescriptions.size()) +
                      " attribute(s), stride = " + std::to_string(bindingDescription.stride));
+        for (const auto& attr : attributeDescriptions) {
+            MR_LOG_DEBUG("  Attr loc=" + std::to_string(attr.location) + 
+                       ", format=" + std::to_string(attr.format) +
+                       ", offset=" + std::to_string(attr.offset));
+        }
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -516,7 +537,8 @@ namespace MonsterRender::RHI::Vulkan
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
         pipelineInfo.basePipelineIndex = -1;
 
-        MR_LOG_DEBUG("Calling vkCreateGraphicsPipelines...");
+        MR_LOG_INFO("Creating pipeline with renderPass=" + std::to_string(reinterpret_cast<uint64>(m_renderPass)) +
+                   ", pipelineLayout=" + std::to_string(reinterpret_cast<uint64>(m_pipelineLayout)));
         VkResult result = functions.vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline);
         if (result != VK_SUCCESS)
         {
@@ -727,6 +749,9 @@ namespace MonsterRender::RHI::Vulkan
         // Use custom vertex layout if provided
         if (!m_desc.vertexLayout.attributes.empty())
         {
+            MR_LOG_INFO("createVertexInputAttributes: Using custom layout with " + 
+                       std::to_string(m_desc.vertexLayout.attributes.size()) + " attributes, stride=" +
+                       std::to_string(m_desc.vertexLayout.stride));
             for (const auto &attr : m_desc.vertexLayout.attributes)
             {
                 VkVertexInputAttributeDescription vkAttr{};
@@ -735,6 +760,8 @@ namespace MonsterRender::RHI::Vulkan
                 vkAttr.format = getVulkanVertexFormat(attr.format);
                 vkAttr.offset = attr.offset;
                 attributes.push_back(vkAttr);
+                MR_LOG_INFO("  Attr[" + std::to_string(attr.location) + "]: format=" + 
+                           std::to_string(vkAttr.format) + ", offset=" + std::to_string(attr.offset));
             }
             return attributes;
         }
@@ -829,19 +856,33 @@ namespace MonsterRender::RHI::Vulkan
     {
         std::vector<VkPipelineColorBlendAttachmentState> attachments;
 
-        for (uint32 i = 0; i < m_desc.renderTargetFormats.size(); ++i)
+        MR_LOG_INFO("createColorBlendAttachments: renderTargetFormats.size()=" + 
+                   std::to_string(m_desc.renderTargetFormats.size()));
+        
+        // CRITICAL: If no render target formats specified, we still need at least one attachment
+        uint32 numAttachments = m_desc.renderTargetFormats.size();
+        if (numAttachments == 0) {
+            MR_LOG_WARNING("createColorBlendAttachments: No render target formats! Adding default attachment.");
+            numAttachments = 1;
+        }
+
+        for (uint32 i = 0; i < numAttachments; ++i)
         {
             VkPipelineColorBlendAttachmentState attachment{};
             attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
             attachment.blendEnable = m_desc.blendState.blendEnable ? VK_TRUE : VK_FALSE;
-            attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // TODO: Convert from EBlendFactor
+            attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
             attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-            attachment.colorBlendOp = VK_BLEND_OP_ADD; // TODO: Convert from EBlendOp
+            attachment.colorBlendOp = VK_BLEND_OP_ADD;
             attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
             attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
             attachment.alphaBlendOp = VK_BLEND_OP_ADD;
             attachments.push_back(attachment);
+            
+            MR_LOG_INFO("  Attachment[" + std::to_string(i) + "]: colorWriteMask=0x" + 
+                       std::to_string(attachment.colorWriteMask) + ", blendEnable=" + 
+                       std::to_string(attachment.blendEnable));
         }
 
         return attachments;

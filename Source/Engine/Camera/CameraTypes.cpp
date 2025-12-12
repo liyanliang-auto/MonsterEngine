@@ -141,11 +141,12 @@ FMatrix FMinimalViewInfo::CalculateProjectionMatrix() const
     {
         // Perspective projection matrix
         const float NearPlane = GetFinalPerspectiveNearClipPlane();
-        const float HalfFOVRadians = FMath::DegreesToRadians(FOV * 0.5f);
+        const float FOVRadians = FMath::DegreesToRadians(FOV);
         
         // Create perspective projection matrix
+        // Note: MakePerspective expects full FOV in radians, not half FOV
         ProjectionMatrix = FMatrix::MakePerspective(
-            HalfFOVRadians,
+            FOVRadians,
             AspectRatio,
             NearPlane,
             100000.0f  // Far plane (large value for reversed-Z)

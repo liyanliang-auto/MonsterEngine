@@ -193,13 +193,14 @@ namespace MonsterRender::RHI::Vulkan {
                 VkDescriptorImageInfo imageInfo{};
                 imageInfo.imageView = vulkanTexture->getImageView();
                 imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                imageInfo.sampler = VK_NULL_HANDLE; // TODO: Get actual sampler
+                imageInfo.sampler = vulkanTexture->getDefaultSampler();
                 
                 imageInfos.Add(imageInfo);
                 write.pImageInfo = &imageInfos.Last();
                 writes.Add(write);
                 
-                MR_LOG_DEBUG("Update descriptor set: texture at binding " + std::to_string(binding.binding));
+                MR_LOG_DEBUG("Update descriptor set: texture at binding " + std::to_string(binding.binding) +
+                            ", sampler=" + std::to_string(reinterpret_cast<uint64>(imageInfo.sampler)));
             }
         }
         

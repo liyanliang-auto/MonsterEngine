@@ -41,9 +41,8 @@ using MonsterEngine::TMap;
         // Debug: Validate SPIR-V magic number
         if (bytecode.size() >= 4) {
             uint32 magic = *reinterpret_cast<const uint32*>(bytecode.data());
-            MR_LOG_DEBUG("SPIR-V bytecode size: " + std::to_string(bytecode.size()) + 
-                        ", magic: 0x" + std::to_string(magic) +
-                        ", data ptr: " + std::to_string(reinterpret_cast<uintptr_t>(bytecode.data())));
+            MR_LOG_INFO("VulkanShader: SPIR-V bytecode size=" + std::to_string(bytecode.size()) + 
+                        " bytes, stage=" + std::to_string(static_cast<int>(m_stage)));
             if (magic != 0x07230203) {
                 MR_LOG_ERROR("Invalid SPIR-V magic number: 0x" + std::to_string(magic) + " (expected 0x07230203)");
                 return false;

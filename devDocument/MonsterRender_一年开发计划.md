@@ -145,18 +145,18 @@ matInstance->setTexture("albedoMap", albedoTexture);
 **目标**: 实现完整的光照抽象和计算
 
 **任务清单**:
-- [ ] **光源类型**
+- [x] **光源类型**
   - 实现 `DirectionalLight`（方向光）
   - 实现 `PointLight`（点光源）
   - 实现 `SpotLight`（聚光灯）
   - 实现 `SkyLight`（天空光/IBL）
 
-- [ ] **光照数据结构**
+- [x] **光照数据结构**
   - 光源 Uniform Buffer（支持多光源）
   - 光照参数打包优化
   - 光源剔除（视锥体剔除）
 
-- [ ] **基础光照着色器**
+- [x] **基础光照着色器**
   - Blinn-Phong 光照模型
   - Lambert 漫反射
   - Specular 高光
@@ -187,7 +187,7 @@ struct LightData {
 **目标**: 实现完整的前向渲染流程
 
 **任务清单**:
-- [ ] **渲染通道系统**
+- [x] **渲染通道系统**
   - 实现 `RenderPass` 抽象
   - 深度预通道（Depth Prepass）
   - 不透明物体通道（Opaque Pass）
@@ -199,7 +199,7 @@ struct LightData {
   - 材质排序（减少状态切换）
   - 实例化合批（相同网格）
 
-- [ ] **渲染器架构**
+- [x] **渲染器架构**
   - 实现 `Renderer` 类
   - 实现 `RenderQueue` 系统
   - 实现 `DrawCall` 收集

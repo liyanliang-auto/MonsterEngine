@@ -226,9 +226,12 @@ void CubeSceneApplication::onRender()
     // Get camera view info
     const FMinimalViewInfo& cameraView = m_cameraManager->GetCameraCacheView();
     
-    // Calculate view and projection matrices
-    FMatrix viewMatrix = cameraView.CalculateViewRotationMatrix();
-    viewMatrix = FMatrix::MakeTranslation(-cameraView.Location) * viewMatrix;
+    // Calculate view and projection matrices using LookAt
+    // Camera looks at origin from its position
+    FVector cameraPos = cameraView.Location;
+    FVector targetPos = FVector::ZeroVector;  // Look at origin
+    FVector upVector = FVector(0.0, 1.0, 0.0);  // Y-up
+    FMatrix viewMatrix = FMatrix::MakeLookAt(cameraPos, targetPos, upVector);
     
     FMatrix projectionMatrix = cameraView.CalculateProjectionMatrix();
     
@@ -306,21 +309,19 @@ void CubeSceneApplication::onRender()
         
         // ================================================================
         // Pass 1: Render scene to viewport render target
-        // NOTE: Viewport RTT rendering is temporarily disabled due to texture layout issues
-        // TODO: Fix texture layout tracking for all textures (cube textures, font texture, viewport RTT)
         // ================================================================
-        // if (m_viewportColorTarget && m_viewportDepthTarget && !m_bViewportNeedsResize)
-        // {
-        //     float viewportAspect = static_cast<float>(m_viewportWidth) / static_cast<float>(m_viewportHeight);
-        //     FMatrix viewportProjection = FMatrix::MakePerspective(
-        //         cameraView.FOV,
-        //         viewportAspect,
-        //         cameraView.OrthoNearClipPlane > 0.0f ? cameraView.OrthoNearClipPlane : 0.1f,
-        //         cameraView.OrthoFarClipPlane > 0.0f ? cameraView.OrthoFarClipPlane : 100.0f
-        //     );
-        //     viewportProjection.M[1][1] *= -1.0f;
-        //     renderSceneToViewport(cmdList, viewMatrix, viewportProjection, cameraPosition);
-        // }
+        if (m_viewportColorTarget && m_viewportDepthTarget && !m_bViewportNeedsResize)
+        {
+            float viewportAspect = static_cast<float>(m_viewportWidth) / static_cast<float>(m_viewportHeight);
+            FMatrix viewportProjection = FMatrix::MakePerspective(
+                cameraView.FOV,
+                viewportAspect,
+                cameraView.OrthoNearClipPlane > 0.0f ? cameraView.OrthoNearClipPlane : 0.1f,
+                cameraView.OrthoFarClipPlane > 0.0f ? cameraView.OrthoFarClipPlane : 100.0f
+            );
+            viewportProjection.M[1][1] *= -1.0f;
+            renderSceneToViewport(cmdList, viewMatrix, viewportProjection, cameraPosition);
+        }
         
         // ================================================================
         // Pass 2: Render ImGui to swapchain
@@ -675,9 +676,10 @@ bool CubeSceneApplication::initializeCamera()
     m_cameraManager->Initialize(nullptr);
     
     // Set initial camera view
+    // Camera at z=3 looking at origin (positive Z, looking towards negative Z)
     FMinimalViewInfo viewInfo;
-    viewInfo.Location = FVector(0.0, 0.0, -3.0);  // Camera at z=-3 looking at origin
-    viewInfo.Rotation = FRotator::ZeroRotator;
+    viewInfo.Location = FVector(0.0, 0.0, 3.0);  // Camera at z=3
+    viewInfo.Rotation = FRotator(0.0, 180.0, 0.0);  // Rotate 180 degrees to look at origin
     viewInfo.FOV = 45.0f;
     viewInfo.AspectRatio = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
     viewInfo.ProjectionMode = ECameraProjectionMode::Perspective;
@@ -685,9 +687,14 @@ bool CubeSceneApplication::initializeCamera()
     viewInfo.OrthoFarClipPlane = 100.0f;
     viewInfo.PerspectiveNearClipPlane = 0.1f;
     
+    // Set both cache and view target to ensure UpdateCamera doesn't overwrite
     m_cameraManager->SetCameraCachePOV(viewInfo);
+    m_cameraManager->SetViewTargetPOV(viewInfo);
     
-    MR_LOG(LogCubeSceneApp, Log, "Camera initialized at (0, 0, -3) with FOV=45");
+    // Verify camera was set correctly
+    const FMinimalViewInfo& verifyView = m_cameraManager->GetCameraCacheView();
+    MR_LOG(LogCubeSceneApp, Log, "Camera initialized: Location=(%.2f, %.2f, %.2f), FOV=%.1f",
+           verifyView.Location.X, verifyView.Location.Y, verifyView.Location.Z, verifyView.FOV);
     return true;
 }
 
@@ -1074,11 +1081,29 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
         return false;
     }
     
+    // NOTE: RTT render pass uses initialLayout=UNDEFINED with loadOp=CLEAR
+    // This handles any previous layout automatically, no manual initialization needed
+    
     // Register color target with ImGui renderer
     if (m_imguiRenderer && m_viewportColorTarget)
     {
         m_viewportTextureID = static_cast<uint64>(m_imguiRenderer->RegisterTexture(m_viewportColorTarget));
         MR_LOG(LogCubeSceneApp, Log, "Viewport texture registered with ImGui (ID: %llu)", m_viewportTextureID);
+    }
+    
+    // Register viewport color target for per-command-buffer layout transitions
+    if (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan && m_viewportColorTarget)
+    {
+        auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+        auto* vulkanTexture = static_cast<RHI::Vulkan::VulkanTexture*>(m_viewportColorTarget.Get());
+        if (vulkanDevice && vulkanTexture)
+        {
+            vulkanDevice->registerTextureForLayoutTransition(
+                vulkanTexture->getImage(),
+                1,  // mip levels
+                1   // array layers
+            );
+        }
     }
     
     MR_LOG(LogCubeSceneApp, Log, "Viewport render target initialized successfully");
@@ -1143,46 +1168,10 @@ void CubeSceneApplication::renderSceneToViewport(
         return;
     }
     
-    // Transition viewport textures to appropriate layouts before rendering
-    // This handles the case where textures are in UNDEFINED or SHADER_READ_ONLY layout
-    if (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
-    {
-        auto* vulkanCmdList = static_cast<RHI::Vulkan::FVulkanRHICommandListImmediate*>(cmdList);
-        if (vulkanCmdList)
-        {
-            // Get current layout from texture
-            auto* vulkanColorTarget = static_cast<RHI::Vulkan::VulkanTexture*>(m_viewportColorTarget.Get());
-            if (vulkanColorTarget)
-            {
-                VkImageLayout currentLayout = vulkanColorTarget->getCurrentLayout();
-                MR_LOG(LogCubeSceneApp, Log, "Viewport color target current layout: %d", static_cast<int>(currentLayout));
-                if (currentLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
-                {
-                    MR_LOG(LogCubeSceneApp, Log, "Transitioning viewport color target to COLOR_ATTACHMENT_OPTIMAL");
-                    vulkanCmdList->transitionTextureLayoutSimple(
-                        m_viewportColorTarget,
-                        currentLayout,
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-                    );
-                }
-            }
-            
-            // Also transition depth target if needed
-            auto* vulkanDepthTarget = static_cast<RHI::Vulkan::VulkanTexture*>(m_viewportDepthTarget.Get());
-            if (vulkanDepthTarget)
-            {
-                VkImageLayout currentLayout = vulkanDepthTarget->getCurrentLayout();
-                if (currentLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                {
-                    vulkanCmdList->transitionTextureLayoutSimple(
-                        m_viewportDepthTarget,
-                        currentLayout,
-                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-                    );
-                }
-            }
-        }
-    }
+    // NOTE: Do NOT transition textures before render pass!
+    // Device render pass has initialLayout=UNDEFINED with loadOp=CLEAR.
+    // Pre-transitioning to COLOR_ATTACHMENT_OPTIMAL causes layout mismatch.
+    // The render pass will handle the layout transition automatically.
     
     // Set viewport render targets
     TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
@@ -1194,9 +1183,19 @@ void CubeSceneApplication::renderSceneToViewport(
     cmdList->clearRenderTarget(m_viewportColorTarget, clearColor);
     cmdList->clearDepthStencil(m_viewportDepthTarget, 1.0f, 0);
     
-    // Set viewport
+    // Set viewport and scissor
     RHI::Viewport viewport(static_cast<float>(m_viewportWidth), static_cast<float>(m_viewportHeight));
     cmdList->setViewport(viewport);
+    
+    RHI::ScissorRect scissor;
+    scissor.left = 0;
+    scissor.top = 0;
+    scissor.right = static_cast<int32>(m_viewportWidth);
+    scissor.bottom = static_cast<int32>(m_viewportHeight);
+    cmdList->setScissorRect(scissor);
+    
+    MR_LOG(LogCubeSceneApp, Log, "Viewport: %.0fx%.0f, Scissor: %dx%d", 
+           viewport.width, viewport.height, scissor.right, scissor.bottom);
     
     // Gather lights from scene
     TArray<FLightSceneInfo*> lights;
@@ -1232,22 +1231,8 @@ void CubeSceneApplication::renderSceneToViewport(
     }
     
     // End render pass for viewport
+    // RTT render pass has finalLayout=SHADER_READ_ONLY_OPTIMAL, no manual transition needed
     cmdList->endRenderPass();
-    
-    // Transition viewport color target to SHADER_READ_ONLY_OPTIMAL for ImGui sampling
-    // This is required because the texture was used as a render target
-    if (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
-    {
-        auto* vulkanCmdList = static_cast<RHI::Vulkan::FVulkanRHICommandListImmediate*>(cmdList);
-        if (vulkanCmdList)
-        {
-            vulkanCmdList->transitionTextureLayoutSimple(
-                m_viewportColorTarget,
-                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            );
-        }
-    }
     
     // Mark viewport texture as ready for display
     m_bViewportTextureReady = true;

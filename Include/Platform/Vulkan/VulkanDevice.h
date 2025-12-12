@@ -6,6 +6,8 @@
 #include "RHI/RHI.h"
 
 #include <vector>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace MonsterRender::RHI {
     class FVulkanMemoryManager;
@@ -128,8 +130,19 @@ namespace MonsterRender::RHI::Vulkan {
         FVulkanMemoryManager* getMemoryManager() const { return m_memoryManager.get(); }
         FVulkanMemoryManager* GetMemoryManager() const { return m_memoryManager.get(); } // UE5 naming style
         
+        // Texture layout tracking for per-command-buffer transitions
+        void registerTextureForLayoutTransition(VkImage image, uint32 mipLevels, uint32 arrayLayers);
+        void executeTextureLayoutTransitions(VkCommandBuffer cmdBuffer);
+        void clearTransitionedTexturesForCmdBuffer(VkCommandBuffer cmdBuffer);
+        
+        // Deferred resource destruction (UE5-style FDeferredDeletionQueue)
+        void deferBufferDestruction(VkBuffer buffer, VkDeviceMemory memory);
+        void deferImageDestruction(VkImage image, VkImageView imageView, VkDeviceMemory memory);
+        void processDeferredDestructions();
+        
         // Render pass and framebuffer accessors
         VkRenderPass getRenderPass() const { return m_renderPass; }
+        VkRenderPass getRTTRenderPass() const { return m_rttRenderPass; }
         
         // Depth buffer accessors (UE5-style)
         VkFormat getVulkanDepthFormat() const { return m_depthFormat; }
@@ -221,6 +234,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Render pass and framebuffers
         VkRenderPass m_renderPass = VK_NULL_HANDLE;
+        VkRenderPass m_rttRenderPass = VK_NULL_HANDLE;  // RTT-specific render pass with SHADER_READ_ONLY initial layout
         std::vector<VkFramebuffer> m_swapchainFramebuffers;
         
         // Depth buffer resources (UE5-style)
@@ -280,7 +294,37 @@ namespace MonsterRender::RHI::Vulkan {
         uint32 m_currentFrame = 0;
         uint32 m_currentImageIndex = 0;
         
+        // Texture layout tracking for per-command-buffer transitions
+        struct TextureLayoutInfo {
+            VkImage image;
+            uint32 mipLevels;
+            uint32 arrayLayers;
+        };
+        TArray<TextureLayoutInfo> m_texturesNeedingTransition;
+        std::mutex m_textureTransitionMutex;
+        
+        // Track which textures have been transitioned for each command buffer
+        // This avoids redundant transitions within the same command buffer
+        std::unordered_map<VkCommandBuffer, std::unordered_set<VkImage>> m_transitionedTexturesPerCmdBuffer;
+        
+        // Deferred resource destruction queue (UE5-style FDeferredDeletionQueue)
+        struct DeferredBufferDestruction {
+            VkBuffer buffer;
+            VkDeviceMemory memory;
+            uint32 frameCount;  // Frames to wait before destruction
+        };
+        struct DeferredImageDestruction {
+            VkImage image;
+            VkImageView imageView;
+            VkDeviceMemory memory;
+            uint32 frameCount;
+        };
+        TArray<DeferredBufferDestruction> m_deferredBufferDestructions;
+        TArray<DeferredImageDestruction> m_deferredImageDestructions;
+        std::mutex m_deferredDestructionMutex;
+        
         // Constants
         static constexpr uint32 MAX_FRAMES_IN_FLIGHT = 2;
+        static constexpr uint32 DEFERRED_DESTRUCTION_FRAMES = 3;  // Wait 3 frames before destruction
     };
 }

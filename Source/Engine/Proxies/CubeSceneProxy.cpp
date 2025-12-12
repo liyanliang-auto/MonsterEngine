@@ -175,27 +175,8 @@ void FCubeSceneProxy::DrawWithLighting(
         return;
     }
     
-    // Get viewport size - use default swapchain size
-    // TODO: Get actual size from device when API is available
-    uint32 ViewportWidth = 800;
-    uint32 ViewportHeight = 600;
-    
-    // Set viewport and scissor
-    MonsterRender::RHI::Viewport viewport;
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(ViewportWidth);
-    viewport.height = static_cast<float>(ViewportHeight);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    CmdList->setViewport(viewport);
-    
-    MonsterRender::RHI::ScissorRect scissor;
-    scissor.left = 0;
-    scissor.top = 0;
-    scissor.right = static_cast<int32>(ViewportWidth);
-    scissor.bottom = static_cast<int32>(ViewportHeight);
-    CmdList->setScissorRect(scissor);
+    // Note: Viewport and scissor should be set by the caller (e.g., renderSceneToViewport)
+    // We don't override them here to support different render target sizes
     
     // Update uniform buffers
     UpdateTransformBuffer(ViewMatrix, ProjectionMatrix, CameraPosition);
@@ -269,7 +250,17 @@ bool FCubeSceneProxy::CreateVertexBuffer()
     std::memcpy(MappedData, Vertices.GetData(), BufferDesc.size);
     VertexBuffer->unmap();
     
-    MR_LOG(LogCubeSceneProxy, Log, "Vertex buffer created with %d vertices", Vertices.Num());
+    // Debug: Log first vertex to verify data
+    if (Vertices.Num() > 0)
+    {
+        const FCubeLitVertex& v = Vertices[0];
+        MR_LOG(LogCubeSceneProxy, Log, "First vertex: pos=(%.2f,%.2f,%.2f), normal=(%.2f,%.2f,%.2f)",
+               v.Position[0], v.Position[1], v.Position[2],
+               v.Normal[0], v.Normal[1], v.Normal[2]);
+    }
+    
+    MR_LOG(LogCubeSceneProxy, Log, "Vertex buffer created with %d vertices, size=%u bytes", 
+           Vertices.Num(), BufferDesc.size);
     return true;
 }
 
@@ -317,10 +308,12 @@ bool FCubeSceneProxy::CreateShaders()
         // Load SPIR-V shaders
         // First try lit shaders, fall back to original cube shaders
         std::vector<uint8> VsSpv = MonsterRender::ShaderCompiler::readFileBytes("Shaders/CubeLit.vert.spv");
+        MR_LOG(LogCubeSceneProxy, Log, "Loaded CubeLit.vert.spv: %zu bytes", VsSpv.size());
         if (VsSpv.empty())
         {
             // Fall back to original shader
             VsSpv = MonsterRender::ShaderCompiler::readFileBytes("Shaders/Cube.vert.spv");
+            MR_LOG(LogCubeSceneProxy, Log, "Fallback to Cube.vert.spv: %zu bytes", VsSpv.size());
         }
         
         if (VsSpv.empty())
@@ -330,10 +323,12 @@ bool FCubeSceneProxy::CreateShaders()
         }
         
         std::vector<uint8> PsSpv = MonsterRender::ShaderCompiler::readFileBytes("Shaders/CubeLit.frag.spv");
+        MR_LOG(LogCubeSceneProxy, Log, "Loaded CubeLit.frag.spv: %zu bytes", PsSpv.size());
         if (PsSpv.empty())
         {
             // Fall back to original shader
             PsSpv = MonsterRender::ShaderCompiler::readFileBytes("Shaders/Cube.frag.spv");
+            MR_LOG(LogCubeSceneProxy, Log, "Fallback to Cube.frag.spv: %zu bytes", PsSpv.size());
         }
         
         if (PsSpv.empty())
@@ -442,14 +437,14 @@ bool FCubeSceneProxy::CreatePipelineState()
     PipelineDesc.vertexLayout.attributes.push_back(TexCoordAttr);
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
-    // Rasterizer state
+    // Rasterizer state - DEBUG: disable culling to see all faces
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
-    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
+    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::None;
     PipelineDesc.rasterizerState.frontCounterClockwise = false;
     
-    // Depth stencil state
-    PipelineDesc.depthStencilState.depthEnable = true;
-    PipelineDesc.depthStencilState.depthWriteEnable = true;
+    // Depth stencil state - DEBUG: disable depth test to ensure visibility
+    PipelineDesc.depthStencilState.depthEnable = false;
+    PipelineDesc.depthStencilState.depthWriteEnable = false;
     PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
     
     // Blend state
@@ -621,7 +616,9 @@ void FCubeSceneProxy::UpdateTransformBuffer(
     FCubeLitUniformBuffer UBO;
     
     // Model matrix from local to world transform
-    MatrixToFloatArray(GetLocalToWorld(), UBO.Model);
+    FMatrix ModelMatrix = GetLocalToWorld();
+    
+    MatrixToFloatArray(ModelMatrix, UBO.Model);
     
     // View and projection matrices
     MatrixToFloatArray(ViewMatrix, UBO.View);
@@ -746,8 +743,8 @@ void FCubeSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
 
 void FCubeSceneProxy::MatrixToFloatArray(const FMatrix& Matrix, float* OutArray)
 {
-    // FMatrix is row-major, GPU expects column-major
-    // Transpose while copying
+    // FMatrix is row-major, GPU expects column-major.
+    // Transpose while copying.
     for (int32 Row = 0; Row < 4; ++Row)
     {
         for (int32 Col = 0; Col < 4; ++Col)

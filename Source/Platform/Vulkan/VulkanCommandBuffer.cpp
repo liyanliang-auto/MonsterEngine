@@ -99,6 +99,8 @@ namespace MonsterRender::RHI::Vulkan {
                 MR_LOG_ERROR("  vkResetCommandBuffer FAILED with result: " + std::to_string(resetResult));
                 return;
             }
+            // Clear transitioned textures tracking for this command buffer
+            m_device->clearTransitionedTexturesForCmdBuffer(m_commandBuffer);
             m_state = EState::ReadyForBegin;
             MR_LOG_INFO("  Command buffer reset successfully, now in ReadyForBegin state");
         }
@@ -126,6 +128,8 @@ namespace MonsterRender::RHI::Vulkan {
                 MR_LOG_ERROR("  vkResetCommandBuffer FAILED with result: " + std::to_string(resetResult));
                 return;
             }
+            // Clear transitioned textures tracking for this command buffer
+            m_device->clearTransitionedTexturesForCmdBuffer(m_commandBuffer);
             m_state = EState::ReadyForBegin;
             MR_LOG_INFO("  Command buffer reset after submission, now in ReadyForBegin state");
         }
@@ -343,8 +347,13 @@ namespace MonsterRender::RHI::Vulkan {
         VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount,
         VkFence fence) {
         
-        if (!m_activeCmdBuffer || !m_activeCmdBuffer->hasEnded()) {
-            MR_LOG_ERROR("Cannot submit command buffer - not ended");
+        if (!m_activeCmdBuffer) {
+            MR_LOG_ERROR("Cannot submit command buffer - no active buffer");
+            return;
+        }
+        
+        if (!m_activeCmdBuffer->hasEnded()) {
+            MR_LOG_ERROR("Cannot submit command buffer - not ended (state mismatch)");
             return;
         }
         

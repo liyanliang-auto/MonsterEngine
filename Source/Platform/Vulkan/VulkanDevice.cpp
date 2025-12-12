@@ -566,6 +566,9 @@ namespace MonsterRender::RHI::Vulkan {
         if (m_descriptorSetLayoutCache) {
             m_descriptorSetLayoutCache->GarbageCollect(m_currentFrame, 120);
         }
+        
+        // Process deferred resource destructions
+        processDeferredDestructions();
     }
     
     void VulkanDevice::getMemoryStats(uint64& usedBytes, uint64& availableBytes) {
@@ -1114,6 +1117,84 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("Render pass created successfully with depth attachment");
         MR_LOG_INFO("  Color format: " + std::to_string(m_swapchainImageFormat));
         MR_LOG_INFO("  Depth format: " + std::to_string(m_depthFormat));
+        
+        // ============================================================================
+        // Create RTT-specific render pass
+        // Key difference: initialLayout = SHADER_READ_ONLY_OPTIMAL (not UNDEFINED)
+        // This matches the layout after ImGui sampling in the previous frame
+        // ============================================================================
+        MR_LOG_INFO("Creating RTT render pass...");
+        
+        std::vector<VkAttachmentDescription> rttAttachments;
+        
+        // RTT Color attachment
+        // Use UNDEFINED initial layout to handle both first frame and subsequent frames
+        // Vulkan spec allows UNDEFINED->any transition, content is discarded (which is fine since we CLEAR)
+        VkAttachmentDescription rttColorAttachment{};
+        rttColorAttachment.format = m_swapchainImageFormat;
+        rttColorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        rttColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        rttColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        rttColorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        rttColorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        rttColorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // Works for any previous layout
+        rttColorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;    // Ready for ImGui sampling
+        rttAttachments.push_back(rttColorAttachment);
+        
+        // RTT Depth attachment
+        VkAttachmentDescription rttDepthAttachment{};
+        rttDepthAttachment.format = m_depthFormat;
+        rttDepthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        rttDepthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        rttDepthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        rttDepthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        rttDepthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        rttDepthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        rttDepthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        rttAttachments.push_back(rttDepthAttachment);
+        
+        VkAttachmentReference rttColorRef{};
+        rttColorRef.attachment = 0;
+        rttColorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        
+        VkAttachmentReference rttDepthRef{};
+        rttDepthRef.attachment = 1;
+        rttDepthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        
+        VkSubpassDescription rttSubpass{};
+        rttSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        rttSubpass.colorAttachmentCount = 1;
+        rttSubpass.pColorAttachments = &rttColorRef;
+        rttSubpass.pDepthStencilAttachment = &rttDepthRef;
+        
+        VkSubpassDependency rttDependency{};
+        rttDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        rttDependency.dstSubpass = 0;
+        rttDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | 
+                                     VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        rttDependency.srcAccessMask = 0;
+        rttDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | 
+                                     VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        rttDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | 
+                                      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        
+        VkRenderPassCreateInfo rttRenderPassInfo{};
+        rttRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        rttRenderPassInfo.attachmentCount = static_cast<uint32>(rttAttachments.size());
+        rttRenderPassInfo.pAttachments = rttAttachments.data();
+        rttRenderPassInfo.subpassCount = 1;
+        rttRenderPassInfo.pSubpasses = &rttSubpass;
+        rttRenderPassInfo.dependencyCount = 1;
+        rttRenderPassInfo.pDependencies = &rttDependency;
+        
+        result = functions.vkCreateRenderPass(m_device, &rttRenderPassInfo, nullptr, &m_rttRenderPass);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create RTT render pass! Result: " + std::to_string(result));
+            return false;
+        }
+        
+        MR_LOG_INFO("RTT render pass created successfully");
+        
         return true;
     }
     
@@ -1663,5 +1744,165 @@ namespace MonsterRender::RHI::Vulkan {
     bool VulkanDevice::hasStencilComponent(VkFormat format) {
         return format == VK_FORMAT_D32_SFLOAT_S8_UINT || 
                format == VK_FORMAT_D24_UNORM_S8_UINT;
+    }
+    
+    void VulkanDevice::deferBufferDestruction(VkBuffer buffer, VkDeviceMemory memory) {
+        if (buffer == VK_NULL_HANDLE) {
+            return;
+        }
+        
+        std::lock_guard<std::mutex> lock(m_deferredDestructionMutex);
+        
+        DeferredBufferDestruction deferred;
+        deferred.buffer = buffer;
+        deferred.memory = memory;
+        deferred.frameCount = DEFERRED_DESTRUCTION_FRAMES;
+        m_deferredBufferDestructions.Add(deferred);
+        
+        MR_LOG_DEBUG("Deferred buffer destruction: " + std::to_string(reinterpret_cast<uint64>(buffer)));
+    }
+    
+    void VulkanDevice::deferImageDestruction(VkImage image, VkImageView imageView, VkDeviceMemory memory) {
+        if (image == VK_NULL_HANDLE && imageView == VK_NULL_HANDLE) {
+            return;
+        }
+        
+        std::lock_guard<std::mutex> lock(m_deferredDestructionMutex);
+        
+        DeferredImageDestruction deferred;
+        deferred.image = image;
+        deferred.imageView = imageView;
+        deferred.memory = memory;
+        deferred.frameCount = DEFERRED_DESTRUCTION_FRAMES;
+        m_deferredImageDestructions.Add(deferred);
+        
+        MR_LOG_DEBUG("Deferred image destruction: " + std::to_string(reinterpret_cast<uint64>(image)));
+    }
+    
+    void VulkanDevice::processDeferredDestructions() {
+        std::lock_guard<std::mutex> lock(m_deferredDestructionMutex);
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        // Process buffer destructions
+        for (int32 i = m_deferredBufferDestructions.Num() - 1; i >= 0; --i) {
+            auto& deferred = m_deferredBufferDestructions[i];
+            if (deferred.frameCount == 0) {
+                // Safe to destroy now
+                if (deferred.buffer != VK_NULL_HANDLE) {
+                    functions.vkDestroyBuffer(m_device, deferred.buffer, nullptr);
+                }
+                if (deferred.memory != VK_NULL_HANDLE) {
+                    functions.vkFreeMemory(m_device, deferred.memory, nullptr);
+                }
+                m_deferredBufferDestructions.RemoveAt(i);
+            } else {
+                deferred.frameCount--;
+            }
+        }
+        
+        // Process image destructions
+        for (int32 i = m_deferredImageDestructions.Num() - 1; i >= 0; --i) {
+            auto& deferred = m_deferredImageDestructions[i];
+            if (deferred.frameCount == 0) {
+                // Safe to destroy now
+                if (deferred.imageView != VK_NULL_HANDLE) {
+                    functions.vkDestroyImageView(m_device, deferred.imageView, nullptr);
+                }
+                if (deferred.image != VK_NULL_HANDLE) {
+                    functions.vkDestroyImage(m_device, deferred.image, nullptr);
+                }
+                if (deferred.memory != VK_NULL_HANDLE) {
+                    functions.vkFreeMemory(m_device, deferred.memory, nullptr);
+                }
+                m_deferredImageDestructions.RemoveAt(i);
+            } else {
+                deferred.frameCount--;
+            }
+        }
+    }
+    
+    void VulkanDevice::registerTextureForLayoutTransition(VkImage image, uint32 mipLevels, uint32 arrayLayers) {
+        std::lock_guard<std::mutex> lock(m_textureTransitionMutex);
+        
+        // Check if already registered
+        for (const auto& info : m_texturesNeedingTransition) {
+            if (info.image == image) {
+                return; // Already registered
+            }
+        }
+        
+        TextureLayoutInfo info;
+        info.image = image;
+        info.mipLevels = mipLevels;
+        info.arrayLayers = arrayLayers;
+        m_texturesNeedingTransition.Add(info);
+        
+        MR_LOG_DEBUG("Registered texture for layout transition: " + 
+                    std::to_string(reinterpret_cast<uint64>(image)));
+    }
+    
+    void VulkanDevice::clearTransitionedTexturesForCmdBuffer(VkCommandBuffer cmdBuffer) {
+        std::lock_guard<std::mutex> lock(m_textureTransitionMutex);
+        m_transitionedTexturesPerCmdBuffer.erase(cmdBuffer);
+    }
+    
+    void VulkanDevice::executeTextureLayoutTransitions(VkCommandBuffer cmdBuffer) {
+        std::lock_guard<std::mutex> lock(m_textureTransitionMutex);
+        
+        if (m_texturesNeedingTransition.IsEmpty() || cmdBuffer == VK_NULL_HANDLE) {
+            return;
+        }
+        
+        // Get or create the set of already-transitioned textures for this command buffer
+        std::unordered_set<VkImage>& transitionedSet = m_transitionedTexturesPerCmdBuffer[cmdBuffer];
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        TArray<VkImageMemoryBarrier> barriers;
+        barriers.Reserve(m_texturesNeedingTransition.Num());
+        
+        for (const auto& info : m_texturesNeedingTransition) {
+            // Skip if already transitioned in this command buffer
+            if (transitionedSet.count(info.image) > 0) {
+                continue;
+            }
+            
+            VkImageMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            // Use UNDEFINED as oldLayout to tell Vulkan we don't care about previous contents.
+            // This is required because Vulkan validation layer tracks layout per-command-buffer,
+            // and textures uploaded in a different command buffer need explicit transitions.
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = info.image;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = info.mipLevels;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = info.arrayLayers;
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            
+            barriers.Add(barrier);
+            transitionedSet.insert(info.image);
+        }
+        
+        if (!barriers.IsEmpty()) {
+            functions.vkCmdPipelineBarrier(
+                cmdBuffer,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                static_cast<uint32>(barriers.Num()), barriers.GetData()
+            );
+            
+            MR_LOG_INFO("Executed layout transitions for " + 
+                       std::to_string(barriers.Num()) + " textures");
+        }
     }
 }
