@@ -231,7 +231,16 @@ void CubeSceneApplication::onRender()
     FVector cameraPos = cameraView.Location;
     FVector targetPos = FVector::ZeroVector;  // Look at origin
     FVector upVector = FVector(0.0, 1.0, 0.0);  // Y-up
+    
+    // DEBUG: Log camera position before MakeLookAt
+    MR_LOG(LogCubeSceneApp, Log, "MakeLookAt input: cameraPos=(%.2f, %.2f, %.2f), target=(%.2f, %.2f, %.2f)",
+           cameraPos.X, cameraPos.Y, cameraPos.Z, targetPos.X, targetPos.Y, targetPos.Z);
+    
     FMatrix viewMatrix = FMatrix::MakeLookAt(cameraPos, targetPos, upVector);
+    
+    // DEBUG: Log view matrix result
+    MR_LOG(LogCubeSceneApp, Log, "ViewMatrix row3 (translation): %.2f, %.2f, %.2f, %.2f",
+           viewMatrix.M[3][0], viewMatrix.M[3][1], viewMatrix.M[3][2], viewMatrix.M[3][3]);
     
     FMatrix projectionMatrix = cameraView.CalculateProjectionMatrix();
     
@@ -293,7 +302,7 @@ void CubeSceneApplication::onRender()
     }
     else
     {
-        // Vulkan rendering path
+        // Vulkan rendering path - Direct to swapchain (no ImGui RTT)
         auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
         auto* context = vulkanDevice->getCommandListContext();
         if (!context) return;
@@ -308,30 +317,32 @@ void CubeSceneApplication::onRender()
         cmdList->begin();
         
         // ================================================================
-        // Pass 1: Render scene to viewport render target
+        // Render scene directly to swapchain (bypass ImGui for debugging)
         // ================================================================
-        if (m_viewportColorTarget && m_viewportDepthTarget && !m_bViewportNeedsResize)
-        {
-            float viewportAspect = static_cast<float>(m_viewportWidth) / static_cast<float>(m_viewportHeight);
-            FMatrix viewportProjection = FMatrix::MakePerspective(
-                cameraView.FOV,
-                viewportAspect,
-                cameraView.OrthoNearClipPlane > 0.0f ? cameraView.OrthoNearClipPlane : 0.1f,
-                cameraView.OrthoFarClipPlane > 0.0f ? cameraView.OrthoFarClipPlane : 100.0f
-            );
-            viewportProjection.M[1][1] *= -1.0f;
-            renderSceneToViewport(cmdList, viewMatrix, viewportProjection, cameraPosition);
-        }
-        
-        // ================================================================
-        // Pass 2: Render ImGui to swapchain
-        // ================================================================
-        // Set render targets (swapchain)
+        // Set render targets to swapchain (empty array = use swapchain)
         TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
         cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
         
-        // Render ImGui overlay (which includes the viewport panel showing the RTT)
-        renderImGui();
+        // Set viewport to window size
+        RHI::Viewport viewport;
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(m_windowWidth);
+        viewport.height = static_cast<float>(m_windowHeight);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        cmdList->setViewport(viewport);
+        
+        // Set scissor rect
+        RHI::ScissorRect scissor;
+        scissor.left = 0;
+        scissor.top = 0;
+        scissor.right = m_windowWidth;
+        scissor.bottom = m_windowHeight;
+        cmdList->setScissorRect(scissor);
+        
+        // Render cube directly
+        renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
         
         // End render pass
         cmdList->endRenderPass();

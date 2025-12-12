@@ -59,24 +59,16 @@ namespace MonsterRender::RHI::Vulkan
             return false;
         }
 
-        // Use RTT render pass for pipeline compatibility with render-to-texture
-        // Both RTT and main render pass have compatible attachment formats
-        // RTT render pass: initialLayout=SHADER_READ_ONLY, finalLayout=SHADER_READ_ONLY
-        // Main render pass: initialLayout=UNDEFINED, finalLayout=PRESENT_SRC
-        // Vulkan allows pipelines to be used with compatible render passes
-        m_renderPass = m_device->getRTTRenderPass();
+        // Use device's main render pass for swapchain rendering
+        // This is the standard render pass with finalLayout=PRESENT_SRC_KHR
+        m_renderPass = m_device->getRenderPass();
         if (m_renderPass == VK_NULL_HANDLE)
         {
-            // Fallback to device render pass if RTT render pass not available
-            m_renderPass = m_device->getRenderPass();
-        }
-        if (m_renderPass == VK_NULL_HANDLE)
-        {
-            MR_LOG_ERROR("No render pass available for pipeline");
+            MR_LOG_ERROR("Device render pass is null");
             return false;
         }
 
-        MR_LOG_DEBUG("Using RTT render pass for pipeline");
+        MR_LOG_DEBUG("Using device render pass for pipeline");
 
         // Create graphics pipeline
         if (!createGraphicsPipeline())

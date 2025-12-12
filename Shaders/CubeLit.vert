@@ -19,21 +19,20 @@ layout(location = 2) out vec2 fragTexCoord;
 layout(location = 3) out vec3 fragViewPos;
 
 void main() {
-    // Transform vertex to world space
+    // Use vertex position directly in clip space for debugging
+    // Cube vertices are in range [-0.5, 0.5], scale up to be visible
+    vec4 pos = vec4(inPosition * 0.5, 1.0);  // Scale down to fit in NDC
+    
+    // Apply MVP transform
     vec4 worldPos = transform.model * vec4(inPosition, 1.0);
+    vec4 viewPos = transform.view * worldPos;
+    vec4 clipPos = transform.projection * viewPos;
+    
+    // Pass to fragment shader
     fragWorldPos = worldPos.xyz;
-    
-    // Transform normal to world space
     fragNormal = mat3(transform.normalMatrix) * inNormal;
-    
-    // Pass through texture coordinates
     fragTexCoord = inTexCoord;
-    
-    // Camera position for view direction
     fragViewPos = transform.cameraPosition.xyz;
     
-    // Final clip space position with Vulkan Y-axis flip
-    vec4 clipPos = transform.projection * transform.view * worldPos;
-    clipPos.y = -clipPos.y;  // Flip Y for Vulkan coordinate system
     gl_Position = clipPos;
 }
