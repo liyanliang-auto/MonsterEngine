@@ -53,8 +53,20 @@ DEFINE_LOG_CATEGORY_STATIC(LogCubeSceneApp, Log, All);
 // Construction / Destruction
 // ============================================================================
 
+// Helper function to create config with OpenGL backend for debugging
+static ApplicationConfig CreateCubeSceneConfig()
+{
+    ApplicationConfig config;
+    config.name = "CubeScene Application";
+    config.preferredBackend = RHI::ERHIBackend::OpenGL;  // Use OpenGL for debugging
+    config.windowProperties.width = 1920;
+    config.windowProperties.height = 1080;
+    config.enableValidation = true;
+    return config;
+}
+
 CubeSceneApplication::CubeSceneApplication()
-    : Application()
+    : Application(CreateCubeSceneConfig())
     , m_device(nullptr)
     , m_scene(nullptr)
     , m_cameraManager(nullptr)
