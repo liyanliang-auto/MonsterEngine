@@ -45,7 +45,7 @@ private:
         // Select RHI backend: None = auto-select, Vulkan, OpenGL
         // Use None for auto-selection (Vulkan preferred on Windows)
         // Change to RHI::ERHIBackend::OpenGL to test OpenGL backend
-        config.preferredBackend = RHI::ERHIBackend::Vulkan;
+        config.preferredBackend = RHI::ERHIBackend::OpenGL;
         return config;
     }
     

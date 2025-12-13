@@ -105,6 +105,14 @@ void CubeSceneApplication::onInitialize()
 {
     MR_LOG(LogCubeSceneApp, Log, "Initializing CubeSceneApplication...");
     
+    // Get actual window size from the window system
+    if (getWindow())
+    {
+        m_windowWidth = getWindow()->getWidth();
+        m_windowHeight = getWindow()->getHeight();
+        MR_LOG(LogCubeSceneApp, Log, "Window size: %ux%u", m_windowWidth, m_windowHeight);
+    }
+    
     // Get RHI device from engine
     m_device = getEngine() ? getEngine()->getRHIDevice() : nullptr;
     if (!m_device)
@@ -367,6 +375,9 @@ void CubeSceneApplication::renderCube(
     UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
     if (!meshComp) return;
     
+    // Ensure component transform is up to date before getting it
+    meshComp->UpdateComponentToWorld();
+    
     FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
     FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
     
@@ -431,6 +442,9 @@ void CubeSceneApplication::renderWithSceneRenderer(
         UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
         if (meshComp)
         {
+            // Ensure component transform is up to date
+            meshComp->UpdateComponentToWorld();
+            
             FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
             FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
             if (cubeProxy)
@@ -1228,6 +1242,9 @@ void CubeSceneApplication::renderSceneToViewport(
         UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
         if (meshComp)
         {
+            // Ensure component transform is up to date
+            meshComp->UpdateComponentToWorld();
+            
             FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(meshComp->GetSceneProxy());
             if (cubeProxy)
             {

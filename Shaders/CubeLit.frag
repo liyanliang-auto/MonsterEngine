@@ -32,10 +32,13 @@ layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) in vec3 fragViewPos;
+layout(location = 4) flat in int vertexID;
 
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    // DEBUG: Output bright green to verify fragment shader is executing
-    outColor = vec4(0.0, 1.0, 0.0, 1.0);
+    // DEBUG: Color based on world position to verify vertex data is correct
+    // This should show a gradient across the cube
+    vec3 posColor = (fragWorldPos + vec3(0.5)) * 0.8 + vec3(0.2);
+    outColor = vec4(posColor, 1.0);
 }
