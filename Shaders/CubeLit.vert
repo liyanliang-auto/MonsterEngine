@@ -24,13 +24,13 @@ void main() {
     vec4 worldPos = transform.model * vec4(inPosition, 1.0);
     vec4 viewPos = transform.view * worldPos;
     vec4 clipPos = transform.projection * viewPos;
-    
+
     // Pass to fragment shader
     fragWorldPos = worldPos.xyz;
     fragNormal = mat3(transform.normalMatrix) * inNormal;
     fragTexCoord = inTexCoord;
     fragViewPos = transform.cameraPosition.xyz;
     vertexID = gl_VertexIndex;
-    
+
     gl_Position = clipPos;
 }

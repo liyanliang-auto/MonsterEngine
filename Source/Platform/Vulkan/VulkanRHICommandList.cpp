@@ -68,6 +68,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::end() {
+        MR_LOG_INFO("===== FVulkanRHICommandListImmediate::end() START =====");
         if (!m_context) {
             MR_LOG_WARNING("FVulkanRHICommandListImmediate::end: No active context");
             return;
@@ -75,9 +76,10 @@ namespace MonsterRender::RHI::Vulkan {
         
         // End recording the command buffer
         // UE5: FVulkanCommandListContext::EndRecording()
+        MR_LOG_INFO("  Calling m_context->endRecording()...");
         m_context->endRecording();
         
-        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::end: Command buffer recording ended");
+        MR_LOG_INFO("===== FVulkanRHICommandListImmediate::end() END =====");
     }
     
     void FVulkanRHICommandListImmediate::reset() {
@@ -346,7 +348,7 @@ namespace MonsterRender::RHI::Vulkan {
         // Scissor is applied during prepareForDraw() before actual draw call
         m_context->getPendingState()->setScissor(scissorRect);
         
-        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setScissorRect: Set scissor rect (" + 
+        MR_LOG_INFO("FVulkanRHICommandListImmediate::setScissorRect: Set scissor rect (" + 
                     std::to_string(scissorRect.right - scissorRect.left) + "x" + 
                     std::to_string(scissorRect.bottom - scissorRect.top) + ")");
     }
@@ -373,6 +375,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::endRenderPass() {
+        MR_LOG_INFO("===== FVulkanRHICommandListImmediate::endRenderPass() START =====");
         if (!m_context) {
             MR_LOG_WARNING("FVulkanRHICommandListImmediate::endRenderPass: No active context");
             return;
@@ -381,9 +384,10 @@ namespace MonsterRender::RHI::Vulkan {
         // End the current render pass
         // UE5 Pattern: FVulkanCommandListContext::RHIEndRenderPass()
         // Calls vkCmdEndRenderPass
+        MR_LOG_INFO("  Calling m_context->endRenderPass()...");
         m_context->endRenderPass();
         
-        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::endRenderPass: Render pass ended");
+        MR_LOG_INFO("===== FVulkanRHICommandListImmediate::endRenderPass() END =====");
     }
     
     // ============================================================================

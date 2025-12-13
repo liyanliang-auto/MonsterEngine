@@ -111,6 +111,9 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanPendingState::setScissor(const ScissorRect& scissor) {
         m_pendingScissor = scissor;
         m_scissorDirty = true;
+        MR_LOG_INFO("FVulkanPendingState::setScissor: Set pending scissor (" + 
+                   std::to_string(scissor.left) + "," + std::to_string(scissor.top) + ")-(" +
+                   std::to_string(scissor.right) + "," + std::to_string(scissor.bottom) + "), dirty=true");
     }
     
     void FVulkanPendingState::setVertexBuffer(uint32 binding, VkBuffer buffer, VkDeviceSize offset) {
@@ -290,6 +293,8 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Apply scissor (force set if not already set, even if not dirty)
+        MR_LOG_INFO("prepareForDraw: m_scissorDirty=" + std::string(m_scissorDirty ? "true" : "false") +
+                   ", m_pendingScissor.right=" + std::to_string(m_pendingScissor.right));
         if (m_scissorDirty || m_pendingScissor.right == 0) {
             if (m_pendingScissor.right <= m_pendingScissor.left || 
                 m_pendingScissor.bottom <= m_pendingScissor.top) {
@@ -303,9 +308,15 @@ namespace MonsterRender::RHI::Vulkan {
             scissor.extent.width = m_pendingScissor.right - m_pendingScissor.left;
             scissor.extent.height = m_pendingScissor.bottom - m_pendingScissor.top;
             
-            MR_LOG_DEBUG("prepareForDraw: Setting scissor rect");
+            MR_LOG_INFO("prepareForDraw: vkCmdSetScissor(x=" + std::to_string(scissor.offset.x) + 
+                        ", y=" + std::to_string(scissor.offset.y) + 
+                        ", w=" + std::to_string(scissor.extent.width) + 
+                        ", h=" + std::to_string(scissor.extent.height) + ")");
             functions.vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
             m_scissorDirty = false;
+        } else {
+            MR_LOG_INFO("prepareForDraw: Scissor NOT set (already clean, m_scissorDirty=false, right=" + 
+                       std::to_string(m_pendingScissor.right) + ")");
         }
         
         // Apply vertex buffers if dirty - use std::vector for Vulkan API compatibility

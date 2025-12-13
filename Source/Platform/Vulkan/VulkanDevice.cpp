@@ -501,6 +501,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void VulkanDevice::present() {
+        MR_LOG_INFO("===== VulkanDevice::present() START =====");
         // Reference: UE5 FVulkanDynamicRHI::RHIEndDrawingViewport
         // Image acquisition is now done in FVulkanCommandListContext::prepareForNewFrame()
         
@@ -513,6 +514,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Submit command buffer using per-image semaphores (Vulkan best practice)
         // Each swapchain image has its own render finished semaphore to avoid conflicts
+        MR_LOG_INFO("  Submitting command buffer...");
         if (m_commandListContext && m_currentImageIndex < m_perImageRenderFinishedSemaphores.size()) {
             VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
             VkSemaphore signalSemaphores[] = {m_perImageRenderFinishedSemaphores[m_currentImageIndex]};
@@ -521,6 +523,9 @@ namespace MonsterRender::RHI::Vulkan {
                 waitSemaphores, 1,
                 signalSemaphores, 1
             );
+            MR_LOG_INFO("  Command buffer submitted");
+        } else {
+            MR_LOG_WARNING("  Cannot submit: context or semaphore issue");
         }
         
         // Present using the per-image semaphore

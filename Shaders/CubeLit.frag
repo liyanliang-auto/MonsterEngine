@@ -37,7 +37,7 @@ layout(location = 4) flat in int vertexID;
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    // DEBUG: Color based on world position to verify vertex data is correct
+    // Color based on world position to verify vertex data is correct
     // This should show a gradient across the cube
     vec3 posColor = (fragWorldPos + vec3(0.5)) * 0.8 + vec3(0.2);
     outColor = vec4(posColor, 1.0);
