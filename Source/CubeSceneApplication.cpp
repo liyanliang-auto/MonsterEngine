@@ -350,16 +350,24 @@ void CubeSceneApplication::onRender()
         cmdList->setScissorRect(scissor);
         
         // Render cube directly
+        MR_LOG(LogCubeSceneApp, Log, "Before renderCube");
         renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+        MR_LOG(LogCubeSceneApp, Log, "After renderCube");
         
         // End render pass
+        MR_LOG(LogCubeSceneApp, Log, "Before endRenderPass");
         cmdList->endRenderPass();
+        MR_LOG(LogCubeSceneApp, Log, "After endRenderPass");
         
         // End command recording
+        MR_LOG(LogCubeSceneApp, Log, "Before end");
         cmdList->end();
+        MR_LOG(LogCubeSceneApp, Log, "After end");
         
         // Present frame
+        MR_LOG(LogCubeSceneApp, Log, "Before present");
         m_device->present();
+        MR_LOG(LogCubeSceneApp, Log, "After present");
     }
 }
 
@@ -701,9 +709,9 @@ bool CubeSceneApplication::initializeCamera()
     m_cameraManager->Initialize(nullptr);
     
     // Set initial camera view
-    // Camera at z=3 looking at origin (positive Z, looking towards negative Z)
+    // Camera at z=5 looking at origin (positive Z, looking towards negative Z)
     FMinimalViewInfo viewInfo;
-    viewInfo.Location = FVector(0.0, 0.0, 3.0);  // Camera at z=3
+    viewInfo.Location = FVector(0.0, 0.0, 5.0);  // Camera at z=5 (moved back for better view)
     viewInfo.Rotation = FRotator(0.0, 180.0, 0.0);  // Rotate 180 degrees to look at origin
     viewInfo.FOV = 45.0f;
     viewInfo.AspectRatio = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
