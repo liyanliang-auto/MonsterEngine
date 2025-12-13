@@ -365,7 +365,7 @@ namespace MonsterRender::RHI::Vulkan {
             
             // Clear values: color + depth
             TArray<VkClearValue> clearValues(numClearValues);
-            clearValues[0].color = {{1.0f, 0.0f, 0.0f, 1.0f}}; // DEBUG: Bright red for visibility
+            clearValues[0].color = {{0.1f, 0.1f, 0.15f, 1.0f}}; // Dark gray background
             if (numClearValues > 1) {
                 clearValues[1].depthStencil = {1.0f, 0}; // Clear depth to 1.0 (far)
             }

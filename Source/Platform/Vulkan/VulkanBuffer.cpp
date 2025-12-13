@@ -103,7 +103,9 @@ namespace MonsterRender::RHI::Vulkan {
                 m_deviceMemory = m_allocation.DeviceMemory;
                 m_usesMemoryManager = true;
                 
-                // Bind buffer to allocated memory
+                // Bind buffer to allocated memory at the sub-allocation offset.
+                // After binding, the buffer starts at m_allocation.Offset in device memory.
+                // When calling vkCmdBindVertexBuffers, offset should be 0 relative to buffer.
                 result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, m_allocation.Offset);
                 if (result != VK_SUCCESS) {
                     MR_LOG_ERROR("Failed to bind buffer memory: " + std::to_string(result));

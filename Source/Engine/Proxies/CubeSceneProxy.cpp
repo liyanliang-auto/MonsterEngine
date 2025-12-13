@@ -250,17 +250,18 @@ bool FCubeSceneProxy::CreateVertexBuffer()
     std::memcpy(MappedData, Vertices.GetData(), BufferDesc.size);
     VertexBuffer->unmap();
     
-    // Debug: Log first vertex to verify data
-    if (Vertices.Num() > 0)
+    // Debug: Log first 6 vertices to verify data (first face)
+    MR_LOG(LogCubeSceneProxy, Log, "=== Vertex buffer debug (first 6 vertices) ===");
+    for (int32 i = 0; i < 6 && i < Vertices.Num(); ++i)
     {
-        const FCubeLitVertex& v = Vertices[0];
-        MR_LOG(LogCubeSceneProxy, Log, "First vertex: pos=(%.2f,%.2f,%.2f), normal=(%.2f,%.2f,%.2f)",
-               v.Position[0], v.Position[1], v.Position[2],
+        const FCubeLitVertex& v = Vertices[i];
+        MR_LOG(LogCubeSceneProxy, Log, "  V[%d]: pos=(%.2f,%.2f,%.2f), normal=(%.2f,%.2f,%.2f)",
+               i, v.Position[0], v.Position[1], v.Position[2],
                v.Normal[0], v.Normal[1], v.Normal[2]);
     }
     
-    MR_LOG(LogCubeSceneProxy, Log, "Vertex buffer created with %d vertices, size=%u bytes", 
-           Vertices.Num(), BufferDesc.size);
+    MR_LOG(LogCubeSceneProxy, Log, "Vertex buffer created with %d vertices, size=%u bytes, stride=%u", 
+           Vertices.Num(), BufferDesc.size, static_cast<uint32>(sizeof(FCubeLitVertex)));
     return true;
 }
 
@@ -437,12 +438,13 @@ bool FCubeSceneProxy::CreatePipelineState()
     PipelineDesc.vertexLayout.attributes.push_back(TexCoordAttr);
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
-    // Rasterizer state - DEBUG: disable culling to see all faces
+    // Rasterizer state - temporarily disable culling to debug
+    // Note: Y-flip in projection matrix reverses winding order, so we need CCW as front face
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::None;
-    PipelineDesc.rasterizerState.frontCounterClockwise = false;
+    PipelineDesc.rasterizerState.frontCounterClockwise = true;
     
-    // Depth stencil state - DEBUG: disable depth test to ensure visibility
+    // DEBUG: Disable depth testing to see all triangles
     PipelineDesc.depthStencilState.depthEnable = false;
     PipelineDesc.depthStencilState.depthWriteEnable = false;
     PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
@@ -632,6 +634,10 @@ void FCubeSceneProxy::UpdateTransformBuffer(
            ViewMatrix.M[3][0], ViewMatrix.M[3][1], ViewMatrix.M[3][2], ViewMatrix.M[3][3]);
     MR_LOG(LogCubeSceneProxy, Log, "  Proj[0]: %.2f, %.2f, %.2f, %.2f",
            ProjectionMatrix.M[0][0], ProjectionMatrix.M[0][1], ProjectionMatrix.M[0][2], ProjectionMatrix.M[0][3]);
+    MR_LOG(LogCubeSceneProxy, Log, "  Proj[1]: %.2f, %.2f, %.2f, %.2f",
+           ProjectionMatrix.M[1][0], ProjectionMatrix.M[1][1], ProjectionMatrix.M[1][2], ProjectionMatrix.M[1][3]);
+    MR_LOG(LogCubeSceneProxy, Log, "  Proj[2]: %.2f, %.2f, %.2f, %.2f",
+           ProjectionMatrix.M[2][0], ProjectionMatrix.M[2][1], ProjectionMatrix.M[2][2], ProjectionMatrix.M[2][3]);
     MR_LOG(LogCubeSceneProxy, Log, "  CameraPos: %.2f, %.2f, %.2f",
            CameraPosition.X, CameraPosition.Y, CameraPosition.Z);
     

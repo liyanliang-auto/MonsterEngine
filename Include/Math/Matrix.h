@@ -561,17 +561,24 @@ public:
         return Result;
     }
 
-    /** Create a perspective projection matrix for Vulkan (Y-down, Z [0,1]) */
+    /** 
+     * Create a perspective projection matrix for Vulkan (Y-down, Z [0,1])
+     * Assumes right-handed view space where camera looks toward -Z
+     * (objects in front of camera have negative Z in view space)
+     */
     MR_NODISCARD static TMatrix<T> MakePerspective(T FovY, T AspectRatio, T NearZ, T FarZ)
     {
         const T TanHalfFov = std::tan(FovY * T(0.5));
 
         TMatrix<T> Result(ForceInit);
+        
+        // Standard perspective matrix for right-handed coordinate system
+        // where camera looks toward -Z and objects in front have negative Z
         Result.M[0][0] = T(1) / (AspectRatio * TanHalfFov);
-        Result.M[1][1] = -T(1) / TanHalfFov;  // Negative for Vulkan Y-down NDC
-        Result.M[2][2] = FarZ / (FarZ - NearZ);
-        Result.M[2][3] = T(1);
-        Result.M[3][2] = -(FarZ * NearZ) / (FarZ - NearZ);
+        Result.M[1][1] = T(1) / TanHalfFov;  // Will be flipped by Vulkan Y-flip if needed
+        Result.M[2][2] = FarZ / (NearZ - FarZ);  // Note: NearZ - FarZ for -Z direction
+        Result.M[2][3] = T(-1);  // -1 for right-handed (camera looks toward -Z)
+        Result.M[3][2] = (FarZ * NearZ) / (NearZ - FarZ);
 
         return Result;
     }
