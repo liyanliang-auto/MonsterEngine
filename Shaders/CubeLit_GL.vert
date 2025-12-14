@@ -8,12 +8,15 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord;
 
-// Uniform matrices
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-uniform mat4 normalMatrix;
-uniform vec3 cameraPosition;
+// Transform uniform block (matches binding point 0)
+layout(std140) uniform TransformUB
+{
+    mat4 model;
+    mat4 view;
+    mat4 projection;
+    mat4 normalMatrix;
+    vec3 cameraPosition;
+};
 
 // Outputs to fragment shader
 out vec3 fragWorldPos;
