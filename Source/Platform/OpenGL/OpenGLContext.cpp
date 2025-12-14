@@ -294,12 +294,40 @@ void FOpenGLContextManager::Shutdown()
 bool FOpenGLContextManager::MakeCurrent()
 {
 #if PLATFORM_WINDOWS
-    if (!m_mainContext.openGLContext || !m_mainContext.deviceContext)
+    if (!m_initialized)
     {
+        MR_LOG(LogOpenGLContext, Error, "Cannot make context current - OpenGL not initialized");
         return false;
     }
-    return wglMakeCurrent(m_mainContext.deviceContext, m_mainContext.openGLContext) == TRUE;
+    
+    if (!m_mainContext.openGLContext || !m_mainContext.deviceContext)
+    {
+        MR_LOG(LogOpenGLContext, Error, "Cannot make context current - invalid context handles (HGLRC: %p, HDC: %p)",
+               m_mainContext.openGLContext, m_mainContext.deviceContext);
+        return false;
+    }
+    
+    // Check if already current (optimization from UE5)
+    HGLRC currentContext = wglGetCurrentContext();
+    if (currentContext == m_mainContext.openGLContext)
+    {
+        return true;
+    }
+    
+    BOOL result = wglMakeCurrent(m_mainContext.deviceContext, m_mainContext.openGLContext);
+    if (result != TRUE)
+    {
+        DWORD error = GetLastError();
+        MR_LOG(LogOpenGLContext, Error, "wglMakeCurrent failed with error code: 0x%08X", error);
+        return false;
+    }
+    
+    return true;
+    
 #else
+    // Platform not supported
+    MR_LOG(LogOpenGLContext, Fatal, "OpenGL context operations not implemented for this platform");
+    checkf(false, "OpenGL requires platform-specific implementation");
     return false;
 #endif
 }
@@ -307,28 +335,82 @@ bool FOpenGLContextManager::MakeCurrent()
 void FOpenGLContextManager::ReleaseCurrent()
 {
 #if PLATFORM_WINDOWS
-    wglMakeCurrent(nullptr, nullptr);
+    // Check if there's a current context to release
+    HGLRC currentContext = wglGetCurrentContext();
+    if (currentContext == nullptr)
+    {
+        return; // Already released
+    }
+    
+    BOOL result = wglMakeCurrent(nullptr, nullptr);
+    if (result != TRUE)
+    {
+        DWORD error = GetLastError();
+        MR_LOG(LogOpenGLContext, Warning, "wglMakeCurrent(nullptr) failed with error code: 0x%08X", error);
+    }
+    
+#else
+    MR_LOG(LogOpenGLContext, Warning, "ReleaseCurrent not implemented for this platform");
 #endif
 }
 
 void FOpenGLContextManager::SwapBuffers()
 {
 #if PLATFORM_WINDOWS
-    if (m_mainContext.deviceContext)
+    if (!m_mainContext.deviceContext)
     {
-        ::SwapBuffers(m_mainContext.deviceContext);
+        MR_LOG(LogOpenGLContext, Warning, "Cannot swap buffers - invalid device context");
+        return;
     }
+    
+    // Verify context is current (UE5 does this check)
+    HGLRC currentContext = wglGetCurrentContext();
+    if (currentContext != m_mainContext.openGLContext)
+    {
+        MR_LOG(LogOpenGLContext, Warning, "SwapBuffers called but context is not current");
+    }
+    
+    BOOL result = ::SwapBuffers(m_mainContext.deviceContext);
+    if (result != TRUE)
+    {
+        DWORD error = GetLastError();
+        MR_LOG(LogOpenGLContext, Error, "SwapBuffers failed with error code: 0x%08X", error);
+    }
+    
+#else
+    MR_LOG(LogOpenGLContext, Warning, "SwapBuffers not implemented for this platform");
 #endif
 }
 
 void FOpenGLContextManager::SetVSync(int32 interval)
 {
 #if PLATFORM_WINDOWS
-    if (wglSwapIntervalEXT)
+    if (!wglSwapIntervalEXT)
     {
-        wglSwapIntervalEXT(interval);
-        m_mainContext.syncInterval = interval;
+        MR_LOG(LogOpenGLContext, Warning, "WGL_EXT_swap_control not supported - cannot set VSync");
+        return;
     }
+    
+    // Clamp interval to valid range (UE5 does this)
+    int32 clampedInterval = interval;
+    if (clampedInterval < 0)
+    {
+        clampedInterval = 0;
+    }
+    
+    BOOL result = wglSwapIntervalEXT(clampedInterval);
+    if (result == TRUE)
+    {
+        m_mainContext.syncInterval = clampedInterval;
+        MR_LOG(LogOpenGLContext, Verbose, "VSync interval set to %d", clampedInterval);
+    }
+    else
+    {
+        MR_LOG(LogOpenGLContext, Warning, "wglSwapIntervalEXT(%d) failed", clampedInterval);
+    }
+    
+#else
+    MR_LOG(LogOpenGLContext, Warning, "SetVSync not implemented for this platform");
 #endif
 }
 
@@ -337,8 +419,16 @@ int32 FOpenGLContextManager::GetVSync() const
 #if PLATFORM_WINDOWS
     if (wglGetSwapIntervalEXT)
     {
-        return wglGetSwapIntervalEXT();
+        int32 currentInterval = wglGetSwapIntervalEXT();
+        // Update cached value if it differs (UE5 pattern)
+        if (currentInterval != m_mainContext.syncInterval)
+        {
+            const_cast<FPlatformOpenGLContext&>(m_mainContext).syncInterval = currentInterval;
+        }
+        return currentInterval;
     }
+    
+    MR_LOG(LogOpenGLContext, VeryVerbose, "WGL_EXT_swap_control not supported - returning cached interval");
 #endif
     return m_mainContext.syncInterval;
 }

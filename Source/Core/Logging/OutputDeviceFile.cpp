@@ -268,6 +268,17 @@ bool FOutputDeviceFile::CreateWriter() {
         return false;
     }
 
+    // Create parent directory if it doesn't exist
+    std::filesystem::path logPath(m_filename);
+    std::filesystem::path parentDir = logPath.parent_path();
+    if (!parentDir.empty() && !std::filesystem::exists(parentDir)) {
+        try {
+            std::filesystem::create_directories(parentDir);
+        } catch (...) {
+            // Failed to create directory, log file creation will likely fail
+        }
+    }
+
     // Create backup of existing file if not appending
     if (!m_bAppendIfExists) {
         CreateBackupCopy(m_filename.c_str());
