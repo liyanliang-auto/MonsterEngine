@@ -60,10 +60,10 @@ int main(int argc, char** argv) {
     // Initialize Logging System FIRST - before any other initialization
     // ========================================================================
     InitializeLogging(
-        "MonsterEngine.log",    // Log file name
-        true,                   // Enable console output
-        true,                   // Enable debug output (OutputDebugString on Windows)
-        true                    // Enable file output
+        "log/MonsterEngine.log",    // Log file name (in log subdirectory)
+        true,                        // Enable console output
+        true,                        // Enable debug output (OutputDebugString on Windows)
+        true                         // Enable file output
     );
     
     MR_LOG(LogInit, Log, "Starting MonsterRender Engine");
