@@ -164,11 +164,11 @@ void CubeSceneApplication::onInitialize()
         }
     }
     
-    // Initialize ImGui
-    if (!initializeImGui())
-    {
-        MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize ImGui, UI will be disabled");
-    }
+    // Initialize ImGui (DISABLED for cube rendering focus)
+    // if (!initializeImGui())
+    // {
+    //     MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize ImGui, UI will be disabled");
+    // }
     
     // Initialize viewport render target
     if (!initializeViewportRenderTarget())
@@ -313,8 +313,8 @@ void CubeSceneApplication::onRender()
         {
             renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
             
-            // Render ImGui overlay
-            renderImGui();
+            // Render ImGui overlay (DISABLED)
+            // renderImGui();
         }
         
         // Swap buffers
@@ -565,8 +565,8 @@ void CubeSceneApplication::onShutdown()
     m_viewportColorTarget.Reset();
     m_viewportDepthTarget.Reset();
     
-    // Shutdown ImGui
-    shutdownImGui();
+    // Shutdown ImGui (DISABLED)
+    // shutdownImGui();
     
     // Clean up scene renderer
     if (m_sceneRenderer)
