@@ -132,6 +132,32 @@ bool FOpenGLPipelineState::CreateProgram()
         return false;
     }
     
+    // Bind uniform blocks to their binding points
+    // This is required for uniform buffers to work correctly
+    GLuint transformBlockIdx = glGetUniformBlockIndex(m_program->GetGLProgram(), "TransformUB");
+    GLuint lightBlockIdx = glGetUniformBlockIndex(m_program->GetGLProgram(), "LightUB");
+    
+    MR_LOG(LogOpenGLPipeline, Log, "Uniform block indices: TransformUB=%u, LightUB=%u (INVALID=%u)", 
+           transformBlockIdx, lightBlockIdx, GL_INVALID_INDEX);
+    
+    if (transformBlockIdx != GL_INVALID_INDEX)
+    {
+        glUniformBlockBinding(m_program->GetGLProgram(), transformBlockIdx, 0);
+    }
+    if (lightBlockIdx != GL_INVALID_INDEX)
+    {
+        glUniformBlockBinding(m_program->GetGLProgram(), lightBlockIdx, 3);
+    }
+    
+    // Also set texture sampler uniforms
+    m_program->Use();
+    GLint loc = glGetUniformLocation(m_program->GetGLProgram(), "texture1");
+    if (loc >= 0) glUniform1i(loc, 1);  // texture1 at slot 1
+    loc = glGetUniformLocation(m_program->GetGLProgram(), "texture2");
+    if (loc >= 0) glUniform1i(loc, 2);  // texture2 at slot 2
+    loc = glGetUniformLocation(m_program->GetGLProgram(), "textureBlend");
+    if (loc >= 0) glUniform1f(loc, 0.0f);  // Default blend factor
+    
     m_program->SetDebugName(m_desc.debugName);
     
     return true;

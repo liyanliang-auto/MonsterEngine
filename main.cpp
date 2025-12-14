@@ -285,13 +285,10 @@ int main(int argc, char** argv) {
     }
     
     // Create application instance
+    // Default: Run CubeSceneApplication (rotating cube demo)
     TUniquePtr<Application> app;
-    if (runCubeScene) {
-        MR_LOG(LogInit, Log, "Running CubeSceneApplication with lighting...");
-        app = MakeUnique<CubeSceneApplication>();
-    } else {
-        app = createApplication();
-    }
+    MR_LOG(LogInit, Log, "Running CubeSceneApplication (default demo)...");
+    app = MakeUnique<CubeSceneApplication>();
     if (!app) {
         printf("Failed to create application");
         return -1;

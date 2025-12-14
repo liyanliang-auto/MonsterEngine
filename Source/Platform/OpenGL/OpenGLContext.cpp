@@ -21,6 +21,29 @@ DEFINE_LOG_CATEGORY_STATIC(LogOpenGLContext, Log, All);
 namespace MonsterEngine::OpenGL {
 
 // ============================================================================
+// RenderDoc Detection
+// ============================================================================
+
+#if PLATFORM_WINDOWS
+/**
+ * Check if RenderDoc is attached to the process
+ * RenderDoc injects renderdoc.dll when capturing
+ */
+static bool IsRenderDocAttached()
+{
+    HMODULE hRenderDoc = GetModuleHandleA("renderdoc.dll");
+    if (hRenderDoc != nullptr)
+    {
+        OutputDebugStringA("OpenGL: RenderDoc detected - using compatible initialization\n");
+        return true;
+    }
+    return false;
+}
+
+static bool s_RenderDocDetected = false;
+#endif
+
+// ============================================================================
 // WGL Function Pointers
 // ============================================================================
 
@@ -144,11 +167,24 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
     OutputDebugStringA("OpenGL: Info\n");
 
 #if PLATFORM_WINDOWS
+    // Check for RenderDoc early
+    s_RenderDocDetected = IsRenderDocAttached();
+    
     // Step 1: Create dummy window and context to load WGL extensions
-    if (!InitializeWGLExtensions())
+    // Skip if RenderDoc is detected to avoid hook conflicts
+    if (!s_RenderDocDetected)
     {
-        OutputDebugStringA("OpenGL: Error\n");
-        return false;
+        if (!InitializeWGLExtensions())
+        {
+            OutputDebugStringA("OpenGL: Error - Failed to initialize WGL extensions\n");
+            return false;
+        }
+    }
+    else
+    {
+        // RenderDoc mode: Load WGL extensions from existing context
+        OutputDebugStringA("OpenGL: RenderDoc mode - skipping dummy window creation\n");
+        // WGL extensions will be loaded after context creation
     }
     
     // Step 2: Setup main context with the actual window
@@ -258,6 +294,9 @@ bool FOpenGLContextManager::InitializeFromExistingContext(void* existingContext,
     MR_LOG(LogOpenGLContext, Log, "Initializing from existing OpenGL context (GLFW mode)");
     
 #if PLATFORM_WINDOWS
+    // Check for RenderDoc
+    s_RenderDocDetected = IsRenderDocAttached();
+    
     // Store the existing context handles
     m_mainContext.windowHandle = static_cast<HWND>(windowHandle);
     m_mainContext.deviceContext = static_cast<HDC>(existingDC);
@@ -283,6 +322,16 @@ bool FOpenGLContextManager::InitializeFromExistingContext(void* existingContext,
             MR_LOG(LogOpenGLContext, Error, "Failed to make existing context current (error: 0x%08X)", error);
             return false;
         }
+    }
+    
+    // Load WGL extensions from the existing context (needed for VSync, etc.)
+    if (!wglSwapIntervalEXT)
+    {
+        wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
+        wglGetSwapIntervalEXT = (PFNWGLGETSWAPINTERVALEXTPROC)wglGetProcAddress("wglGetSwapIntervalEXT");
+        wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+        wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
+        MR_LOG(LogOpenGLContext, Log, "Loaded WGL extensions from existing context");
     }
     
     // Initialize debug output if available
@@ -743,9 +792,57 @@ bool FOpenGLContextManager::SetPixelFormat(HDC dc, const FOpenGLContextConfig& c
 
 bool FOpenGLContextManager::CreateCoreContext(const FOpenGLContextConfig& config)
 {
+    // RenderDoc mode: Create legacy context first, then load WGL extensions
+    if (s_RenderDocDetected && !wglCreateContextAttribsARB)
+    {
+        OutputDebugStringA("OpenGL: RenderDoc mode - creating legacy context first\n");
+        
+        // Create legacy context
+        m_mainContext.openGLContext = wglCreateContext(m_mainContext.deviceContext);
+        if (!m_mainContext.openGLContext)
+        {
+            OutputDebugStringA("OpenGL: Failed to create legacy context\n");
+            return false;
+        }
+        
+        // Make it current to load WGL extensions
+        if (!wglMakeCurrent(m_mainContext.deviceContext, m_mainContext.openGLContext))
+        {
+            OutputDebugStringA("OpenGL: Failed to make legacy context current\n");
+            wglDeleteContext(m_mainContext.openGLContext);
+            m_mainContext.openGLContext = nullptr;
+            return false;
+        }
+        
+        // Now load WGL extensions
+        wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+        wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
+        wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
+        wglGetSwapIntervalEXT = (PFNWGLGETSWAPINTERVALEXTPROC)wglGetProcAddress("wglGetSwapIntervalEXT");
+        
+        // If we got wglCreateContextAttribsARB, upgrade to modern context
+        if (wglCreateContextAttribsARB)
+        {
+            OutputDebugStringA("OpenGL: Upgrading to modern OpenGL context\n");
+            
+            // Release legacy context
+            wglMakeCurrent(nullptr, nullptr);
+            wglDeleteContext(m_mainContext.openGLContext);
+            m_mainContext.openGLContext = nullptr;
+            
+            // Fall through to create modern context
+        }
+        else
+        {
+            // Use legacy context (OpenGL 2.1)
+            OutputDebugStringA("OpenGL: Using legacy OpenGL context (wglCreateContextAttribsARB not available)\n");
+            return true;
+        }
+    }
+    
     if (!wglCreateContextAttribsARB)
     {
-        OutputDebugStringA("OpenGL: Error\n");
+        OutputDebugStringA("OpenGL: Error - wglCreateContextAttribsARB not available\n");
         return false;
     }
     
@@ -772,11 +869,11 @@ bool FOpenGLContextManager::CreateCoreContext(const FOpenGLContextConfig& config
     
     if (!m_mainContext.openGLContext)
     {
-        OutputDebugStringA("OpenGL: Failed to create context\n");
+        OutputDebugStringA("OpenGL: Failed to create modern context\n");
         return false;
     }
     
-    OutputDebugStringA("OpenGL: Debug\n");
+    OutputDebugStringA("OpenGL: Modern OpenGL context created successfully\n");
     
     return true;
 }

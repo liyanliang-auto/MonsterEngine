@@ -582,6 +582,26 @@ public:
 
         return Result;
     }
+    
+    /** 
+     * Create a perspective projection matrix for OpenGL (Z [-1,1])
+     * Standard OpenGL right-handed coordinate system
+     */
+    MR_NODISCARD static TMatrix<T> MakePerspectiveGL(T FovY, T AspectRatio, T NearZ, T FarZ)
+    {
+        const T TanHalfFov = std::tan(FovY * T(0.5));
+
+        TMatrix<T> Result(ForceInit);
+        
+        // OpenGL perspective matrix with depth range [-1, 1]
+        Result.M[0][0] = T(1) / (AspectRatio * TanHalfFov);
+        Result.M[1][1] = T(1) / TanHalfFov;
+        Result.M[2][2] = -(FarZ + NearZ) / (FarZ - NearZ);
+        Result.M[2][3] = T(-1);
+        Result.M[3][2] = -(T(2) * FarZ * NearZ) / (FarZ - NearZ);
+
+        return Result;
+    }
 
     /** Create an orthographic projection matrix */
     MR_NODISCARD static TMatrix<T> MakeOrtho(T Width, T Height, T NearZ, T FarZ)
