@@ -247,6 +247,72 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
 #endif
 }
 
+bool FOpenGLContextManager::InitializeFromExistingContext(void* existingContext, void* existingDC, void* windowHandle)
+{
+    if (m_initialized)
+    {
+        MR_LOG(LogOpenGLContext, Warning, "Context manager already initialized");
+        return true;
+    }
+    
+    MR_LOG(LogOpenGLContext, Log, "Initializing from existing OpenGL context (GLFW mode)");
+    
+#if PLATFORM_WINDOWS
+    // Store the existing context handles
+    m_mainContext.windowHandle = static_cast<HWND>(windowHandle);
+    m_mainContext.deviceContext = static_cast<HDC>(existingDC);
+    m_mainContext.openGLContext = static_cast<HGLRC>(existingContext);
+    m_mainContext.releaseWindowOnDestroy = false; // Don't destroy GLFW's context
+    
+    // Verify the context is valid
+    if (!m_mainContext.openGLContext || !m_mainContext.deviceContext)
+    {
+        MR_LOG(LogOpenGLContext, Error, "Invalid existing context handles (HGLRC: %p, HDC: %p)",
+               m_mainContext.openGLContext, m_mainContext.deviceContext);
+        return false;
+    }
+    
+    // Ensure the context is current
+    HGLRC currentContext = wglGetCurrentContext();
+    if (currentContext != m_mainContext.openGLContext)
+    {
+        MR_LOG(LogOpenGLContext, Warning, "Existing context is not current, making it current");
+        if (!wglMakeCurrent(m_mainContext.deviceContext, m_mainContext.openGLContext))
+        {
+            DWORD error = GetLastError();
+            MR_LOG(LogOpenGLContext, Error, "Failed to make existing context current (error: 0x%08X)", error);
+            return false;
+        }
+    }
+    
+    // Initialize debug output if available
+    InitializeDebugOutput();
+    
+    // Query device capabilities
+    QueryCapabilities();
+    
+    // Create default VAO (required for core profile)
+    glGenVertexArrays(1, &m_mainContext.vertexArrayObject);
+    glBindVertexArray(m_mainContext.vertexArrayObject);
+    
+    // Set vsync
+    SetVSync(1);
+    
+    m_initialized = true;
+    
+    MR_LOG(LogOpenGLContext, Log, "Successfully initialized from existing context");
+    MR_LOG(LogOpenGLContext, Log, "OpenGL Version: %ls", *m_versionString);
+    MR_LOG(LogOpenGLContext, Log, "OpenGL Vendor: %ls", *m_vendorString);
+    MR_LOG(LogOpenGLContext, Log, "OpenGL Renderer: %ls", *m_rendererString);
+    
+    return true;
+    
+#else
+    MR_LOG(LogOpenGLContext, Error, "InitializeFromExistingContext not implemented for this platform");
+    return false;
+#endif
+}
+
 void FOpenGLContextManager::Shutdown()
 {
     if (!m_initialized)
@@ -254,7 +320,7 @@ void FOpenGLContextManager::Shutdown()
         return;
     }
     
-    OutputDebugStringA("OpenGL: Info\n");
+    MR_LOG(LogOpenGLContext, Log, "Shutting down OpenGL context manager");
 
 #if PLATFORM_WINDOWS
     // Delete VAO
@@ -267,18 +333,30 @@ void FOpenGLContextManager::Shutdown()
     // Release context
     wglMakeCurrent(nullptr, nullptr);
     
-    // Delete OpenGL context
-    if (m_mainContext.openGLContext)
+    // Only delete context if we created it (not if it's from GLFW)
+    if (m_mainContext.openGLContext && m_mainContext.releaseWindowOnDestroy)
     {
+        MR_LOG(LogOpenGLContext, Verbose, "Deleting OpenGL context (we created it)");
         wglDeleteContext(m_mainContext.openGLContext);
         m_mainContext.openGLContext = nullptr;
     }
-    
-    // Release device context
-    if (m_mainContext.deviceContext && m_mainContext.windowHandle)
+    else if (m_mainContext.openGLContext)
     {
+        MR_LOG(LogOpenGLContext, Verbose, "Not deleting OpenGL context (created by GLFW)");
+        m_mainContext.openGLContext = nullptr; // Just clear the pointer
+    }
+    
+    // Only release DC if we created it
+    if (m_mainContext.deviceContext && m_mainContext.windowHandle && m_mainContext.releaseWindowOnDestroy)
+    {
+        MR_LOG(LogOpenGLContext, Verbose, "Releasing device context");
         ReleaseDC(m_mainContext.windowHandle, m_mainContext.deviceContext);
         m_mainContext.deviceContext = nullptr;
+    }
+    else if (m_mainContext.deviceContext)
+    {
+        MR_LOG(LogOpenGLContext, Verbose, "Not releasing device context (managed by GLFW)");
+        m_mainContext.deviceContext = nullptr; // Just clear the pointer
     }
     
     // Cleanup dummy resources
@@ -288,7 +366,7 @@ void FOpenGLContextManager::Shutdown()
     m_initialized = false;
     m_extensions.Empty();
     
-    OutputDebugStringA("OpenGL: Info\n");
+    MR_LOG(LogOpenGLContext, Log, "OpenGL context manager shutdown complete");
 }
 
 bool FOpenGLContextManager::MakeCurrent()

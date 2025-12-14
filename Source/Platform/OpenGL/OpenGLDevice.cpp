@@ -54,13 +54,12 @@ bool FOpenGLDevice::Initialize(void* windowHandle, const FOpenGLContextConfig& c
     OutputDebugStringA("OpenGL: Initializing device...\n");
     
     // Check if there's already an OpenGL context (e.g., from GLFW)
-    // If so, just load the function pointers without creating a new context
     bool contextExists = false;
     
 #if PLATFORM_WINDOWS
     HGLRC currentContext = wglGetCurrentContext();
     if (currentContext != nullptr) {
-        OutputDebugStringA("OpenGL: Using existing OpenGL context from GLFW\n");
+        OutputDebugStringA("OpenGL: Detected existing OpenGL context from GLFW\n");
         contextExists = true;
         
         // Load OpenGL functions using the existing context
@@ -68,10 +67,19 @@ bool FOpenGLDevice::Initialize(void* windowHandle, const FOpenGLContextConfig& c
             OutputDebugStringA("OpenGL: Failed to load OpenGL functions\n");
             return false;
         }
+        
+        // Initialize context manager with existing context (don't create new one)
+        // This ensures m_contextManager.m_initialized is set to true
+        HDC currentDC = wglGetCurrentDC();
+        if (!m_contextManager.InitializeFromExistingContext(currentContext, currentDC, windowHandle))
+        {
+            OutputDebugStringA("OpenGL: Failed to initialize context manager from existing context\n");
+            return false;
+        }
     }
+    else
 #endif
-    
-    if (!contextExists) {
+    {
         // Initialize OpenGL context (create new one)
         if (!m_contextManager.Initialize(windowHandle, config))
         {

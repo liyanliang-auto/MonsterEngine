@@ -152,6 +152,15 @@ public:
     bool Initialize(void* windowHandle, const FOpenGLContextConfig& config = FOpenGLContextConfig());
     
     /**
+     * Initialize from an existing OpenGL context (e.g., created by GLFW)
+     * @param existingContext Existing OpenGL context handle (HGLRC on Windows)
+     * @param existingDC Existing device context (HDC on Windows)
+     * @param windowHandle Native window handle (HWND on Windows)
+     * @return true if initialization succeeded
+     */
+    bool InitializeFromExistingContext(void* existingContext, void* existingDC, void* windowHandle);
+    
+    /**
      * Shutdown OpenGL and destroy all contexts
      */
     void Shutdown();
