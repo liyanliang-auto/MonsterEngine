@@ -293,6 +293,9 @@ void CubeSceneApplication::onRender()
         // OpenGL rendering path
         using namespace MonsterEngine::OpenGL;
         
+        // Context should already be current from GLFW initialization
+        // No need to explicitly make it current here
+        
         // Bind default framebuffer
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         
@@ -306,15 +309,13 @@ void CubeSceneApplication::onRender()
         // Enable depth testing
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
+        glDisable(GL_CULL_FACE);
         
         // Get command list and render
         RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
         if (cmdList)
         {
             renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
-            
-            // Render ImGui overlay (DISABLED)
-            // renderImGui();
         }
         
         // Swap buffers

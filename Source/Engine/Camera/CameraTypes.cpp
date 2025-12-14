@@ -149,7 +149,10 @@ FMatrix FMinimalViewInfo::CalculateProjectionMatrix() const
         
         // Create perspective projection matrix
         // Note: MakePerspective expects full FOV in radians, not half FOV
-        ProjectionMatrix = FMatrix::MakePerspective(
+        // Use OpenGL-specific matrix for OpenGL backend (depth range [-1, 1])
+        // TODO: Add backend detection parameter to this function
+        // For now, use OpenGL matrix as it's the current default
+        ProjectionMatrix = FMatrix::MakePerspectiveGL(
             FOVRadians,
             AspectRatio,
             NearPlane,

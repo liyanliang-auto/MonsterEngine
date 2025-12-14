@@ -75,6 +75,9 @@ vec3 calculateLight(int lightIndex, vec3 normal, vec3 viewDir, vec3 baseColor) {
 }
 
 void main() {
+    // DEBUG: Output normal as color to visualize if geometry is correct
+    // outColor = vec4(normalize(fragNormal) * 0.5 + 0.5, 1.0); return;
+    
     // Normalize interpolated normal
     vec3 normal = normalize(fragNormal);
     
@@ -87,6 +90,11 @@ void main() {
     
     // Blend textures based on blend factor
     vec3 baseColor = mix(texColor1.rgb, texColor2.rgb, textureBlend);
+    
+    // If no texture, use a default color
+    if (texColor1.a < 0.01 && texColor2.a < 0.01) {
+        baseColor = vec3(0.8, 0.6, 0.4);  // Default brownish color
+    }
     
     // Ambient lighting
     vec3 ambient = ambientColor * baseColor;

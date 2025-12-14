@@ -263,10 +263,28 @@ void FOpenGLCommandList::endRenderPass()
 
 void FOpenGLCommandList::draw(uint32 vertexCount, uint32 startVertexLocation)
 {
-    MR_LOG(LogOpenGLCommands, Log, "glDrawArrays: topology=%d, start=%d, count=%d", 
-           m_primitiveTopology, startVertexLocation, vertexCount);
+    // Check for OpenGL errors before draw
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
+    {
+        MR_LOG(LogOpenGLCommands, Error, "OpenGL error before draw: 0x%X", err);
+    }
+    
+    // Verify current state (GL_CURRENT_PROGRAM = 0x8B8D, GL_VERTEX_ARRAY_BINDING = 0x85B5)
+    GLint currentProgram = 0;
+    GLint currentVAO = 0;
+    glGetIntegerv(0x8B8D, &currentProgram);  // GL_CURRENT_PROGRAM
+    glGetIntegerv(0x85B5, &currentVAO);      // GL_VERTEX_ARRAY_BINDING
+    MR_LOG(LogOpenGLCommands, Log, "glDrawArrays: topology=%d, start=%d, count=%d, program=%d, VAO=%d", 
+           m_primitiveTopology, startVertexLocation, vertexCount, currentProgram, currentVAO);
+    
     glDrawArrays(m_primitiveTopology, startVertexLocation, vertexCount);
-    GL_CHECK("glDrawArrays");
+    
+    err = glGetError();
+    if (err != GL_NO_ERROR)
+    {
+        MR_LOG(LogOpenGLCommands, Error, "OpenGL error after draw: 0x%X", err);
+    }
 }
 
 void FOpenGLCommandList::drawIndexed(uint32 indexCount, uint32 startIndexLocation, int32 baseVertexLocation)
@@ -497,7 +515,9 @@ void FOpenGLCommandList::BindVertexBuffers()
     {
         if (m_vertexBuffers[i].buffer)
         {
-            glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffers[i].buffer->GetGLBuffer());
+            GLuint vbo = m_vertexBuffers[i].buffer->GetGLBuffer();
+            MR_LOG(LogOpenGLCommands, Log, "BindVertexBuffers: Binding VBO %u, stride=%u", vbo, m_vertexBuffers[i].stride);
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
             
             // Re-setup vertex attributes with the bound buffer
             // This is needed because VAO stores the buffer binding
