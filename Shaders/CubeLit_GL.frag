@@ -10,14 +10,18 @@ struct LightData {
     vec4 params;      // x = radius, y = source radius, z/w = reserved
 };
 
-// Uniforms
+// Texture uniforms (not in UBO)
 uniform sampler2D texture1;
 uniform sampler2D texture2;
 uniform float textureBlend;
 
-uniform LightData lights[8];
-uniform vec3 ambientColor;
-uniform int numLights;
+// Light uniform block (matches binding point 3)
+layout(std140) uniform LightUB
+{
+    LightData lights[8];
+    vec3 ambientColor;
+    int numLights;
+};
 
 // Inputs from vertex shader
 in vec3 fragWorldPos;

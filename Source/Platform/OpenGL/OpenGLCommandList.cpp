@@ -161,14 +161,9 @@ void FOpenGLCommandList::setConstantBuffer(uint32 slot, TSharedPtr<IRHIBuffer> b
     auto* glBuffer = static_cast<FOpenGLBuffer*>(buffer.get());
     m_constantBuffers[slot] = glBuffer;
     
-    if (glBuffer)
-    {
-        glBindBufferBase(GL_UNIFORM_BUFFER, slot, glBuffer->GetGLBuffer());
-    }
-    else
-    {
-        glBindBufferBase(GL_UNIFORM_BUFFER, slot, 0);
-    }
+    // Use state cache to avoid redundant OpenGL calls
+    GLuint glBufferHandle = glBuffer ? glBuffer->GetGLBuffer() : 0;
+    m_device->GetStateCache().SetUniformBuffer(slot, glBufferHandle);
 }
 
 void FOpenGLCommandList::setShaderResource(uint32 slot, TSharedPtr<IRHITexture> texture)
@@ -268,6 +263,8 @@ void FOpenGLCommandList::endRenderPass()
 
 void FOpenGLCommandList::draw(uint32 vertexCount, uint32 startVertexLocation)
 {
+    MR_LOG(LogOpenGLCommands, Log, "glDrawArrays: topology=%d, start=%d, count=%d", 
+           m_primitiveTopology, startVertexLocation, vertexCount);
     glDrawArrays(m_primitiveTopology, startVertexLocation, vertexCount);
     GL_CHECK("glDrawArrays");
 }
@@ -487,11 +484,13 @@ void FOpenGLCommandList::BindVertexBuffers()
 {
     if (!m_currentPipeline || !m_currentPipeline->GetVertexArray())
     {
+        MR_LOG(LogOpenGLCommands, Warning, "BindVertexBuffers: No pipeline or VAO");
         return;
     }
     
     // Bind VAO
     m_currentPipeline->GetVertexArray()->Bind();
+    MR_LOG(LogOpenGLCommands, Log, "BindVertexBuffers: VAO bound, setting up %d buffers", m_numVertexBuffers);
     
     // Bind vertex buffers
     for (uint32 i = 0; i < m_numVertexBuffers; ++i)
