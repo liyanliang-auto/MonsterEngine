@@ -928,18 +928,59 @@ namespace MonsterRender::RHI::Vulkan {
         };
         
         // Required extensions (must be supported)
-        // For RenderDoc compatibility: use minimal extension set
-        // Only VK_KHR_swapchain is strictly required for basic rendering
         if (!enableIfSupported(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
             MR_LOG_ERROR("Required extension VK_KHR_swapchain not supported!");
             return false;
         }
         
-        // Optional extensions - disabled by default for RenderDoc compatibility
-        // Uncomment these after confirming RenderDoc capture works:
-        // enableIfSupported(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-        // enableIfSupported(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
-        // enableIfSupported(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+        // ============================================================================
+        // Optional advanced extensions
+        // Note: In Vulkan 1.1+, many of these features are core and don't need extensions.
+        // We use API version 1.0 for maximum compatibility, so we need extensions.
+        // However, the dependency extensions (VK_KHR_get_physical_device_properties2, etc.)
+        // are INSTANCE extensions, not device extensions. They should be enabled at
+        // instance creation time, not device creation time.
+        // 
+        // For now, we only enable extensions that don't have complex dependencies,
+        // or we rely on Vulkan 1.1+ where these are core features.
+        // ============================================================================
+        
+        // Check Vulkan API version - if 1.1+, these features are core
+        uint32 apiVersion = m_deviceProperties.apiVersion;
+        bool isVulkan11OrHigher = VK_VERSION_MAJOR(apiVersion) > 1 || 
+                                   (VK_VERSION_MAJOR(apiVersion) == 1 && VK_VERSION_MINOR(apiVersion) >= 1);
+        bool isVulkan12OrHigher = VK_VERSION_MAJOR(apiVersion) > 1 || 
+                                   (VK_VERSION_MAJOR(apiVersion) == 1 && VK_VERSION_MINOR(apiVersion) >= 2);
+        
+        MR_LOG_INFO("Device Vulkan API version: " + std::to_string(VK_VERSION_MAJOR(apiVersion)) + "." +
+                   std::to_string(VK_VERSION_MINOR(apiVersion)) + "." +
+                   std::to_string(VK_VERSION_PATCH(apiVersion)));
+        
+        // Timeline semaphores: core in Vulkan 1.2, extension in 1.1
+        if (isVulkan12OrHigher) {
+            MR_LOG_INFO("Timeline semaphores: using Vulkan 1.2 core feature");
+        } else if (isVulkan11OrHigher) {
+            enableIfSupported(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+        }
+        
+        // Descriptor indexing: core in Vulkan 1.2
+        if (isVulkan12OrHigher) {
+            MR_LOG_INFO("Descriptor indexing: using Vulkan 1.2 core feature");
+        } else if (isVulkan11OrHigher) {
+            enableIfSupported(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+        }
+        
+        // Buffer device address: core in Vulkan 1.2
+        bool hasBufferDeviceAddress = false;
+        if (isVulkan12OrHigher) {
+            MR_LOG_INFO("Buffer device address: using Vulkan 1.2 core feature");
+            hasBufferDeviceAddress = true;
+        } else if (isVulkan11OrHigher) {
+            hasBufferDeviceAddress = enableIfSupported(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+        }
+        
+        // Suppress unused variable warning
+        (void)hasBufferDeviceAddress;
         
         // Step 3: Log all requested extensions before device creation
         MR_LOG_INFO("=== Requested Device Extensions ===");
