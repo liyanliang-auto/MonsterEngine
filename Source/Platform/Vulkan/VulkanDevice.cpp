@@ -18,6 +18,7 @@
 #include <set>
 #include <algorithm>
 #include <vector>
+#include <unordered_set>
 
 namespace MonsterRender::RHI::Vulkan {
     
@@ -628,6 +629,34 @@ namespace MonsterRender::RHI::Vulkan {
         
         m_validationEnabled = createInfo.enableValidation;
         
+        // ============================================================================
+        // RenderDoc Detection and Layer Conflict Prevention
+        // Disable problematic implicit layers that conflict with RenderDoc
+        // ============================================================================
+        
+        // Check if running under RenderDoc
+        bool runningUnderRenderDoc = false;
+        HMODULE renderDocModule = GetModuleHandleA("renderdoc.dll");
+        if (renderDocModule != nullptr) {
+            runningUnderRenderDoc = true;
+            MR_LOG_INFO("RenderDoc detected - using minimal layer configuration");
+        }
+        
+        // Disable problematic implicit layers via environment variables
+        // These layers can conflict with RenderDoc's capture mechanism
+        const char* problematicLayers[] = {
+            "DISABLE_VK_LAYER_TENCENT_wegame_cross_overlay_1",
+            "DISABLE_VK_LAYER_VALVE_steam_overlay_1",
+            "DISABLE_VK_LAYER_VALVE_steam_fossilize_1",
+            "DISABLE_VK_LAYER_EOS_Overlay_1",
+            "DISABLE_VK_LAYER_ROCKSTAR_GAMES_social_club_1"
+        };
+        
+        for (const char* envVar : problematicLayers) {
+            _putenv_s(envVar, "1");
+        }
+        MR_LOG_INFO("Disabled problematic implicit Vulkan layers for RenderDoc compatibility");
+        
         // Check validation layers if requested
         if (m_validationEnabled && !checkValidationLayerSupport()) {
             MR_LOG_ERROR("Validation layers requested, but not available!");
@@ -654,8 +683,11 @@ namespace MonsterRender::RHI::Vulkan {
         instanceCreateInfo.ppEnabledExtensionNames = extensions.data();
         
         // Set validation layers if enabled
+        // When running under RenderDoc, disable validation layer to reduce conflicts
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-        if (m_validationEnabled) {
+        bool useValidation = m_validationEnabled && !runningUnderRenderDoc;
+        
+        if (useValidation) {
             instanceCreateInfo.enabledLayerCount = g_validationLayerCount;
             instanceCreateInfo.ppEnabledLayerNames = g_validationLayers;
             
@@ -669,9 +701,13 @@ namespace MonsterRender::RHI::Vulkan {
             debugCreateInfo.pfnUserCallback = VulkanUtils::debugCallback;
             debugCreateInfo.pUserData = nullptr;
             instanceCreateInfo.pNext = &debugCreateInfo;
+            MR_LOG_INFO("Validation layers enabled");
         } else {
             instanceCreateInfo.enabledLayerCount = 0;
             instanceCreateInfo.pNext = nullptr;
+            if (runningUnderRenderDoc && m_validationEnabled) {
+                MR_LOG_INFO("Validation layers disabled for RenderDoc compatibility");
+            }
         }
         
         // Create instance
@@ -860,6 +896,58 @@ namespace MonsterRender::RHI::Vulkan {
         deviceFeatures.geometryShader = m_deviceFeatures.geometryShader;
         deviceFeatures.tessellationShader = m_deviceFeatures.tessellationShader;
         
+        // ============================================================================
+        // Device Extension Handling (RenderDoc-compatible)
+        // Standard pattern: Query -> Filter -> Enable
+        // Reference: Vulkan best practice for extension handling
+        // ============================================================================
+        
+        // Step 1: Query supported device extensions
+        std::unordered_set<std::string> supportedExtensions;
+        uint32 extensionCount = 0;
+        functions.vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &extensionCount, nullptr);
+        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+        functions.vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &extensionCount, availableExtensions.data());
+        
+        MR_LOG_INFO("Available device extensions: " + std::to_string(extensionCount));
+        for (const auto& ext : availableExtensions) {
+            supportedExtensions.insert(ext.extensionName);
+        }
+        
+        // Step 2: Build list of extensions to enable (filter by support)
+        std::vector<const char*> enabledExtensions;
+        
+        // Helper lambda: enable extension only if supported
+        auto enableIfSupported = [&](const char* extensionName) -> bool {
+            if (supportedExtensions.count(extensionName)) {
+                enabledExtensions.push_back(extensionName);
+                return true;
+            }
+            MR_LOG_WARNING("Device extension not supported: " + String(extensionName));
+            return false;
+        };
+        
+        // Required extensions (must be supported)
+        // For RenderDoc compatibility: use minimal extension set
+        // Only VK_KHR_swapchain is strictly required for basic rendering
+        if (!enableIfSupported(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+            MR_LOG_ERROR("Required extension VK_KHR_swapchain not supported!");
+            return false;
+        }
+        
+        // Optional extensions - disabled by default for RenderDoc compatibility
+        // Uncomment these after confirming RenderDoc capture works:
+        // enableIfSupported(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+        // enableIfSupported(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+        // enableIfSupported(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+        
+        // Step 3: Log all requested extensions before device creation
+        MR_LOG_INFO("=== Requested Device Extensions ===");
+        for (const auto& ext : enabledExtensions) {
+            MR_LOG_INFO("  Request Device Extension: " + String(ext));
+        }
+        MR_LOG_INFO("Total: " + std::to_string(enabledExtensions.size()) + " extensions");
+        
         // Create device
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -867,9 +955,9 @@ namespace MonsterRender::RHI::Vulkan {
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
         createInfo.pEnabledFeatures = &deviceFeatures;
         
-        // Device extensions
-        createInfo.enabledExtensionCount = g_deviceExtensionCount;
-        createInfo.ppEnabledExtensionNames = g_deviceExtensions;
+        // Device extensions (filtered list)
+        createInfo.enabledExtensionCount = static_cast<uint32>(enabledExtensions.size());
+        createInfo.ppEnabledExtensionNames = enabledExtensions.data();
         
         // Validation layers (deprecated for devices, but needed for older Vulkan)
         if (m_validationEnabled) {
