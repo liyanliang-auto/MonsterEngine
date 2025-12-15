@@ -485,6 +485,9 @@ namespace MonsterRender::RHI::Vulkan
 
         // Rasterization state
         VkPipelineRasterizationStateCreateInfo rasterizer = createRasterizationState();
+        MR_LOG_INFO("Rasterizer: cullMode=" + std::to_string(rasterizer.cullMode) +
+                   ", frontFace=" + std::to_string(rasterizer.frontFace) +
+                   ", polygonMode=" + std::to_string(rasterizer.polygonMode));
 
         // Multisample state
         VkPipelineMultisampleStateCreateInfo multisampling = createMultisampleState();
@@ -499,6 +502,9 @@ namespace MonsterRender::RHI::Vulkan
 
         // Depth stencil state
         VkPipelineDepthStencilStateCreateInfo depthStencil = createDepthStencilState();
+        MR_LOG_INFO("DepthStencil: depthTestEnable=" + std::to_string(depthStencil.depthTestEnable) +
+                   ", depthWriteEnable=" + std::to_string(depthStencil.depthWriteEnable) +
+                   ", depthCompareOp=" + std::to_string(depthStencil.depthCompareOp));
 
         // Dynamic state - use std::vector for Vulkan API compatibility
         std::vector<VkDynamicState> dynamicStates = {
