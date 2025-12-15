@@ -541,7 +541,7 @@ public:
         return MakeFromQuat(R.Quaternion());
     }
 
-    /** Create a look-at matrix */
+    /** Create a look-at matrix (row-major layout: M[Row][Col]) */
     MR_NODISCARD static TMatrix<T> MakeLookAt(const TVector<T>& Eye, const TVector<T>& Target, const TVector<T>& Up)
     {
         // Forward direction (from eye to target, then negated for right-handed coordinate system)
@@ -549,14 +549,16 @@ public:
         TVector<T> Right = TVector<T>::CrossProduct(Up, Forward).GetSafeNormal();
         TVector<T> UpVec = TVector<T>::CrossProduct(Forward, Right);
 
+        // Row-major layout: each row is [Right, Up, Forward, Translation]
+        // Row 0: Right vector
+        // Row 1: Up vector  
+        // Row 2: Forward vector
+        // Row 3: Translation (dot products)
         TMatrix<T> Result;
-        Result.M[0][0] = Right.X;   Result.M[0][1] = UpVec.X;  Result.M[0][2] = Forward.X; Result.M[0][3] = T(0);
-        Result.M[1][0] = Right.Y;   Result.M[1][1] = UpVec.Y;  Result.M[1][2] = Forward.Y; Result.M[1][3] = T(0);
-        Result.M[2][0] = Right.Z;   Result.M[2][1] = UpVec.Z;  Result.M[2][2] = Forward.Z; Result.M[2][3] = T(0);
-        Result.M[3][0] = -TVector<T>::DotProduct(Right, Eye);
-        Result.M[3][1] = -TVector<T>::DotProduct(UpVec, Eye);
-        Result.M[3][2] = -TVector<T>::DotProduct(Forward, Eye);
-        Result.M[3][3] = T(1);
+        Result.M[0][0] = Right.X;   Result.M[0][1] = Right.Y;   Result.M[0][2] = Right.Z;   Result.M[0][3] = -TVector<T>::DotProduct(Right, Eye);
+        Result.M[1][0] = UpVec.X;   Result.M[1][1] = UpVec.Y;   Result.M[1][2] = UpVec.Z;   Result.M[1][3] = -TVector<T>::DotProduct(UpVec, Eye);
+        Result.M[2][0] = Forward.X; Result.M[2][1] = Forward.Y; Result.M[2][2] = Forward.Z; Result.M[2][3] = -TVector<T>::DotProduct(Forward, Eye);
+        Result.M[3][0] = T(0);      Result.M[3][1] = T(0);      Result.M[3][2] = T(0);      Result.M[3][3] = T(1);
 
         return Result;
     }
@@ -565,6 +567,7 @@ public:
      * Create a perspective projection matrix for Vulkan (Y-down, Z [0,1])
      * Assumes right-handed view space where camera looks toward -Z
      * (objects in front of camera have negative Z in view space)
+     * Row-major layout: M[Row][Col]
      */
     MR_NODISCARD static TMatrix<T> MakePerspective(T FovY, T AspectRatio, T NearZ, T FarZ)
     {
@@ -572,13 +575,16 @@ public:
 
         TMatrix<T> Result(ForceInit);
         
-        // Standard perspective matrix for right-handed coordinate system
-        // where camera looks toward -Z and objects in front have negative Z
+        // Row-major perspective matrix for right-handed coordinate system
+        // Row 0: [sx,  0,  0,  0]
+        // Row 1: [ 0, sy,  0,  0]
+        // Row 2: [ 0,  0, sz, tz]
+        // Row 3: [ 0,  0, -1,  0]
         Result.M[0][0] = T(1) / (AspectRatio * TanHalfFov);
         Result.M[1][1] = T(1) / TanHalfFov;  // Will be flipped by Vulkan Y-flip if needed
         Result.M[2][2] = FarZ / (NearZ - FarZ);  // Note: NearZ - FarZ for -Z direction
-        Result.M[2][3] = T(-1);  // -1 for right-handed (camera looks toward -Z)
-        Result.M[3][2] = (FarZ * NearZ) / (NearZ - FarZ);
+        Result.M[2][3] = (FarZ * NearZ) / (NearZ - FarZ);
+        Result.M[3][2] = T(-1);  // -1 for right-handed (camera looks toward -Z)
 
         return Result;
     }
@@ -586,6 +592,7 @@ public:
     /** 
      * Create a perspective projection matrix for OpenGL (Z [-1,1])
      * Standard OpenGL right-handed coordinate system
+     * Row-major layout: M[Row][Col]
      */
     MR_NODISCARD static TMatrix<T> MakePerspectiveGL(T FovY, T AspectRatio, T NearZ, T FarZ)
     {
@@ -593,12 +600,16 @@ public:
 
         TMatrix<T> Result(ForceInit);
         
-        // OpenGL perspective matrix with depth range [-1, 1]
+        // Row-major OpenGL perspective matrix with depth range [-1, 1]
+        // Row 0: [sx,  0,  0,  0]
+        // Row 1: [ 0, sy,  0,  0]
+        // Row 2: [ 0,  0, sz, tz]
+        // Row 3: [ 0,  0, -1,  0]
         Result.M[0][0] = T(1) / (AspectRatio * TanHalfFov);
         Result.M[1][1] = T(1) / TanHalfFov;
         Result.M[2][2] = -(FarZ + NearZ) / (FarZ - NearZ);
-        Result.M[2][3] = T(-1);
-        Result.M[3][2] = -(T(2) * FarZ * NearZ) / (FarZ - NearZ);
+        Result.M[2][3] = -(T(2) * FarZ * NearZ) / (FarZ - NearZ);
+        Result.M[3][2] = T(-1);
 
         return Result;
     }
