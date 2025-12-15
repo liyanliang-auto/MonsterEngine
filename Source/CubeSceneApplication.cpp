@@ -53,14 +53,14 @@ DEFINE_LOG_CATEGORY_STATIC(LogCubeSceneApp, Log, All);
 // Construction / Destruction
 // ============================================================================
 
-// Helper function to create config with OpenGL backend for debugging
+// Helper function to create config with preferred backend
 static ApplicationConfig CreateCubeSceneConfig()
 {
     ApplicationConfig config;
     config.name = "CubeScene Application";
-    config.preferredBackend = RHI::ERHIBackend::OpenGL;  // Use OpenGL for debugging
-    config.windowProperties.width = 1920;
-    config.windowProperties.height = 1080;
+    config.preferredBackend = RHI::ERHIBackend::Vulkan;  // Use Vulkan backend
+    config.windowProperties.width = 256;
+    config.windowProperties.height = 256;
     config.enableValidation = true;
     return config;
 }
