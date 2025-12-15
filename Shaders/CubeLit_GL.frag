@@ -10,10 +10,20 @@ struct LightData {
     vec4 params;      // x = radius, y = source radius, z/w = reserved
 };
 
-// Texture uniforms (not in UBO)
+// Texture samplers
 uniform sampler2D texture1;
 uniform sampler2D texture2;
-uniform float textureBlend;
+
+// Transform uniform block (matches binding point 0, shared with vertex shader)
+layout(std140) uniform TransformUB
+{
+    mat4 model;
+    mat4 view;
+    mat4 projection;
+    mat4 normalMatrix;
+    vec4 cameraPosition;   // xyz = position, w = padding
+    vec4 textureBlendVec;  // x = blend factor, yzw = padding
+};
 
 // Light uniform block (matches binding point 3)
 layout(std140) uniform LightUB
@@ -88,7 +98,8 @@ void main() {
     vec4 texColor1 = texture(texture1, fragTexCoord);
     vec4 texColor2 = texture(texture2, fragTexCoord);
     
-    // Blend textures based on blend factor
+    // Blend textures based on blend factor from UBO
+    float textureBlend = textureBlendVec.x;
     vec3 baseColor = mix(texColor1.rgb, texColor2.rgb, textureBlend);
     
     // If no texture, use a default color
