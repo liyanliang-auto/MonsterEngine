@@ -506,9 +506,20 @@ bool FCubeSceneProxy::CreatePipelineState()
     
     // Rasterizer state - enable backface culling
     // Note: For right-handed coordinate system with CCW front face
+    // Vulkan: Y-axis is flipped in projection matrix, so frontFace must be CW (not CCW)
+    // OpenGL: Standard CCW front face
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = true;
+    if (Device->getRHIBackend() == MonsterRender::RHI::ERHIBackend::Vulkan)
+    {
+        // Vulkan Y-flip reverses winding order, so use CW as front face
+        PipelineDesc.rasterizerState.frontCounterClockwise = false;
+    }
+    else
+    {
+        // OpenGL uses standard CCW front face
+        PipelineDesc.rasterizerState.frontCounterClockwise = true;
+    }
     
     // Depth testing - enable for proper occlusion
     PipelineDesc.depthStencilState.depthEnable = true;
