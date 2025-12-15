@@ -15,7 +15,8 @@ layout(std140) uniform TransformUB
     mat4 view;
     mat4 projection;
     mat4 normalMatrix;
-    vec3 cameraPosition;
+    vec4 cameraPosition;   // xyz = position, w = padding
+    vec4 textureBlendVec;  // x = blend factor, yzw = padding
 };
 
 // Outputs to fragment shader
@@ -36,7 +37,7 @@ void main() {
     fragTexCoord = inTexCoord;
     
     // Camera position for specular calculations
-    fragViewPos = cameraPosition;
+    fragViewPos = cameraPosition.xyz;
     
     // Final clip space position
     gl_Position = projection * view * worldPos;
