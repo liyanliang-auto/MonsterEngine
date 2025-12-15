@@ -89,7 +89,7 @@ CubeSceneApplication::CubeSceneApplication()
     , m_bShowLightingControl(true)
     , m_bShowDemoWindow(false)
     , m_cubeRotationSpeed(1.0f)
-    , m_lightIntensity(1.0f)
+    , m_lightIntensity(3.0f)
     , m_viewportTextureID(0)
     , m_viewportWidth(800)
     , m_viewportHeight(600)
@@ -652,7 +652,8 @@ bool CubeSceneApplication::initializeScene()
     
     // Create cube actor
     m_cubeActor = new ACubeActor();
-    m_cubeActor->SetRotationSpeed(1.0f);
+    m_cubeActor->SetRotationSpeed(0.0f);
+    m_cubeActor->SetRotationEnabled(true);  // Disable per-frame rotation for debugging
     m_cubeActor->SetRotationAxis(FVector(0.5f, 1.0f, 0.0f));
     m_cubeActor->SetScene(m_scene);
     m_cubeActor->BeginPlay();
@@ -674,20 +675,21 @@ bool CubeSceneApplication::initializeScene()
         }
     }
     
-    // Create directional light (sun)
+    // Create directional light (sun) - main light source
     m_directionalLight = new UDirectionalLightComponent();
-    m_directionalLight->SetLightColor(FLinearColor(1.0f, 0.95f, 0.9f));
-    m_directionalLight->SetIntensity(1.0f);
+    m_directionalLight->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f));  // Pure white
+    m_directionalLight->SetIntensity(3.0f);  // Increased intensity for brighter scene
     m_directionalLight->SetWorldRotation(FRotator(-45.0f, 30.0f, 0.0f));
     m_scene->AddLight(m_directionalLight);
     
-    // Create point light (accent)
-    m_pointLight = new UPointLightComponent();
-    m_pointLight->SetLightColor(FLinearColor(0.3f, 0.5f, 1.0f));
-    m_pointLight->SetIntensity(2.0f);
-    m_pointLight->SetWorldLocation(FVector(2.0f, 1.0f, -1.0f));
-    m_pointLight->SetAttenuationRadius(10.0f);
-    m_scene->AddLight(m_pointLight);
+    // Point light disabled for now
+    // m_pointLight = new UPointLightComponent();
+    // m_pointLight->SetLightColor(FLinearColor(0.3f, 0.5f, 1.0f));
+    // m_pointLight->SetIntensity(2.0f);
+    // m_pointLight->SetWorldLocation(FVector(2.0f, 1.0f, -1.0f));
+    // m_pointLight->SetAttenuationRadius(10.0f);
+    // m_scene->AddLight(m_pointLight);
+    m_pointLight = nullptr;
     
     // Create and configure cube material
     m_cubeMaterial = MakeShared<FMaterial>(FName("CubeMaterial"));
@@ -991,7 +993,7 @@ void CubeSceneApplication::renderLightingControlPanel()
         
         ImGui::Separator();
         ImGui::Text("Directional Light");
-        ImGui::SliderFloat("Intensity", &m_lightIntensity, 0.0f, 3.0f);
+        ImGui::SliderFloat("Intensity", &m_lightIntensity, 0.0f, 10.0f);
         ImGui::ColorEdit3("Color", m_lightColor);
     }
     ImGui::End();
