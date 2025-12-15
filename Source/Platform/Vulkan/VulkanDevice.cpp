@@ -1492,12 +1492,16 @@ namespace MonsterRender::RHI::Vulkan {
     bool VulkanDevice::checkDeviceExtensionSupport(VkPhysicalDevice device) {
         const auto& functions = VulkanAPI::getFunctions();
         
+        // Get device name for logging
+        VkPhysicalDeviceProperties props;
+        functions.vkGetPhysicalDeviceProperties(device, &props);
+        
         uint32 extensionCount = 0;
         functions.vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
         
         // No extensions available
         if (extensionCount == 0) {
-            MR_LOG_WARNING("No device extensions available");
+            MR_LOG_WARNING("No device extensions available for " + String(props.deviceName));
             return g_deviceExtensionCount == 0;
         }
         
@@ -1505,13 +1509,30 @@ namespace MonsterRender::RHI::Vulkan {
         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
         functions.vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
         
+        // Log available extensions for debugging
+        MR_LOG_DEBUG("Device " + String(props.deviceName) + " has " + std::to_string(extensionCount) + " extensions");
+        
         std::set<String> requiredExtensions;
         for (uint32 i = 0; i < g_deviceExtensionCount; ++i) {
             requiredExtensions.insert(g_deviceExtensions[i]);
         }
         
+        // Check if VK_KHR_swapchain is available
+        bool hasSwapchain = false;
         for (size_t i = 0; i < availableExtensions.size(); ++i) {
+            if (String(availableExtensions[i].extensionName) == VK_KHR_SWAPCHAIN_EXTENSION_NAME) {
+                hasSwapchain = true;
+            }
             requiredExtensions.erase(availableExtensions[i].extensionName);
+        }
+        
+        MR_LOG_DEBUG("  VK_KHR_swapchain: " + String(hasSwapchain ? "YES" : "NO"));
+        
+        if (!requiredExtensions.empty()) {
+            MR_LOG_WARNING("Missing required extensions for " + String(props.deviceName) + ":");
+            for (const auto& ext : requiredExtensions) {
+                MR_LOG_WARNING("  - " + ext);
+            }
         }
         
         return requiredExtensions.empty();
