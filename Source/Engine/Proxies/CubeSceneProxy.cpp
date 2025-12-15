@@ -504,15 +504,15 @@ bool FCubeSceneProxy::CreatePipelineState()
     PipelineDesc.vertexLayout.attributes.push_back(TexCoordAttr);
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
-    // Rasterizer state - temporarily disable culling to debug
-    // Note: Y-flip in projection matrix reverses winding order, so we need CCW as front face
+    // Rasterizer state - enable backface culling
+    // Note: For right-handed coordinate system with CCW front face
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
-    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::None;
+    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
     PipelineDesc.rasterizerState.frontCounterClockwise = true;
     
-    // DEBUG: Disable depth testing to see all triangles
-    PipelineDesc.depthStencilState.depthEnable = false;
-    PipelineDesc.depthStencilState.depthWriteEnable = false;
+    // Depth testing - enable for proper occlusion
+    PipelineDesc.depthStencilState.depthEnable = true;
+    PipelineDesc.depthStencilState.depthWriteEnable = true;
     PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
     
     // Blend state
