@@ -761,29 +761,57 @@ namespace MonsterRender::RHI::Vulkan {
         std::vector<VkPhysicalDevice> devices(deviceCount);
         functions.vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
         
-        // Find the first suitable device
+        // Score and select the best device (prefer discrete GPU)
+        VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
+        int32 bestScore = -1;
+        
         for (size_t i = 0; i < devices.size(); ++i) {
             const auto& device = devices[i];
-            if (isDeviceSuitable(device)) {
-                m_physicalDevice = device;
-                
-                // Get device properties
-                functions.vkGetPhysicalDeviceProperties(device, &m_deviceProperties);
-                functions.vkGetPhysicalDeviceFeatures(device, &m_deviceFeatures);
-                functions.vkGetPhysicalDeviceMemoryProperties(device, &m_memoryProperties);
-                
-                MR_LOG_INFO("Selected GPU: " + String(m_deviceProperties.deviceName));
-                MR_LOG_INFO("GPU Type: " + std::to_string(m_deviceProperties.deviceType));
-                MR_LOG_INFO("API Version: " + std::to_string(VK_VERSION_MAJOR(m_deviceProperties.apiVersion)) +
-                           "." + std::to_string(VK_VERSION_MINOR(m_deviceProperties.apiVersion)) +
-                           "." + std::to_string(VK_VERSION_PATCH(m_deviceProperties.apiVersion)));
-                
-                return true;
+            if (!isDeviceSuitable(device)) {
+                continue;
+            }
+            
+            VkPhysicalDeviceProperties props;
+            functions.vkGetPhysicalDeviceProperties(device, &props);
+            
+            // Score the device: discrete GPU > integrated GPU > others
+            int32 score = 0;
+            if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                score = 1000;  // Strongly prefer discrete GPU
+            } else if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+                score = 100;   // Integrated GPU as fallback
+            } else {
+                score = 10;    // Other types
+            }
+            
+            MR_LOG_INFO("Device " + std::to_string(i) + ": " + String(props.deviceName) + 
+                       " (type=" + std::to_string(props.deviceType) + ", score=" + std::to_string(score) + ")");
+            
+            if (score > bestScore) {
+                bestScore = score;
+                bestDevice = device;
             }
         }
         
-        MR_LOG_ERROR("Failed to find a suitable GPU!");
-        return false;
+        if (bestDevice == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Failed to find a suitable GPU!");
+            return false;
+        }
+        
+        m_physicalDevice = bestDevice;
+        
+        // Get device properties
+        functions.vkGetPhysicalDeviceProperties(bestDevice, &m_deviceProperties);
+        functions.vkGetPhysicalDeviceFeatures(bestDevice, &m_deviceFeatures);
+        functions.vkGetPhysicalDeviceMemoryProperties(bestDevice, &m_memoryProperties);
+        
+        MR_LOG_INFO("Selected GPU: " + String(m_deviceProperties.deviceName));
+        MR_LOG_INFO("GPU Type: " + std::to_string(m_deviceProperties.deviceType));
+        MR_LOG_INFO("API Version: " + std::to_string(VK_VERSION_MAJOR(m_deviceProperties.apiVersion)) +
+                   "." + std::to_string(VK_VERSION_MINOR(m_deviceProperties.apiVersion)) +
+                   "." + std::to_string(VK_VERSION_PATCH(m_deviceProperties.apiVersion)));
+        
+        return true;
     }
     
     bool VulkanDevice::createLogicalDevice() {
