@@ -372,40 +372,46 @@ void FOpenGLContextManager::Shutdown()
     MR_LOG(LogOpenGLContext, Log, "Shutting down OpenGL context manager");
 
 #if PLATFORM_WINDOWS
-    // Delete VAO
-    if (m_mainContext.vertexArrayObject)
+    // Delete VAO if we have a valid context
+    if (m_mainContext.vertexArrayObject && m_mainContext.openGLContext)
     {
-        glDeleteVertexArrays(1, &m_mainContext.vertexArrayObject);
+        // Ensure context is current before deleting GL resources
+        HGLRC currentContext = wglGetCurrentContext();
+        if (currentContext == m_mainContext.openGLContext)
+        {
+            glDeleteVertexArrays(1, &m_mainContext.vertexArrayObject);
+        }
         m_mainContext.vertexArrayObject = 0;
     }
     
-    // Release context
-    wglMakeCurrent(nullptr, nullptr);
-    
-    // Only delete context if we created it (not if it's from GLFW)
-    if (m_mainContext.openGLContext && m_mainContext.releaseWindowOnDestroy)
+    // Only release context if we created it (not if it's from GLFW)
+    // IMPORTANT: Don't call wglMakeCurrent(nullptr, nullptr) if GLFW owns the context
+    // as this will cause GLFW to fail when it tries to clean up
+    if (m_mainContext.releaseWindowOnDestroy)
     {
-        MR_LOG(LogOpenGLContext, Verbose, "Deleting OpenGL context (we created it)");
-        wglDeleteContext(m_mainContext.openGLContext);
+        // We created the context, so we can release it
+        wglMakeCurrent(nullptr, nullptr);
+        
+        if (m_mainContext.openGLContext)
+        {
+            MR_LOG(LogOpenGLContext, Verbose, "Deleting OpenGL context (we created it)");
+            wglDeleteContext(m_mainContext.openGLContext);
+            m_mainContext.openGLContext = nullptr;
+        }
+        
+        if (m_mainContext.deviceContext && m_mainContext.windowHandle)
+        {
+            MR_LOG(LogOpenGLContext, Verbose, "Releasing device context");
+            ReleaseDC(m_mainContext.windowHandle, m_mainContext.deviceContext);
+            m_mainContext.deviceContext = nullptr;
+        }
+    }
+    else
+    {
+        // GLFW owns the context - just clear our pointers, don't release anything
+        MR_LOG(LogOpenGLContext, Verbose, "Not releasing OpenGL context (managed by GLFW)");
         m_mainContext.openGLContext = nullptr;
-    }
-    else if (m_mainContext.openGLContext)
-    {
-        MR_LOG(LogOpenGLContext, Verbose, "Not deleting OpenGL context (created by GLFW)");
-        m_mainContext.openGLContext = nullptr; // Just clear the pointer
-    }
-    
-    // Only release DC if we created it
-    if (m_mainContext.deviceContext && m_mainContext.windowHandle && m_mainContext.releaseWindowOnDestroy)
-    {
-        MR_LOG(LogOpenGLContext, Verbose, "Releasing device context");
-        ReleaseDC(m_mainContext.windowHandle, m_mainContext.deviceContext);
         m_mainContext.deviceContext = nullptr;
-    }
-    else if (m_mainContext.deviceContext)
-    {
-        MR_LOG(LogOpenGLContext, Verbose, "Not releasing device context (managed by GLFW)");
-        m_mainContext.deviceContext = nullptr; // Just clear the pointer
     }
     
     // Cleanup dummy resources

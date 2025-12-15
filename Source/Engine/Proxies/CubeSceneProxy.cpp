@@ -17,9 +17,15 @@
 #include "Math/MonsterMath.h"
 #include "Platform/Vulkan/VulkanTexture.h"
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <string>
 #include <vector>
 #include <span>
+
+#if PLATFORM_WINDOWS
+ #include <Windows.h>
+#endif
 
 namespace MonsterEngine
 {
@@ -30,6 +36,51 @@ DEFINE_LOG_CATEGORY_STATIC(LogCubeSceneProxy, Log, All);
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
+
+static std::string normalizeDirPath(const std::filesystem::path& InPath)
+{
+    std::string Result = InPath.lexically_normal().generic_string();
+    if (!Result.empty() && Result.back() != '/')
+    {
+        Result.push_back('/');
+    }
+    return Result;
+}
+
+static std::string resolveProjectRootFromExecutable()
+{
+    std::filesystem::path ExePath;
+
+#if PLATFORM_WINDOWS
+    char ModulePath[MAX_PATH] = {};
+    DWORD Len = ::GetModuleFileNameA(nullptr, ModulePath, MAX_PATH);
+    if (Len == 0 || Len >= MAX_PATH)
+    {
+        return std::string();
+    }
+    ExePath = std::filesystem::path(ModulePath);
+#else
+    ExePath = std::filesystem::current_path();
+#endif
+
+    std::filesystem::path Cursor = ExePath.parent_path();
+    for (int32 i = 0; i < 8; ++i)
+    {
+        std::filesystem::path ShadersDir = Cursor / "Shaders";
+        if (std::filesystem::exists(ShadersDir) && std::filesystem::is_directory(ShadersDir))
+        {
+            return normalizeDirPath(Cursor);
+        }
+
+        if (!Cursor.has_parent_path())
+        {
+            break;
+        }
+        Cursor = Cursor.parent_path();
+    }
+
+    return std::string();
+}
 
 FCubeSceneProxy::FCubeSceneProxy(const UCubeMeshComponent* InComponent)
     : FPrimitiveSceneProxy(InComponent, "CubeSceneProxy")
@@ -304,16 +355,25 @@ bool FCubeSceneProxy::CreateShaders()
     MR_LOG(LogCubeSceneProxy, Log, "Loading shaders for %s...",
         MonsterRender::RHI::GetRHIBackendName(RHIBackend));
     
+    // Use absolute path to handle different working directories (e.g., RenderDoc)
+    std::string ProjectRoot = resolveProjectRootFromExecutable();
+    if (ProjectRoot.empty())
+    {
+        MR_LOG(LogCubeSceneProxy, Warning, "Failed to resolve project root from executable path, falling back to current working directory");
+    }
+    
     if (RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan)
     {
         // Load SPIR-V shaders
         // First try lit shaders, fall back to original cube shaders
-        std::vector<uint8> VsSpv = MonsterRender::ShaderCompiler::readFileBytes("Shaders/CubeLit.vert.spv");
+        std::string VsPath = ProjectRoot + "Shaders/CubeLit.vert.spv";
+        std::vector<uint8> VsSpv = MonsterRender::ShaderCompiler::readFileBytes(VsPath.c_str());
         MR_LOG(LogCubeSceneProxy, Log, "Loaded CubeLit.vert.spv: %zu bytes", VsSpv.size());
         if (VsSpv.empty())
         {
             // Fall back to original shader
-            VsSpv = MonsterRender::ShaderCompiler::readFileBytes("Shaders/Cube.vert.spv");
+            VsPath = ProjectRoot + "Shaders/Cube.vert.spv";
+            VsSpv = MonsterRender::ShaderCompiler::readFileBytes(VsPath.c_str());
             MR_LOG(LogCubeSceneProxy, Log, "Fallback to Cube.vert.spv: %zu bytes", VsSpv.size());
         }
         
@@ -323,12 +383,14 @@ bool FCubeSceneProxy::CreateShaders()
             return false;
         }
         
-        std::vector<uint8> PsSpv = MonsterRender::ShaderCompiler::readFileBytes("Shaders/CubeLit.frag.spv");
+        std::string PsPath = ProjectRoot + "Shaders/CubeLit.frag.spv";
+        std::vector<uint8> PsSpv = MonsterRender::ShaderCompiler::readFileBytes(PsPath.c_str());
         MR_LOG(LogCubeSceneProxy, Log, "Loaded CubeLit.frag.spv: %zu bytes", PsSpv.size());
         if (PsSpv.empty())
         {
             // Fall back to original shader
-            PsSpv = MonsterRender::ShaderCompiler::readFileBytes("Shaders/Cube.frag.spv");
+            PsPath = ProjectRoot + "Shaders/Cube.frag.spv";
+            PsSpv = MonsterRender::ShaderCompiler::readFileBytes(PsPath.c_str());
             MR_LOG(LogCubeSceneProxy, Log, "Fallback to Cube.frag.spv: %zu bytes", PsSpv.size());
         }
         
@@ -344,15 +406,17 @@ bool FCubeSceneProxy::CreateShaders()
     else if (RHIBackend == MonsterRender::RHI::ERHIBackend::OpenGL)
     {
         // Load GLSL shaders
-        std::ifstream VsFile("Shaders/CubeLit_GL.vert", std::ios::binary);
+        std::string VsPath = ProjectRoot + "Shaders/CubeLit_GL.vert";
+        std::ifstream VsFile(VsPath, std::ios::binary);
         if (!VsFile.is_open())
         {
-            VsFile.open("Shaders/Cube_GL.vert", std::ios::binary);
+            VsPath = ProjectRoot + "Shaders/Cube_GL.vert";
+            VsFile.open(VsPath, std::ios::binary);
         }
         
         if (!VsFile.is_open())
         {
-            MR_LOG(LogCubeSceneProxy, Error, "Failed to open vertex shader");
+            MR_LOG(LogCubeSceneProxy, Error, "Failed to open vertex shader: %s", VsPath.c_str());
             return false;
         }
         
@@ -360,15 +424,17 @@ bool FCubeSceneProxy::CreateShaders()
                               std::istreambuf_iterator<char>());
         VsFile.close();
         
-        std::ifstream PsFile("Shaders/CubeLit_GL.frag", std::ios::binary);
+        std::string PsPath = ProjectRoot + "Shaders/CubeLit_GL.frag";
+        std::ifstream PsFile(PsPath, std::ios::binary);
         if (!PsFile.is_open())
         {
-            PsFile.open("Shaders/Cube_GL.frag", std::ios::binary);
+            PsPath = ProjectRoot + "Shaders/Cube_GL.frag";
+            PsFile.open(PsPath, std::ios::binary);
         }
         
         if (!PsFile.is_open())
         {
-            MR_LOG(LogCubeSceneProxy, Error, "Failed to open fragment shader");
+            MR_LOG(LogCubeSceneProxy, Error, "Failed to open fragment shader: %s", PsPath.c_str());
             return false;
         }
         
@@ -485,10 +551,13 @@ bool FCubeSceneProxy::LoadTextures()
     }
     
     // Otherwise load default textures
+    // Use absolute path to handle different working directories (e.g., RenderDoc)
+    const char* ProjectRoot = "E:/MonsterEngine/";
+    
     if (!Texture1)
     {
         MonsterRender::FTextureLoadInfo LoadInfo1;
-        LoadInfo1.FilePath = "resources/textures/container.jpg";
+        LoadInfo1.FilePath = std::string(ProjectRoot) + "resources/textures/container.jpg";
         LoadInfo1.bGenerateMips = true;
         LoadInfo1.bSRGB = true;
         LoadInfo1.bFlipVertical = true;
@@ -505,7 +574,7 @@ bool FCubeSceneProxy::LoadTextures()
     if (!Texture2)
     {
         MonsterRender::FTextureLoadInfo LoadInfo2;
-        LoadInfo2.FilePath = "resources/textures/awesomeface.png";
+        LoadInfo2.FilePath = std::string(ProjectRoot) + "resources/textures/awesomeface.png";
         LoadInfo2.bGenerateMips = true;
         LoadInfo2.bSRGB = true;
         LoadInfo2.bFlipVertical = true;
