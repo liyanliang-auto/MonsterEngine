@@ -262,12 +262,25 @@ void CubeSceneApplication::onRender()
     MR_LOG(LogCubeSceneApp, Log, "ViewMatrix row3 (translation): %.2f, %.2f, %.2f, %.2f",
            viewMatrix.M[3][0], viewMatrix.M[3][1], viewMatrix.M[3][2], viewMatrix.M[3][3]);
     
-    FMatrix projectionMatrix = cameraView.CalculateProjectionMatrix();
+    // Calculate projection matrix based on backend
+    // Vulkan: depth range [0, 1], Y-down (need Y-flip)
+    // OpenGL: depth range [-1, 1], Y-up
+    FMatrix projectionMatrix;
+    const float NearPlane = 0.1f;
+    const float FarPlane = 100000.0f;
+    const float FOVRadians = FMath::DegreesToRadians(cameraView.FOV);
     
-    // Flip Y for Vulkan
     if (backend == RHI::ERHIBackend::Vulkan)
     {
+        // Use Vulkan projection matrix with depth range [0, 1]
+        projectionMatrix = FMatrix::MakePerspective(FOVRadians, cameraView.AspectRatio, NearPlane, FarPlane);
+        // Flip Y for Vulkan (Y-down in NDC)
         projectionMatrix.M[1][1] *= -1.0f;
+    }
+    else
+    {
+        // Use OpenGL projection matrix with depth range [-1, 1]
+        projectionMatrix = FMatrix::MakePerspectiveGL(FOVRadians, cameraView.AspectRatio, NearPlane, FarPlane);
     }
     
     // Get camera position
