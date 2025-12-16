@@ -561,14 +561,21 @@ bool FCubeSceneProxy::LoadTextures()
         return true;
     }
     
-    // Otherwise load default textures
-    // Use absolute path to handle different working directories (e.g., RenderDoc)
-    const char* ProjectRoot = "E:/MonsterEngine/";
+    // Resolve project root from executable path to handle different working directories (e.g., RenderDoc)
+    // This searches upward from exe location for a directory containing "Shaders/"
+    std::string ProjectRoot = resolveProjectRootFromExecutable();
+    if (ProjectRoot.empty())
+    {
+        MR_LOG(LogCubeSceneProxy, Warning, "Failed to resolve project root from executable path, falling back to current working directory");
+        ProjectRoot = normalizeDirPath(std::filesystem::current_path());
+    }
+    
+    MR_LOG(LogCubeSceneProxy, Log, "Using project root for textures: %s", ProjectRoot.c_str());
     
     if (!Texture1)
     {
         MonsterRender::FTextureLoadInfo LoadInfo1;
-        LoadInfo1.FilePath = std::string(ProjectRoot) + "resources/textures/container.jpg";
+        LoadInfo1.FilePath = ProjectRoot + "resources/textures/container.jpg";
         LoadInfo1.bGenerateMips = true;
         LoadInfo1.bSRGB = true;
         LoadInfo1.bFlipVertical = true;
@@ -577,7 +584,7 @@ bool FCubeSceneProxy::LoadTextures()
         Texture1 = MonsterRender::FTextureLoader::LoadFromFile(Device, LoadInfo1);
         if (!Texture1)
         {
-            MR_LOG(LogCubeSceneProxy, Warning, "Failed to load container texture, creating placeholder");
+            MR_LOG(LogCubeSceneProxy, Warning, "Failed to load container texture from: %s, creating placeholder", LoadInfo1.FilePath.c_str());
             Texture1 = CreatePlaceholderTexture(Device, 256, true);
         }
     }
@@ -585,7 +592,7 @@ bool FCubeSceneProxy::LoadTextures()
     if (!Texture2)
     {
         MonsterRender::FTextureLoadInfo LoadInfo2;
-        LoadInfo2.FilePath = std::string(ProjectRoot) + "resources/textures/awesomeface.png";
+        LoadInfo2.FilePath = ProjectRoot + "resources/textures/awesomeface.png";
         LoadInfo2.bGenerateMips = true;
         LoadInfo2.bSRGB = true;
         LoadInfo2.bFlipVertical = true;
@@ -594,7 +601,7 @@ bool FCubeSceneProxy::LoadTextures()
         Texture2 = MonsterRender::FTextureLoader::LoadFromFile(Device, LoadInfo2);
         if (!Texture2)
         {
-            MR_LOG(LogCubeSceneProxy, Warning, "Failed to load awesomeface texture, creating placeholder");
+            MR_LOG(LogCubeSceneProxy, Warning, "Failed to load awesomeface texture from: %s, creating placeholder", LoadInfo2.FilePath.c_str());
             Texture2 = CreatePlaceholderTexture(Device, 256, false);
         }
     }
