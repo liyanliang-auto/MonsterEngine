@@ -12,6 +12,7 @@
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanTexture.h"
+#include "RHI/IRHISwapChain.h"  // For ERHIBackend definition
 #include "Core/Log.h"
 
 namespace MonsterRender::RHI::Vulkan {
@@ -704,6 +705,13 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        // Backend type validation - ensure texture is from Vulkan backend
+        // 后端类型验证 - 确保纹理来自 Vulkan 后端
+        if (texture->getBackendType() != ERHIBackend::Vulkan) {
+            MR_LOG_ERROR("transitionTextureLayout: texture is not a Vulkan resource");
+            return;
+        }
+        
         if (!m_context) {
             MR_LOG_ERROR("transitionTextureLayout: No active context");
             return;
@@ -715,7 +723,7 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
-        // Get Vulkan texture
+        // Get Vulkan texture (safe after backend validation)
         auto* vulkanTexture = static_cast<VulkanTexture*>(texture.get());
         VkImage image = vulkanTexture->getImage();
         
@@ -771,8 +779,7 @@ namespace MonsterRender::RHI::Vulkan {
         // Update texture's current layout
         vulkanTexture->setCurrentLayout(newLayout);
         
-        MR_LOG_INFO("Transitioned texture layout: " + 
-                    std::to_string(oldLayout) + " -> " + std::to_string(newLayout));
+        MR_LOG(LogTemp, Log, "transitionTextureLayout: %d -> %d", (int32)oldLayout, (int32)newLayout);
     }
     
     void FVulkanRHICommandListImmediate::copyBufferToTexture(
@@ -790,6 +797,17 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        // Backend type validation - ensure resources are from Vulkan backend
+        // 后端类型验证 - 确保资源来自 Vulkan 后端
+        if (srcBuffer->getBackendType() != ERHIBackend::Vulkan) {
+            MR_LOG_ERROR("copyBufferToTexture: srcBuffer is not a Vulkan resource");
+            return;
+        }
+        if (dstTexture->getBackendType() != ERHIBackend::Vulkan) {
+            MR_LOG_ERROR("copyBufferToTexture: dstTexture is not a Vulkan resource");
+            return;
+        }
+        
         if (!m_context) {
             MR_LOG_ERROR("copyBufferToTexture: No active context");
             return;
@@ -801,7 +819,30 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
-        // Get Vulkan handles
+        // Debug validation: check mip/layer/extent bounds
+        // Debug 校验：检查 mip/layer/extent 边界
+#ifdef _DEBUG
+        const TextureDesc& texDesc = dstTexture->getDesc();
+        if (mipLevel >= texDesc.mipLevels) {
+            MR_LOG(LogTemp, Error, "copyBufferToTexture: mipLevel %u >= mipLevels %u", mipLevel, texDesc.mipLevels);
+            return;
+        }
+        if (arrayLayer >= texDesc.arraySize) {
+            MR_LOG(LogTemp, Error, "copyBufferToTexture: arrayLayer %u >= arraySize %u", arrayLayer, texDesc.arraySize);
+            return;
+        }
+        // Calculate expected mip dimensions
+        uint32 mipWidth = (std::max)(1u, texDesc.width >> mipLevel);
+        uint32 mipHeight = (std::max)(1u, texDesc.height >> mipLevel);
+        uint32 mipDepth = (std::max)(1u, texDesc.depth >> mipLevel);
+        if (width > mipWidth || height > mipHeight || depth > mipDepth) {
+            MR_LOG(LogTemp, Error, "copyBufferToTexture: extent (%ux%ux%u) exceeds mip%u dimensions (%ux%ux%u)",
+                   width, height, depth, mipLevel, mipWidth, mipHeight, mipDepth);
+            return;
+        }
+#endif
+        
+        // Get Vulkan handles (safe after backend validation)
         auto* vulkanBuffer = static_cast<VulkanBuffer*>(srcBuffer.get());
         auto* vulkanTexture = static_cast<VulkanTexture*>(dstTexture.get());
         
@@ -818,7 +859,21 @@ namespace MonsterRender::RHI::Vulkan {
         region.bufferOffset = srcOffset;
         region.bufferRowLength = 0;   // Tightly packed
         region.bufferImageHeight = 0; // Tightly packed
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        
+        // Determine aspect mask based on texture format (same logic as transitionTextureLayout)
+        // 根据纹理格式确定 aspect mask（与 transitionTextureLayout 相同的逻辑）
+        EPixelFormat format = dstTexture->getDesc().format;
+        if (format == EPixelFormat::D32_FLOAT || 
+            format == EPixelFormat::D24_UNORM_S8_UINT || 
+            format == EPixelFormat::D32_FLOAT_S8_UINT ||
+            format == EPixelFormat::D16_UNORM) {
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            // Note: For depth-stencil copy, typically only depth is copied from buffer
+            // Stencil data would require separate copy with VK_IMAGE_ASPECT_STENCIL_BIT
+        } else {
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        }
+        
         region.imageSubresource.mipLevel = mipLevel;
         region.imageSubresource.baseArrayLayer = arrayLayer;
         region.imageSubresource.layerCount = 1;
@@ -836,7 +891,6 @@ namespace MonsterRender::RHI::Vulkan {
             &region
         );
         
-        MR_LOG_DEBUG("Copied buffer to texture mip " + std::to_string(mipLevel) + 
-                    ": " + std::to_string(width) + "x" + std::to_string(height));
+        MR_LOG(LogTemp, Verbose, "copyBufferToTexture: mip %u, %ux%ux%u", mipLevel, width, height, depth);
     }
 }

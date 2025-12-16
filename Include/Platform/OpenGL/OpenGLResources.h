@@ -36,6 +36,9 @@ public:
     virtual void* map() override;
     virtual void unmap() override;
     
+    // IRHIResource interface - backend identification
+    MonsterRender::RHI::ERHIBackend getBackendType() const override { return MonsterRender::RHI::ERHIBackend::OpenGL; }
+    
     /**
      * Get the OpenGL buffer handle
      */
@@ -259,6 +262,9 @@ public:
     FOpenGLTexture(const MonsterRender::RHI::TextureDesc& desc);
     virtual ~FOpenGLTexture();
     
+    // IRHIResource interface - backend identification
+    MonsterRender::RHI::ERHIBackend getBackendType() const override { return MonsterRender::RHI::ERHIBackend::OpenGL; }
+    
     /**
      * Get the OpenGL texture handle
      */
@@ -391,6 +397,9 @@ class FOpenGLSampler : public MonsterRender::RHI::IRHISampler
 public:
     FOpenGLSampler(const FSamplerDesc& desc);
     virtual ~FOpenGLSampler();
+    
+    // IRHIResource interface - backend identification
+    MonsterRender::RHI::ERHIBackend getBackendType() const override { return MonsterRender::RHI::ERHIBackend::OpenGL; }
     
     /**
      * Get the OpenGL sampler handle

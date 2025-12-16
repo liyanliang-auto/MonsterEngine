@@ -27,6 +27,9 @@ using MonsterRender::RHI::FVulkanAllocation;
         VulkanTexture(VulkanTexture&&) = delete;
         VulkanTexture& operator=(VulkanTexture&&) = delete;
         
+        // IRHIResource interface - backend identification
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
+        
         // Vulkan-specific interface
         VkImage getImage() const { return m_image; }
         VkImageView getImageView() const { return m_imageView; }

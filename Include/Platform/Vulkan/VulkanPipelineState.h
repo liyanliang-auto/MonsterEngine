@@ -75,6 +75,9 @@ using MonsterEngine::TMap;
         VulkanPipelineState(VulkanPipelineState&&) = default;
         VulkanPipelineState& operator=(VulkanPipelineState&&) = default;
         
+        // IRHIResource interface - backend identification
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
+        
         /**
          * Initialize the pipeline state
          * Creates Vulkan pipeline objects and sets up reflection data

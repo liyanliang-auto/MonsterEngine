@@ -4,6 +4,36 @@
 
 namespace MonsterRender::RHI {
     
+    /**
+     * RHI Backend type enumeration
+     * Identifies which graphics API implementation a resource belongs to
+     */
+    enum class ERHIBackend : uint8
+    {
+        None = 0,
+        Unknown = 0,
+        D3D11,
+        D3D12,
+        Vulkan,
+        OpenGL,
+        Metal
+    };
+    
+    /**
+     * Get the name of an RHI backend
+     */
+    inline const char* GetRHIBackendName(ERHIBackend backend)
+    {
+        switch (backend)
+        {
+            case ERHIBackend::Vulkan:  return "Vulkan";
+            case ERHIBackend::OpenGL:  return "OpenGL";
+            case ERHIBackend::D3D12:   return "D3D12";
+            case ERHIBackend::Metal:   return "Metal";
+            default:                   return "Unknown";
+        }
+    }
+    
     // Resource usage flags
     enum class EResourceUsage : uint32 {
         None = 0,

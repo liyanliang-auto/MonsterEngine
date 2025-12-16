@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Core/CoreMinimal.h"
-#include "RHI/RHIDefinitions.h"
+#include "RHI/RHIDefinitions.h"  // For ERHIBackend definition
 
 namespace MonsterRender::RHI {
     
@@ -39,6 +39,12 @@ namespace MonsterRender::RHI {
          * Get the resource usage flags
          */
         virtual EResourceUsage getUsage() const = 0;
+        
+        /**
+         * Get the RHI backend type that created this resource
+         * Used for safe downcasting to platform-specific implementations
+         */
+        virtual ERHIBackend getBackendType() const = 0;
         
     protected:
         String m_debugName;
