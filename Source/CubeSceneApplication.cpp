@@ -59,8 +59,8 @@ static ApplicationConfig CreateCubeSceneConfig()
     ApplicationConfig config;
     config.name = "CubeScene Application";
     config.preferredBackend = RHI::ERHIBackend::Vulkan;  // Use Vulkan backend
-    config.windowProperties.width = 800;
-    config.windowProperties.height = 600;
+    config.windowProperties.width = 256/2;
+    config.windowProperties.height = 256/2;
     config.enableValidation = true;
     return config;
 }
