@@ -549,16 +549,26 @@ public:
         TVector<T> Right = TVector<T>::CrossProduct(Up, Forward).GetSafeNormal();
         TVector<T> UpVec = TVector<T>::CrossProduct(Forward, Right);
 
-        // Row-major layout: each row is [Right, Up, Forward, Translation]
-        // Row 0: Right vector
-        // Row 1: Up vector  
-        // Row 2: Forward vector
-        // Row 3: Translation (dot products)
+        // Row-major layout for view matrix:
+        // Row 0: Right vector components
+        // Row 1: Up vector components
+        // Row 2: Forward vector components
+        // Row 3: Translation (eye position transformed to view space)
+        //
+        // Standard row-major view matrix:
+        // | Rx  Ry  Rz  0 |
+        // | Ux  Uy  Uz  0 |
+        // | Fx  Fy  Fz  0 |
+        // | Tx  Ty  Tz  1 |
+        // Where T = -dot(axis, Eye)
         TMatrix<T> Result;
-        Result.M[0][0] = Right.X;   Result.M[0][1] = Right.Y;   Result.M[0][2] = Right.Z;   Result.M[0][3] = -TVector<T>::DotProduct(Right, Eye);
-        Result.M[1][0] = UpVec.X;   Result.M[1][1] = UpVec.Y;   Result.M[1][2] = UpVec.Z;   Result.M[1][3] = -TVector<T>::DotProduct(UpVec, Eye);
-        Result.M[2][0] = Forward.X; Result.M[2][1] = Forward.Y; Result.M[2][2] = Forward.Z; Result.M[2][3] = -TVector<T>::DotProduct(Forward, Eye);
-        Result.M[3][0] = T(0);      Result.M[3][1] = T(0);      Result.M[3][2] = T(0);      Result.M[3][3] = T(1);
+        Result.M[0][0] = Right.X;   Result.M[0][1] = Right.Y;   Result.M[0][2] = Right.Z;   Result.M[0][3] = T(0);
+        Result.M[1][0] = UpVec.X;   Result.M[1][1] = UpVec.Y;   Result.M[1][2] = UpVec.Z;   Result.M[1][3] = T(0);
+        Result.M[2][0] = Forward.X; Result.M[2][1] = Forward.Y; Result.M[2][2] = Forward.Z; Result.M[2][3] = T(0);
+        Result.M[3][0] = -TVector<T>::DotProduct(Right, Eye);
+        Result.M[3][1] = -TVector<T>::DotProduct(UpVec, Eye);
+        Result.M[3][2] = -TVector<T>::DotProduct(Forward, Eye);
+        Result.M[3][3] = T(1);
 
         return Result;
     }
