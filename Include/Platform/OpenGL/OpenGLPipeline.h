@@ -34,6 +34,9 @@ public:
     FOpenGLPipelineState(const MonsterRender::RHI::PipelineStateDesc& desc);
     virtual ~FOpenGLPipelineState();
     
+    // IRHIResource interface - backend identification
+    MonsterRender::RHI::ERHIBackend getBackendType() const override { return MonsterRender::RHI::ERHIBackend::OpenGL; }
+    
     /**
      * Bind this pipeline state
      */

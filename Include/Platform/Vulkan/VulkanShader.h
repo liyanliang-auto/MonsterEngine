@@ -23,6 +23,9 @@ namespace MonsterRender::RHI::Vulkan {
         VulkanShader(VulkanShader&&) = delete;
         VulkanShader& operator=(VulkanShader&&) = delete;
         
+        // IRHIResource interface - backend identification
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
+        
         // Vulkan-specific interface
         VkShaderModule getShaderModule() const { return m_shaderModule; }
         VkPipelineShaderStageCreateInfo getPipelineStageCreateInfo() const;
@@ -59,6 +62,7 @@ namespace MonsterRender::RHI::Vulkan {
         // IRHIResource interface
         uint32 getSize() const override { return VulkanShader::getSize(); }
         EResourceUsage getUsage() const override { return VulkanShader::getUsage(); }
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
     };
     
     /**
@@ -72,5 +76,6 @@ namespace MonsterRender::RHI::Vulkan {
         // IRHIResource interface
         uint32 getSize() const override { return VulkanShader::getSize(); }
         EResourceUsage getUsage() const override { return VulkanShader::getUsage(); }
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
     };
 }

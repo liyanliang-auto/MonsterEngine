@@ -39,6 +39,9 @@ namespace MonsterRender::RHI::Vulkan {
         VulkanSampler(const VulkanSampler&) = delete;
         VulkanSampler& operator=(const VulkanSampler&) = delete;
         
+        // IRHIResource interface - backend identification
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
+        
         /**
          * Get native Vulkan sampler handle
          */

@@ -116,6 +116,9 @@ public:
     FOpenGLVertexShader();
     virtual ~FOpenGLVertexShader();
     
+    // IRHIResource interface - backend identification
+    MonsterRender::RHI::ERHIBackend getBackendType() const override { return MonsterRender::RHI::ERHIBackend::OpenGL; }
+    
     /**
      * Initialize from GLSL source
      */
@@ -158,6 +161,9 @@ class FOpenGLPixelShader : public MonsterRender::RHI::IRHIPixelShader
 public:
     FOpenGLPixelShader();
     virtual ~FOpenGLPixelShader();
+    
+    // IRHIResource interface - backend identification
+    MonsterRender::RHI::ERHIBackend getBackendType() const override { return MonsterRender::RHI::ERHIBackend::OpenGL; }
     
     /**
      * Initialize from GLSL source

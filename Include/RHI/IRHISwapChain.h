@@ -170,33 +170,6 @@ protected:
     SwapChainDesc m_desc;
 };
 
-/**
- * RHI Backend type enumeration
- */
-enum class ERHIBackend : uint8
-{
-    None = 0,
-    Unknown = 0,
-    D3D11,
-    D3D12,
-    Vulkan,
-    OpenGL,
-    Metal
-};
-
-/**
- * Get the name of an RHI backend
- */
-inline const char* GetRHIBackendName(ERHIBackend backend)
-{
-    switch (backend)
-    {
-        case ERHIBackend::Vulkan:  return "Vulkan";
-        case ERHIBackend::OpenGL:  return "OpenGL";
-        case ERHIBackend::D3D12:   return "D3D12";
-        case ERHIBackend::Metal:   return "Metal";
-        default:                   return "Unknown";
-    }
-}
+// ERHIBackend is now defined in RHIDefinitions.h
 
 } // namespace MonsterRender::RHI

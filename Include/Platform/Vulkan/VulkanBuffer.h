@@ -29,6 +29,9 @@ namespace MonsterRender::RHI::Vulkan {
         void* map() override;
         void unmap() override;
         
+        // IRHIResource interface - backend identification
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
+        
         // Vulkan-specific interface
         VkBuffer getBuffer() const { return m_buffer; }
         VkDeviceMemory getDeviceMemory() const { return m_deviceMemory; }
