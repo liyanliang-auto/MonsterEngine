@@ -11,6 +11,8 @@
 #include "Renderer/SceneRenderer.h"
 #include "Renderer/Scene.h"
 #include "Renderer/SceneVisibility.h"
+#include "Renderer/ShadowRendering.h"
+#include "Renderer/ShadowDepthPass.h"
 #include "Core/Logging/Logging.h"
 #include "Math/MathFunctions.h"
 #include "RHI/IRHICommandList.h"
@@ -29,6 +31,7 @@ namespace Renderer
 
 FSceneRenderer::FSceneRenderer(const FSceneViewFamily* InViewFamily)
     : Scene(nullptr)
+    , ShadowSceneRenderer(nullptr)
     , FeatureLevel(0)
     , ShaderPlatform(0)
     , bUsedPrecomputedVisibility(false)
@@ -492,14 +495,76 @@ void FSceneRenderer::SetupMeshPass(FViewInfo& View, FViewCommands& ViewCommands)
 
 void FSceneRenderer::InitDynamicShadows()
 {
-    // Initialize shadow data structures
-    MR_LOG(LogRenderer, Verbose, "InitDynamicShadows");
+    MR_LOG(LogRenderer, Verbose, "InitDynamicShadows begin");
+    
+    // Clear previous frame's shadow data
+    VisibleProjectedShadows.Empty();
+    
+    // Skip if no scene or no visible lights
+    if (!Scene || VisibleLightInfos.Num() == 0)
+    {
+        MR_LOG(LogRenderer, Verbose, "InitDynamicShadows - No scene or no visible lights");
+        return;
+    }
+    
+    // Iterate through visible lights and setup shadows
+    for (int32 LightIndex = 0; LightIndex < VisibleLightInfos.Num(); ++LightIndex)
+    {
+        FVisibleLightInfo& VisibleLightInfo = VisibleLightInfos[LightIndex];
+        FLightSceneInfo* LightSceneInfo = VisibleLightInfo.LightSceneInfo;
+        
+        if (!LightSceneInfo)
+        {
+            continue;
+        }
+        
+        // TODO: Check if light casts dynamic shadow from light component
+        // For now, assume all visible lights cast shadows
+        
+        // TODO: Create FProjectedShadowInfo for this light
+        // For directional lights: setup cascaded shadow maps
+        // For point lights: setup cube shadow maps
+        // For spot lights: setup single shadow map
+        
+        MR_LOG(LogRenderer, Verbose, "InitDynamicShadows - Processing light %d", LightIndex);
+    }
+    
+    // Gather shadow primitives
+    GatherShadowPrimitives();
+    
+    MR_LOG(LogRenderer, Verbose, "InitDynamicShadows end - %d shadows setup", VisibleProjectedShadows.Num());
 }
 
 void FSceneRenderer::GatherShadowPrimitives()
 {
-    // Gather primitives that cast shadows
-    MR_LOG(LogRenderer, Verbose, "GatherShadowPrimitives");
+    MR_LOG(LogRenderer, Verbose, "GatherShadowPrimitives begin");
+    
+    // Skip if no shadows to render
+    if (VisibleProjectedShadows.Num() == 0)
+    {
+        return;
+    }
+    
+    // Iterate through each shadow and gather primitives
+    for (FProjectedShadowInfo* ShadowInfo : VisibleProjectedShadows)
+    {
+        if (!ShadowInfo)
+        {
+            continue;
+        }
+        
+        // TODO: Gather primitives that are within the shadow frustum
+        // and add them to ShadowInfo->DynamicSubjectPrimitives
+        
+        // For each view, check which primitives cast shadows into this shadow map
+        for (const FViewInfo& View : Views)
+        {
+            // TODO: Frustum cull primitives against shadow frustum
+            // Add shadow-casting primitives to the shadow info
+        }
+    }
+    
+    MR_LOG(LogRenderer, Verbose, "GatherShadowPrimitives end");
 }
 
 // ============================================================================
@@ -690,8 +755,44 @@ void FDeferredShadingSceneRenderer::RenderPostProcessing(RHI::IRHICommandList& R
 
 void FDeferredShadingSceneRenderer::RenderShadowDepthMaps(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps");
-    // Render shadow depth maps
+    MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps begin");
+    
+    // Skip if no shadows to render
+    if (VisibleProjectedShadows.Num() == 0)
+    {
+        MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps - No shadows to render");
+        return;
+    }
+    
+    // Initialize shadow depth pass if needed
+    if (!ShadowDepthPass)
+    {
+        // TODO: Get RHI device from context
+        // ShadowDepthPass = MakeShared<FShadowDepthPass>(RHIDevice);
+        // ShadowDepthPass->initialize();
+        MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps - Shadow depth pass not initialized");
+    }
+    
+    // Render each shadow depth map
+    for (FProjectedShadowInfo* ShadowInfo : VisibleProjectedShadows)
+    {
+        if (!ShadowInfo || !ShadowInfo->RenderTargets.isValid())
+        {
+            continue;
+        }
+        
+        MR_LOG(LogRenderer, Verbose, "Rendering shadow depth map: resolution=%ux%u",
+               ShadowInfo->ResolutionX, ShadowInfo->ResolutionY);
+        
+        // Render shadow depth using the shadow depth pass
+        if (ShadowDepthPass && ShadowDepthPass->isInitialized())
+        {
+            // TODO: Create FShadowMap from RenderTargets or pass RenderTargets directly
+            // ShadowDepthPass->renderShadowDepth(RHICmdList, ShadowInfo, shadowMap);
+        }
+    }
+    
+    MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps end - %d shadows rendered", VisibleProjectedShadows.Num());
 }
 
 void FDeferredShadingSceneRenderer::RenderShadowProjections(RHI::IRHICommandList& RHICmdList)
