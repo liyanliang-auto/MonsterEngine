@@ -496,6 +496,41 @@ public:
     float computeTransitionSize() const;
     
     // ========================================================================
+    // Render Target Management
+    // ========================================================================
+    
+    /**
+     * Allocate shadow depth render target
+     * @param InDevice RHI device for resource creation
+     * @return true if allocation succeeded
+     */
+    bool allocateRenderTargets(IRHIDevice* InDevice);
+    
+    /**
+     * Release shadow depth render target
+     */
+    void releaseRenderTargets();
+    
+    /**
+     * Check if render targets are allocated
+     * @return true if allocated
+     */
+    bool hasRenderTargets() const { return RenderTargets.isValid(); }
+    
+    /**
+     * Render shadow depth for this shadow
+     * @param RHICmdList Command list for GPU commands
+     * @param SceneRenderer Scene renderer reference
+     */
+    void renderDepth(IRHICommandList& RHICmdList, class FSceneRenderer* SceneRenderer);
+    
+    /**
+     * Set viewport and scissor for shadow rendering
+     * @param RHICmdList Command list for GPU commands
+     */
+    void setStateForView(IRHICommandList& RHICmdList) const;
+    
+    // ========================================================================
     // Accessors - Bias Parameters
     // ========================================================================
     

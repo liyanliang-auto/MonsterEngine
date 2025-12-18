@@ -629,6 +629,22 @@ public:
      */
     uint32 GetFrameNumber() const { return FrameNumber; }
     
+    // ========================================================================
+    // RHI Device Access
+    // ========================================================================
+    
+    /**
+     * Set the RHI device for this scene
+     * @param InDevice RHI device pointer
+     */
+    void setRHIDevice(MonsterRender::RHI::IRHIDevice* InDevice) { m_rhiDevice = InDevice; }
+    
+    /**
+     * Get the RHI device for this scene
+     * @return RHI device pointer (may be nullptr)
+     */
+    MonsterRender::RHI::IRHIDevice* getRHIDevice() const { return m_rhiDevice; }
+    
 public:
     // ========================================================================
     // Scene Data Arrays (parallel arrays indexed by primitive index)
@@ -665,6 +681,9 @@ private:
      * Remove primitive from internal arrays
      */
     void RemovePrimitiveFromArrays(FPrimitiveSceneInfo* PrimitiveSceneInfo);
+    
+    /** RHI device for resource creation */
+    MonsterRender::RHI::IRHIDevice* m_rhiDevice = nullptr;
 };
 
 } // namespace Renderer
