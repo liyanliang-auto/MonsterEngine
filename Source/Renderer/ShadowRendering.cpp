@@ -299,6 +299,141 @@ void FProjectedShadowInfo::setupWholeSceneProjection(
            ResolutionX, ResolutionY, BorderSize);
 }
 
+bool FProjectedShadowInfo::setupDirectionalLightShadow(
+    FLightSceneInfo* InLightSceneInfo,
+    FViewInfo* InDependentView,
+    const FVector& InLightDirection,
+    const FSphere& InShadowBounds,
+    uint32 InResolutionX,
+    uint32 InResolutionY,
+    uint32 InBorderSize,
+    int32 InCascadeIndex)
+{
+    std::lock_guard<std::mutex> Lock(m_mutex);
+    
+    if (!InLightSceneInfo)
+    {
+        MR_LOG(LogShadowRendering, Error,
+               "FProjectedShadowInfo::setupDirectionalLightShadow - Invalid light scene info");
+        return false;
+    }
+    
+    // Store references
+    m_lightSceneInfo = InLightSceneInfo;
+    m_parentSceneInfo = nullptr;
+    DependentView = InDependentView;
+    
+    // Set resolution and border
+    ResolutionX = InResolutionX;
+    ResolutionY = InResolutionY;
+    BorderSize = InBorderSize;
+    
+    // Set shadow flags for directional light
+    bWholeSceneShadow = 1;
+    bDirectionalLight = 1;
+    bOnePassPointLightShadow = 0;
+    bPerObjectOpaqueShadow = 0;
+    bPreShadow = 0;
+    bTranslucentShadow = 0;
+    bSelfShadowOnly = 0;
+    
+    // Store shadow bounds
+    ShadowBounds = InShadowBounds;
+    
+    // PreShadowTranslation moves the world origin to the shadow bounds center
+    // This improves precision for shadow depth rendering
+    PreShadowTranslation = -ShadowBounds.Center;
+    
+    // Compute depth range
+    // For directional lights, we use the shadow bounds radius as the depth range
+    float ShadowBoundsRadius = ShadowBounds.W;
+    MinSubjectZ = -ShadowBoundsRadius;
+    MaxSubjectZ = ShadowBoundsRadius;
+    InvMaxSubjectDepth = 1.0f / (MaxSubjectZ - MinSubjectZ);
+    
+    // Store light direction for matrix computation
+    // Note: We store the negated direction as PreShadowTranslation is used for direction reference
+    FVector NormalizedLightDir = InLightDirection.GetSafeNormal();
+    
+    // Compute view matrix from light direction
+    _computeDirectionalLightViewMatrix(NormalizedLightDir);
+    
+    // Compute orthographic projection matrix
+    // Near plane is at -ShadowBoundsRadius, far plane is at +ShadowBoundsRadius
+    float NearPlane = 0.0f;
+    float FarPlane = ShadowBoundsRadius * 2.0f;
+    _computeOrthographicProjection(ShadowBoundsRadius, NearPlane, FarPlane);
+    
+    // Compute combined world-to-clip matrices
+    _computeWorldToClipMatrices();
+    
+    // Update shader depth bias
+    updateShaderDepthBias();
+    
+    // Store cascade index for CSM (reserved for future use)
+    ShadowId = InCascadeIndex;
+    
+    MR_LOG(LogShadowRendering, Log,
+           "FProjectedShadowInfo::setupDirectionalLightShadow - Resolution: %ux%u, Bounds: (%.1f, %.1f, %.1f) R=%.1f, Cascade: %d",
+           ResolutionX, ResolutionY,
+           ShadowBounds.Center.X, ShadowBounds.Center.Y, ShadowBounds.Center.Z,
+           ShadowBoundsRadius, InCascadeIndex);
+    
+    return true;
+}
+
+void FProjectedShadowInfo::computeDirectionalLightMatrices()
+{
+    std::lock_guard<std::mutex> Lock(m_mutex);
+    
+    if (!bDirectionalLight)
+    {
+        MR_LOG(LogShadowRendering, Warning,
+               "FProjectedShadowInfo::computeDirectionalLightMatrices - Not a directional light shadow");
+        return;
+    }
+    
+    // Recompute matrices if needed
+    // This is useful when shadow bounds change
+    _computeWorldToClipMatrices();
+    
+    MR_LOG(LogShadowRendering, Verbose,
+           "FProjectedShadowInfo::computeDirectionalLightMatrices - Matrices updated");
+}
+
+void FProjectedShadowInfo::_computeWorldToClipMatrices()
+{
+    // Compute the combined world-to-clip matrices
+    // These are used for shadow depth rendering and shadow projection
+    
+    // Inner matrix (excluding border) - used for shadow depth rendering
+    FMatrix WorldToClipInner = TranslatedWorldToView * ViewToClipInner;
+    
+    // Outer matrix (including border) - used for shadow projection
+    FMatrix WorldToClipOuter = TranslatedWorldToView * ViewToClipOuter;
+    
+    // Convert to float32 matrices for shader use
+    for (int32 Row = 0; Row < 4; ++Row)
+    {
+        for (int32 Col = 0; Col < 4; ++Col)
+        {
+            TranslatedWorldToClipInnerMatrix.M[Row][Col] = static_cast<float>(WorldToClipInner.M[Row][Col]);
+            TranslatedWorldToClipOuterMatrix.M[Row][Col] = static_cast<float>(WorldToClipOuter.M[Row][Col]);
+        }
+    }
+    
+    // Compute inverse receiver matrix for shadow projection
+    // This transforms from shadow clip space back to world space
+    FMatrix InvWorldToClipInner = WorldToClipInner.Inverse();
+    for (int32 Row = 0; Row < 4; ++Row)
+    {
+        for (int32 Col = 0; Col < 4; ++Col)
+        {
+            InvReceiverInnerMatrix.M[Row][Col] = static_cast<float>(InvWorldToClipInner.M[Row][Col]);
+        }
+    }
+}
+
 void FProjectedShadowInfo::setupPointLightShadow(
     FLightSceneInfo* InLightSceneInfo,
     uint32 InResolution,

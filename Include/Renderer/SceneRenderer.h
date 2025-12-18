@@ -14,6 +14,7 @@
 #include "Core/CoreMinimal.h"
 #include "Core/CoreTypes.h"
 #include "Containers/Array.h"
+#include "Math/Sphere.h"
 #include "Renderer/SceneTypes.h"
 #include "Renderer/SceneView.h"
 #include "Renderer/Scene.h"
@@ -429,6 +430,33 @@ private:
      * Compute the family size from views
      */
     void ComputeFamilySize();
+    
+    /**
+     * Create directional light shadow
+     * @param LightSceneInfo Light scene info
+     * @param LightProxy Light scene proxy
+     * @param ShadowResolution Shadow map resolution
+     * @param ShadowBorder Shadow map border size
+     * @param ShadowDistance Shadow distance from camera
+     */
+    void _createDirectionalLightShadow(
+        FLightSceneInfo* LightSceneInfo,
+        FLightSceneProxy* LightProxy,
+        uint32 ShadowResolution,
+        uint32 ShadowBorder,
+        float ShadowDistance);
+    
+    /**
+     * Compute shadow bounds for directional light
+     * @param View The view to compute bounds for
+     * @param LightDirection Light direction
+     * @param ShadowDistance Shadow distance
+     * @return Shadow bounding sphere
+     */
+    FSphere _computeDirectionalLightShadowBounds(
+        const FViewInfo& View,
+        const FVector& LightDirection,
+        float ShadowDistance) const;
 };
 
 // ============================================================================
