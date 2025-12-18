@@ -17,6 +17,7 @@
 #include "Math/MathFunctions.h"
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHIDevice.h"
+#include <cstdlib>
 
 using namespace MonsterRender;
 
@@ -507,6 +508,11 @@ void FSceneRenderer::InitDynamicShadows()
         return;
     }
     
+    // Shadow map configuration
+    const uint32 DefaultShadowResolution = 1024;
+    const uint32 ShadowBorder = 4;
+    const float DefaultShadowDistance = 5000.0f;
+    
     // Iterate through visible lights and setup shadows
     for (int32 LightIndex = 0; LightIndex < VisibleLightInfos.Num(); ++LightIndex)
     {
@@ -518,15 +524,52 @@ void FSceneRenderer::InitDynamicShadows()
             continue;
         }
         
-        // TODO: Check if light casts dynamic shadow from light component
-        // For now, assume all visible lights cast shadows
+        // Get light proxy for light type and shadow settings
+        FLightSceneProxy* LightProxy = LightSceneInfo->GetProxy();
+        if (!LightProxy)
+        {
+            continue;
+        }
         
-        // TODO: Create FProjectedShadowInfo for this light
-        // For directional lights: setup cascaded shadow maps
-        // For point lights: setup cube shadow maps
-        // For spot lights: setup single shadow map
+        // Check if light casts dynamic shadows
+        if (!LightProxy->bCastShadows)
+        {
+            continue;
+        }
         
-        MR_LOG(LogRenderer, Verbose, "InitDynamicShadows - Processing light %d", LightIndex);
+        // Get light type (using Renderer::FLightSceneProxy::ELightType)
+        FLightSceneProxy::ELightType LightType = LightProxy->GetLightType();
+        
+        // Create shadow based on light type
+        switch (LightType)
+        {
+            case FLightSceneProxy::ELightType::Directional:
+            {
+                // Create directional light shadow
+                _createDirectionalLightShadow(LightSceneInfo, LightProxy, DefaultShadowResolution, ShadowBorder, DefaultShadowDistance);
+                break;
+            }
+            case FLightSceneProxy::ELightType::Point:
+            {
+                // TODO: Create point light shadow (cube map) - reserved for future implementation
+                MR_LOG(LogRenderer, Verbose, "InitDynamicShadows - Point light shadow not yet implemented");
+                break;
+            }
+            case FLightSceneProxy::ELightType::Spot:
+            {
+                // TODO: Create spot light shadow - reserved for future implementation
+                MR_LOG(LogRenderer, Verbose, "InitDynamicShadows - Spot light shadow not yet implemented");
+                break;
+            }
+            default:
+            {
+                MR_LOG(LogRenderer, Warning, "InitDynamicShadows - Unknown light type: %d", static_cast<int32>(LightType));
+                break;
+            }
+        }
+        
+        MR_LOG(LogRenderer, Verbose, "InitDynamicShadows - Processed light %d, type: %d", 
+               LightIndex, static_cast<int32>(LightType));
     }
     
     // Gather shadow primitives
@@ -597,6 +640,118 @@ void FSceneRenderer::RenderFinish(RHI::IRHICommandList& RHICmdList)
 {
     // Cleanup after rendering
     MR_LOG(LogRenderer, Verbose, "RenderFinish");
+}
+
+void FSceneRenderer::_createDirectionalLightShadow(
+    FLightSceneInfo* LightSceneInfo,
+    FLightSceneProxy* LightProxy,
+    uint32 ShadowResolution,
+    uint32 ShadowBorder,
+    float ShadowDistance)
+{
+    if (!LightSceneInfo || !LightProxy)
+    {
+        MR_LOG(LogRenderer, Warning, "_createDirectionalLightShadow - Invalid light info or proxy");
+        return;
+    }
+    
+    // Get light direction from proxy
+    FVector LightDirection = LightProxy->GetDirection();
+    
+    // For each view, create a shadow
+    // Note: For CSM, we would create multiple shadows per view (one per cascade)
+    // Currently we create a single shadow per directional light
+    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+    {
+        FViewInfo& View = Views[ViewIndex];
+        
+        // Compute shadow bounds based on view frustum and shadow distance
+        FSphere ShadowBounds = _computeDirectionalLightShadowBounds(View, LightDirection, ShadowDistance);
+        
+        // Create projected shadow info
+        // Allocate memory for shadow info
+        void* ShadowMemory = std::malloc(sizeof(FProjectedShadowInfo));
+        if (!ShadowMemory)
+        {
+            MR_LOG(LogRenderer, Error, "_createDirectionalLightShadow - Failed to allocate memory");
+            continue;
+        }
+        FProjectedShadowInfo* ShadowInfo = static_cast<FProjectedShadowInfo*>(ShadowMemory);
+        
+        if (!ShadowInfo)
+        {
+            MR_LOG(LogRenderer, Error, "_createDirectionalLightShadow - Failed to allocate FProjectedShadowInfo");
+            continue;
+        }
+        
+        // Placement new to construct the object
+        new (ShadowInfo) FProjectedShadowInfo();
+        
+        // Setup directional light shadow with computed bounds
+        bool bSuccess = ShadowInfo->setupDirectionalLightShadow(
+            LightSceneInfo,
+            &View,
+            LightDirection,
+            ShadowBounds,
+            ShadowResolution,
+            ShadowResolution,
+            ShadowBorder,
+            -1  // Single shadow, no cascade index
+        );
+        
+        if (bSuccess)
+        {
+            // Add to visible projected shadows
+            VisibleProjectedShadows.Add(ShadowInfo);
+            
+            MR_LOG(LogRenderer, Log, 
+                   "_createDirectionalLightShadow - Created shadow for view %d, resolution: %ux%u",
+                   ViewIndex, ShadowResolution, ShadowResolution);
+        }
+        else
+        {
+            // Cleanup on failure
+            ShadowInfo->~FProjectedShadowInfo();
+            std::free(ShadowInfo);
+            
+            MR_LOG(LogRenderer, Warning, 
+                   "_createDirectionalLightShadow - Failed to setup shadow for view %d", ViewIndex);
+        }
+    }
+}
+
+FSphere FSceneRenderer::_computeDirectionalLightShadowBounds(
+    const FViewInfo& View,
+    const FVector& LightDirection,
+    float ShadowDistance) const
+{
+    // Compute shadow bounds based on view frustum
+    // The shadow bounds should encompass the visible area that needs shadows
+    
+    // Get view origin and direction
+    FVector ViewOrigin = View.ViewMatrices.ViewOrigin;
+    FVector ViewDirection = View.ViewMatrices.ViewForward;
+    
+    // Compute shadow center - offset from view origin along view direction
+    // Place the shadow center at half the shadow distance in front of the camera
+    float HalfShadowDistance = ShadowDistance * 0.5f;
+    FVector ShadowCenter = ViewOrigin + ViewDirection * HalfShadowDistance;
+    
+    // Shadow radius should cover the shadow distance
+    // Use a slightly larger radius to ensure full coverage
+    float ShadowRadius = ShadowDistance * 0.6f;
+    
+    // Adjust shadow center along light direction to ensure proper depth coverage
+    // Move the center back along the light direction by the radius
+    // This ensures objects behind the camera can still cast shadows
+    FVector NormalizedLightDir = LightDirection.GetSafeNormal();
+    ShadowCenter = ShadowCenter - NormalizedLightDir * ShadowRadius * 0.5f;
+    
+    MR_LOG(LogRenderer, Verbose, 
+           "_computeDirectionalLightShadowBounds - Center: (%.1f, %.1f, %.1f), Radius: %.1f",
+           ShadowCenter.X, ShadowCenter.Y, ShadowCenter.Z, ShadowRadius);
+    
+    return FSphere(ShadowCenter, ShadowRadius);
 }
 
 // ============================================================================

@@ -401,6 +401,35 @@ public:
         uint32 InBorderSize);
     
     /**
+     * Setup directional light shadow with explicit parameters
+     * This is the main entry point for directional light shadow setup
+     * @param InLightSceneInfo Light source
+     * @param InDependentView View this shadow depends on
+     * @param InLightDirection Light direction (normalized)
+     * @param InShadowBounds Shadow bounding sphere
+     * @param InResolutionX Horizontal resolution
+     * @param InResolutionY Vertical resolution
+     * @param InBorderSize Border size for filtering
+     * @param InCascadeIndex Cascade index for CSM (-1 for single shadow)
+     * @return true if setup successful
+     */
+    bool setupDirectionalLightShadow(
+        FLightSceneInfo* InLightSceneInfo,
+        FViewInfo* InDependentView,
+        const FVector& InLightDirection,
+        const FSphere& InShadowBounds,
+        uint32 InResolutionX,
+        uint32 InResolutionY,
+        uint32 InBorderSize,
+        int32 InCascadeIndex = -1);
+    
+    /**
+     * Compute shadow view and projection matrices for directional light
+     * Called internally after setupDirectionalLightShadow
+     */
+    void computeDirectionalLightMatrices();
+    
+    /**
      * Setup for point light shadow (cube map)
      * @param InLightSceneInfo Light source
      * @param InResolution Shadow map resolution per face
@@ -773,9 +802,14 @@ private:
     /**
      * Compute light view matrix for directional light
      * @param LightDirection Light direction vector
-     * @param LightPosition Light position (for non-directional)
      */
     void _computeDirectionalLightViewMatrix(const FVector& LightDirection);
+    
+    /**
+     * Compute combined world-to-clip matrices
+     * Called after view and projection matrices are set
+     */
+    void _computeWorldToClipMatrices();
     
     /**
      * Compute projection matrix for orthographic shadow
