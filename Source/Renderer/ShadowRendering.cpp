@@ -620,6 +620,15 @@ bool FProjectedShadowInfo::hasSubjectPrims() const
     return m_dynamicSubjectPrimitives.Num() > 0;
 }
 
+void FProjectedShadowInfo::addDynamicSubjectPrimitive(FPrimitiveSceneInfo* Primitive)
+{
+    if (Primitive)
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        m_dynamicSubjectPrimitives.Add(Primitive);
+    }
+}
+
 bool FProjectedShadowInfo::allocateRenderTargets(IRHIDevice* InDevice)
 {
     std::lock_guard<std::mutex> Lock(m_mutex);
@@ -737,12 +746,91 @@ void FProjectedShadowInfo::renderDepth(IRHICommandList& RHICmdList, FSceneRender
     // Set blend state (no blending, no color writes)
     RHICmdList.setBlendState(false, 0, 0, 0, 0, 0, 0, 0);
     
-    // TODO: Render shadow-casting primitives
-    // This requires iterating through m_dynamicSubjectPrimitives and rendering each mesh
-    // For now, we just log that we would render primitives
+    // Render shadow-casting primitives
+    int32 PrimitivesRendered = 0;
+    int32 MeshBatchesRendered = 0;
+    
+    for (const FPrimitiveSceneInfo* PrimitiveInfo : m_dynamicSubjectPrimitives)
+    {
+        if (!PrimitiveInfo)
+        {
+            continue;
+        }
+        
+        // Get mesh batches from primitive
+        const TArray<FMeshBatch>& MeshBatches = PrimitiveInfo->GetMeshBatches();
+        
+        for (const FMeshBatch& MeshBatch : MeshBatches)
+        {
+            // Skip invalid batches or batches that don't cast shadows
+            if (!MeshBatch.IsValid() || !MeshBatch.bCastShadow)
+            {
+                continue;
+            }
+            
+            // Bind vertex buffer
+            if (MeshBatch.VertexBuffer)
+            {
+                TSharedPtr<IRHIBuffer> VB(MeshBatch.VertexBuffer, [](IRHIBuffer*){});
+                TArray<TSharedPtr<IRHIBuffer>> VBArray;
+                VBArray.Add(VB);
+                RHICmdList.setVertexBuffers(0, TSpan<TSharedPtr<IRHIBuffer>>(VBArray.GetData(), VBArray.Num()));
+            }
+            
+            // Draw the mesh batch
+            if (MeshBatch.IsIndexed())
+            {
+                // Bind index buffer
+                if (MeshBatch.IndexBuffer)
+                {
+                    TSharedPtr<IRHIBuffer> IB(MeshBatch.IndexBuffer, [](IRHIBuffer*){});
+                    RHICmdList.setIndexBuffer(IB, MeshBatch.bUse32BitIndices);
+                }
+                
+                // Draw indexed
+                if (MeshBatch.NumInstances > 1)
+                {
+                    RHICmdList.drawIndexedInstanced(
+                        MeshBatch.NumIndices,
+                        MeshBatch.NumInstances,
+                        MeshBatch.FirstIndex,
+                        MeshBatch.BaseVertexLocation,
+                        0);
+                }
+                else
+                {
+                    RHICmdList.drawIndexed(
+                        MeshBatch.NumIndices,
+                        MeshBatch.FirstIndex,
+                        MeshBatch.BaseVertexLocation);
+                }
+            }
+            else
+            {
+                // Draw non-indexed
+                if (MeshBatch.NumInstances > 1)
+                {
+                    RHICmdList.drawInstanced(
+                        MeshBatch.NumVertices,
+                        MeshBatch.NumInstances,
+                        MeshBatch.FirstVertex,
+                        0);
+                }
+                else
+                {
+                    RHICmdList.draw(MeshBatch.NumVertices, MeshBatch.FirstVertex);
+                }
+            }
+            
+            ++MeshBatchesRendered;
+        }
+        
+        ++PrimitivesRendered;
+    }
+    
     MR_LOG(LogShadowRendering, Verbose, 
-           "FProjectedShadowInfo::renderDepth - Would render %d subject primitives",
-           m_dynamicSubjectPrimitives.Num());
+           "FProjectedShadowInfo::renderDepth - Rendered %d primitives, %d mesh batches",
+           PrimitivesRendered, MeshBatchesRendered);
     
     // End render pass
     RHICmdList.endRenderPass();

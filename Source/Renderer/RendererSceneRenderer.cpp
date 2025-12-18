@@ -13,10 +13,12 @@
 #include "Renderer/SceneVisibility.h"
 #include "Renderer/ShadowRendering.h"
 #include "Renderer/ShadowDepthPass.h"
+#include "Renderer/ShadowProjectionPass.h"
 #include "Core/Logging/Logging.h"
 #include "Math/MathFunctions.h"
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHIDevice.h"
+#include "RHI/RHIDefinitions.h"
 #include <cstdlib>
 
 using namespace MonsterRender;
@@ -979,8 +981,146 @@ void FDeferredShadingSceneRenderer::RenderShadowDepthMaps(RHI::IRHICommandList& 
 
 void FDeferredShadingSceneRenderer::RenderShadowProjections(RHI::IRHICommandList& RHICmdList)
 {
-    MR_LOG(LogRenderer, Verbose, "RenderShadowProjections");
-    // Render shadow projections
+    MR_LOG(LogRenderer, Verbose, "RenderShadowProjections begin");
+    
+    // Skip if no shadows to project
+    if (VisibleProjectedShadows.Num() == 0)
+    {
+        MR_LOG(LogRenderer, Verbose, "RenderShadowProjections - No shadows to project");
+        return;
+    }
+    
+    // Begin debug event
+    RHICmdList.beginEvent("ShadowProjections");
+    
+    // Track number of shadows projected
+    int32 ShadowsProjected = 0;
+    
+    // Project shadows for each view
+    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+    {
+        FViewInfo& View = Views[ViewIndex];
+        
+        MR_LOG(LogRenderer, Verbose, "Projecting shadows for view %d", ViewIndex);
+        
+        // Project each shadow onto the view
+        for (FProjectedShadowInfo* ShadowInfo : VisibleProjectedShadows)
+        {
+            if (!ShadowInfo || !ShadowInfo->bAllocated || !ShadowInfo->bRendered)
+            {
+                continue;
+            }
+            
+            // Check if shadow has valid render targets
+            if (!ShadowInfo->hasRenderTargets())
+            {
+                continue;
+            }
+            
+            MR_LOG(LogRenderer, Verbose, 
+                   "Projecting shadow %d: resolution=%ux%u, directional=%s",
+                   ShadowInfo->ShadowId, 
+                   ShadowInfo->ResolutionX, ShadowInfo->ResolutionY,
+                   ShadowInfo->bDirectionalLight ? "true" : "false");
+            
+            // Project the shadow onto the scene
+            // This samples the shadow depth map and computes shadow factors
+            _projectShadowToView(RHICmdList, ShadowInfo, &View);
+            
+            ++ShadowsProjected;
+        }
+    }
+    
+    // End debug event
+    RHICmdList.endEvent();
+    
+    MR_LOG(LogRenderer, Verbose, "RenderShadowProjections end - %d shadows projected", 
+           ShadowsProjected);
+}
+
+void FDeferredShadingSceneRenderer::_projectShadowToView(
+    RHI::IRHICommandList& RHICmdList,
+    FProjectedShadowInfo* ShadowInfo,
+    FViewInfo* View)
+{
+    if (!ShadowInfo || !View)
+    {
+        return;
+    }
+    
+    // Begin debug event for this shadow
+    RHICmdList.beginEvent("ProjectShadow");
+    
+    // Get shadow depth texture
+    MonsterRender::RHI::IRHITexture* ShadowDepthTexture = ShadowInfo->RenderTargets.DepthTarget;
+    if (!ShadowDepthTexture)
+    {
+        MR_LOG(LogRenderer, Warning, 
+               "_projectShadowToView - Shadow %d has no depth texture",
+               ShadowInfo->ShadowId);
+        RHICmdList.endEvent();
+        return;
+    }
+    
+    // Compute screen to shadow matrix
+    // This transforms screen space positions to shadow UV + depth
+    FMatrix InvViewProj = View->ViewMatrices.InvViewProjectionMatrix;
+    FMatrix ShadowWorldToClip = FMatrix(ShadowInfo->TranslatedWorldToClipOuterMatrix);
+    FMatrix ScreenToShadow = InvViewProj * ShadowWorldToClip;
+    
+    // Set viewport to view rect
+    using namespace MonsterRender::RHI;
+    Viewport VP;
+    VP.x = View->ViewRect.x;
+    VP.y = View->ViewRect.y;
+    VP.width = View->ViewRect.width;
+    VP.height = View->ViewRect.height;
+    VP.minDepth = 0.0f;
+    VP.maxDepth = 1.0f;
+    RHICmdList.setViewport(VP);
+    
+    // Set scissor rect
+    ScissorRect Scissor;
+    Scissor.left = static_cast<int32>(View->ViewRect.x);
+    Scissor.top = static_cast<int32>(View->ViewRect.y);
+    Scissor.right = static_cast<int32>(View->ViewRect.x + View->ViewRect.width);
+    Scissor.bottom = static_cast<int32>(View->ViewRect.y + View->ViewRect.height);
+    RHICmdList.setScissorRect(Scissor);
+    
+    // Set depth-stencil state (read depth, no write)
+    RHICmdList.setDepthStencilState(false, false, 7);  // 7 = Always
+    
+    // Set blend state for shadow mask multiplication
+    // Output = Dst * ShadowFactor (multiply blend)
+    RHICmdList.setBlendState(
+        true,   // Enable blend
+        0,      // Zero (src color factor)
+        3,      // SrcColor (dst color factor)
+        0,      // Add
+        0,      // Zero (src alpha)
+        1,      // One (dst alpha)
+        0,      // Add
+        0x0F);  // RGBA write mask
+    
+    // Set rasterizer state (no culling for full screen)
+    RHICmdList.setRasterizerState(0, 0, false, 0.0f, 0.0f);
+    
+    // Bind shadow depth texture
+    TSharedPtr<IRHITexture> DepthTexture(ShadowDepthTexture, [](IRHITexture*){});
+    RHICmdList.setShaderResource(0, DepthTexture);
+    
+    // TODO: Bind shadow projection shader and draw full screen quad
+    // For now, we just log that we would project the shadow
+    MR_LOG(LogRenderer, Verbose, 
+           "_projectShadowToView - Would project shadow %d with matrix",
+           ShadowInfo->ShadowId);
+    
+    // Draw full screen triangle (3 vertices)
+    // The vertex shader generates positions from vertex ID
+    // RHICmdList.draw(3, 0);
+    
+    // End debug event
+    RHICmdList.endEvent();
 }
 
 // ============================================================================
