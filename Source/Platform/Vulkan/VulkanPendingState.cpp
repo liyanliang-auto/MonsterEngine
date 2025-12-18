@@ -276,18 +276,23 @@ namespace MonsterRender::RHI::Vulkan {
                 return false;
             }
             
+            // UE5 Pattern: Apply Y-flip for Vulkan to match OpenGL/D3D coordinate system
+            // Reference: UE5 VulkanPendingState.cpp - InternalUpdateDynamicStates()
+            // Vulkan's clip space Y is inverted compared to OpenGL/D3D
+            // By using negative height and offsetting Y, we flip the viewport
+            // This requires VK_KHR_maintenance1 extension (core in Vulkan 1.1+)
             VkViewport vkViewport{};
             vkViewport.x = m_pendingViewport.x;
-            vkViewport.y = m_pendingViewport.y;
+            // Y-flip: offset Y by height, then use negative height
+            vkViewport.y = m_pendingViewport.y + m_pendingViewport.height;
             vkViewport.width = m_pendingViewport.width;
-            vkViewport.height = m_pendingViewport.height;
+            vkViewport.height = -m_pendingViewport.height;  // Negative height for Y-flip
             vkViewport.minDepth = m_pendingViewport.minDepth;
             vkViewport.maxDepth = m_pendingViewport.maxDepth;
             
-            MR_LOG_INFO("prepareForDraw: vkCmdSetViewport(x=" + std::to_string(vkViewport.x) +
-                        ", y=" + std::to_string(vkViewport.y) + 
-                        ", w=" + std::to_string(vkViewport.width) + 
-                        ", h=" + std::to_string(vkViewport.height) + ")");
+            MR_LOG_INFO("prepareForDraw: vkCmdSetViewport with Y-flip (x=" + 
+                        std::to_string(vkViewport.x) + ", y=" + std::to_string(vkViewport.y) + 
+                        ", w=" + std::to_string(vkViewport.width) + ", h=" + std::to_string(vkViewport.height) + ")");
             functions.vkCmdSetViewport(cmdBuffer, 0, 1, &vkViewport);
             m_viewportDirty = false;
         }

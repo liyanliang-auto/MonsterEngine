@@ -505,21 +505,17 @@ bool FCubeSceneProxy::CreatePipelineState()
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
     // Rasterizer state - enable backface culling
-    // Note: For right-handed coordinate system with CCW front face
-    // Vulkan: Y-axis is flipped in projection matrix, so frontFace must be CW (not CCW)
-    // OpenGL: Standard CCW front face
+    // UE5 Pattern: Unified front-face convention across all backends
+    // Reference: UE5 VulkanState.h, OpenGLDrv - unified coordinate system handling
+    // 
+    // MonsterEngine uses CW (clockwise) as front face (frontCounterClockwise = false)
+    // - Vulkan: Y-flip applied in viewport (negative height), uses VK_FRONT_FACE_CLOCKWISE
+    // - OpenGL: glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE) + glFrontFace(GL_CW)
+    // 
+    // This eliminates per-backend branching and ensures consistent rendering
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    if (Device->getRHIBackend() == MonsterRender::RHI::ERHIBackend::Vulkan)
-    {
-        // Vulkan Y-flip reverses winding order, so use CW as front face
-        PipelineDesc.rasterizerState.frontCounterClockwise = false;
-    }
-    else
-    {
-        // OpenGL uses standard CCW front face
-        PipelineDesc.rasterizerState.frontCounterClockwise = true;
-    }
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front face (unified)
     
     // Depth testing - enable for proper occlusion
     PipelineDesc.depthStencilState.depthEnable = true;

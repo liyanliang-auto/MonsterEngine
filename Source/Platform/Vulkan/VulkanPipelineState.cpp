@@ -793,14 +793,31 @@ namespace MonsterRender::RHI::Vulkan
 
     VkPipelineRasterizationStateCreateInfo VulkanPipelineState::createRasterizationState() const
     {
+        // UE5 Pattern: Vulkan rasterizer state with unified front-face convention
+        // Reference: UE5 VulkanState.h - FVulkanRasterizerState::ResetCreateInfo()
+        // 
+        // With Y-flip applied in viewport (negative height), the winding order
+        // appears reversed. UE5 uses VK_FRONT_FACE_CLOCKWISE as default.
+        // When frontCounterClockwise=false (engine default), use CLOCKWISE.
         VkPipelineRasterizationStateCreateInfo rasterizer{};
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.depthClampEnable = VK_FALSE;
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
-        rasterizer.polygonMode = m_desc.rasterizerState.fillMode == EFillMode::Wireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+        rasterizer.polygonMode = m_desc.rasterizerState.fillMode == EFillMode::Wireframe 
+                                 ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = m_desc.rasterizerState.cullMode == ECullMode::None ? VK_CULL_MODE_NONE : (m_desc.rasterizerState.cullMode == ECullMode::Front ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT);
-        rasterizer.frontFace = m_desc.rasterizerState.frontCounterClockwise ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
+        
+        // Cull mode conversion
+        rasterizer.cullMode = m_desc.rasterizerState.cullMode == ECullMode::None 
+                              ? VK_CULL_MODE_NONE 
+                              : (m_desc.rasterizerState.cullMode == ECullMode::Front 
+                                 ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT);
+        
+        // Front face: UE5 default is CLOCKWISE (with Y-flip in viewport)
+        rasterizer.frontFace = m_desc.rasterizerState.frontCounterClockwise 
+                               ? VK_FRONT_FACE_COUNTER_CLOCKWISE 
+                               : VK_FRONT_FACE_CLOCKWISE;
+        
         rasterizer.depthBiasEnable = VK_FALSE;
         return rasterizer;
     }
