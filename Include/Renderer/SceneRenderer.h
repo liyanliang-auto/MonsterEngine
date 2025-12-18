@@ -46,6 +46,9 @@ class FSceneViewState;
 class FFrustumCuller;
 class FOcclusionCuller;
 class FMeshElementCollector;
+class FShadowDepthPass;
+class FProjectedShadowInfo;
+class FShadowSceneRenderer;
 
 // ============================================================================
 // FMeshElementCollector - Mesh Element Collection Helper
@@ -393,6 +396,12 @@ protected:
     /** Visible light information */
     TArray<FVisibleLightInfo> VisibleLightInfos;
     
+    /** Projected shadow infos for this frame */
+    TArray<FProjectedShadowInfo*> VisibleProjectedShadows;
+    
+    /** Shadow scene renderer */
+    FShadowSceneRenderer* ShadowSceneRenderer;
+    
     // ========================================================================
     // Rendering State
     // ========================================================================
@@ -536,6 +545,9 @@ protected:
     
     /** Whether to use deferred lighting */
     bool bUseDeferredLighting;
+    
+    /** Shadow depth pass */
+    TSharedPtr<FShadowDepthPass> ShadowDepthPass;
     
     /** Whether screen space ambient occlusion is enabled */
     bool bUseSSAO;
