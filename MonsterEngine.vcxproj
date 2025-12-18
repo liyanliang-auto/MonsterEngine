@@ -282,6 +282,7 @@
     <ClCompile Include="Source\Renderer\RendererSceneVisibility.cpp" />
     <ClCompile Include="Source\Renderer\MeshDrawCommand.cpp" />
     <ClCompile Include="Source\Renderer\RenderQueue.cpp" />
+    <ClCompile Include="Source\Renderer\ShadowRendering.cpp" />
     <ClCompile Include="Source\Tests\CubeSceneRendererTest.cpp" />
     <ClCompile Include="Source\Tests\CubeSceneRendererTestApp.cpp" />
     <!-- ImGui Source Files -->
@@ -460,6 +461,7 @@
     <ClInclude Include="Include\Renderer\SceneVisibility.h" />
     <ClInclude Include="Include\Renderer\MeshDrawCommand.h" />
     <ClInclude Include="Include\Renderer\RenderQueue.h" />
+    <ClInclude Include="Include\Renderer\ShadowRendering.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTest.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTestApp.h" />
   </ItemGroup>

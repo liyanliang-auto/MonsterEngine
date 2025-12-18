@@ -141,6 +141,9 @@
     <ClCompile Include="Source\Tests\SmartPointerTest.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Renderer\ShadowRendering.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Include\Core\Assert.h">
@@ -339,6 +342,9 @@
       <Filter>头文件\Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Include\Renderer\ForwardShaderCompiler.h">
+      <Filter>头文件\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Include\Renderer\ShadowRendering.h">
       <Filter>头文件\Renderer</Filter>
     </ClInclude>
   </ItemGroup>
