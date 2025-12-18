@@ -279,6 +279,23 @@ public:
      */
     void SetComponentId(uint32 InId) { ComponentId = InId; }
     
+    /**
+     * Get mesh batches for rendering
+     * @return Array of mesh batches
+     */
+    const TArray<FMeshBatch>& GetMeshBatches() const { return MeshBatches; }
+    
+    /**
+     * Add a mesh batch
+     * @param Batch Mesh batch to add
+     */
+    void AddMeshBatch(const FMeshBatch& Batch) { MeshBatches.Add(Batch); }
+    
+    /**
+     * Clear all mesh batches
+     */
+    void ClearMeshBatches() { MeshBatches.Empty(); }
+    
 public:
     /** The primitive's proxy */
     FPrimitiveSceneProxy* Proxy;
@@ -297,6 +314,10 @@ public:
     uint32 bNeedsCachedReflectionCaptureUpdate : 1;
     uint32 bPendingAddToScene : 1;
     uint32 bPendingRemoveFromScene : 1;
+    
+private:
+    /** Mesh batches for rendering */
+    TArray<FMeshBatch> MeshBatches;
 };
 
 // ============================================================================

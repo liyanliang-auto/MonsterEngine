@@ -616,6 +616,23 @@ public:
     bool hasSubjectPrims() const;
     
     /**
+     * Get dynamic subject primitives
+     * @return Array of dynamic shadow casting primitives
+     */
+    const PrimitiveArrayType& getDynamicSubjectPrimitives() const { return m_dynamicSubjectPrimitives; }
+    
+    /**
+     * Add a dynamic subject primitive
+     * @param Primitive Primitive to add
+     */
+    void addDynamicSubjectPrimitive(FPrimitiveSceneInfo* Primitive);
+    
+    /**
+     * Clear dynamic subject primitives
+     */
+    void clearDynamicSubjectPrimitives() { m_dynamicSubjectPrimitives.Empty(); }
+    
+    /**
      * Get light scene info
      * @return Light scene info reference
      */

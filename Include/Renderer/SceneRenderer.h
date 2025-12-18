@@ -563,6 +563,22 @@ protected:
      */
     void RenderShadowProjections(IRHICommandList& RHICmdList);
     
+private:
+    // ========================================================================
+    // Internal Shadow Methods
+    // ========================================================================
+    
+    /**
+     * Project a shadow onto a view
+     * @param RHICmdList The command list
+     * @param ShadowInfo Shadow information
+     * @param View View to project shadow onto
+     */
+    void _projectShadowToView(
+        IRHICommandList& RHICmdList,
+        FProjectedShadowInfo* ShadowInfo,
+        FViewInfo* View);
+    
 protected:
     // ========================================================================
     // Pipeline State
@@ -576,6 +592,9 @@ protected:
     
     /** Shadow depth pass */
     TSharedPtr<FShadowDepthPass> ShadowDepthPass;
+    
+    /** Shadow projection pass */
+    TSharedPtr<class FShadowProjectionPass> ShadowProjectionPass;
     
     /** Whether screen space ambient occlusion is enabled */
     bool bUseSSAO;
