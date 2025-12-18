@@ -919,35 +919,62 @@ void FDeferredShadingSceneRenderer::RenderShadowDepthMaps(RHI::IRHICommandList& 
         return;
     }
     
-    // Initialize shadow depth pass if needed
-    if (!ShadowDepthPass)
+    // Begin debug event for shadow depth rendering
+    RHICmdList.beginEvent("ShadowDepthMaps");
+    
+    // Get RHI device for render target allocation
+    RHI::IRHIDevice* RHIDevice = nullptr;
+    if (Scene)
     {
-        // TODO: Get RHI device from context
-        // ShadowDepthPass = MakeShared<FShadowDepthPass>(RHIDevice);
-        // ShadowDepthPass->initialize();
-        MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps - Shadow depth pass not initialized");
+        RHIDevice = Scene->getRHIDevice();
     }
+    
+    // Track number of shadows rendered
+    int32 ShadowsRendered = 0;
     
     // Render each shadow depth map
     for (FProjectedShadowInfo* ShadowInfo : VisibleProjectedShadows)
     {
-        if (!ShadowInfo || !ShadowInfo->RenderTargets.isValid())
+        if (!ShadowInfo)
         {
             continue;
         }
         
-        MR_LOG(LogRenderer, Verbose, "Rendering shadow depth map: resolution=%ux%u",
-               ShadowInfo->ResolutionX, ShadowInfo->ResolutionY);
-        
-        // Render shadow depth using the shadow depth pass
-        if (ShadowDepthPass && ShadowDepthPass->isInitialized())
+        // Allocate render targets if not already allocated
+        if (!ShadowInfo->hasRenderTargets() && RHIDevice)
         {
-            // TODO: Create FShadowMap from RenderTargets or pass RenderTargets directly
-            // ShadowDepthPass->renderShadowDepth(RHICmdList, ShadowInfo, shadowMap);
+            if (!ShadowInfo->allocateRenderTargets(RHIDevice))
+            {
+                MR_LOG(LogRenderer, Warning, 
+                       "RenderShadowDepthMaps - Failed to allocate render targets for shadow %d",
+                       ShadowInfo->ShadowId);
+                continue;
+            }
         }
+        
+        // Skip if still no render targets
+        if (!ShadowInfo->hasRenderTargets())
+        {
+            MR_LOG(LogRenderer, Warning, 
+                   "RenderShadowDepthMaps - No render targets for shadow %d",
+                   ShadowInfo->ShadowId);
+            continue;
+        }
+        
+        MR_LOG(LogRenderer, Verbose, "Rendering shadow depth map %d: resolution=%ux%u",
+               ShadowInfo->ShadowId, ShadowInfo->ResolutionX, ShadowInfo->ResolutionY);
+        
+        // Render shadow depth directly using FProjectedShadowInfo::renderDepth
+        ShadowInfo->renderDepth(RHICmdList, this);
+        
+        ++ShadowsRendered;
     }
     
-    MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps end - %d shadows rendered", VisibleProjectedShadows.Num());
+    // End debug event
+    RHICmdList.endEvent();
+    
+    MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps end - %d/%d shadows rendered", 
+           ShadowsRendered, VisibleProjectedShadows.Num());
 }
 
 void FDeferredShadingSceneRenderer::RenderShadowProjections(RHI::IRHICommandList& RHICmdList)

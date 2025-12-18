@@ -11,8 +11,10 @@
 #include "Renderer/ShadowRendering.h"
 #include "Renderer/Scene.h"
 #include "Renderer/SceneView.h"
+#include "Renderer/SceneRenderer.h"
 #include "RHI/RHIResources.h"
 #include "RHI/IRHIDevice.h"
+#include "RHI/IRHICommandList.h"
 #include "Core/Logging/LogMacros.h"
 #include "Math/MathFunctions.h"
 #include "Math/MathUtility.h"
@@ -616,6 +618,172 @@ float FProjectedShadowInfo::getShaderReceiverDepthBias() const
 bool FProjectedShadowInfo::hasSubjectPrims() const
 {
     return m_dynamicSubjectPrimitives.Num() > 0;
+}
+
+bool FProjectedShadowInfo::allocateRenderTargets(IRHIDevice* InDevice)
+{
+    std::lock_guard<std::mutex> Lock(m_mutex);
+    
+    if (!InDevice)
+    {
+        MR_LOG(LogShadowRendering, Error, 
+               "FProjectedShadowInfo::allocateRenderTargets - Invalid device");
+        return false;
+    }
+    
+    if (ResolutionX == 0 || ResolutionY == 0)
+    {
+        MR_LOG(LogShadowRendering, Error, 
+               "FProjectedShadowInfo::allocateRenderTargets - Invalid resolution: %ux%u",
+               ResolutionX, ResolutionY);
+        return false;
+    }
+    
+    // Release existing render targets
+    releaseRenderTargets();
+    
+    // Calculate total size including border
+    uint32 TotalWidth = ResolutionX + 2 * BorderSize;
+    uint32 TotalHeight = ResolutionY + 2 * BorderSize;
+    
+    // Create depth texture descriptor
+    using namespace MonsterRender::RHI;
+    TextureDesc DepthDesc;
+    DepthDesc.width = TotalWidth;
+    DepthDesc.height = TotalHeight;
+    DepthDesc.depth = 1;
+    DepthDesc.mipLevels = 1;
+    DepthDesc.arraySize = bOnePassPointLightShadow ? 6 : 1;  // 6 faces for cube map
+    DepthDesc.format = EPixelFormat::D32_FLOAT;  // 32-bit depth for shadow maps
+    DepthDesc.usage = static_cast<EResourceUsage>(
+        static_cast<uint32>(EResourceUsage::DepthStencil) | 
+        static_cast<uint32>(EResourceUsage::ShaderResource));
+    
+    // Create depth texture
+    TSharedPtr<IRHITexture> DepthTexture = InDevice->createTexture(DepthDesc);
+    if (!DepthTexture)
+    {
+        MR_LOG(LogShadowRendering, Error, 
+               "FProjectedShadowInfo::allocateRenderTargets - Failed to create depth texture");
+        return false;
+    }
+    
+    // Store in render targets
+    RenderTargets.DepthTarget = DepthTexture.Get();
+    
+    // Mark as allocated
+    bAllocated = 1;
+    
+    MR_LOG(LogShadowRendering, Log, 
+           "FProjectedShadowInfo::allocateRenderTargets - Allocated %ux%u depth target, CubeMap: %s",
+           TotalWidth, TotalHeight, bOnePassPointLightShadow ? "true" : "false");
+    
+    return true;
+}
+
+void FProjectedShadowInfo::releaseRenderTargets()
+{
+    std::lock_guard<std::mutex> Lock(m_mutex);
+    
+    RenderTargets.release();
+    bAllocated = 0;
+    bRendered = 0;
+    
+    MR_LOG(LogShadowRendering, Verbose, 
+           "FProjectedShadowInfo::releaseRenderTargets - Render targets released");
+}
+
+void FProjectedShadowInfo::renderDepth(IRHICommandList& RHICmdList, FSceneRenderer* SceneRenderer)
+{
+    if (!RenderTargets.isValid())
+    {
+        MR_LOG(LogShadowRendering, Warning, 
+               "FProjectedShadowInfo::renderDepth - No render targets allocated");
+        return;
+    }
+    
+    MR_LOG(LogShadowRendering, Verbose, 
+           "FProjectedShadowInfo::renderDepth - Begin rendering shadow %d, resolution: %ux%u",
+           ShadowId, ResolutionX, ResolutionY);
+    
+    // Begin debug event
+    RHICmdList.beginEvent("ShadowDepth");
+    
+    // Set render target (depth only, no color)
+    TArray<TSharedPtr<IRHITexture>> EmptyColorTargets;
+    TSharedPtr<IRHITexture> DepthTarget = TSharedPtr<IRHITexture>(RenderTargets.DepthTarget, [](IRHITexture*){});
+    RHICmdList.setRenderTargets(TSpan<TSharedPtr<IRHITexture>>(EmptyColorTargets.GetData(), 0), DepthTarget);
+    
+    // Clear depth to 1.0 (far plane)
+    RHICmdList.clearDepthStencil(DepthTarget, true, false, 1.0f, 0);
+    
+    // Set viewport and scissor
+    setStateForView(RHICmdList);
+    
+    // Set depth-stencil state for shadow rendering
+    // Depth test: Less, Depth write: Enabled
+    RHICmdList.setDepthStencilState(true, true, 1);  // 1 = Less
+    
+    // Set rasterizer state with depth bias
+    float DepthBias = getShaderDepthBias();
+    float SlopeScaledBias = getShaderSlopeDepthBias();
+    RHICmdList.setRasterizerState(
+        0,  // Solid fill
+        2,  // Back face culling
+        false,  // Counter-clockwise front face
+        DepthBias,
+        SlopeScaledBias);
+    
+    // Set blend state (no blending, no color writes)
+    RHICmdList.setBlendState(false, 0, 0, 0, 0, 0, 0, 0);
+    
+    // TODO: Render shadow-casting primitives
+    // This requires iterating through m_dynamicSubjectPrimitives and rendering each mesh
+    // For now, we just log that we would render primitives
+    MR_LOG(LogShadowRendering, Verbose, 
+           "FProjectedShadowInfo::renderDepth - Would render %d subject primitives",
+           m_dynamicSubjectPrimitives.Num());
+    
+    // End render pass
+    RHICmdList.endRenderPass();
+    
+    // End debug event
+    RHICmdList.endEvent();
+    
+    // Mark as rendered
+    bRendered = 1;
+    
+    MR_LOG(LogShadowRendering, Verbose, 
+           "FProjectedShadowInfo::renderDepth - Shadow depth rendering complete");
+}
+
+void FProjectedShadowInfo::setStateForView(IRHICommandList& RHICmdList) const
+{
+    // Get the outer view rect (including border)
+    FIntRect ViewRect = getOuterViewRect();
+    
+    // Set viewport using RHI types
+    using namespace MonsterRender::RHI;
+    Viewport VP;
+    VP.x = static_cast<float>(ViewRect.Min.X);
+    VP.y = static_cast<float>(ViewRect.Min.Y);
+    VP.width = static_cast<float>(ViewRect.Max.X - ViewRect.Min.X);
+    VP.height = static_cast<float>(ViewRect.Max.Y - ViewRect.Min.Y);
+    VP.minDepth = 0.0f;
+    VP.maxDepth = 1.0f;
+    RHICmdList.setViewport(VP);
+    
+    // Set scissor rect to match viewport
+    ScissorRect Scissor;
+    Scissor.left = ViewRect.Min.X;
+    Scissor.top = ViewRect.Min.Y;
+    Scissor.right = ViewRect.Max.X;
+    Scissor.bottom = ViewRect.Max.Y;
+    RHICmdList.setScissorRect(Scissor);
+    
+    MR_LOG(LogShadowRendering, Verbose, 
+           "FProjectedShadowInfo::setStateForView - Viewport: (%d, %d) - (%d, %d)",
+           ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Max.X, ViewRect.Max.Y);
 }
 
 void FProjectedShadowInfo::_computeDirectionalLightViewMatrix(const FVector& LightDirection)
