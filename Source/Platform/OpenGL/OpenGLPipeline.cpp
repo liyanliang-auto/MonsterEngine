@@ -36,6 +36,12 @@ FOpenGLPipelineState::FOpenGLPipelineState(const PipelineStateDesc& desc)
     m_blendState.alphaOp = ConvertBlendOp(desc.blendState.alphaBlendOp);
     
     // Rasterizer state
+    // UE5 Pattern: OpenGL front-face convention
+    // Reference: UE5 OpenGLDrv - glFrontFace handling
+    // 
+    // Engine unified convention: frontCounterClockwise=false means CW is front
+    // OpenGL: When using glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE), the Y-axis
+    // is flipped similar to Vulkan, so we use GL_CW when frontCounterClockwise=false
     m_rasterizerState.fillMode = (desc.rasterizerState.fillMode == EFillMode::Wireframe) ? GL_LINE : GL_FILL;
     switch (desc.rasterizerState.cullMode)
     {
@@ -43,6 +49,7 @@ FOpenGLPipelineState::FOpenGLPipelineState(const PipelineStateDesc& desc)
         case ECullMode::Front: m_rasterizerState.cullMode = GL_FRONT; break;
         case ECullMode::Back:  m_rasterizerState.cullMode = GL_BACK; break;
     }
+    // Front face: CW when frontCounterClockwise=false (engine default)
     m_rasterizerState.frontFace = desc.rasterizerState.frontCounterClockwise ? GL_CCW : GL_CW;
     m_rasterizerState.depthClamp = desc.rasterizerState.depthClampEnable;
     m_rasterizerState.scissorEnable = desc.rasterizerState.scissorEnable;

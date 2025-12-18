@@ -353,10 +353,35 @@ namespace MonsterRender::RHI {
         Back
     };
     
+    /**
+     * 引擎统一正面约定 (UE5 Pattern)
+     * 
+     * MonsterEngine 采用与 UE5 相同的坐标系统统一策略：
+     * - Vulkan 后端在 viewport 设置时做 Y-flip（负高度）
+     * - 因此 Vulkan 的 frontFace 设为 CLOCKWISE（CW 为正面）
+     * - OpenGL 后端保持传统约定（CCW 为正面）
+     * 
+     * 引擎层统一使用 frontCounterClockwise = false（CW 为正面）
+     * 后端负责根据需要做转换：
+     * - Vulkan: 直接使用 VK_FRONT_FACE_CLOCKWISE
+     * - OpenGL: 由于 Y-flip 在 viewport 层已处理，使用 GL_CW
+     * 
+     * Reference: UE5 VulkanState.h - FVulkanRasterizerState::ResetCreateInfo()
+     */
     struct RasterizerState {
         EFillMode fillMode = EFillMode::Solid;
         ECullMode cullMode = ECullMode::Back;
+        
+        /**
+         * Front face winding order convention
+         * false = Clockwise (CW) is front face (UE5/MonsterEngine default)
+         * true  = Counter-Clockwise (CCW) is front face
+         * 
+         * Note: With Vulkan Y-flip applied, CW should be used as front face
+         * to match the expected visual result across all backends.
+         */
         bool frontCounterClockwise = false;
+        
         bool depthClampEnable = false;
         bool scissorEnable = false;
     };

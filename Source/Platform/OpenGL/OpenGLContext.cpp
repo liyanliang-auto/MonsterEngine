@@ -252,16 +252,29 @@ bool FOpenGLContextManager::Initialize(void* windowHandle, const FOpenGLContextC
     glDepthFunc(GL_LESS);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    glFrontFace(GL_CCW);
+    
+    // UE5 Pattern: Set front face to CW (unified convention with Vulkan Y-flip)
+    // Reference: UE5 OpenGLDrv - unified front-face convention
+    // With glClipControl(GL_UPPER_LEFT, ...), Y-axis is flipped similar to Vulkan
+    glFrontFace(GL_CW);
     
     // Enable seamless cubemap sampling
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
     
-    // Set clip control to match D3D/Vulkan conventions (optional)
+    // UE5 Pattern: Set clip control to match D3D/Vulkan conventions
+    // Reference: UE5 OpenGLDrv.cpp - InitDefaultGLContextState()
+    // GL_ARB_clip_control extension (core in GL 4.5+)
+    // - GL_UPPER_LEFT: Origin at upper-left (like Vulkan/D3D)
+    // - GL_ZERO_TO_ONE: Depth range [0,1] instead of [-1,1]
     if (glClipControl)
     {
         // GL_UPPER_LEFT = 0x8CA2, GL_ZERO_TO_ONE = 0x935F
         glClipControl(0x8CA2, 0x935F);
+        MR_LOG(LogOpenGLContext, Log, "Enabled GL_ARB_clip_control: GL_UPPER_LEFT, GL_ZERO_TO_ONE");
+    }
+    else
+    {
+        MR_LOG(LogOpenGLContext, Warning, "GL_ARB_clip_control not available - depth range will be [-1,1]");
     }
     
     // Set vsync
@@ -343,6 +356,25 @@ bool FOpenGLContextManager::InitializeFromExistingContext(void* existingContext,
     // Create default VAO (required for core profile)
     glGenVertexArrays(1, &m_mainContext.vertexArrayObject);
     glBindVertexArray(m_mainContext.vertexArrayObject);
+    
+    // UE5 Pattern: Set clip control to match D3D/Vulkan conventions
+    // Reference: UE5 OpenGLDrv.cpp - InitDefaultGLContextState()
+    // GL_ARB_clip_control extension (core in GL 4.5+)
+    // - GL_UPPER_LEFT: Origin at upper-left (like Vulkan/D3D)
+    // - GL_ZERO_TO_ONE: Depth range [0,1] instead of [-1,1]
+    if (glClipControl)
+    {
+        // GL_UPPER_LEFT = 0x8CA2, GL_ZERO_TO_ONE = 0x935F
+        glClipControl(0x8CA2, 0x935F);
+        MR_LOG(LogOpenGLContext, Log, "Enabled GL_ARB_clip_control: GL_UPPER_LEFT, GL_ZERO_TO_ONE");
+    }
+    else
+    {
+        MR_LOG(LogOpenGLContext, Warning, "GL_ARB_clip_control not available - depth range will be [-1,1]");
+    }
+    
+    // UE5 Pattern: Set front face to CW (unified convention with Vulkan Y-flip)
+    glFrontFace(GL_CW);
     
     // Set vsync
     SetVSync(1);

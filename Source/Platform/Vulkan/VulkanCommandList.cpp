@@ -271,20 +271,25 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
-        // Set Vulkan viewport
+        // UE5 Pattern: Apply Y-flip for Vulkan to match OpenGL/D3D coordinate system
+        // Reference: UE5 VulkanPendingState.cpp - InternalUpdateDynamicStates()
+        // Vulkan's clip space Y is inverted compared to OpenGL/D3D
+        // By using negative height and offsetting Y, we flip the viewport
+        // This requires VK_KHR_maintenance1 extension (core in Vulkan 1.1+)
         VkViewport vkViewport{};
         vkViewport.x = viewport.x;
-        vkViewport.y = viewport.y;
+        // Y-flip: offset Y by height, then use negative height
+        vkViewport.y = viewport.y + viewport.height;
         vkViewport.width = viewport.width;
-        vkViewport.height = viewport.height;
+        vkViewport.height = -viewport.height;  // Negative height for Y-flip
         vkViewport.minDepth = viewport.minDepth;
         vkViewport.maxDepth = viewport.maxDepth;
         
         const auto& functions = VulkanAPI::getFunctions();
         functions.vkCmdSetViewport(m_commandBuffer, 0, 1, &vkViewport);
         
-        MR_LOG_DEBUG("Viewport set: " + std::to_string(viewport.width) + "x" + std::to_string(viewport.height) + 
-                    " at (" + std::to_string(viewport.x) + "," + std::to_string(viewport.y) + ")");
+        MR_LOG(LogVulkan, Log, "Viewport set with Y-flip: %.0fx%.0f at (%.0f,%.0f)",
+               viewport.width, viewport.height, viewport.x, viewport.y);
     }
     
     void VulkanCommandList::setScissorRect(const ScissorRect& scissorRect) {
