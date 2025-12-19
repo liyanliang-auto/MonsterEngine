@@ -564,28 +564,102 @@ void FProjectedShadowInfo::updateShaderDepthBias()
 {
     std::lock_guard<std::mutex> Lock(m_mutex);
     
-    // Compute depth bias based on shadow resolution and type
-    float DepthBiasScale = 1.0f;
+    float DepthBias = 0.0f;
+    float SlopeScaleDepthBias = 1.0f;
     
-    if (bDirectionalLight)
+    // Get resolution for bias scaling
+    float MaxResolution = static_cast<float>(FMath::Max(ResolutionX, ResolutionY));
+    if (MaxResolution < 1.0f) MaxResolution = 1.0f;
+    
+    // Get depth range for normalization
+    float DepthRange = MaxSubjectZ - MinSubjectZ;
+    if (DepthRange < 0.0001f) DepthRange = 1.0f;
+    
+    // Calculate world space texel scale
+    float WorldSpaceTexelScale = ShadowBounds.W / MaxResolution;
+    
+    if (bOnePassPointLightShadow)
     {
-        // Directional lights need more bias due to larger depth range
-        DepthBiasScale = 2.0f;
+        // Point light shadows
+        // Reference: UE5 CVarPointLightShadowDepthBias (0.02)
+        const float PointLightDepthBiasConstant = 0.02f;
+        const float PointLightSlopeBiasConstant = 3.0f;
+        
+        // Scale bias by resolution (higher resolution = less bias needed)
+        DepthBias = PointLightDepthBiasConstant * 512.0f / MaxResolution;
+        
+        // Apply user bias multiplier
+        DepthBias *= 2.0f * BiasParameters.ConstantDepthBias;
+        
+        SlopeScaleDepthBias = PointLightSlopeBiasConstant;
+        SlopeScaleDepthBias *= BiasParameters.SlopeScaledDepthBias;
     }
-    else if (bOnePassPointLightShadow)
+    else if (bDirectionalLight && bWholeSceneShadow)
     {
-        // Point lights need different bias handling
-        DepthBiasScale = 1.5f;
+        // Whole scene directional light (CSM)
+        // Reference: UE5 CVarCSMShadowDepthBias (10.0)
+        const float CSMDepthBiasConstant = 10.0f;
+        const float CSMSlopeBiasConstant = 3.0f;
+        const float CascadeBiasDistribution = 0.8f;
+        
+        // Normalize by depth range
+        DepthBias = CSMDepthBiasConstant / DepthRange;
+        
+        // Lerp between constant and world-space scaled bias based on cascade
+        DepthBias = FMath::Lerp(DepthBias, DepthBias * WorldSpaceTexelScale, CascadeBiasDistribution);
+        
+        // Apply user bias
+        DepthBias *= BiasParameters.ConstantDepthBias;
+        
+        SlopeScaleDepthBias = CSMSlopeBiasConstant;
+        SlopeScaleDepthBias *= BiasParameters.SlopeScaledDepthBias;
+    }
+    else if (bPreShadow)
+    {
+        // Pre-shadows don't need depth bias (no self-shadowing)
+        DepthBias = 0.0f;
+        SlopeScaleDepthBias = 0.0f;
+    }
+    else if (bDirectionalLight)
+    {
+        // Per-object directional shadow
+        // Reference: UE5 CVarPerObjectDirectionalShadowDepthBias (10.0)
+        const float PerObjectDirDepthBias = 10.0f;
+        const float PerObjectDirSlopeBias = 3.0f;
+        
+        DepthBias = PerObjectDirDepthBias / DepthRange;
+        DepthBias *= WorldSpaceTexelScale;
+        DepthBias *= 0.5f * BiasParameters.ConstantDepthBias;
+        
+        SlopeScaleDepthBias = PerObjectDirSlopeBias;
+        SlopeScaleDepthBias *= BiasParameters.SlopeScaledDepthBias;
+    }
+    else
+    {
+        // Spot light shadows
+        // Reference: UE5 CVarSpotLightShadowDepthBias (5.0)
+        const float SpotLightDepthBiasConstant = 5.0f;
+        const float SpotLightSlopeBiasConstant = 3.0f;
+        
+        DepthBias = SpotLightDepthBiasConstant * 512.0f / (DepthRange * MaxResolution);
+        DepthBias *= 2.0f * BiasParameters.ConstantDepthBias;
+        
+        SlopeScaleDepthBias = SpotLightSlopeBiasConstant;
+        SlopeScaleDepthBias *= BiasParameters.SlopeScaledDepthBias;
     }
     
-    // Compute final shader bias values
-    m_shaderDepthBias = BiasParameters.ConstantDepthBias * DepthBiasScale;
-    m_shaderSlopeDepthBias = BiasParameters.SlopeScaledDepthBias;
+    // Clamp depth bias to prevent near plane clipping
+    DepthBias = FMath::Min(DepthBias, 0.1f);
+    
+    // Store final values
+    m_shaderDepthBias = FMath::Max(DepthBias, 0.0f);
+    m_shaderSlopeDepthBias = FMath::Max(SlopeScaleDepthBias, 0.0f);
     m_shaderMaxSlopeDepthBias = BiasParameters.MaxSlopeDepthBias;
     
     MR_LOG(LogShadowRendering, Verbose,
-           "FProjectedShadowInfo::updateShaderDepthBias - DepthBias: %f, SlopeBias: %f",
-           m_shaderDepthBias, m_shaderSlopeDepthBias);
+           "FProjectedShadowInfo::updateShaderDepthBias - Type: %s, DepthBias: %.6f, SlopeBias: %.2f, MaxSlopeBias: %.2f",
+           bDirectionalLight ? "Directional" : (bOnePassPointLightShadow ? "Point" : "Spot"),
+           m_shaderDepthBias, m_shaderSlopeDepthBias, m_shaderMaxSlopeDepthBias);
 }
 
 float FProjectedShadowInfo::computeTransitionSize() const
