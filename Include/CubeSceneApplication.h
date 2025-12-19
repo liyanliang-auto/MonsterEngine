@@ -214,6 +214,50 @@ protected:
         const MonsterEngine::Math::FMatrix& projectionMatrix,
         const MonsterEngine::Math::FVector& cameraPosition);
 
+    /**
+     * Initialize shadow map resources
+     * @return True if successful
+     */
+    bool initializeShadowMap();
+
+    /**
+     * Render shadow depth pass
+     * @param cmdList Command list
+     * @param lightDirection Direction of the directional light
+     * @param outLightViewProjection Output light view-projection matrix
+     */
+    void renderShadowDepthPass(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FVector& lightDirection,
+        MonsterEngine::Math::FMatrix& outLightViewProjection);
+
+    /**
+     * Render cube with shadows
+     * @param cmdList Command list
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     * @param lights Affecting lights
+     * @param lightViewProjection Light space VP matrix
+     */
+    void renderCubeWithShadows(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition,
+        const MonsterEngine::TArray<MonsterEngine::FLightSceneInfo*>& lights,
+        const MonsterEngine::Math::FMatrix& lightViewProjection);
+
+    /**
+     * Calculate light view-projection matrix for shadow mapping
+     * @param lightDirection Direction of the light
+     * @param sceneBounds Scene bounding sphere
+     * @return Light view-projection matrix
+     */
+    MonsterEngine::Math::FMatrix calculateLightViewProjection(
+        const MonsterEngine::Math::FVector& lightDirection,
+        float sceneBoundsRadius);
+
 protected:
     /** RHI device */
     RHI::IRHIDevice* m_device;
@@ -307,6 +351,31 @@ protected:
 
     /** Light color */
     float m_lightColor[3];
+
+    // ========================================================================
+    // Shadow Mapping
+    // ========================================================================
+
+    /** Shadow map depth texture */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_shadowMapTexture;
+
+    /** Shadow map resolution */
+    uint32 m_shadowMapResolution = 1024;
+
+    /** Shadow depth bias */
+    float m_shadowDepthBias = 0.005f;
+
+    /** Shadow slope bias */
+    float m_shadowSlopeBias = 0.01f;
+
+    /** Shadow normal bias */
+    float m_shadowNormalBias = 0.02f;
+
+    /** Shadow distance */
+    float m_shadowDistance = 50.0f;
+
+    /** Whether shadows are enabled */
+    bool m_bShadowsEnabled = true;
 
     // ========================================================================
     // Viewport Render Target
