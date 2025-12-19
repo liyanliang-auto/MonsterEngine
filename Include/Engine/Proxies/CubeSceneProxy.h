@@ -60,6 +60,16 @@ struct alignas(16) FCubeLightUniformBuffer
 };
 
 /**
+ * Shadow uniform buffer for cube rendering
+ */
+struct alignas(16) FCubeShadowUniformBuffer
+{
+    float LightViewProjection[16];  // Light space VP matrix
+    float ShadowParams[4];          // x = bias, y = slope bias, z = normal bias, w = shadow distance
+    float ShadowMapSize[4];         // xy = size, zw = 1/size
+};
+
+/**
  * Scene proxy for cube mesh rendering
  * 
  * This proxy:
@@ -146,6 +156,27 @@ public:
         const TArray<FLightSceneInfo*>& AffectingLights);
 
     /**
+     * Draw the cube with lighting and shadows
+     * @param CmdList - Command list to record draw commands
+     * @param ViewMatrix - View matrix
+     * @param ProjectionMatrix - Projection matrix
+     * @param CameraPosition - Camera world position
+     * @param AffectingLights - Lights affecting this primitive
+     * @param LightViewProjection - Light space view-projection matrix
+     * @param ShadowMap - Shadow depth texture
+     * @param ShadowParams - Shadow parameters (bias, slope bias, normal bias, distance)
+     */
+    void DrawWithShadows(
+        MonsterRender::RHI::IRHICommandList* CmdList,
+        const FMatrix& ViewMatrix,
+        const FMatrix& ProjectionMatrix,
+        const FVector& CameraPosition,
+        const TArray<FLightSceneInfo*>& AffectingLights,
+        const FMatrix& LightViewProjection,
+        TSharedPtr<MonsterRender::RHI::IRHITexture> ShadowMap,
+        const FVector4& ShadowParams);
+
+    /**
      * Update the model matrix (called when transform changes)
      * @param NewLocalToWorld - New local to world transform
      */
@@ -229,6 +260,30 @@ protected:
     void UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights);
 
     /**
+     * Update shadow uniform buffer
+     * @param LightViewProjection - Light space VP matrix
+     * @param ShadowParams - Shadow parameters
+     * @param ShadowMapSize - Shadow map dimensions
+     */
+    void UpdateShadowBuffer(
+        const FMatrix& LightViewProjection,
+        const FVector4& ShadowParams,
+        uint32 ShadowMapWidth,
+        uint32 ShadowMapHeight);
+
+    /**
+     * Create shadow-enabled shaders
+     * @return True if successful
+     */
+    bool CreateShadowShaders();
+
+    /**
+     * Create shadow-enabled pipeline state
+     * @return True if successful
+     */
+    bool CreateShadowPipelineState();
+
+    /**
      * Convert FMatrix to float array (column-major for GPU)
      * @param Matrix - Source matrix
      * @param OutArray - Destination array (16 floats)
@@ -268,6 +323,21 @@ protected:
 
     /** Pipeline state */
     TSharedPtr<MonsterRender::RHI::IRHIPipelineState> PipelineState;
+
+    /** Shadow uniform buffer */
+    TSharedPtr<MonsterRender::RHI::IRHIBuffer> ShadowUniformBuffer;
+
+    /** Shadow-enabled vertex shader */
+    TSharedPtr<MonsterRender::RHI::IRHIVertexShader> ShadowVertexShader;
+
+    /** Shadow-enabled pixel shader */
+    TSharedPtr<MonsterRender::RHI::IRHIPixelShader> ShadowPixelShader;
+
+    /** Shadow-enabled pipeline state */
+    TSharedPtr<MonsterRender::RHI::IRHIPipelineState> ShadowPipelineState;
+
+    /** Shadow sampler for comparison */
+    TSharedPtr<MonsterRender::RHI::IRHISampler> ShadowSampler;
 
     /** Texture blend factor */
     float TextureBlendFactor;
