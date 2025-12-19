@@ -860,4 +860,303 @@ void FCubeSceneProxy::MatrixToFloatArray(const FMatrix& Matrix, float* OutArray)
     }
 }
 
+// ============================================================================
+// Shadow Rendering Support
+// ============================================================================
+
+void FCubeSceneProxy::DrawWithShadows(
+    MonsterRender::RHI::IRHICommandList* CmdList,
+    const FMatrix& ViewMatrix,
+    const FMatrix& ProjectionMatrix,
+    const FVector& CameraPosition,
+    const TArray<FLightSceneInfo*>& AffectingLights,
+    const FMatrix& LightViewProjection,
+    TSharedPtr<MonsterRender::RHI::IRHITexture> ShadowMap,
+    const FVector4& ShadowParams)
+{
+    if (!CmdList || !bResourcesInitialized || !bVisible)
+    {
+        return;
+    }
+    
+    // Create shadow resources if not yet created
+    if (!ShadowPipelineState)
+    {
+        if (!CreateShadowShaders())
+        {
+            MR_LOG(LogCubeSceneProxy, Warning, "Failed to create shadow shaders, falling back to non-shadow rendering");
+            DrawWithLighting(CmdList, ViewMatrix, ProjectionMatrix, CameraPosition, AffectingLights);
+            return;
+        }
+        
+        if (!CreateShadowPipelineState())
+        {
+            MR_LOG(LogCubeSceneProxy, Warning, "Failed to create shadow pipeline, falling back to non-shadow rendering");
+            DrawWithLighting(CmdList, ViewMatrix, ProjectionMatrix, CameraPosition, AffectingLights);
+            return;
+        }
+    }
+    
+    // Create shadow uniform buffer if needed
+    if (!ShadowUniformBuffer)
+    {
+        MonsterRender::RHI::BufferDesc BufferDesc;
+        BufferDesc.size = sizeof(FCubeShadowUniformBuffer);
+        BufferDesc.usage = MonsterRender::RHI::EResourceUsage::UniformBuffer;
+        BufferDesc.cpuAccessible = true;
+        BufferDesc.debugName = "CubeProxy Shadow UBO";
+        ShadowUniformBuffer = Device->createBuffer(BufferDesc);
+        
+        if (!ShadowUniformBuffer)
+        {
+            MR_LOG(LogCubeSceneProxy, Error, "Failed to create shadow uniform buffer");
+            DrawWithLighting(CmdList, ViewMatrix, ProjectionMatrix, CameraPosition, AffectingLights);
+            return;
+        }
+    }
+    
+    // Create shadow sampler if needed
+    if (!ShadowSampler)
+    {
+        MonsterRender::RHI::SamplerDesc SamplerDesc;
+        SamplerDesc.filter = MonsterRender::RHI::ESamplerFilter::Bilinear;
+        SamplerDesc.addressU = MonsterRender::RHI::ESamplerAddressMode::Border;
+        SamplerDesc.addressV = MonsterRender::RHI::ESamplerAddressMode::Border;
+        SamplerDesc.addressW = MonsterRender::RHI::ESamplerAddressMode::Border;
+        SamplerDesc.borderColor[0] = 1.0f;
+        SamplerDesc.borderColor[1] = 1.0f;
+        SamplerDesc.borderColor[2] = 1.0f;
+        SamplerDesc.borderColor[3] = 1.0f;
+        SamplerDesc.debugName = "CubeProxy Shadow Sampler";
+        ShadowSampler = Device->createSampler(SamplerDesc);
+    }
+    
+    // Update uniform buffers
+    UpdateTransformBuffer(ViewMatrix, ProjectionMatrix, CameraPosition);
+    UpdateLightBuffer(AffectingLights);
+    
+    // Get shadow map size
+    uint32 ShadowMapWidth = ShadowMap ? ShadowMap->getWidth() : 1024;
+    uint32 ShadowMapHeight = ShadowMap ? ShadowMap->getHeight() : 1024;
+    UpdateShadowBuffer(LightViewProjection, ShadowParams, ShadowMapWidth, ShadowMapHeight);
+    
+    // Set shadow pipeline state
+    CmdList->setPipelineState(ShadowPipelineState);
+    
+    // Bind uniform buffers
+    CmdList->setConstantBuffer(0, TransformUniformBuffer);
+    CmdList->setConstantBuffer(3, LightUniformBuffer);
+    CmdList->setConstantBuffer(4, ShadowUniformBuffer);
+    
+    // Bind textures
+    if (Texture1)
+    {
+        CmdList->setShaderResource(1, Texture1);
+    }
+    if (Texture2)
+    {
+        CmdList->setShaderResource(2, Texture2);
+    }
+    
+    // Bind shadow map
+    if (ShadowMap)
+    {
+        CmdList->setShaderResource(5, ShadowMap);
+    }
+    
+    // Bind vertex buffer
+    TArray<TSharedPtr<MonsterRender::RHI::IRHIBuffer>> VertexBuffers;
+    VertexBuffers.Add(VertexBuffer);
+    CmdList->setVertexBuffers(0, std::span<TSharedPtr<MonsterRender::RHI::IRHIBuffer>>(VertexBuffers.GetData(), VertexBuffers.Num()));
+    
+    // Draw cube
+    CmdList->draw(36, 0);
+    
+    MR_LOG(LogCubeSceneProxy, Verbose, "Cube drawn with shadows, %d lights", AffectingLights.Num());
+}
+
+void FCubeSceneProxy::UpdateShadowBuffer(
+    const FMatrix& LightViewProjection,
+    const FVector4& ShadowParams,
+    uint32 ShadowMapWidth,
+    uint32 ShadowMapHeight)
+{
+    if (!ShadowUniformBuffer)
+    {
+        return;
+    }
+    
+    void* MappedData = ShadowUniformBuffer->map();
+    if (!MappedData)
+    {
+        return;
+    }
+    
+    FCubeShadowUniformBuffer* ShadowUBO = static_cast<FCubeShadowUniformBuffer*>(MappedData);
+    
+    // Set light view-projection matrix
+    MatrixToFloatArray(LightViewProjection, ShadowUBO->LightViewProjection);
+    
+    // Set shadow parameters
+    ShadowUBO->ShadowParams[0] = static_cast<float>(ShadowParams.X);  // Depth bias
+    ShadowUBO->ShadowParams[1] = static_cast<float>(ShadowParams.Y);  // Slope bias
+    ShadowUBO->ShadowParams[2] = static_cast<float>(ShadowParams.Z);  // Normal bias
+    ShadowUBO->ShadowParams[3] = static_cast<float>(ShadowParams.W);  // Shadow distance
+    
+    // Set shadow map size
+    ShadowUBO->ShadowMapSize[0] = static_cast<float>(ShadowMapWidth);
+    ShadowUBO->ShadowMapSize[1] = static_cast<float>(ShadowMapHeight);
+    ShadowUBO->ShadowMapSize[2] = 1.0f / static_cast<float>(ShadowMapWidth);
+    ShadowUBO->ShadowMapSize[3] = 1.0f / static_cast<float>(ShadowMapHeight);
+    
+    ShadowUniformBuffer->unmap();
+}
+
+bool FCubeSceneProxy::CreateShadowShaders()
+{
+    MR_LOG(LogCubeSceneProxy, Log, "Creating shadow-enabled shaders...");
+    
+    std::string ProjectRoot = resolveProjectRootFromExecutable();
+    if (ProjectRoot.empty())
+    {
+        MR_LOG(LogCubeSceneProxy, Error, "Failed to resolve project root");
+        return false;
+    }
+    
+    if (RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan)
+    {
+        // Load and compile SPIR-V shaders for Vulkan
+        MonsterRender::ShaderCompileOptions VsOpts;
+        VsOpts.language = MonsterRender::EShaderLanguage::GLSL;
+        VsOpts.stage = MonsterRender::EShaderStageKind::Vertex;
+        
+        MonsterRender::ShaderCompileOptions PsOpts;
+        PsOpts.language = MonsterRender::EShaderLanguage::GLSL;
+        PsOpts.stage = MonsterRender::EShaderStageKind::Fragment;
+        
+        std::string VsPath = ProjectRoot + "Shaders/CubeLitShadow.vert";
+        std::string PsPath = ProjectRoot + "Shaders/CubeLitShadow.frag";
+        
+        std::vector<uint8> VsSpv = MonsterRender::ShaderCompiler::compileFromFile(VsPath, VsOpts);
+        std::vector<uint8> PsSpv = MonsterRender::ShaderCompiler::compileFromFile(PsPath, PsOpts);
+        
+        if (VsSpv.empty() || PsSpv.empty())
+        {
+            MR_LOG(LogCubeSceneProxy, Error, "Failed to compile shadow shaders");
+            return false;
+        }
+        
+        ShadowVertexShader = Device->createVertexShader(std::span<const uint8>(VsSpv.data(), VsSpv.size()));
+        ShadowPixelShader = Device->createPixelShader(std::span<const uint8>(PsSpv.data(), PsSpv.size()));
+    }
+    else if (RHIBackend == MonsterRender::RHI::ERHIBackend::OpenGL)
+    {
+        // Load GLSL shaders for OpenGL
+        std::string VsPath = ProjectRoot + "Shaders/CubeLitShadow_GL.vert";
+        std::string PsPath = ProjectRoot + "Shaders/CubeLitShadow_GL.frag";
+        
+        std::ifstream VsFile(VsPath, std::ios::binary);
+        std::ifstream PsFile(PsPath, std::ios::binary);
+        
+        if (!VsFile.is_open() || !PsFile.is_open())
+        {
+            MR_LOG(LogCubeSceneProxy, Error, "Failed to open shadow shader files");
+            return false;
+        }
+        
+        std::string VsSource((std::istreambuf_iterator<char>(VsFile)), std::istreambuf_iterator<char>());
+        std::string PsSource((std::istreambuf_iterator<char>(PsFile)), std::istreambuf_iterator<char>());
+        VsFile.close();
+        PsFile.close();
+        
+        std::vector<uint8> VsData(VsSource.begin(), VsSource.end());
+        VsData.push_back(0);
+        std::vector<uint8> PsData(PsSource.begin(), PsSource.end());
+        PsData.push_back(0);
+        
+        ShadowVertexShader = Device->createVertexShader(std::span<const uint8>(VsData.data(), VsData.size()));
+        ShadowPixelShader = Device->createPixelShader(std::span<const uint8>(PsData.data(), PsData.size()));
+    }
+    else
+    {
+        MR_LOG(LogCubeSceneProxy, Error, "Unsupported RHI backend for shadow shaders");
+        return false;
+    }
+    
+    if (!ShadowVertexShader || !ShadowPixelShader)
+    {
+        MR_LOG(LogCubeSceneProxy, Error, "Failed to create shadow shaders");
+        return false;
+    }
+    
+    MR_LOG(LogCubeSceneProxy, Log, "Shadow shaders created successfully");
+    return true;
+}
+
+bool FCubeSceneProxy::CreateShadowPipelineState()
+{
+    MR_LOG(LogCubeSceneProxy, Log, "Creating shadow pipeline state...");
+    
+    MonsterRender::RHI::EPixelFormat RenderTargetFormat = Device->getSwapChainFormat();
+    MonsterRender::RHI::EPixelFormat DepthFormat = Device->getDepthFormat();
+    
+    MonsterRender::RHI::PipelineStateDesc PipelineDesc;
+    PipelineDesc.vertexShader = ShadowVertexShader;
+    PipelineDesc.pixelShader = ShadowPixelShader;
+    PipelineDesc.primitiveTopology = MonsterRender::RHI::EPrimitiveTopology::TriangleList;
+    
+    // Vertex layout: position (vec3) + normal (vec3) + texcoord (vec2)
+    MonsterRender::RHI::VertexAttribute PosAttr;
+    PosAttr.location = 0;
+    PosAttr.format = MonsterRender::RHI::EVertexFormat::Float3;
+    PosAttr.offset = 0;
+    PosAttr.semanticName = "POSITION";
+    
+    MonsterRender::RHI::VertexAttribute NormalAttr;
+    NormalAttr.location = 1;
+    NormalAttr.format = MonsterRender::RHI::EVertexFormat::Float3;
+    NormalAttr.offset = sizeof(float) * 3;
+    NormalAttr.semanticName = "NORMAL";
+    
+    MonsterRender::RHI::VertexAttribute TexCoordAttr;
+    TexCoordAttr.location = 2;
+    TexCoordAttr.format = MonsterRender::RHI::EVertexFormat::Float2;
+    TexCoordAttr.offset = sizeof(float) * 6;
+    TexCoordAttr.semanticName = "TEXCOORD";
+    
+    PipelineDesc.vertexLayout.attributes.push_back(PosAttr);
+    PipelineDesc.vertexLayout.attributes.push_back(NormalAttr);
+    PipelineDesc.vertexLayout.attributes.push_back(TexCoordAttr);
+    PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
+    
+    // Rasterizer state
+    PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
+    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;
+    
+    // Depth testing
+    PipelineDesc.depthStencilState.depthEnable = true;
+    PipelineDesc.depthStencilState.depthWriteEnable = true;
+    PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
+    
+    // Blend state
+    PipelineDesc.blendState.blendEnable = false;
+    
+    // Render target format
+    PipelineDesc.renderTargetFormats.push_back(RenderTargetFormat);
+    PipelineDesc.depthStencilFormat = DepthFormat;
+    
+    PipelineDesc.debugName = "CubeProxy Shadow Pipeline";
+    
+    ShadowPipelineState = Device->createPipelineState(PipelineDesc);
+    if (!ShadowPipelineState)
+    {
+        MR_LOG(LogCubeSceneProxy, Error, "Failed to create shadow pipeline state");
+        return false;
+    }
+    
+    MR_LOG(LogCubeSceneProxy, Log, "Shadow pipeline state created");
+    return true;
+}
+
 } // namespace MonsterEngine
