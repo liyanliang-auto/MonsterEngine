@@ -298,6 +298,9 @@
     <ClCompile Include="Source\Editor\ImGui\ImGuiInputHandler.cpp" />
     <ClCompile Include="Source\Editor\EditorApplication.cpp" />
     <ClCompile Include="Source\ImGuiTestApplication.cpp" />
+    <!-- RDG Module Source Files -->
+    <ClCompile Include="Source\RDG\RDGResource.cpp" />
+    <ClCompile Include="Source\RDG\RDGBuilder.cpp" />
   </ItemGroup>
   <ItemGroup>
     <!-- Editor Headers -->
@@ -466,6 +469,13 @@
     <ClInclude Include="Include\Renderer\ShadowDepthPass.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTest.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTestApp.h" />
+    <!-- RDG Module Headers -->
+    <ClInclude Include="Include\RDG\RDG.h" />
+    <ClInclude Include="Include\RDG\RDGFwd.h" />
+    <ClInclude Include="Include\RDG\RDGDefinitions.h" />
+    <ClInclude Include="Include\RDG\RDGResource.h" />
+    <ClInclude Include="Include\RDG\RDGPass.h" />
+    <ClInclude Include="Include\RDG\RDGBuilder.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
