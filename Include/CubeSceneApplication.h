@@ -392,7 +392,7 @@ protected:
     bool m_bShadowsEnabled = true;
 
     /** Whether to use RDG for rendering */
-    bool m_bUseRDG = true;
+    bool m_bUseRDG = false;  // Disabled by default until RDG execution is fully implemented
 
     // ========================================================================
     // Viewport Render Target

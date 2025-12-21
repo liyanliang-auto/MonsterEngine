@@ -195,6 +195,7 @@
     <ClCompile Include="Source\CubeRenderer.cpp" />
     <ClCompile Include="Source\RHI\IRHIResource.cpp" />
     <ClCompile Include="Source\RHI\RHI.cpp" />
+    <ClCompile Include="Source\RHI\RHIBarriers.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanAPI.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanBuffer.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandList.cpp" />
