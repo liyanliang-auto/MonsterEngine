@@ -41,6 +41,7 @@
 #include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/OpenGL/OpenGLFunctions.h"
 #include "Platform/OpenGL/OpenGLDefinitions.h"
+#include "RDG/RDG.h"
 
 namespace MonsterRender
 {
@@ -391,67 +392,80 @@ void CubeSceneApplication::onRender()
         cmdList->begin();
         
         // ================================================================
-        // Shadow Depth Pass (if shadows enabled)
+        // Choose rendering path: RDG or traditional
         // ================================================================
-        FMatrix lightViewProjection = FMatrix::Identity;
-        
-        if (m_bShadowsEnabled && m_shadowMapTexture && lights.Num() > 0)
+        if (m_bUseRDG && m_bShadowsEnabled)
         {
-            // Get directional light direction from first light
-            FVector lightDirection = FVector(0.5, -1.0, 0.3).GetSafeNormal();
-            
-            // Check if first light is directional and get its direction
-            if (lights[0] && lights[0]->Proxy)
-            {
-                FLightSceneProxy* lightProxy = lights[0]->Proxy;
-                if (lightProxy->IsDirectionalLight())
-                {
-                    lightDirection = lightProxy->GetDirection();
-                }
-            }
-            
-            MR_LOG(LogCubeSceneApp, Verbose, "Rendering shadow pass, light dir: (%.2f, %.2f, %.2f)",
-                   lightDirection.X, lightDirection.Y, lightDirection.Z);
-            
-            // Render shadow depth pass
-            renderShadowDepthPass(cmdList, lightDirection, lightViewProjection);
-        }
-        
-        // ================================================================
-        // Main Render Pass - Render scene to swapchain
-        // ================================================================
-        // Set render targets to swapchain (empty array = use swapchain)
-        TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
-        cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
-        
-        // Set viewport to window size
-        RHI::Viewport viewport;
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast<float>(m_windowWidth);
-        viewport.height = static_cast<float>(m_windowHeight);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        cmdList->setViewport(viewport);
-        
-        // Set scissor rect
-        RHI::ScissorRect scissor;
-        scissor.left = 0;
-        scissor.top = 0;
-        scissor.right = m_windowWidth;
-        scissor.bottom = m_windowHeight;
-        cmdList->setScissorRect(scissor);
-        
-        // Render cube with or without shadows
-        if (m_bShadowsEnabled && m_shadowMapTexture)
-        {
-            MR_LOG(LogCubeSceneApp, Verbose, "Rendering cube with shadows");
-            renderCubeWithShadows(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights, lightViewProjection);
+            MR_LOG(LogCubeSceneApp, Log, "Using RDG rendering path");
+            renderWithRDG(cmdList, viewMatrix, projectionMatrix, cameraPosition);
         }
         else
         {
-            MR_LOG(LogCubeSceneApp, Verbose, "Rendering cube without shadows");
-            renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+            MR_LOG(LogCubeSceneApp, Log, "Using traditional rendering path");
+            
+            // ================================================================
+            // Shadow Depth Pass (if shadows enabled)
+            // ================================================================
+            FMatrix lightViewProjection = FMatrix::Identity;
+            
+            if (m_bShadowsEnabled && m_shadowMapTexture && lights.Num() > 0)
+            {
+                // Get directional light direction from first light
+                FVector lightDirection = FVector(0.5, -1.0, 0.3).GetSafeNormal();
+                
+                // Check if first light is directional and get its direction
+                if (lights[0] && lights[0]->Proxy)
+                {
+                    FLightSceneProxy* lightProxy = lights[0]->Proxy;
+                    if (lightProxy->IsDirectionalLight())
+                    {
+                        lightDirection = lightProxy->GetDirection();
+                    }
+                }
+                
+                MR_LOG(LogCubeSceneApp, Verbose, "Rendering shadow pass, light dir: (%.2f, %.2f, %.2f)",
+                       lightDirection.X, lightDirection.Y, lightDirection.Z);
+                
+                // Render shadow depth pass
+                renderShadowDepthPass(cmdList, lightDirection, lightViewProjection);
+            }
+            
+            // ================================================================
+            // Main Render Pass - Render scene to swapchain
+            // ================================================================
+            // Set render targets to swapchain (empty array = use swapchain)
+            TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
+            cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+            
+            // Set viewport to window size
+            RHI::Viewport viewport;
+            viewport.x = 0.0f;
+            viewport.y = 0.0f;
+            viewport.width = static_cast<float>(m_windowWidth);
+            viewport.height = static_cast<float>(m_windowHeight);
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            cmdList->setViewport(viewport);
+            
+            // Set scissor rect
+            RHI::ScissorRect scissor;
+            scissor.left = 0;
+            scissor.top = 0;
+            scissor.right = m_windowWidth;
+            scissor.bottom = m_windowHeight;
+            cmdList->setScissorRect(scissor);
+            
+            // Render cube with or without shadows
+            if (m_bShadowsEnabled && m_shadowMapTexture)
+            {
+                MR_LOG(LogCubeSceneApp, Verbose, "Rendering cube with shadows");
+                renderCubeWithShadows(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights, lightViewProjection);
+            }
+            else
+            {
+                MR_LOG(LogCubeSceneApp, Verbose, "Rendering cube without shadows");
+                renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+            }
         }
         
         // End render pass
@@ -1630,6 +1644,159 @@ void CubeSceneApplication::renderCubeWithShadows(
         m_shadowMapTexture,
         shadowParams
     );
+}
+
+// ============================================================================
+// RDG-based Rendering
+// ============================================================================
+
+void CubeSceneApplication::renderWithRDG(
+    RHI::IRHICommandList* cmdList,
+    const Math::FMatrix& viewMatrix,
+    const Math::FMatrix& projectionMatrix,
+    const Math::FVector& cameraPosition)
+{
+    using namespace RDG;
+    
+    if (!m_bShadowsEnabled || !m_directionalLight)
+    {
+        // Fallback to non-RDG rendering if shadows are disabled
+        TArray<FLightSceneInfo*> lights;
+        if (m_directionalLight)
+        {
+            lights.Add(m_directionalLight->GetLightSceneInfo());
+        }
+        if (m_pointLight)
+        {
+            lights.Add(m_pointLight->GetLightSceneInfo());
+        }
+        renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+        return;
+    }
+    
+    // Get light direction from light scene info
+    FVector lightDirection = FVector(0.5f, -1.0f, 0.3f);
+    if (m_directionalLight->GetLightSceneInfo() && m_directionalLight->GetLightSceneInfo()->Proxy)
+    {
+        lightDirection = m_directionalLight->GetLightSceneInfo()->Proxy->GetDirection();
+    }
+    lightDirection.Normalize();
+    
+    // Calculate light view-projection matrix
+    Math::FMatrix lightViewProjection = calculateLightViewProjection(lightDirection, 10.0f);
+    
+    // Create RDG builder
+    FRDGBuilder graphBuilder(m_device, "CubeSceneRenderGraph");
+    
+    // Register external shadow map texture
+    FRDGTextureRef shadowMapRDG = graphBuilder.registerExternalTexture(
+        "ShadowMap",
+        m_shadowMapTexture.Get(),
+        ERHIAccess::Unknown
+    );
+    
+    // Add Shadow Depth Pass
+    graphBuilder.addPass(
+        "ShadowDepthPass",
+        ERDGPassFlags::Raster,
+        [&](FRDGPassBuilder& builder)
+        {
+            // Declare that we will write to the shadow map depth
+            builder.writeDepth(shadowMapRDG, ERHIAccess::DSVWrite);
+        },
+        [this, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
+        {
+            // Set shadow map as render target
+            TArray<TSharedPtr<RHI::IRHITexture>> emptyColorTargets;
+            TSharedPtr<RHI::IRHITexture> depthTarget(m_shadowMapTexture.Get(), [](RHI::IRHITexture*){});
+            rhiCmdList.setRenderTargets(
+                TSpan<TSharedPtr<RHI::IRHITexture>>(emptyColorTargets.GetData(), 0),
+                depthTarget
+            );
+            
+            // Clear depth
+            rhiCmdList.clearDepthStencil(depthTarget, true, false, 1.0f, 0);
+            
+            // Set viewport
+            RHI::Viewport viewport;
+            viewport.x = 0;
+            viewport.y = 0;
+            viewport.width = static_cast<float32>(m_shadowMapResolution);
+            viewport.height = static_cast<float32>(m_shadowMapResolution);
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            rhiCmdList.setViewport(viewport);
+            
+            // Set scissor
+            RHI::ScissorRect scissor;
+            scissor.left = 0;
+            scissor.top = 0;
+            scissor.right = static_cast<int32>(m_shadowMapResolution);
+            scissor.bottom = static_cast<int32>(m_shadowMapResolution);
+            rhiCmdList.setScissorRect(scissor);
+            
+            // Render cube to shadow map
+            if (m_cubeActor)
+            {
+                UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+                if (meshComp)
+                {
+                    meshComp->UpdateComponentToWorld();
+                    FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+                    FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+                    
+                    if (cubeProxy && cubeProxy->AreResourcesInitialized())
+                    {
+                        cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+                        
+                        // Render depth only - use regular draw method for shadow depth pass
+                        cubeProxy->Draw(&rhiCmdList, lightViewProjection, lightViewProjection, 
+                                      FVector::ZeroVector);
+                    }
+                }
+            }
+            
+            rhiCmdList.endRenderPass();
+        }
+    );
+    
+    // Add Main Render Pass
+    graphBuilder.addPass(
+        "MainRenderPass",
+        ERDGPassFlags::Raster,
+        [&](FRDGPassBuilder& builder)
+        {
+            // Declare that we will read from the shadow map
+            builder.readTexture(shadowMapRDG, ERHIAccess::SRVGraphics);
+        },
+        [this, viewMatrix, projectionMatrix, cameraPosition, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
+        {
+            // Render cube with shadows
+            TArray<FLightSceneInfo*> lights;
+            if (m_directionalLight)
+            {
+                lights.Add(m_directionalLight->GetLightSceneInfo());
+            }
+            if (m_pointLight)
+            {
+                lights.Add(m_pointLight->GetLightSceneInfo());
+            }
+            
+            renderCubeWithShadows(
+                &rhiCmdList,
+                viewMatrix,
+                projectionMatrix,
+                cameraPosition,
+                lights,
+                lightViewProjection
+            );
+        }
+    );
+    
+    // Execute the render graph
+    MR_LOG(LogCubeSceneApp, Log, "Executing RDG with %d passes", 2);
+    graphBuilder.execute(*cmdList);
+    MR_LOG(LogCubeSceneApp, Log, "RDG execution complete");
 }
 
 } // namespace MonsterRender
