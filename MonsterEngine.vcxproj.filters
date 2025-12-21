@@ -182,6 +182,9 @@
     <ClInclude Include="Include\RHI\RHIDefinitions.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Include\RHI\RHIBarriers.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Include\Platform\Vulkan\VulkanDevice.h">
       <Filter>头文件</Filter>
     </ClInclude>
