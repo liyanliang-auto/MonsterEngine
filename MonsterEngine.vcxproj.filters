@@ -441,5 +441,11 @@
     <Filter Include="源文件\Engine">
       <UniqueIdentifier>{B4C5D6E7-F8A9-0123-7890-234567890123}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\RDG">
+      <UniqueIdentifier>{C5D6E7F8-A9B0-1234-8901-345678901234}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\RDG">
+      <UniqueIdentifier>{D6E7F8A9-B0C1-2345-9012-456789012345}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 </Project>

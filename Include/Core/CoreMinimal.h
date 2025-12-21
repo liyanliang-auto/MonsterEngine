@@ -36,6 +36,12 @@
 #include "Core/Assert.h"
 #include "Core/Memory.h"
 
+// Container types
+#include "Containers/String.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
+#include "Containers/Set.h"
+
 // Engine namespace
 namespace MonsterRender {
 
