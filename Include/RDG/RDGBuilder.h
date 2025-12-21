@@ -30,6 +30,9 @@ struct FRDGTransition
     ERHIAccess stateBefore = ERHIAccess::Unknown;
     ERHIAccess stateAfter = ERHIAccess::Unknown;
     
+    // Resource type flag
+    bool bIsTexture = true;
+    
     // Subresource information (for textures)
     uint32 mipLevel = 0xFFFFFFFF;
     uint32 arraySlice = 0xFFFFFFFF;
@@ -38,10 +41,12 @@ struct FRDGTransition
     
     FRDGTransition(FRDGResourceRef inResource, 
                    ERHIAccess inBefore, 
-                   ERHIAccess inAfter)
+                   ERHIAccess inAfter,
+                   bool inIsTexture = true)
         : resource(inResource)
         , stateBefore(inBefore)
         , stateAfter(inAfter)
+        , bIsTexture(inIsTexture)
     {}
     
     bool isWholeResource() const
@@ -145,7 +150,7 @@ public:
         auto* pass = new TRDGLambdaPass<ExecuteLambdaType>(
             name, 
             flags, 
-            Forward<ExecuteLambdaType>(executeFunc));
+            std::move(executeFunc));
         
         // Assign handle
         pass->m_handle = FRDGPassHandle(static_cast<uint16>(m_passes.Num()));

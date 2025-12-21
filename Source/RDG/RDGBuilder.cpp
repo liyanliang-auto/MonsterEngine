@@ -210,31 +210,487 @@ void FRDGBuilder::execute(RHI::IRHICommandList& rhiCmdList)
 
 void FRDGBuilder::_buildDependencyGraph()
 {
-    // TODO: Implement in Phase 2
-    // This will analyze pass dependencies based on resource read/write patterns
-    MR_LOG(LogRDG, Verbose, "Building dependency graph (stub)");
+    MR_LOG(LogRDG, Verbose, "Building dependency graph for %d passes", m_passes.Num());
+    
+    // Clear previous dependency data
+    for (FRDGPass* pass : m_passes)
+    {
+        pass->m_dependencies.Empty();
+        pass->m_dependents.Empty();
+    }
+    
+    // Build read-after-write (RAW), write-after-read (WAR), and write-after-write (WAW) dependencies
+    // Track last writer and readers for each resource
+    TMap<FRDGTexture*, FRDGPassHandle> lastTextureWriter;
+    TMap<FRDGTexture*, TArray<FRDGPassHandle>> lastTextureReaders;
+    TMap<FRDGBuffer*, FRDGPassHandle> lastBufferWriter;
+    TMap<FRDGBuffer*, TArray<FRDGPassHandle>> lastBufferReaders;
+    
+    for (FRDGPass* pass : m_passes)
+    {
+        const FRDGPassHandle passHandle = pass->getHandle();
+        
+        // Process texture accesses
+        for (const FRDGTextureAccess& access : pass->getTextureAccesses())
+        {
+            if (!access.texture)
+            {
+                continue;
+            }
+            
+            FRDGTexture* texture = access.texture;
+            const bool bIsWrite = isWritableAccess(access.access);
+            const bool bIsRead = isReadOnlyAccess(access.access);
+            
+            // Write-after-write (WAW) dependency
+            if (bIsWrite)
+            {
+                auto* lastWriter = lastTextureWriter.Find(texture);
+                if (lastWriter && lastWriter->isValid())
+                {
+                    FRDGPass* writerPass = m_passes[lastWriter->index];
+                    pass->m_dependencies.AddUnique(writerPass->getHandle());
+                    writerPass->m_dependents.AddUnique(passHandle);
+                }
+                
+                // Write-after-read (WAR) dependency
+                auto* readers = lastTextureReaders.Find(texture);
+                if (readers)
+                {
+                    for (const FRDGPassHandle& readerHandle : *readers)
+                    {
+                        if (readerHandle.isValid())
+                        {
+                            FRDGPass* readerPass = m_passes[readerHandle.index];
+                            pass->m_dependencies.AddUnique(readerHandle);
+                            readerPass->m_dependents.AddUnique(passHandle);
+                        }
+                    }
+                    readers->Empty();
+                }
+                
+                lastTextureWriter.Add(texture, passHandle);
+            }
+            
+            // Read-after-write (RAW) dependency
+            if (bIsRead)
+            {
+                auto* lastWriter = lastTextureWriter.Find(texture);
+                if (lastWriter && lastWriter->isValid())
+                {
+                    FRDGPass* writerPass = m_passes[lastWriter->index];
+                    pass->m_dependencies.AddUnique(writerPass->getHandle());
+                    writerPass->m_dependents.AddUnique(passHandle);
+                }
+                
+                // Track this reader
+                TArray<FRDGPassHandle>& readers = lastTextureReaders.FindOrAdd(texture);
+                readers.AddUnique(passHandle);
+            }
+        }
+        
+        // Process buffer accesses (same logic as textures)
+        for (const FRDGBufferAccess& access : pass->getBufferAccesses())
+        {
+            if (!access.buffer)
+            {
+                continue;
+            }
+            
+            FRDGBuffer* buffer = access.buffer;
+            const bool bIsWrite = isWritableAccess(access.access);
+            const bool bIsRead = isReadOnlyAccess(access.access);
+            
+            // Write-after-write (WAW) dependency
+            if (bIsWrite)
+            {
+                auto* lastWriter = lastBufferWriter.Find(buffer);
+                if (lastWriter && lastWriter->isValid())
+                {
+                    FRDGPass* writerPass = m_passes[lastWriter->index];
+                    pass->m_dependencies.AddUnique(writerPass->getHandle());
+                    writerPass->m_dependents.AddUnique(passHandle);
+                }
+                
+                // Write-after-read (WAR) dependency
+                auto* readers = lastBufferReaders.Find(buffer);
+                if (readers)
+                {
+                    for (const FRDGPassHandle& readerHandle : *readers)
+                    {
+                        if (readerHandle.isValid())
+                        {
+                            FRDGPass* readerPass = m_passes[readerHandle.index];
+                            pass->m_dependencies.AddUnique(readerHandle);
+                            readerPass->m_dependents.AddUnique(passHandle);
+                        }
+                    }
+                    readers->Empty();
+                }
+                
+                lastBufferWriter.Add(buffer, passHandle);
+            }
+            
+            // Read-after-write (RAW) dependency
+            if (bIsRead)
+            {
+                auto* lastWriter = lastBufferWriter.Find(buffer);
+                if (lastWriter && lastWriter->isValid())
+                {
+                    FRDGPass* writerPass = m_passes[lastWriter->index];
+                    pass->m_dependencies.AddUnique(writerPass->getHandle());
+                    writerPass->m_dependents.AddUnique(passHandle);
+                }
+                
+                // Track this reader
+                TArray<FRDGPassHandle>& readers = lastBufferReaders.FindOrAdd(buffer);
+                readers.AddUnique(passHandle);
+            }
+        }
+    }
+    
+    // Log dependency statistics
+    int32 totalDependencies = 0;
+    for (const FRDGPass* pass : m_passes)
+    {
+        totalDependencies += pass->m_dependencies.Num();
+    }
+    
+    MR_LOG(LogRDG, Verbose, "Dependency graph built: %d total dependencies", totalDependencies);
 }
 
 void FRDGBuilder::_topologicalSort()
 {
-    // TODO: Implement in Phase 2
-    // For now, just use the original pass order
-    m_sortedPasses = m_passes;
-    MR_LOG(LogRDG, Verbose, "Topological sort (stub): %d passes", m_sortedPasses.Num());
+    MR_LOG(LogRDG, Verbose, "Performing topological sort on %d passes", m_passes.Num());
+    
+    m_sortedPasses.Empty();
+    m_sortedPasses.Reserve(m_passes.Num());
+    
+    // Kahn's algorithm for topological sorting
+    // 1. Calculate in-degree for each pass
+    TMap<FRDGPassHandle, int32> inDegree;
+    for (const FRDGPass* pass : m_passes)
+    {
+        inDegree.Add(pass->getHandle(), pass->m_dependencies.Num());
+    }
+    
+    // 2. Find all passes with in-degree 0 (no dependencies)
+    TArray<FRDGPassHandle> queue;
+    for (const FRDGPass* pass : m_passes)
+    {
+        if (inDegree[pass->getHandle()] == 0)
+        {
+            queue.Add(pass->getHandle());
+        }
+    }
+    
+    // 3. Process passes in topological order
+    while (queue.Num() > 0)
+    {
+        // Pop front (BFS order)
+        FRDGPassHandle currentHandle = queue[0];
+        queue.RemoveAt(0);
+        
+        FRDGPass* currentPass = m_passes[currentHandle.index];
+        m_sortedPasses.Add(currentPass);
+        
+        // Reduce in-degree of dependent passes
+        for (const FRDGPassHandle& dependentHandle : currentPass->m_dependents)
+        {
+            int32& degree = inDegree[dependentHandle];
+            degree--;
+            
+            if (degree == 0)
+            {
+                queue.Add(dependentHandle);
+            }
+        }
+    }
+    
+    // 4. Check for cycles (if sorted passes count != total passes count)
+    if (m_sortedPasses.Num() != m_passes.Num())
+    {
+        MR_LOG(LogRDG, Error, "Topological sort failed: cycle detected in dependency graph! "
+               "Sorted %d passes out of %d total", 
+               m_sortedPasses.Num(), m_passes.Num());
+        
+        // Find passes that weren't sorted (part of cycle)
+        TArray<FString> cyclePassNames;
+        for (const FRDGPass* pass : m_passes)
+        {
+            bool bFound = false;
+            for (const FRDGPass* sortedPass : m_sortedPasses)
+            {
+                if (sortedPass == pass)
+                {
+                    bFound = true;
+                    break;
+                }
+            }
+            
+            if (!bFound)
+            {
+                cyclePassNames.Add(pass->getName());
+            }
+        }
+        
+        MR_LOG(LogRDG, Error, "Passes involved in cycle: %d", cyclePassNames.Num());
+        for (const FString& name : cyclePassNames)
+        {
+            MR_LOG(LogRDG, Error, "  - %s", *name);
+        }
+        
+        // Fallback: use original pass order
+        m_sortedPasses = m_passes;
+    }
+    
+    MR_LOG(LogRDG, Verbose, "Topological sort complete: %d passes sorted", m_sortedPasses.Num());
+    
+#if RDG_ENABLE_DEBUG
+    // Log sorted pass order
+    MR_LOG(LogRDG, Verbose, "Pass execution order:");
+    for (int32 i = 0; i < m_sortedPasses.Num(); ++i)
+    {
+        const FRDGPass* pass = m_sortedPasses[i];
+        MR_LOG(LogRDG, Verbose, "  %d. %s (dependencies: %d, dependents: %d)",
+               i, *pass->getName(), pass->m_dependencies.Num(), pass->m_dependents.Num());
+    }
+#endif
 }
 
 void FRDGBuilder::_analyzeResourceLifetimes()
 {
-    // TODO: Implement in Phase 3
-    // This will determine when resources are first/last used
-    MR_LOG(LogRDG, Verbose, "Analyzing resource lifetimes (stub)");
+    MR_LOG(LogRDG, Verbose, "Analyzing resource lifetimes for %d textures and %d buffers",
+           m_textures.Num(), m_buffers.Num());
+    
+    // Initialize all resources as unused
+    for (FRDGTexture* texture : m_textures)
+    {
+        for (FRDGSubresourceState& state : texture->getSubresourceStates())
+        {
+            state.firstPass = FRDGPassHandle();
+            state.lastPass = FRDGPassHandle();
+        }
+    }
+    
+    for (FRDGBuffer* buffer : m_buffers)
+    {
+        FRDGSubresourceState& state = buffer->getState();
+        state.firstPass = FRDGPassHandle();
+        state.lastPass = FRDGPassHandle();
+    }
+    
+    // Analyze texture lifetimes based on sorted pass order
+    for (int32 passIndex = 0; passIndex < m_sortedPasses.Num(); ++passIndex)
+    {
+        const FRDGPass* pass = m_sortedPasses[passIndex];
+        const FRDGPassHandle passHandle = pass->getHandle();
+        
+        // Track texture usage
+        for (const FRDGTextureAccess& access : pass->getTextureAccesses())
+        {
+            if (!access.texture)
+            {
+                continue;
+            }
+            
+            FRDGTexture* texture = access.texture;
+            
+            // For simplicity, track all subresources together
+            // In a full implementation, we would track per-mip and per-array-slice
+            for (FRDGSubresourceState& state : texture->getSubresourceStates())
+            {
+                if (!state.firstPass.isValid())
+                {
+                    state.firstPass = passHandle;
+                }
+                state.lastPass = passHandle;
+            }
+        }
+        
+        // Track buffer usage
+        for (const FRDGBufferAccess& access : pass->getBufferAccesses())
+        {
+            if (!access.buffer)
+            {
+                continue;
+            }
+            
+            FRDGBuffer* buffer = access.buffer;
+            FRDGSubresourceState& state = buffer->getState();
+            
+            if (!state.firstPass.isValid())
+            {
+                state.firstPass = passHandle;
+            }
+            state.lastPass = passHandle;
+        }
+    }
+    
+    // Log resource lifetime statistics
+#if RDG_ENABLE_DEBUG
+    int32 transientTextures = 0;
+    int32 persistentTextures = 0;
+    
+    for (const FRDGTexture* texture : m_textures)
+    {
+        const FRDGSubresourceState& state = texture->getSubresourceStates()[0];
+        if (state.firstPass.isValid() && state.lastPass.isValid())
+        {
+            const int32 lifetime = state.lastPass.index - state.firstPass.index;
+            if (lifetime < m_sortedPasses.Num() / 2)
+            {
+                transientTextures++;
+            }
+            else
+            {
+                persistentTextures++;
+            }
+            
+            MR_LOG(LogRDG, VeryVerbose, "Texture '%s': first pass %d, last pass %d, lifetime %d passes",
+                   *texture->getName(), state.firstPass.index, state.lastPass.index, lifetime);
+        }
+    }
+    
+    MR_LOG(LogRDG, Verbose, "Resource lifetime analysis: %d transient textures, %d persistent textures",
+           transientTextures, persistentTextures);
+#endif
 }
 
 void FRDGBuilder::_insertTransitions()
 {
-    // TODO: Implement in Phase 3
-    // This will insert resource barriers between passes
-    MR_LOG(LogRDG, Verbose, "Inserting resource transitions (stub)");
+    MR_LOG(LogRDG, Verbose, "Inserting resource transitions between passes");
+    
+    // Clear previous transition data
+    m_passTransitions.Empty();
+    
+    // Track current state of each resource
+    TMap<FRDGTexture*, ERHIAccess> currentTextureStates;
+    TMap<FRDGBuffer*, ERHIAccess> currentBufferStates;
+    
+    // Initialize external resources with their initial states
+    for (FRDGTexture* texture : m_textures)
+    {
+        if (texture->hasRHI())
+        {
+            // External texture - use its initial state
+            const FRDGSubresourceState& state = texture->getSubresourceStates()[0];
+            currentTextureStates.Add(texture, state.access);
+        }
+        else
+        {
+            // RDG-created texture - starts in Unknown state
+            currentTextureStates.Add(texture, ERHIAccess::Unknown);
+        }
+    }
+    
+    for (FRDGBuffer* buffer : m_buffers)
+    {
+        if (buffer->hasRHI())
+        {
+            // External buffer - use its initial state
+            const FRDGSubresourceState& state = buffer->getState();
+            currentBufferStates.Add(buffer, state.access);
+        }
+        else
+        {
+            // RDG-created buffer - starts in Unknown state
+            currentBufferStates.Add(buffer, ERHIAccess::Unknown);
+        }
+    }
+    
+    // Process passes in sorted order and insert transitions
+    for (const FRDGPass* pass : m_sortedPasses)
+    {
+        TArray<FRDGTransition> passTransitions;
+        
+        // Check texture state transitions
+        for (const FRDGTextureAccess& access : pass->getTextureAccesses())
+        {
+            if (!access.texture)
+            {
+                continue;
+            }
+            
+            FRDGTexture* texture = access.texture;
+            ERHIAccess currentState = currentTextureStates[texture];
+            ERHIAccess requiredState = access.access;
+            
+            // Insert transition if state change is needed
+            if (currentState != requiredState && requiredState != ERHIAccess::Unknown)
+            {
+                FRDGTransition transition;
+                transition.resource = texture;
+                transition.stateBefore = currentState;
+                transition.stateAfter = requiredState;
+                transition.bIsTexture = true;
+                
+                passTransitions.Add(transition);
+                
+                MR_LOG(LogRDG, VeryVerbose, "Transition for texture '%s' before pass '%s': %d -> %d",
+                       *texture->getName(), *pass->getName(), 
+                       static_cast<int32>(currentState), static_cast<int32>(requiredState));
+            }
+            
+            // Update current state
+            // If this is a write access, the resource will be in this state after the pass
+            if (isWritableAccess(requiredState))
+            {
+                currentTextureStates[texture] = requiredState;
+            }
+        }
+        
+        // Check buffer state transitions
+        for (const FRDGBufferAccess& access : pass->getBufferAccesses())
+        {
+            if (!access.buffer)
+            {
+                continue;
+            }
+            
+            FRDGBuffer* buffer = access.buffer;
+            ERHIAccess currentState = currentBufferStates[buffer];
+            ERHIAccess requiredState = access.access;
+            
+            // Insert transition if state change is needed
+            if (currentState != requiredState && requiredState != ERHIAccess::Unknown)
+            {
+                FRDGTransition transition;
+                transition.resource = buffer;
+                transition.stateBefore = currentState;
+                transition.stateAfter = requiredState;
+                transition.bIsTexture = false;
+                
+                passTransitions.Add(transition);
+                
+                MR_LOG(LogRDG, VeryVerbose, "Transition for buffer '%s' before pass '%s': %d -> %d",
+                       *buffer->getName(), *pass->getName(),
+                       static_cast<int32>(currentState), static_cast<int32>(requiredState));
+            }
+            
+            // Update current state
+            if (isWritableAccess(requiredState))
+            {
+                currentBufferStates[buffer] = requiredState;
+            }
+        }
+        
+        // Store transitions for this pass
+        if (passTransitions.Num() > 0)
+        {
+            m_passTransitions.Add(pass->getHandle(), passTransitions);
+        }
+    }
+    
+    // Log transition statistics
+    int32 totalTransitions = 0;
+    for (const auto& pair : m_passTransitions)
+    {
+        totalTransitions += pair.Value.Num();
+    }
+    
+    MR_LOG(LogRDG, Verbose, "Inserted %d resource transitions across %d passes",
+           totalTransitions, m_passTransitions.Num());
 }
 
 void FRDGBuilder::_allocateResources(RHI::IRHICommandList& rhiCmdList)

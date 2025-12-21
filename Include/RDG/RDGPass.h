@@ -178,8 +178,9 @@ protected:
     TArray<FRDGTextureAccess> m_textureAccesses;
     TArray<FRDGBufferAccess> m_bufferAccesses;
     
-    // Dependencies on other passes
-    TArray<FRDGPassHandle> m_dependencies;
+    // Pass dependency tracking for topological sort
+    TArray<FRDGPassHandle> m_dependencies;  // Passes this pass depends on
+    TArray<FRDGPassHandle> m_dependents;    // Passes that depend on this pass
     
     friend class FRDGBuilder;
 };
@@ -196,7 +197,7 @@ public:
                    ERDGPassFlags inFlags,
                    ExecuteLambdaType&& inExecuteLambda)
         : FRDGPass(inName, inFlags)
-        , m_executeLambda(MoveTemp(inExecuteLambda))
+        , m_executeLambda(std::move(inExecuteLambda))
     {}
     
     virtual void execute(RHI::IRHICommandList& rhiCmdList) override

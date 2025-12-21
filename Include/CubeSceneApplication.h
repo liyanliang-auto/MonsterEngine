@@ -258,6 +258,20 @@ protected:
         const MonsterEngine::Math::FVector& lightDirection,
         float sceneBoundsRadius);
 
+    /**
+     * Render scene using RDG (Render Dependency Graph)
+     * This demonstrates the RDG system with Shadow Depth Pass and Main Render Pass
+     * @param cmdList Command list
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     */
+    void renderWithRDG(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
+
 protected:
     /** RHI device */
     RHI::IRHIDevice* m_device;
@@ -376,6 +390,9 @@ protected:
 
     /** Whether shadows are enabled */
     bool m_bShadowsEnabled = true;
+
+    /** Whether to use RDG for rendering */
+    bool m_bUseRDG = true;
 
     // ========================================================================
     // Viewport Render Target
