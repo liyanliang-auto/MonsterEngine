@@ -1706,9 +1706,52 @@ void CubeSceneApplication::renderWithRDG(
         },
         [this, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
         {
-            // Note: RDG should handle render pass begin/end automatically
-            // For now, we'll render using the traditional path since RDG execution is not fully implemented
-            MR_LOG(LogCubeSceneApp, Warning, "Shadow Depth Pass executed (RDG stub)");
+            MR_LOG(LogCubeSceneApp, Verbose, "Executing Shadow Depth Pass");
+            
+            // Set viewport for shadow map
+            RHI::Viewport viewport;
+            viewport.x = 0;
+            viewport.y = 0;
+            viewport.width = static_cast<float32>(m_shadowMapResolution);
+            viewport.height = static_cast<float32>(m_shadowMapResolution);
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            rhiCmdList.setViewport(viewport);
+            
+            // Set scissor rect
+            RHI::ScissorRect scissor;
+            scissor.left = 0;
+            scissor.top = 0;
+            scissor.right = static_cast<int32>(m_shadowMapResolution);
+            scissor.bottom = static_cast<int32>(m_shadowMapResolution);
+            rhiCmdList.setScissorRect(scissor);
+            
+            // Clear depth buffer
+            TSharedPtr<RHI::IRHITexture> depthTarget(m_shadowMapTexture.Get(), [](RHI::IRHITexture*){});
+            rhiCmdList.clearDepthStencil(depthTarget, true, false, 1.0f, 0);
+            
+            // Render cube to shadow map
+            if (m_cubeActor)
+            {
+                UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+                if (meshComp)
+                {
+                    meshComp->UpdateComponentToWorld();
+                    FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+                    FCubeSceneProxy* cubeProxy = dynamic_cast<FCubeSceneProxy*>(baseProxy);
+                    
+                    if (cubeProxy && cubeProxy->AreResourcesInitialized())
+                    {
+                        cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+                        
+                        // Draw depth only - use regular Draw method
+                        // The render pass is configured to only write depth
+                        cubeProxy->Draw(&rhiCmdList, lightViewProjection, lightViewProjection, FVector::ZeroVector);
+                    }
+                }
+            }
+            
+            MR_LOG(LogCubeSceneApp, Verbose, "Shadow Depth Pass complete");
         }
     );
     
