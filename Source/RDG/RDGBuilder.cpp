@@ -695,90 +695,152 @@ void FRDGBuilder::_insertTransitions()
 
 void FRDGBuilder::_allocateResources(RHI::IRHICommandList& rhiCmdList)
 {
-    // TODO: Implement in Phase 4
-    // Allocate RHI resources for RDG textures/buffers
-    MR_LOG(LogRDG, Verbose, "Allocating RHI resources (stub)");
+    MR_LOG(LogRDG, Verbose, "Allocating RHI resources for %d textures and %d buffers",
+           m_textures.Num(), m_buffers.Num());
     
-    // For now, just allocate all textures
+    int32 allocatedTextures = 0;
+    int32 allocatedBuffers = 0;
+    
+    // Allocate textures
     for (FRDGTexture* texture : m_textures)
     {
-        if (!texture->hasRHI())
+        if (!texture)
         {
-            const FRDGTextureDesc& desc = texture->getDesc();
+            continue;
+        }
+        
+        // Skip external resources that already have RHI resources
+        if (texture->hasRHI())
+        {
+            MR_LOG(LogRDG, VeryVerbose, "Texture '%s' already has RHI resource (external)", 
+                   *texture->getName());
+            continue;
+        }
+        
+        // Check if this texture is actually used
+        const FRDGSubresourceState& state = texture->getSubresourceStates()[0];
+        if (!state.firstPass.isValid())
+        {
+            MR_LOG(LogRDG, Warning, "Texture '%s' is not used by any pass, skipping allocation",
+                   *texture->getName());
+            continue;
+        }
+        
+        const FRDGTextureDesc& desc = texture->getDesc();
+        
+        // Convert RDG descriptor to RHI descriptor
+        RHI::TextureDesc rhiDesc;
+        rhiDesc.width = desc.width;
+        rhiDesc.height = desc.height;
+        rhiDesc.depth = desc.depth;
+        rhiDesc.arraySize = desc.arraySize;
+        rhiDesc.mipLevels = desc.mipLevels;
+        rhiDesc.format = desc.format;
+        rhiDesc.usage = desc.usage;
+        rhiDesc.debugName = String(texture->getName().begin(), texture->getName().end());
+        
+        // Create RHI texture
+        TSharedPtr<RHI::IRHITexture> rhiTexture = m_rhiDevice->createTexture(rhiDesc);
+        if (rhiTexture)
+        {
+            texture->m_resourceRHI = rhiTexture.Get();
+            // Store shared pointer for lifetime management (will be added to FRDGTexture later)
+            allocatedTextures++;
             
-            // Convert RDG descriptor to RHI descriptor
-            RHI::TextureDesc rhiDesc;
-            rhiDesc.width = desc.width;
-            rhiDesc.height = desc.height;
-            rhiDesc.depth = desc.depth;
-            rhiDesc.arraySize = desc.arraySize;
-            rhiDesc.mipLevels = desc.mipLevels;
-            rhiDesc.format = desc.format;
-            rhiDesc.usage = desc.usage;
-            rhiDesc.debugName = String(texture->getName().begin(), texture->getName().end());
-            
-            // Create RHI texture
-            TSharedPtr<RHI::IRHITexture> rhiTexture = m_rhiDevice->createTexture(rhiDesc);
-            if (rhiTexture)
-            {
-                texture->m_resourceRHI = rhiTexture.Get();
-                MR_LOG(LogRDG, Verbose, "Allocated RHI texture: %s", *texture->getName());
-            }
-            else
-            {
-                MR_LOG(LogRDG, Error, "Failed to allocate RHI texture: %s", *texture->getName());
-            }
+            MR_LOG(LogRDG, Verbose, "Allocated RHI texture: %s (%dx%d, format %d)",
+                   *texture->getName(), desc.width, desc.height, static_cast<int32>(desc.format));
+        }
+        else
+        {
+            MR_LOG(LogRDG, Error, "Failed to allocate RHI texture: %s", *texture->getName());
         }
     }
     
     // Allocate buffers
     for (FRDGBuffer* buffer : m_buffers)
     {
-        if (!buffer->hasRHI())
+        if (!buffer)
         {
-            const FRDGBufferDesc& desc = buffer->getDesc();
+            continue;
+        }
+        
+        // Skip external resources that already have RHI resources
+        if (buffer->hasRHI())
+        {
+            MR_LOG(LogRDG, VeryVerbose, "Buffer '%s' already has RHI resource (external)",
+                   *buffer->getName());
+            continue;
+        }
+        
+        // Check if this buffer is actually used
+        const FRDGSubresourceState& state = buffer->getState();
+        if (!state.firstPass.isValid())
+        {
+            MR_LOG(LogRDG, Warning, "Buffer '%s' is not used by any pass, skipping allocation",
+                   *buffer->getName());
+            continue;
+        }
+        
+        const FRDGBufferDesc& desc = buffer->getDesc();
+        
+        // Convert RDG descriptor to RHI descriptor
+        RHI::BufferDesc rhiDesc;
+        rhiDesc.size = desc.size;
+        rhiDesc.stride = desc.stride;
+        rhiDesc.usage = desc.usage;
+        rhiDesc.debugName = String(buffer->getName().begin(), buffer->getName().end());
+        
+        // Create RHI buffer
+        TSharedPtr<RHI::IRHIBuffer> rhiBuffer = m_rhiDevice->createBuffer(rhiDesc);
+        if (rhiBuffer)
+        {
+            buffer->m_resourceRHI = rhiBuffer.Get();
+            // Store shared pointer for lifetime management (will be added to FRDGBuffer later)
+            allocatedBuffers++;
             
-            // Convert RDG descriptor to RHI descriptor
-            RHI::BufferDesc rhiDesc;
-            rhiDesc.size = desc.size;
-            rhiDesc.stride = desc.stride;
-            rhiDesc.usage = desc.usage;
-            rhiDesc.debugName = String(buffer->getName().begin(), buffer->getName().end());
-            
-            // Create RHI buffer
-            TSharedPtr<RHI::IRHIBuffer> rhiBuffer = m_rhiDevice->createBuffer(rhiDesc);
-            if (rhiBuffer)
-            {
-                buffer->m_resourceRHI = rhiBuffer.Get();
-                MR_LOG(LogRDG, Verbose, "Allocated RHI buffer: %s", *buffer->getName());
-            }
-            else
-            {
-                MR_LOG(LogRDG, Error, "Failed to allocate RHI buffer: %s", *buffer->getName());
-            }
+            MR_LOG(LogRDG, Verbose, "Allocated RHI buffer: %s (size %llu bytes)",
+                   *buffer->getName(), desc.size);
+        }
+        else
+        {
+            MR_LOG(LogRDG, Error, "Failed to allocate RHI buffer: %s", *buffer->getName());
         }
     }
+    
+    MR_LOG(LogRDG, Log, "Resource allocation complete: %d textures, %d buffers allocated",
+           allocatedTextures, allocatedBuffers);
 }
 
 void FRDGBuilder::_executePass(RHI::IRHICommandList& rhiCmdList, FRDGPass* pass)
 {
     if (!pass)
     {
+        MR_LOG(LogRDG, Error, "Attempted to execute null pass");
         return;
     }
     
-    MR_LOG(LogRDG, Verbose, "Executing pass: %s", *pass->getName());
+    MR_LOG(LogRDG, Verbose, "Executing pass: %s (flags: %d)", 
+           *pass->getName(), static_cast<int32>(pass->getFlags()));
     
     // Execute pre-pass transitions
     auto transitionsIt = m_passTransitions.Find(pass->getHandle());
     if (transitionsIt)
     {
+        MR_LOG(LogRDG, VeryVerbose, "Executing %d transitions before pass '%s'",
+               transitionsIt->Num(), *pass->getName());
         _executeTransitions(rhiCmdList, *transitionsIt);
     }
     
     // Begin debug event
     String passName(pass->getName().begin(), pass->getName().end());
     rhiCmdList.beginEvent(passName);
+    
+    // Setup render targets for raster passes
+    const bool bIsRasterPass = enumHasAnyFlags(pass->getFlags(), ERDGPassFlags::Raster);
+    if (bIsRasterPass)
+    {
+        _setupRenderTargets(rhiCmdList, pass);
+    }
     
     // Execute pass
 #if RDG_ENABLE_DEBUG
@@ -799,6 +861,7 @@ void FRDGBuilder::_executePass(RHI::IRHICommandList& rhiCmdList, FRDGPass* pass)
     }
 #endif
     
+    // Execute the pass lambda
     pass->execute(rhiCmdList);
     
 #if RDG_ENABLE_DEBUG
@@ -819,30 +882,119 @@ void FRDGBuilder::_executePass(RHI::IRHICommandList& rhiCmdList, FRDGPass* pass)
     }
 #endif
     
+    // End render pass for raster passes
+    if (bIsRasterPass)
+    {
+        rhiCmdList.endRenderPass();
+        MR_LOG(LogRDG, VeryVerbose, "Ended render pass for '%s'", *pass->getName());
+    }
+    
     // End debug event
     rhiCmdList.endEvent();
+    
+    MR_LOG(LogRDG, VeryVerbose, "Pass '%s' execution complete", *pass->getName());
 }
 
 void FRDGBuilder::_executeTransitions(RHI::IRHICommandList& rhiCmdList, 
                                      const TArray<FRDGTransition>& transitions)
 {
-    // TODO: Implement in Phase 3
+    if (transitions.Num() == 0)
+    {
+        return;
+    }
+    
+    MR_LOG(LogRDG, VeryVerbose, "Executing %d resource transitions", transitions.Num());
+    
     // Execute resource barriers
     for (const FRDGTransition& transition : transitions)
     {
-        if (transition.resource)
+        if (!transition.resource)
         {
-            MR_LOG(LogRDG, Verbose, "Transition: %s (state %d -> %d)",
-                   *transition.resource->getName(),
-                   static_cast<int32>(transition.stateBefore),
-                   static_cast<int32>(transition.stateAfter));
-            
-            // Call RHI transition
-            rhiCmdList.transitionResource(
-                TSharedPtr<RHI::IRHIResource>(transition.resource->getRHI(), [](RHI::IRHIResource*){}),
-                static_cast<RHI::EResourceUsage>(transition.stateBefore),
-                static_cast<RHI::EResourceUsage>(transition.stateAfter));
+            MR_LOG(LogRDG, Warning, "Null resource in transition");
+            continue;
         }
+        
+        RHI::IRHIResource* rhiResource = transition.resource->getRHI();
+        if (!rhiResource)
+        {
+            MR_LOG(LogRDG, Warning, "Resource '%s' has no RHI resource for transition",
+                   *transition.resource->getName());
+            continue;
+        }
+        
+        MR_LOG(LogRDG, VeryVerbose, "Transition: %s (state %d -> %d)",
+               *transition.resource->getName(),
+               static_cast<int32>(transition.stateBefore),
+               static_cast<int32>(transition.stateAfter));
+        
+        // Call RHI transition - use non-owning shared pointer
+        rhiCmdList.transitionResource(
+            TSharedPtr<RHI::IRHIResource>(rhiResource, [](RHI::IRHIResource*){}),
+            static_cast<RHI::EResourceUsage>(transition.stateBefore),
+            static_cast<RHI::EResourceUsage>(transition.stateAfter));
+    }
+}
+
+void FRDGBuilder::_setupRenderTargets(RHI::IRHICommandList& rhiCmdList, FRDGPass* pass)
+{
+    if (!pass)
+    {
+        return;
+    }
+    
+    MR_LOG(LogRDG, VeryVerbose, "Setting up render targets for pass '%s'", *pass->getName());
+    
+    // Collect render targets from pass texture accesses
+    TArray<TSharedPtr<RHI::IRHITexture>> colorTargets;
+    TSharedPtr<RHI::IRHITexture> depthTarget;
+    
+    for (const FRDGTextureAccess& access : pass->getTextureAccesses())
+    {
+        if (!access.texture || !access.texture->hasRHI())
+        {
+            continue;
+        }
+        
+        RHI::IRHITexture* rhiTexture = static_cast<RHI::IRHITexture*>(access.texture->getRHI());
+        if (!rhiTexture)
+        {
+            continue;
+        }
+        
+        // Check if this is a render target write
+        if (access.access == ERHIAccess::RTV)
+        {
+            // Color render target
+            TSharedPtr<RHI::IRHITexture> target(rhiTexture, [](RHI::IRHITexture*){});
+            colorTargets.Add(target);
+            
+            MR_LOG(LogRDG, VeryVerbose, "  Color RT: %s", *access.texture->getName());
+        }
+        else if (access.access == ERHIAccess::DSVWrite || access.access == ERHIAccess::DSVRead)
+        {
+            // Depth/stencil target
+            depthTarget = TSharedPtr<RHI::IRHITexture>(rhiTexture, [](RHI::IRHITexture*){});
+            
+            MR_LOG(LogRDG, VeryVerbose, "  Depth RT: %s", *access.texture->getName());
+        }
+    }
+    
+    // Set render targets if any were found
+    if (colorTargets.Num() > 0 || depthTarget)
+    {
+        rhiCmdList.setRenderTargets(
+            TSpan<TSharedPtr<RHI::IRHITexture>>(colorTargets.GetData(), colorTargets.Num()),
+            depthTarget
+        );
+        
+        MR_LOG(LogRDG, Verbose, "Set %d color targets and %s depth target for pass '%s'",
+               colorTargets.Num(), 
+               depthTarget ? "1" : "0",
+               *pass->getName());
+    }
+    else
+    {
+        MR_LOG(LogRDG, VeryVerbose, "No render targets to set for pass '%s'", *pass->getName());
     }
 }
 

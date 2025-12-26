@@ -198,6 +198,7 @@ private:
     void _executePass(RHI::IRHICommandList& rhiCmdList, FRDGPass* pass);
     void _executeTransitions(RHI::IRHICommandList& rhiCmdList, 
                             const TArray<FRDGTransition>& transitions);
+    void _setupRenderTargets(RHI::IRHICommandList& rhiCmdList, FRDGPass* pass);
     void _releaseResources();
     
     // Debug validation
