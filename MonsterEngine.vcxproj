@@ -478,6 +478,15 @@
     <ClInclude Include="Include\RDG\RDGPass.h" />
     <ClInclude Include="Include\RDG\RDGBuilder.h" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- PBR Shader Files -->
+    <None Include="Shaders\Common\BRDF.glsl" />
+    <None Include="Shaders\Common\ShadingModels.glsl" />
+    <None Include="Shaders\PBR\StandardPBR.vert" />
+    <None Include="Shaders\PBR\StandardPBR.frag" />
+    <None Include="Shaders\PBR\StandardPBR_GL.vert" />
+    <None Include="Shaders\PBR\StandardPBR_GL.frag" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

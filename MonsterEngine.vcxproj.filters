@@ -450,5 +450,34 @@
     <Filter Include="源文件\RDG">
       <UniqueIdentifier>{D6E7F8A9-B0C1-2345-9012-456789012345}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{E7F8A9B0-C1D2-3456-0123-567890123456}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders\Common">
+      <UniqueIdentifier>{F8A9B0C1-D2E3-4567-1234-678901234567}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders\PBR">
+      <UniqueIdentifier>{A9B0C1D2-E3F4-5678-2345-789012345678}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Common\BRDF.glsl">
+      <Filter>Shaders\Common</Filter>
+    </None>
+    <None Include="Shaders\Common\ShadingModels.glsl">
+      <Filter>Shaders\Common</Filter>
+    </None>
+    <None Include="Shaders\PBR\StandardPBR.vert">
+      <Filter>Shaders\PBR</Filter>
+    </None>
+    <None Include="Shaders\PBR\StandardPBR.frag">
+      <Filter>Shaders\PBR</Filter>
+    </None>
+    <None Include="Shaders\PBR\StandardPBR_GL.vert">
+      <Filter>Shaders\PBR</Filter>
+    </None>
+    <None Include="Shaders\PBR\StandardPBR_GL.frag">
+      <Filter>Shaders\PBR</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../../../UnrealEngine"
+		},
+		{
+			"path": "../../../../githubCode/Filament-V2"
 		}
 	],
 	"settings": {}
