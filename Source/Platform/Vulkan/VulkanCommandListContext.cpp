@@ -213,14 +213,19 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanCommandListContext::endRenderPass() {
+        // Check if we are actually inside a render pass before ending it
+        // This prevents Vulkan validation errors when endRenderPass is called without a matching beginRenderPass
+        if (!m_pendingState || !m_pendingState->isInsideRenderPass()) {
+            MR_LOG_DEBUG("FVulkanCommandListContext::endRenderPass: Not inside render pass, skipping");
+            return;
+        }
+        
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
             const auto& functions = VulkanAPI::getFunctions();
             functions.vkCmdEndRenderPass(m_cmdBuffer->getHandle());
             
             // Mark that we are no longer inside a render pass
-            if (m_pendingState) {
-                m_pendingState->setInsideRenderPass(false);
-            }
+            m_pendingState->setInsideRenderPass(false);
             
             MR_LOG_DEBUG("FVulkanCommandListContext::endRenderPass: Render pass ended");
         }
