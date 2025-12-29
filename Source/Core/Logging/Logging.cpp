@@ -91,6 +91,20 @@ void SetGlobalLogVerbosity(ELogVerbosity::Type Verbosity)
     LogPlatform.SetVerbosity(Verbosity);
     LogWindow.SetVerbosity(Verbosity);
     LogInput.SetVerbosity(Verbosity);
+    
+    // Scene and rendering system categories
+    LogScene.SetVerbosity(Verbosity);
+    LogSceneRenderer.SetVerbosity(Verbosity);
+    LogSceneView.SetVerbosity(Verbosity);
+    LogPrimitiveSceneProxy.SetVerbosity(Verbosity);
+    LogCubeSceneProxy.SetVerbosity(Verbosity);
+    
+    // Application categories
+    LogCubeSceneApp.SetVerbosity(Verbosity);
+    LogCubeActor.SetVerbosity(Verbosity);
+    
+    // RDG categories
+    LogRDG.SetVerbosity(Verbosity);
 }
 
 } // namespace MonsterRender

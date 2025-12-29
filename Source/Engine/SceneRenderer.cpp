@@ -23,7 +23,8 @@ using namespace MonsterRender::RHI;
 namespace MonsterEngine
 {
 
-DEFINE_LOG_CATEGORY_STATIC(LogSceneRenderer, Log, All);
+// Use global log category (defined in LogCategories.cpp)
+using MonsterRender::LogSceneRenderer;
 
 // ============================================================================
 // FMeshDrawCommand Implementation

@@ -18,8 +18,8 @@
 namespace MonsterEngine
 {
 
-// Define log category for scene system
-DEFINE_LOG_CATEGORY_STATIC(LogScene, Log, All);
+// Use global log category (defined in LogCategories.cpp)
+using MonsterRender::LogScene;
 
 // ============================================================================
 // FSceneInterface Implementation
