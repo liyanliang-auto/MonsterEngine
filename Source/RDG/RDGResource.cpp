@@ -12,8 +12,8 @@ void FRDGResource::validateRHIAccess() const
 {
     if (!m_bAllowRHIAccess)
     {
-        MR_LOG(LogRDG, Error, 
-               "Attempting to access RHI resource '%s' outside of pass execution. "
+        MR_LOG(LogRDG, Warning, 
+               "Attempting to access RHI resource '%ls' outside of pass execution. "
                "RHI resources are only valid during pass execution.",
                *m_name);
     }

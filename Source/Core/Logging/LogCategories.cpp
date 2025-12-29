@@ -45,6 +45,10 @@ DEFINE_LOG_CATEGORY(LogCubeSceneProxy)
 DEFINE_LOG_CATEGORY(LogCubeSceneApp)
 DEFINE_LOG_CATEGORY(LogCubeActor)
 
+// Camera categories
+DEFINE_LOG_CATEGORY(LogCameraManager)
+DEFINE_LOG_CATEGORY(LogCameraTypes)
+
 // RDG (Render Dependency Graph) categories
 DEFINE_LOG_CATEGORY(LogRDG)
 

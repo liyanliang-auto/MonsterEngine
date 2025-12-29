@@ -16,8 +16,8 @@
 namespace MonsterEngine
 {
 
-// Define log category
-DEFINE_LOG_CATEGORY_STATIC(LogCameraManager, Log, All);
+// Use global log category (defined in LogCategories.cpp)
+using MonsterRender::LogCameraManager;
 
 // ============================================================================
 // Construction / Destruction

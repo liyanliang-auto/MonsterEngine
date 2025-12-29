@@ -14,8 +14,8 @@
 namespace MonsterEngine
 {
 
-// Define log category
-DEFINE_LOG_CATEGORY_STATIC(LogCameraTypes, Log, All);
+// Use global log category (defined in LogCategories.cpp)
+using MonsterRender::LogCameraTypes;
 
 // Global near clipping plane distance
 static float GNearClippingPlane = 10.0f;

@@ -103,6 +103,10 @@ void SetGlobalLogVerbosity(ELogVerbosity::Type Verbosity)
     LogCubeSceneApp.SetVerbosity(Verbosity);
     LogCubeActor.SetVerbosity(Verbosity);
     
+    // Camera categories
+    LogCameraManager.SetVerbosity(Verbosity);
+    LogCameraTypes.SetVerbosity(Verbosity);
+    
     // RDG categories
     LogRDG.SetVerbosity(Verbosity);
 }

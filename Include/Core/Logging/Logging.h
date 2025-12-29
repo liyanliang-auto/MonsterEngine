@@ -97,6 +97,10 @@ DECLARE_LOG_CATEGORY_EXTERN(LogCubeSceneProxy, Log, All)
 DECLARE_LOG_CATEGORY_EXTERN(LogCubeSceneApp, Log, All)
 DECLARE_LOG_CATEGORY_EXTERN(LogCubeActor, Log, All)
 
+// Camera categories
+DECLARE_LOG_CATEGORY_EXTERN(LogCameraManager, Log, All)
+DECLARE_LOG_CATEGORY_EXTERN(LogCameraTypes, Log, All)
+
 // RDG (Render Dependency Graph) categories
 DECLARE_LOG_CATEGORY_EXTERN(LogRDG, Log, All)
 
