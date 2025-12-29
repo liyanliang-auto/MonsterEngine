@@ -120,4 +120,12 @@ inline void FlushLogs() {
     GLog->Flush();
 }
 
+/**
+ * Set verbosity level for all built-in log categories.
+ * This affects all globally declared categories but not static local categories.
+ * 
+ * @param Verbosity - The verbosity level to set (e.g., ELogVerbosity::Error)
+ */
+void SetGlobalLogVerbosity(ELogVerbosity::Type Verbosity);
+
 } // namespace MonsterRender

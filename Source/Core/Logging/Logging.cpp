@@ -75,4 +75,22 @@ void ShutdownLogging()
     GLog->TearDown();
 }
 
+void SetGlobalLogVerbosity(ELogVerbosity::Type Verbosity)
+{
+    // Set verbosity for all built-in log categories
+    LogTemp.SetVerbosity(Verbosity);
+    LogCore.SetVerbosity(Verbosity);
+    LogInit.SetVerbosity(Verbosity);
+    LogExit.SetVerbosity(Verbosity);
+    LogMemory.SetVerbosity(Verbosity);
+    LogRenderer.SetVerbosity(Verbosity);
+    LogRHI.SetVerbosity(Verbosity);
+    LogVulkan.SetVerbosity(Verbosity);
+    LogShaders.SetVerbosity(Verbosity);
+    LogTextures.SetVerbosity(Verbosity);
+    LogPlatform.SetVerbosity(Verbosity);
+    LogWindow.SetVerbosity(Verbosity);
+    LogInput.SetVerbosity(Verbosity);
+}
+
 } // namespace MonsterRender
