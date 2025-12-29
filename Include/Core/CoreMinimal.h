@@ -1,46 +1,14 @@
 #pragma once
 
-// Platform detection
-#if defined(_WIN32)
-    #define PLATFORM_WINDOWS 1
-#else
-    #define PLATFORM_WINDOWS 0
-#endif
+/**
+ * CoreMinimal.h - Minimal core includes for MonsterEngine
+ * 
+ * This file now delegates to the PCH header for faster compilation.
+ * All commonly used headers are in MonsterEnginePCH.h
+ */
 
-#if defined(__linux__)
-    #define PLATFORM_LINUX 1
-#else
-    #define PLATFORM_LINUX 0
-#endif
-
-// C++ Standard Library
-#include <memory>
-#include <string>
-#include <string_view>
-#include <vector>
-#include <unordered_map>
-#include <optional>
-#include <span>
-#include <functional>
-#include <atomic>
-#include <mutex>
-#include <chrono>
-#include <cassert>
-#include <iostream>
-
-// Core types and definitions
-#include "Core/CoreTypes.h"
-#include "Core/Templates/SharedPointer.h"
-#include "Core/Templates/UniquePtr.h"
-#include "Core/Log.h"
-#include "Core/Assert.h"
-#include "Core/Memory.h"
-
-// Container types
-#include "Containers/String.h"
-#include "Containers/Array.h"
-#include "Containers/Map.h"
-#include "Containers/Set.h"
+// Include PCH header which contains all common includes
+#include "Core/MonsterEnginePCH.h"
 
 // Engine namespace
 namespace MonsterRender {
