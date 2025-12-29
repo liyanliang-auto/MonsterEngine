@@ -751,8 +751,9 @@ bool CubeSceneApplication::initializeScene()
     // Create cube actor
     m_cubeActor = new ACubeActor();
     m_cubeActor->SetRotationSpeed(0.0f);
-    m_cubeActor->SetRotationEnabled(true);  // Disable per-frame rotation for debugging
+    m_cubeActor->SetRotationEnabled(false);  // Rotation disabled
     m_cubeActor->SetRotationAxis(FVector(0.5f, 1.0f, 0.0f));
+    m_cubeActor->SetActorRotation(FRotator(45.0f, 45.0f, 0.0f));  // Initial rotation: 45 degrees
     m_cubeActor->SetScene(m_scene);
     m_cubeActor->BeginPlay();
     
