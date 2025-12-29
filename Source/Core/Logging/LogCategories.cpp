@@ -34,4 +34,18 @@ DEFINE_LOG_CATEGORY(LogPlatform)
 DEFINE_LOG_CATEGORY(LogWindow)
 DEFINE_LOG_CATEGORY(LogInput)
 
+// Scene and rendering system categories
+DEFINE_LOG_CATEGORY(LogScene)
+DEFINE_LOG_CATEGORY(LogSceneRenderer)
+DEFINE_LOG_CATEGORY(LogSceneView)
+DEFINE_LOG_CATEGORY(LogPrimitiveSceneProxy)
+DEFINE_LOG_CATEGORY(LogCubeSceneProxy)
+
+// Application categories
+DEFINE_LOG_CATEGORY(LogCubeSceneApp)
+DEFINE_LOG_CATEGORY(LogCubeActor)
+
+// RDG (Render Dependency Graph) categories
+DEFINE_LOG_CATEGORY(LogRDG)
+
 } // namespace MonsterRender

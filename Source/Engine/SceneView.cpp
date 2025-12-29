@@ -11,7 +11,8 @@
 namespace MonsterEngine
 {
 
-DEFINE_LOG_CATEGORY_STATIC(LogSceneView, Log, All);
+// Use global log category (defined in LogCategories.cpp)
+using MonsterRender::LogSceneView;
 
 // ============================================================================
 // FSceneView Implementation

@@ -1,8 +1,8 @@
 #include "RDG/RDGResource.h"
 #include "Core/Logging/LogMacros.h"
 
-DECLARE_LOG_CATEGORY_EXTERN(LogRDG, Log, All);
-DEFINE_LOG_CATEGORY(LogRDG);
+// Use global log category (defined in LogCategories.cpp)
+using MonsterRender::LogRDG;
 
 namespace MonsterRender {
 namespace RDG {

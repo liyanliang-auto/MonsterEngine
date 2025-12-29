@@ -86,6 +86,20 @@ DECLARE_LOG_CATEGORY_EXTERN(LogPlatform, Log, All)
 DECLARE_LOG_CATEGORY_EXTERN(LogWindow, Log, All)
 DECLARE_LOG_CATEGORY_EXTERN(LogInput, Log, All)
 
+// Scene and rendering system categories
+DECLARE_LOG_CATEGORY_EXTERN(LogScene, Log, All)
+DECLARE_LOG_CATEGORY_EXTERN(LogSceneRenderer, Log, All)
+DECLARE_LOG_CATEGORY_EXTERN(LogSceneView, Log, All)
+DECLARE_LOG_CATEGORY_EXTERN(LogPrimitiveSceneProxy, Log, All)
+DECLARE_LOG_CATEGORY_EXTERN(LogCubeSceneProxy, Log, All)
+
+// Application categories
+DECLARE_LOG_CATEGORY_EXTERN(LogCubeSceneApp, Log, All)
+DECLARE_LOG_CATEGORY_EXTERN(LogCubeActor, Log, All)
+
+// RDG (Render Dependency Graph) categories
+DECLARE_LOG_CATEGORY_EXTERN(LogRDG, Log, All)
+
 // ============================================================================
 // Logging System Initialization
 // ============================================================================

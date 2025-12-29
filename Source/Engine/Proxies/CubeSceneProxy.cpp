@@ -30,8 +30,8 @@
 namespace MonsterEngine
 {
 
-// Define log category
-DEFINE_LOG_CATEGORY_STATIC(LogCubeSceneProxy, Log, All);
+// Use global log category (defined in LogCategories.cpp)
+using MonsterRender::LogCubeSceneProxy;
 
 // ============================================================================
 // Construction / Destruction
