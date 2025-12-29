@@ -661,6 +661,9 @@ void CubeSceneApplication::onShutdown()
     m_viewportColorTarget.Reset();
     m_viewportDepthTarget.Reset();
     
+    // Release shadow map texture (must be done before device shutdown)
+    m_shadowMapTexture.Reset();
+    
     // Shutdown ImGui (DISABLED)
     // shutdownImGui();
     
