@@ -296,10 +296,11 @@ namespace MonsterRender::RHI::Vulkan {
                 
                 // Pass VkImage handle for layout transitions before render pass
                 VkImage image = vulkanTexture->getImage();
+                VkFormat format = vulkanTexture->getVulkanFormat();
                 uint32 mipLevels = texture->getDesc().mipLevels;
                 uint32 arrayLayers = texture->getDesc().arraySize;
                 
-                m_context->getPendingState()->setTexture(slot, imageView, sampler, image, mipLevels, arrayLayers);
+                m_context->getPendingState()->setTexture(slot, imageView, sampler, image, format, mipLevels, arrayLayers);
             } else {
                 MR_LOG_ERROR("setShaderResource: Failed to cast texture to VulkanTexture for slot " + std::to_string(slot));
             }
