@@ -151,12 +151,13 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanPendingState::setTexture(uint32 slot, VkImageView imageView, VkSampler sampler,
-                                         VkImage image, uint32 mipLevels, uint32 arrayLayers) {
+                                         VkImage image, VkFormat format, uint32 mipLevels, uint32 arrayLayers) {
         auto& binding = m_textures[slot];
         if (binding.imageView != imageView || binding.sampler != sampler) {
             binding.imageView = imageView;
             binding.sampler = sampler;
             binding.image = image;
+            binding.format = format;
             binding.mipLevels = mipLevels;
             binding.arrayLayers = arrayLayers;
             m_descriptorsDirty = true;
@@ -198,7 +199,20 @@ namespace MonsterRender::RHI::Vulkan {
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = binding.image;
-            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            
+            // Determine aspect mask based on format
+            if (binding.format == VK_FORMAT_D32_SFLOAT || 
+                binding.format == VK_FORMAT_D16_UNORM) {
+                // Depth-only formats
+                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            } else if (binding.format == VK_FORMAT_D24_UNORM_S8_UINT || 
+                       binding.format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
+                // Depth-stencil formats
+                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            } else {
+                // Color formats
+                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            }
             barrier.subresourceRange.baseMipLevel = 0;
             barrier.subresourceRange.levelCount = binding.mipLevels;
             barrier.subresourceRange.baseArrayLayer = 0;

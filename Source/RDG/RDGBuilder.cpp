@@ -943,22 +943,35 @@ void FRDGBuilder::_setupRenderTargets(RHI::IRHICommandList& rhiCmdList, FRDGPass
         return;
     }
     
-    MR_LOG(LogRDG, VeryVerbose, "Setting up render targets for pass '%s'", *pass->getName());
+    MR_LOG(LogRDG, Log, "Setting up render targets for pass '%ls'", *pass->getName());
     
     // Collect render targets from pass texture accesses
     TArray<TSharedPtr<RHI::IRHITexture>> colorTargets;
     TSharedPtr<RHI::IRHITexture> depthTarget;
     
+    MR_LOG(LogRDG, Log, "  Pass has %d texture accesses", pass->getTextureAccesses().Num());
+    
     for (const FRDGTextureAccess& access : pass->getTextureAccesses())
     {
-        if (!access.texture || !access.texture->hasRHI())
+        if (!access.texture)
         {
+            MR_LOG(LogRDG, Warning, "  Null texture in access");
+            continue;
+        }
+        
+        MR_LOG(LogRDG, Log, "  Checking texture '%ls' with access %d", 
+               *access.texture->getName(), static_cast<int32>(access.access));
+        
+        if (!access.texture->hasRHI())
+        {
+            MR_LOG(LogRDG, Warning, "  Texture '%ls' has no RHI resource", *access.texture->getName());
             continue;
         }
         
         RHI::IRHITexture* rhiTexture = static_cast<RHI::IRHITexture*>(access.texture->getRHI());
         if (!rhiTexture)
         {
+            MR_LOG(LogRDG, Warning, "  Failed to get RHI texture for '%ls'", *access.texture->getName());
             continue;
         }
         
@@ -969,33 +982,36 @@ void FRDGBuilder::_setupRenderTargets(RHI::IRHICommandList& rhiCmdList, FRDGPass
             TSharedPtr<RHI::IRHITexture> target(rhiTexture, [](RHI::IRHITexture*){});
             colorTargets.Add(target);
             
-            MR_LOG(LogRDG, VeryVerbose, "  Color RT: %s", *access.texture->getName());
+            MR_LOG(LogRDG, Log, "  Added Color RT: %ls", *access.texture->getName());
         }
         else if (access.access == ERHIAccess::DSVWrite || access.access == ERHIAccess::DSVRead)
         {
             // Depth/stencil target
             depthTarget = TSharedPtr<RHI::IRHITexture>(rhiTexture, [](RHI::IRHITexture*){});
             
-            MR_LOG(LogRDG, VeryVerbose, "  Depth RT: %s", *access.texture->getName());
+            MR_LOG(LogRDG, Log, "  Added Depth RT: %ls", *access.texture->getName());
         }
     }
     
     // Set render targets if any were found
-    if (colorTargets.Num() > 0 || depthTarget)
+    // If no explicit render targets are declared, assume swapchain rendering (empty array)
+    // This matches UE5 behavior where passes without explicit RT declarations render to backbuffer
+    MR_LOG(LogRDG, Log, "Calling setRenderTargets with %d color and %d depth targets",
+           colorTargets.Num(), depthTarget ? 1 : 0);
+    
+    rhiCmdList.setRenderTargets(
+        TSpan<TSharedPtr<RHI::IRHITexture>>(colorTargets.GetData(), colorTargets.Num()),
+        depthTarget
+    );
+    
+    if (colorTargets.Num() == 0 && !depthTarget)
     {
-        rhiCmdList.setRenderTargets(
-            TSpan<TSharedPtr<RHI::IRHITexture>>(colorTargets.GetData(), colorTargets.Num()),
-            depthTarget
-        );
-        
-        MR_LOG(LogRDG, Verbose, "Set %d color targets and %s depth target for pass '%s'",
-               colorTargets.Num(), 
-               depthTarget ? "1" : "0",
+        MR_LOG(LogRDG, Log, "No explicit render targets - using swapchain rendering for pass '%ls'",
                *pass->getName());
     }
     else
     {
-        MR_LOG(LogRDG, VeryVerbose, "No render targets to set for pass '%s'", *pass->getName());
+        MR_LOG(LogRDG, Log, "setRenderTargets completed for pass '%ls'", *pass->getName());
     }
 }
 

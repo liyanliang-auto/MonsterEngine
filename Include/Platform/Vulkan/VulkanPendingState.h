@@ -72,13 +72,18 @@ namespace MonsterRender::RHI::Vulkan {
         void setUniformBuffer(uint32 slot, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range);
         
         /**
-         * Set texture at binding slot (UE5: SetShaderTexture())
-         * @param image VkImage handle for layout transitions
+         * Bind a texture to a descriptor slot
+         * @param slot Descriptor binding slot
+         * @param imageView Vulkan image view
+         * @param sampler Vulkan sampler
+         * @param image Vulkan image (for layout transitions)
+         * @param format Vulkan format (for aspect mask determination)
          * @param mipLevels Number of mip levels for barrier
          * @param arrayLayers Number of array layers for barrier
          */
         void setTexture(uint32 slot, VkImageView imageView, VkSampler sampler,
-                       VkImage image = VK_NULL_HANDLE, uint32 mipLevels = 1, uint32 arrayLayers = 1);
+                       VkImage image = VK_NULL_HANDLE, VkFormat format = VK_FORMAT_UNDEFINED,
+                       uint32 mipLevels = 1, uint32 arrayLayers = 1);
         
         /**
          * Prepare for draw call - ensure all pending state is applied (UE5: PrepareForDraw())
@@ -164,6 +169,7 @@ namespace MonsterRender::RHI::Vulkan {
             VkImageView imageView = VK_NULL_HANDLE;
             VkSampler sampler = VK_NULL_HANDLE;
             VkImage image = VK_NULL_HANDLE;  // For layout transitions
+            VkFormat format = VK_FORMAT_UNDEFINED;  // For aspect mask determination
             uint32 mipLevels = 1;
             uint32 arrayLayers = 1;
         };
