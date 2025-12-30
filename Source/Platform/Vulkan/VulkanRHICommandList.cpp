@@ -612,8 +612,24 @@ namespace MonsterRender::RHI::Vulkan {
             barrier.image = vkTexture->getImage();
             
             // Setup subresource range
-            barrier.subresourceRange.aspectMask = bIsDepthStencil ? 
-                (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) : VK_IMAGE_ASPECT_COLOR_BIT;
+            if (bIsDepthStencil)
+            {
+                // Determine aspect mask based on texture format
+                EPixelFormat format = texture->getDesc().format;
+                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+                
+                // Only add stencil aspect for formats that actually have stencil component
+                if (format == EPixelFormat::D24_UNORM_S8_UINT || 
+                    format == EPixelFormat::D32_FLOAT_S8_UINT)
+                {
+                    barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+                }
+            }
+            else
+            {
+                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            }
+            
             barrier.subresourceRange.baseMipLevel = 0;
             barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
             barrier.subresourceRange.baseArrayLayer = 0;

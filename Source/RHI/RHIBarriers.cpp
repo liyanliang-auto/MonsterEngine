@@ -177,7 +177,17 @@ uint32 getVulkanImageLayout(ERHIAccess access, bool bIsDepthStencil, bool bIsSou
     switch (access)
     {
         case ERHIAccess::Unknown:
-            return VK_IMAGE_LAYOUT_UNDEFINED;
+            // IMPORTANT: VK_IMAGE_LAYOUT_UNDEFINED is only valid for oldLayout (source state)
+            // For newLayout (destination state), we must use a valid layout
+            if (bIsSourceState)
+            {
+                return VK_IMAGE_LAYOUT_UNDEFINED;
+            }
+            else
+            {
+                // For unknown destination state, use GENERAL layout as fallback
+                return VK_IMAGE_LAYOUT_GENERAL;
+            }
             
         case ERHIAccess::Discard:
             return bIsSourceState ? VK_IMAGE_LAYOUT_UNDEFINED : 
