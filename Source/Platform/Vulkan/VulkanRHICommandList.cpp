@@ -12,6 +12,7 @@
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanUtils.h"
 #include "RHI/RHIBarriers.h"
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHISwapChain.h"
@@ -612,24 +613,9 @@ namespace MonsterRender::RHI::Vulkan {
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = vkTexture->getImage();
             
-            // Setup subresource range
-            if (bIsDepthStencil)
-            {
-                // Determine aspect mask based on texture format
-                EPixelFormat format = texture->getDesc().format;
-                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-                
-                // Only add stencil aspect for formats that actually have stencil component
-                if (format == EPixelFormat::D24_UNORM_S8_UINT || 
-                    format == EPixelFormat::D32_FLOAT_S8_UINT)
-                {
-                    barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-                }
-            }
-            else
-            {
-                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            }
+            // Determine aspect mask based on texture format
+            VkFormat vkFormat = vkTexture->getVulkanFormat();
+            barrier.subresourceRange.aspectMask = VulkanUtils::getImageAspectMask(vkFormat);
             
             barrier.subresourceRange.baseMipLevel = 0;
             barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
@@ -888,20 +874,8 @@ namespace MonsterRender::RHI::Vulkan {
         barrier.image = image;
         
         // Determine aspect mask based on texture format
-        EPixelFormat format = texture->getDesc().format;
-        if (format == EPixelFormat::D32_FLOAT || 
-            format == EPixelFormat::D24_UNORM_S8_UINT || 
-            format == EPixelFormat::D32_FLOAT_S8_UINT ||
-            format == EPixelFormat::D16_UNORM) {
-            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            // Add stencil aspect if format has stencil
-            if (format == EPixelFormat::D24_UNORM_S8_UINT || 
-                format == EPixelFormat::D32_FLOAT_S8_UINT) {
-                barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-            }
-        } else {
-            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        }
+        VkFormat vkFormat = vulkanTexture->getVulkanFormat();
+        barrier.subresourceRange.aspectMask = VulkanUtils::getImageAspectMask(vkFormat);
         
         barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.levelCount = texture->getDesc().mipLevels;
@@ -1006,19 +980,10 @@ namespace MonsterRender::RHI::Vulkan {
         region.bufferRowLength = 0;   // Tightly packed
         region.bufferImageHeight = 0; // Tightly packed
         
-        // Determine aspect mask based on texture format (same logic as transitionTextureLayout)
-        // 根据纹理格式确定 aspect mask（与 transitionTextureLayout 相同的逻辑）
-        EPixelFormat format = dstTexture->getDesc().format;
-        if (format == EPixelFormat::D32_FLOAT || 
-            format == EPixelFormat::D24_UNORM_S8_UINT || 
-            format == EPixelFormat::D32_FLOAT_S8_UINT ||
-            format == EPixelFormat::D16_UNORM) {
-            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            // Note: For depth-stencil copy, typically only depth is copied from buffer
-            // Stencil data would require separate copy with VK_IMAGE_ASPECT_STENCIL_BIT
-        } else {
-            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        }
+        // Determine aspect mask based on texture format
+        VulkanTexture* vulkanDstTexture = static_cast<VulkanTexture*>(dstTexture.get());
+        VkFormat vkFormat = vulkanDstTexture->getVulkanFormat();
+        region.imageSubresource.aspectMask = VulkanUtils::getImageAspectMask(vkFormat);
         
         region.imageSubresource.mipLevel = mipLevel;
         region.imageSubresource.baseArrayLayer = arrayLayer;
