@@ -139,17 +139,11 @@ namespace MonsterRender::RHI {
         
         // Command list management
         /**
-         * Create a command list
-         */
-        virtual TSharedPtr<IRHICommandList> createCommandList() = 0;
-        
-        /**
-         * Execute command lists
-         */
-        virtual void executeCommandLists(TSpan<TSharedPtr<IRHICommandList>> commandLists) = 0;
-        
-        /**
          * Get the immediate command list (for direct execution)
+         * 
+         * Reference UE5: RHIGetDefaultContext()
+         * Use this method to get the immediate command list for rendering.
+         * The immediate command list is managed per-frame and automatically submitted.
          */
         virtual IRHICommandList* getImmediateCommandList() = 0;
         

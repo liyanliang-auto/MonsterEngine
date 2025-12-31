@@ -54,9 +54,6 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanBuffer.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Platform\Vulkan\VulkanCommandList.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="Source\Platform\Vulkan\VulkanDevice.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -207,9 +204,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Include\Platform\Vulkan\VulkanBuffer.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Include\Platform\Vulkan\VulkanCommandList.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Include\Platform\Vulkan\VulkanShader.h">

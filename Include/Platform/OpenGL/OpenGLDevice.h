@@ -82,11 +82,6 @@ public:
         MonsterRender::RHI::EBufferUsageFlags Usage,
         MonsterRender::RHI::FRHIResourceCreateInfo& CreateInfo) override;
     
-    virtual TSharedPtr<MonsterRender::RHI::IRHICommandList> createCommandList() override;
-    
-    virtual void executeCommandLists(
-        MonsterRender::TSpan<TSharedPtr<MonsterRender::RHI::IRHICommandList>> commandLists) override;
-    
     virtual MonsterRender::RHI::IRHICommandList* getImmediateCommandList() override;
     
     virtual void waitForIdle() override;
