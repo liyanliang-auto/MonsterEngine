@@ -3,9 +3,10 @@
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Platform/Vulkan/VulkanShader.h"
-#include "Core/Log.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanUtils.h"
+#include "Core/Log.h"
 
 namespace MonsterRender::RHI::Vulkan {
     
@@ -914,7 +915,9 @@ namespace MonsterRender::RHI::Vulkan {
         region.bufferRowLength = 0;    // Tightly packed
         region.bufferImageHeight = 0;  // Tightly packed
         
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        // Determine aspect mask based on texture format
+        VkFormat vkFormat = vulkanTexture->getVulkanFormat();
+        region.imageSubresource.aspectMask = VulkanUtils::getImageAspectMask(vkFormat);
         region.imageSubresource.mipLevel = mipLevel;
         region.imageSubresource.baseArrayLayer = arrayLayer;
         region.imageSubresource.layerCount = 1;

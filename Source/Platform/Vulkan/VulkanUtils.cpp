@@ -242,5 +242,32 @@ namespace MonsterRender::RHI::Vulkan {
             
             return VK_FALSE;
         }
+        
+        VkImageAspectFlags getImageAspectMask(VkFormat format) {
+            // Determine aspect mask based on format
+            // Reference: UE5 FVulkanBarrierManager::GetAspectMask()
+            
+            switch (format) {
+                // Depth-only formats
+                case VK_FORMAT_D16_UNORM:
+                case VK_FORMAT_D32_SFLOAT:
+                case VK_FORMAT_X8_D24_UNORM_PACK32:
+                    return VK_IMAGE_ASPECT_DEPTH_BIT;
+                
+                // Depth-stencil formats
+                case VK_FORMAT_D16_UNORM_S8_UINT:
+                case VK_FORMAT_D24_UNORM_S8_UINT:
+                case VK_FORMAT_D32_SFLOAT_S8_UINT:
+                    return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+                
+                // Stencil-only formats
+                case VK_FORMAT_S8_UINT:
+                    return VK_IMAGE_ASPECT_STENCIL_BIT;
+                
+                // All other formats are color formats
+                default:
+                    return VK_IMAGE_ASPECT_COLOR_BIT;
+            }
+        }
     }
 }

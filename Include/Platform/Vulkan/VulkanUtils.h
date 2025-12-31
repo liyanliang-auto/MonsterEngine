@@ -75,5 +75,11 @@ namespace MonsterRender::RHI::Vulkan {
             VkDebugUtilsMessageTypeFlagsEXT messageType,
             const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
             void* userData);
+        
+        /**
+         * Get correct aspect mask for image format
+         * Automatically determines COLOR, DEPTH, or DEPTH|STENCIL based on format
+         */
+        VkImageAspectFlags getImageAspectMask(VkFormat format);
     }
 }

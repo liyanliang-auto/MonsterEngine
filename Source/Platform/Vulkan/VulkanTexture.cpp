@@ -189,15 +189,8 @@ namespace MonsterRender::RHI::Vulkan {
             }
         }
         
-        // Determine aspect mask
-        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        if (hasResourceUsage(m_desc.usage, EResourceUsage::DepthStencil)) {
-            aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            // Add stencil aspect for formats that have it
-            if (m_desc.format == EPixelFormat::D24_UNORM_S8_UINT) {
-                aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-            }
-        }
+        // Determine aspect mask based on format
+        VkImageAspectFlags aspectMask = VulkanUtils::getImageAspectMask(m_format);
         
         // Setup image view create info
         m_imageViewCreateInfo = {};
