@@ -31,6 +31,10 @@ layout(set = 0, binding = 0) uniform TransformUBO {
     vec4 textureBlend;
 } transform;
 
+// Textures moved to set 0 for compatibility with single descriptor set binding
+layout(set = 0, binding = 1) uniform sampler2D texture1;
+layout(set = 0, binding = 2) uniform sampler2D texture2;
+
 struct LightData {
     vec4 position;    // xyz = position/direction, w = type (0=directional, 1=point/spot)
     vec4 color;       // rgb = color, a = intensity
@@ -52,13 +56,7 @@ layout(set = 0, binding = 4) uniform ShadowUBO {
     vec4 shadowMapSize;     // xy = size, zw = 1/size
 } shadow;
 
-// ============================================================================
-// Textures
-// ============================================================================
-
-layout(set = 1, binding = 0) uniform sampler2D texture1;
-layout(set = 1, binding = 1) uniform sampler2D texture2;
-layout(set = 1, binding = 2) uniform sampler2D shadowMap;
+layout(set = 0, binding = 5) uniform sampler2D shadowMap;
 
 // ============================================================================
 // Fragment Input

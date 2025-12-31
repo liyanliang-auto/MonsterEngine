@@ -10,6 +10,17 @@ namespace MonsterRender::RHI::Vulkan {
     class VulkanDevice;
     
     /**
+     * Extended descriptor binding info that includes set index
+     * Standard VkDescriptorSetLayoutBinding doesn't include set information
+     */
+    struct FVulkanDescriptorBinding {
+        uint32 set;                                    // Descriptor set index
+        VkDescriptorSetLayoutBinding layoutBinding;    // Standard Vulkan binding info
+        
+        FVulkanDescriptorBinding() : set(0), layoutBinding{} {}
+    };
+    
+    /**
      * Base class for Vulkan shader implementations
      */
     class VulkanShader : public IRHIShader {
@@ -35,6 +46,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Shader reflection (future enhancement)
         const TArray<VkDescriptorSetLayoutBinding>& getDescriptorBindings() const { return m_descriptorBindings; }
+        const TArray<FVulkanDescriptorBinding>& getExtendedDescriptorBindings() const { return m_extendedDescriptorBindings; }
         
     private:
         bool initialize(TSpan<const uint8> bytecode);
@@ -48,6 +60,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Shader reflection data
         TArray<VkDescriptorSetLayoutBinding> m_descriptorBindings;
+        TArray<FVulkanDescriptorBinding> m_extendedDescriptorBindings;
         uint32 m_pushConstantSize = 0;
     };
     
