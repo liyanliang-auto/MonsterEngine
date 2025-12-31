@@ -268,22 +268,6 @@ TSharedPtr<FRHIIndexBuffer> FOpenGLDevice::CreateIndexBuffer(
     return indexBuffer;
 }
 
-TSharedPtr<IRHICommandList> FOpenGLDevice::createCommandList()
-{
-    return MakeShared<FOpenGLCommandList>(this);
-}
-
-void FOpenGLDevice::executeCommandLists(MonsterRender::TSpan<TSharedPtr<IRHICommandList>> commandLists)
-{
-    for (auto& cmdList : commandLists)
-    {
-        if (auto* glCmdList = static_cast<FOpenGLCommandList*>(cmdList.get()))
-        {
-            glCmdList->Execute();
-        }
-    }
-}
-
 IRHICommandList* FOpenGLDevice::getImmediateCommandList()
 {
     return m_immediateCommandList.get();

@@ -16,7 +16,6 @@ namespace MonsterRender::RHI {
 namespace MonsterRender::RHI::Vulkan {
     
     // Forward declarations
-    class VulkanCommandList;
     class VulkanPipelineState;
     class VulkanPipelineCache;
     class VulkanDescriptorSetAllocator;
@@ -78,9 +77,6 @@ namespace MonsterRender::RHI::Vulkan {
             uint32 Size,
             EBufferUsageFlags Usage,
             FRHIResourceCreateInfo& CreateInfo) override;
-        
-        TSharedPtr<IRHICommandList> createCommandList() override;
-        void executeCommandLists(TSpan<TSharedPtr<IRHICommandList>> commandLists) override;
         
         // Vulkan-specific accessors
         VkDevice getLogicalDevice() const { return m_device; }

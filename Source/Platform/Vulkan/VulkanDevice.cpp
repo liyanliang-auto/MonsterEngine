@@ -1,5 +1,4 @@
 #include "Platform/Vulkan/VulkanDevice.h"
-#include "Platform/Vulkan/VulkanCommandList.h"
 #include "Platform/Vulkan/VulkanRHICommandList.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanTexture.h"
@@ -441,51 +440,6 @@ namespace MonsterRender::RHI::Vulkan {
         
         MR_LOG_DEBUG("Successfully created index buffer: " + CreateInfo.DebugName);
         return indexBuffer;
-    }
-    
-    TSharedPtr<IRHICommandList> VulkanDevice::createCommandList() {
-        auto commandList = MakeShared<VulkanCommandList>(this);
-        if (!commandList->initialize()) {
-            MR_LOG_ERROR("Failed to initialize Vulkan command list");
-            return nullptr;
-        }
-        return commandList;
-    }
-    
-    void VulkanDevice::executeCommandLists(TSpan<TSharedPtr<IRHICommandList>> commandLists) {
-        if (commandLists.empty()) {
-            return;
-        }
-        
-        const auto& functions = VulkanAPI::getFunctions();
-        
-        // Convert to Vulkan command buffers
-        TArray<VkCommandBuffer> vkCommandBuffers;
-        vkCommandBuffers.reserve(commandLists.size());
-        
-        for (const auto& cmdList : commandLists) {
-            auto vulkanCmdList = StaticCastSharedPtr<VulkanCommandList>(cmdList);
-            if (vulkanCmdList) {
-                vkCommandBuffers.Add(vulkanCmdList->getVulkanCommandBuffer());
-            }
-        }
-        
-        if (vkCommandBuffers.empty()) {
-            MR_LOG_WARNING("No valid Vulkan command buffers to execute");
-            return;
-        }
-        
-        // Submit to graphics queue
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = static_cast<uint32>(vkCommandBuffers.size());
-        submitInfo.pCommandBuffers = vkCommandBuffers.data();
-        
-        VkResult result = functions.vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-        
-        if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to submit command buffers! Result: " + std::to_string(result));
-        }
     }
     
     IRHICommandList* VulkanDevice::getImmediateCommandList() {

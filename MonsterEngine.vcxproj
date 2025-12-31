@@ -210,7 +210,6 @@
     <ClCompile Include="Source\RHI\RHIBarriers.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanAPI.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanBuffer.cpp" />
-    <ClCompile Include="Source\Platform\Vulkan\VulkanCommandList.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanRHICommandList.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandBuffer.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandListContext.cpp" />
@@ -359,7 +358,6 @@
     <ClInclude Include="Include\RHI\RHI.h" />
     <ClInclude Include="Include\RHI\RHIDefinitions.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanBuffer.h" />
-    <ClInclude Include="Include\Platform\Vulkan\VulkanCommandList.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanRHICommandList.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanCommandBuffer.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanCommandListContext.h" />
