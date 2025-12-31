@@ -117,6 +117,7 @@ using MonsterEngine::TMap;
     void VulkanShader::performReflection(TSpan<const uint8> bytecode) {
         // Minimal SPIR-V reflection: extract descriptor bindings and push constants by scanning decorations
         m_descriptorBindings.clear();
+        m_extendedDescriptorBindings.clear();
         m_pushConstantSize = 0;
 
         const uint32* code = reinterpret_cast<const uint32*>(bytecode.data());
@@ -185,6 +186,8 @@ using MonsterEngine::TMap;
                         auto it = idToBinding.find(resultId);
                         if (it != idToBinding.end() && it->second.hasBinding) {
                             BindingInfo* bindingInfoPtr = &it->second;
+                            
+                            // Create standard Vulkan binding
                             VkDescriptorSetLayoutBinding b{};
                             b.binding = bindingInfoPtr->binding;
                             b.descriptorCount = 1;
@@ -192,7 +195,15 @@ using MonsterEngine::TMap;
                             // UniformConstant (0) -> sampled image/sampler; Uniform (2) -> uniform buffer
                             b.descriptorType = (storageClass == 0) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                             m_descriptorBindings.Add(b);
-                            MR_LOG_DEBUG("Reflection: Added binding " + std::to_string(b.binding) + 
+                            
+                            // Create extended binding with set information
+                            FVulkanDescriptorBinding extBinding;
+                            extBinding.set = bindingInfoPtr->hasSet ? bindingInfoPtr->set : 0;
+                            extBinding.layoutBinding = b;
+                            m_extendedDescriptorBindings.Add(extBinding);
+                            
+                            MR_LOG_DEBUG("Reflection: Added binding set=" + std::to_string(extBinding.set) + 
+                                        " binding=" + std::to_string(b.binding) + 
                                         " as " + (storageClass == 0 ? "COMBINED_IMAGE_SAMPLER" : "UNIFORM_BUFFER"));
                         } else {
                             MR_LOG_DEBUG("Reflection: No binding found for ID=" + std::to_string(resultId));

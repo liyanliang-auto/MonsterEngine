@@ -178,34 +178,24 @@ namespace MonsterRender::RHI::Vulkan
         // Use std::map and std::vector for Vulkan API compatibility
         std::map<uint32, std::vector<VkDescriptorSetLayoutBinding>> setBindings;
 
-        // Collect bindings from vertex shader
+        // Collect descriptor bindings from shaders using extended binding info
+        // Use std::map to organize bindings by set index
         if (m_desc.vertexShader)
         {
             auto *vulkanVS = static_cast<VulkanVertexShader *>(m_desc.vertexShader.get());
-            const auto &bindings = vulkanVS->getDescriptorBindings();
-            MR_LOG_DEBUG("createPipelineLayout: Vertex shader has " + std::to_string(bindings.size()) + " descriptor bindings");
-            for (const auto &binding : bindings)
+            const auto &extBindings = vulkanVS->getExtendedDescriptorBindings();
+            MR_LOG(LogRHI, Log, "createPipelineLayout: Vertex shader has %d descriptor bindings", static_cast<int32>(extBindings.size()));
+            for (const auto &extBinding : extBindings)
             {
-                // Assume set=0 for now; enhance later for multi-set support
-                setBindings[0].push_back(binding);
-                MR_LOG_DEBUG("  - VS binding " + std::to_string(binding.binding) +
+                uint32 setIndex = extBinding.set;
+                const auto &binding = extBinding.layoutBinding;
+                MR_LOG_DEBUG("  - VS set=" + std::to_string(setIndex) + 
+                             " binding=" + std::to_string(binding.binding) +
                              " type=" + std::to_string(binding.descriptorType));
-            }
-        }
-
-        // Collect bindings from pixel shader
-        if (m_desc.pixelShader)
-        {
-            auto *vulkanPS = static_cast<VulkanPixelShader *>(m_desc.pixelShader.get());
-            const auto &bindings = vulkanPS->getDescriptorBindings();
-            MR_LOG_DEBUG("createPipelineLayout: Pixel shader has " + std::to_string(bindings.size()) + " descriptor bindings");
-            for (const auto &binding : bindings)
-            {
-                MR_LOG_DEBUG("  - PS binding " + std::to_string(binding.binding) +
-                             " type=" + std::to_string(binding.descriptorType));
-                // Merge with existing bindings, combining stage flags if binding already exists
+                
+                // Merge with existing bindings in the same set, combining stage flags if binding already exists
                 bool found = false;
-                for (auto &existing : setBindings[0])
+                for (auto &existing : setBindings[setIndex])
                 {
                     if (existing.binding == binding.binding)
                     {
@@ -216,7 +206,39 @@ namespace MonsterRender::RHI::Vulkan
                 }
                 if (!found)
                 {
-                    setBindings[0].push_back(binding);
+                    setBindings[setIndex].push_back(binding);
+                }
+            }
+        }
+
+        // Merge pixel shader bindings
+        if (m_desc.pixelShader)
+        {
+            auto *vulkanPS = static_cast<VulkanPixelShader *>(m_desc.pixelShader.get());
+            const auto &extBindings = vulkanPS->getExtendedDescriptorBindings();
+            MR_LOG_DEBUG("createPipelineLayout: Pixel shader has " + std::to_string(extBindings.size()) + " descriptor bindings");
+            for (const auto &extBinding : extBindings)
+            {
+                uint32 setIndex = extBinding.set;
+                const auto &binding = extBinding.layoutBinding;
+                MR_LOG_DEBUG("  - PS set=" + std::to_string(setIndex) + 
+                             " binding=" + std::to_string(binding.binding) +
+                             " type=" + std::to_string(binding.descriptorType));
+                
+                // Merge with existing bindings in the same set, combining stage flags if binding already exists
+                bool found = false;
+                for (auto &existing : setBindings[setIndex])
+                {
+                    if (existing.binding == binding.binding)
+                    {
+                        existing.stageFlags |= binding.stageFlags;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                {
+                    setBindings[setIndex].push_back(binding);
                 }
             }
         }
