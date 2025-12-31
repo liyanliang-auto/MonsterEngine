@@ -188,6 +188,13 @@ void CubeSceneApplication::onInitialize()
         }
     }
     
+    // Initialize floor geometry
+    if (!initializeFloor())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to initialize floor geometry");
+        return;
+    }
+    
     MR_LOG(LogCubeSceneApp, Log, "CubeSceneApplication initialized successfully");
 }
 
@@ -1477,6 +1484,65 @@ bool CubeSceneApplication::initializeShadowMap()
     }
     
     MR_LOG(LogCubeSceneApp, Log, "Shadow map initialized successfully");
+    return true;
+}
+
+bool CubeSceneApplication::initializeFloor()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Initializing floor geometry...");
+    
+    if (!m_device)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Cannot initialize floor: no device");
+        return false;
+    }
+    
+    // Floor vertices: 2 triangles forming a large plane at Y = -0.5
+    // Format: Position(3) + Normal(3) + TexCoord(2) = 8 floats per vertex
+    // Reference: LearnOpenGL shadow_mapping.cpp planeVertices
+    // Texture coordinates are scaled by 25.0 to create tiling effect
+    float32 planeVertices[] = {
+        // positions            // normals         // texcoords
+         25.0f, -0.5f,  25.0f,  0.0f, 1.0f, 0.0f,  25.0f,  0.0f,
+        -25.0f, -0.5f,  25.0f,  0.0f, 1.0f, 0.0f,   0.0f,  0.0f,
+        -25.0f, -0.5f, -25.0f,  0.0f, 1.0f, 0.0f,   0.0f, 25.0f,
+
+         25.0f, -0.5f,  25.0f,  0.0f, 1.0f, 0.0f,  25.0f,  0.0f,
+        -25.0f, -0.5f, -25.0f,  0.0f, 1.0f, 0.0f,   0.0f, 25.0f,
+         25.0f, -0.5f, -25.0f,  0.0f, 1.0f, 0.0f,  25.0f, 25.0f
+    };
+    
+    uint32 vertexDataSize = sizeof(planeVertices);
+    m_floorVertexCount = 6;
+    
+    MR_LOG(LogCubeSceneApp, Log, "Floor vertex data size: %u bytes, vertex count: %u", 
+           vertexDataSize, m_floorVertexCount);
+    
+    // Create vertex buffer
+    RHI::BufferDesc vertexBufferDesc;
+    vertexBufferDesc.size = vertexDataSize;
+    vertexBufferDesc.usage = RHI::EResourceUsage::VertexBuffer;
+    vertexBufferDesc.debugName = "FloorVertexBuffer";
+    
+    m_floorVertexBuffer = m_device->createBuffer(vertexBufferDesc);
+    if (!m_floorVertexBuffer)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create floor vertex buffer");
+        return false;
+    }
+    
+    // Upload vertex data to buffer
+    void* mappedData = m_floorVertexBuffer->map();
+    if (!mappedData)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to map floor vertex buffer");
+        return false;
+    }
+    
+    FMemory::Memcpy(mappedData, planeVertices, vertexDataSize);
+    m_floorVertexBuffer->unmap();
+    
+    MR_LOG(LogCubeSceneApp, Log, "Floor geometry initialized successfully");
     return true;
 }
 

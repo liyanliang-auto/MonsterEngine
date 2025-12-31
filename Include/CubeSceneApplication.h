@@ -221,6 +221,12 @@ protected:
     bool initializeShadowMap();
 
     /**
+     * Initialize floor geometry and vertex buffer
+     * @return True if successful
+     */
+    bool initializeFloor();
+
+    /**
      * Render shadow depth pass
      * @param cmdList Command list
      * @param lightDirection Direction of the directional light
@@ -423,6 +429,16 @@ protected:
 
     /** Viewport texture is ready for display (has been rendered to at least once) */
     bool m_bViewportTextureReady;
+
+    // ========================================================================
+    // Floor Rendering
+    // ========================================================================
+
+    /** Floor vertex buffer */
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_floorVertexBuffer;
+
+    /** Number of floor vertices */
+    uint32 m_floorVertexCount = 6;
 };
 
 } // namespace MonsterRender
