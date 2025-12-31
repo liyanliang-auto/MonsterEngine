@@ -1270,15 +1270,17 @@ namespace MonsterRender::RHI::Vulkan {
         rttAttachments.push_back(rttColorAttachment);
         
         // RTT Depth attachment
+        // For shadow mapping: storeOp = STORE (need to read depth later)
+        // finalLayout = DEPTH_STENCIL_READ_ONLY_OPTIMAL (correct layout for depth texture sampling)
         VkAttachmentDescription rttDepthAttachment{};
         rttDepthAttachment.format = m_depthFormat;
         rttDepthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         rttDepthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        rttDepthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        rttDepthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;  // Store depth for shadow mapping
         rttDepthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         rttDepthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         rttDepthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        rttDepthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        rttDepthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;  // Correct for depth sampling
         rttAttachments.push_back(rttDepthAttachment);
         
         VkAttachmentReference rttColorRef{};

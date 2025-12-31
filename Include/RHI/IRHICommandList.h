@@ -4,6 +4,7 @@
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHIResource.h"
 #include "RHI/RHIResources.h"
+#include "RDG/RDGDefinitions.h"
 
 namespace MonsterRender::RHI {
     
@@ -212,11 +213,22 @@ namespace MonsterRender::RHI {
         
         // Resource transitions (for explicit APIs like D3D12/Vulkan)
         /**
-         * Transition resource state
+         * Transition resource state (legacy EResourceUsage version)
          * This is a no-op for implicit APIs like D3D11/OpenGL
          */
         virtual void transitionResource(TSharedPtr<IRHIResource> resource, 
                                       EResourceUsage stateBefore, EResourceUsage stateAfter) = 0;
+        
+        /**
+         * Transition resource state (ERHIAccess version for RDG)
+         * This is a no-op for implicit APIs like D3D11/OpenGL
+         */
+        virtual void transitionResource(TSharedPtr<IRHIResource> resource, 
+                                      MonsterRender::RDG::ERHIAccess stateBefore, 
+                                      MonsterRender::RDG::ERHIAccess stateAfter) {
+            // Default implementation - can be overridden by platform-specific command lists
+            (void)resource; (void)stateBefore; (void)stateAfter;
+        }
         
         // Synchronization
         /**
