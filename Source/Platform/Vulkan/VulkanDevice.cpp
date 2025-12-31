@@ -909,17 +909,18 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("Device Vulkan API version: " + std::to_string(VK_VERSION_MAJOR(apiVersion)) + "." +
                    std::to_string(VK_VERSION_MINOR(apiVersion)) + "." +
                    std::to_string(VK_VERSION_PATCH(apiVersion)));
+        MR_LOG_INFO("isVulkan11OrHigher: " + std::string(isVulkan11OrHigher ? "true" : "false"));
         
         // VK_KHR_maintenance1: core in Vulkan 1.1, required for negative viewport height
         // This extension enables Y-axis flipping via negative viewport height
-        if (!isVulkan11OrHigher) {
-            if (enableIfSupported(VK_KHR_MAINTENANCE1_EXTENSION_NAME)) {
-                MR_LOG_INFO("VK_KHR_maintenance1: enabled (required for viewport Y-flip)");
-            } else {
-                MR_LOG_WARNING("VK_KHR_maintenance1 not supported - viewport Y-flip may not work");
-            }
+        // IMPORTANT: Even for Vulkan 1.1+, we still try to enable the extension explicitly
+        // because some validation layers may require it to be in the enabled extensions list
+        if (enableIfSupported(VK_KHR_MAINTENANCE1_EXTENSION_NAME)) {
+            MR_LOG_INFO("VK_KHR_maintenance1: explicitly enabled (required for viewport Y-flip)");
+        } else if (isVulkan11OrHigher) {
+            MR_LOG_INFO("VK_KHR_maintenance1: using Vulkan 1.1+ core feature (extension not available)");
         } else {
-            MR_LOG_INFO("VK_KHR_maintenance1: using Vulkan 1.1+ core feature");
+            MR_LOG_WARNING("VK_KHR_maintenance1 not supported - viewport Y-flip may not work on Vulkan 1.0");
         }
         
         // Timeline semaphores: core in Vulkan 1.2, extension in 1.1
