@@ -928,11 +928,11 @@ void FRDGBuilder::_executeTransitions(RHI::IRHICommandList& rhiCmdList,
                static_cast<int32>(transition.stateBefore),
                static_cast<int32>(transition.stateAfter));
         
-        // Call RHI transition - use non-owning shared pointer
+        // Call RHI transition with ERHIAccess - use non-owning shared pointer
         rhiCmdList.transitionResource(
             TSharedPtr<RHI::IRHIResource>(rhiResource, [](RHI::IRHIResource*){}),
-            static_cast<RHI::EResourceUsage>(transition.stateBefore),
-            static_cast<RHI::EResourceUsage>(transition.stateAfter));
+            transition.stateBefore,
+            transition.stateAfter);
     }
 }
 

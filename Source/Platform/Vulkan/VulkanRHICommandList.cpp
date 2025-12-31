@@ -671,6 +671,120 @@ namespace MonsterRender::RHI::Vulkan {
         }
     }
     
+    void FVulkanRHICommandListImmediate::transitionResource(TSharedPtr<IRHIResource> resource, 
+                                                           MonsterRender::RDG::ERHIAccess stateBefore, 
+                                                           MonsterRender::RDG::ERHIAccess stateAfter) {
+        if (!m_context) {
+            MR_LOG(LogVulkanRHI, Error, "transitionResource: No active context");
+            return;
+        }
+        
+        if (!resource) {
+            MR_LOG(LogVulkanRHI, Warning, "transitionResource: Null resource");
+            return;
+        }
+        
+        // Get command buffer
+        FVulkanCmdBuffer* cmdBufferWrapper = m_context->getCmdBuffer();
+        if (!cmdBufferWrapper) {
+            MR_LOG(LogVulkanRHI, Error, "transitionResource: No active command buffer wrapper");
+            return;
+        }
+        
+        VkCommandBuffer cmdBuffer = cmdBufferWrapper->getHandle();
+        if (!cmdBuffer) {
+            MR_LOG(LogVulkanRHI, Error, "transitionResource: No active command buffer");
+            return;
+        }
+        
+        // Check if this is a texture or buffer
+        IRHITexture* texture = dynamic_cast<IRHITexture*>(resource.Get());
+        IRHIBuffer* buffer = dynamic_cast<IRHIBuffer*>(resource.Get());
+        
+        if (texture) {
+            // Texture transition - use image memory barrier
+            VulkanTexture* vkTexture = static_cast<VulkanTexture*>(texture);
+            
+            bool bIsDepthStencil = enumHasAnyFlags(stateAfter, ERHIAccess::DSVWrite | ERHIAccess::DSVRead) ||
+                                   enumHasAnyFlags(stateBefore, ERHIAccess::DSVWrite | ERHIAccess::DSVRead);
+            
+            // Get Vulkan flags using RHI barrier utilities
+            VkPipelineStageFlags srcStage = getVulkanStageFlags(stateBefore, true);
+            VkPipelineStageFlags dstStage = getVulkanStageFlags(stateAfter, false);
+            VkAccessFlags srcAccess = getVulkanAccessFlags(stateBefore);
+            VkAccessFlags dstAccess = getVulkanAccessFlags(stateAfter);
+            VkImageLayout oldLayout = static_cast<VkImageLayout>(getVulkanImageLayout(stateBefore, bIsDepthStencil, true));
+            VkImageLayout newLayout = static_cast<VkImageLayout>(getVulkanImageLayout(stateAfter, bIsDepthStencil, false));
+            
+            // Setup image memory barrier
+            VkImageMemoryBarrier barrier = {};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.srcAccessMask = srcAccess;
+            barrier.dstAccessMask = dstAccess;
+            barrier.oldLayout = oldLayout;
+            barrier.newLayout = newLayout;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = vkTexture->getImage();
+            
+            // Determine aspect mask based on texture format
+            VkFormat vkFormat = vkTexture->getVulkanFormat();
+            barrier.subresourceRange.aspectMask = VulkanUtils::getImageAspectMask(vkFormat);
+            
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+            
+            // Insert pipeline barrier
+            vkCmdPipelineBarrier(
+                cmdBuffer,
+                srcStage,
+                dstStage,
+                0,
+                0, nullptr,
+                0, nullptr,
+                1, &barrier
+            );
+            
+            MR_LOG(LogVulkanRHI, Verbose, "Texture transition (ERHIAccess): layout %d -> %d", oldLayout, newLayout);
+        }
+        else if (buffer) {
+            // Buffer transition - use buffer memory barrier
+            VulkanBuffer* vkBuffer = static_cast<VulkanBuffer*>(buffer);
+            
+            // Get Vulkan flags
+            VkPipelineStageFlags srcStage = getVulkanStageFlags(stateBefore, true);
+            VkPipelineStageFlags dstStage = getVulkanStageFlags(stateAfter, false);
+            VkAccessFlags srcAccess = getVulkanAccessFlags(stateBefore);
+            VkAccessFlags dstAccess = getVulkanAccessFlags(stateAfter);
+            
+            // Setup buffer memory barrier
+            VkBufferMemoryBarrier barrier = {};
+            barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            barrier.srcAccessMask = srcAccess;
+            barrier.dstAccessMask = dstAccess;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.buffer = vkBuffer->getBuffer();
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            
+            // Insert pipeline barrier
+            vkCmdPipelineBarrier(
+                cmdBuffer,
+                srcStage,
+                dstStage,
+                0,
+                0, nullptr,
+                1, &barrier,
+                0, nullptr
+            );
+            
+            MR_LOG(LogVulkanRHI, Verbose, "Buffer transition (ERHIAccess): access 0x%x -> 0x%x", srcAccess, dstAccess);
+        }
+    }
+    
     void FVulkanRHICommandListImmediate::resourceBarrier() {
         if (!m_context) {
             MR_LOG_WARNING("FVulkanRHICommandListImmediate::resourceBarrier: No active context");

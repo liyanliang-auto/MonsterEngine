@@ -196,13 +196,21 @@ namespace MonsterRender::RHI::Vulkan {
             // Use UNDEFINED as oldLayout - tells Vulkan we don't care about previous contents
             // The actual data was already uploaded in a previous command buffer
             barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            
+            // Determine aspect mask and correct layout based on format
+            VkImageAspectFlags aspectMask = VulkanUtils::getImageAspectMask(binding.format);
+            barrier.subresourceRange.aspectMask = aspectMask;
+            
+            // Depth textures use DEPTH_STENCIL_READ_ONLY_OPTIMAL, color textures use SHADER_READ_ONLY_OPTIMAL
+            if (aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
+                barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            } else {
+                barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
+            
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = binding.image;
-            
-            // Determine aspect mask based on format
-            barrier.subresourceRange.aspectMask = VulkanUtils::getImageAspectMask(binding.format);
             barrier.subresourceRange.baseMipLevel = 0;
             barrier.subresourceRange.levelCount = binding.mipLevels;
             barrier.subresourceRange.baseArrayLayer = 0;
@@ -482,7 +490,16 @@ namespace MonsterRender::RHI::Vulkan {
                 VkDescriptorImageInfo& ImageInfo = ImageInfos.emplace_back();
                 ImageInfo.imageView = Binding.imageView;
                 ImageInfo.sampler = Binding.sampler;
-                ImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                
+                // Determine correct image layout based on format
+                // Depth textures use DEPTH_STENCIL_READ_ONLY_OPTIMAL
+                // Color textures use SHADER_READ_ONLY_OPTIMAL
+                VkImageAspectFlags aspectMask = VulkanUtils::getImageAspectMask(Binding.format);
+                if (aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
+                    ImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                } else {
+                    ImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
                 
                 VkWriteDescriptorSet Write = {};
                 Write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -535,7 +552,15 @@ namespace MonsterRender::RHI::Vulkan {
                 FVulkanDescriptorSetKey::FImageBinding ImageBinding;
                 ImageBinding.ImageView = Binding.imageView;
                 ImageBinding.Sampler = Binding.sampler;
-                ImageBinding.ImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                
+                // Determine correct image layout based on format
+                VkImageAspectFlags aspectMask = VulkanUtils::getImageAspectMask(Binding.format);
+                if (aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
+                    ImageBinding.ImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                } else {
+                    ImageBinding.ImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
+                
                 Key.ImageBindings[Slot] = ImageBinding;
             }
         }

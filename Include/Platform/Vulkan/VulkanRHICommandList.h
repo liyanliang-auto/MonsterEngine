@@ -3,6 +3,7 @@
 #include "Core/CoreMinimal.h"
 #include "RHI/IRHICommandList.h"
 #include "Platform/Vulkan/VulkanRHI.h"  // For Vulkan types (VkImageLayout, etc.)
+#include "RDG/RDGDefinitions.h"  // For ERHIAccess
 #include "Containers/Array.h"
 #include "Containers/Map.h"
 
@@ -81,6 +82,12 @@ using MonsterEngine::TMap;
         
         void transitionResource(TSharedPtr<IRHIResource> resource, 
                               EResourceUsage stateBefore, EResourceUsage stateAfter) override;
+        
+        // ERHIAccess version for RDG transitions
+        void transitionResource(TSharedPtr<IRHIResource> resource, 
+                              MonsterRender::RDG::ERHIAccess stateBefore, 
+                              MonsterRender::RDG::ERHIAccess stateAfter) override;
+        
         void resourceBarrier() override;
         
         void beginEvent(const String& name) override;
