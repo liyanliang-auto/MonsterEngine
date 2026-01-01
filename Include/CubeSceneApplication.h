@@ -227,6 +227,12 @@ protected:
     bool initializeFloor();
 
     /**
+     * Load wood texture for floor rendering
+     * @return True if successful
+     */
+    bool loadWoodTexture();
+
+    /**
      * Render shadow depth pass
      * @param cmdList Command list
      * @param lightDirection Direction of the directional light
@@ -439,6 +445,12 @@ protected:
 
     /** Number of floor vertices */
     uint32 m_floorVertexCount = 6;
+
+    /** Wood floor texture */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_woodTexture;
+
+    /** Wood texture sampler */
+    MonsterEngine::TSharedPtr<RHI::IRHISampler> m_woodSampler;
 };
 
 } // namespace MonsterRender

@@ -43,6 +43,10 @@
 #include "Platform/OpenGL/OpenGLDefinitions.h"
 #include "RDG/RDG.h"
 
+// stb_image for texture loading
+#define STB_IMAGE_IMPLEMENTATION
+#include "../3rd-party/stb/stb_image.h"
+
 namespace MonsterRender
 {
 
@@ -192,6 +196,13 @@ void CubeSceneApplication::onInitialize()
     if (!initializeFloor())
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to initialize floor geometry");
+        return;
+    }
+    
+    // Load wood texture for floor
+    if (!loadWoodTexture())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to load wood texture");
         return;
     }
     
@@ -1543,6 +1554,184 @@ bool CubeSceneApplication::initializeFloor()
     m_floorVertexBuffer->unmap();
     
     MR_LOG(LogCubeSceneApp, Log, "Floor geometry initialized successfully");
+    return true;
+}
+
+bool CubeSceneApplication::loadWoodTexture()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Loading wood texture...");
+    
+    if (!m_device)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Cannot load wood texture: no device");
+        return false;
+    }
+    
+    // Load texture using stb_image
+    int32 width = 0;
+    int32 height = 0;
+    int32 channels = 0;
+    const char* texturePath = "E:\\MonsterEngine\\resources\\textures\\wood.png";
+    
+    // Flip texture vertically for OpenGL/Vulkan compatibility
+    stbi_set_flip_vertically_on_load(true);
+    
+    unsigned char* imageData = stbi_load(texturePath, &width, &height, &channels, STBI_rgb_alpha);
+    if (!imageData)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to load wood texture from: %s", texturePath);
+        return false;
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Wood texture loaded: %dx%d, %d channels", width, height, channels);
+    
+    // Create texture descriptor
+    RHI::TextureDesc textureDesc;
+    textureDesc.width = static_cast<uint32>(width);
+    textureDesc.height = static_cast<uint32>(height);
+    textureDesc.depth = 1;
+    textureDesc.mipLevels = 1;
+    textureDesc.arraySize = 1;
+    textureDesc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
+    textureDesc.usage = RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferDst;
+    textureDesc.debugName = "WoodTexture";
+    
+    m_woodTexture = m_device->createTexture(textureDesc);
+    if (!m_woodTexture)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create wood texture");
+        stbi_image_free(imageData);
+        return false;
+    }
+    
+    // Upload texture data using staging buffer
+    uint32 imageSize = width * height * 4; // RGBA format
+    
+    // Create staging buffer
+    RHI::BufferDesc stagingDesc;
+    stagingDesc.size = imageSize;
+    stagingDesc.usage = RHI::EResourceUsage::TransferSrc;
+    stagingDesc.debugName = "WoodTextureStagingBuffer";
+    
+    TSharedPtr<RHI::IRHIBuffer> stagingBuffer = m_device->createBuffer(stagingDesc);
+    if (!stagingBuffer)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create staging buffer for wood texture");
+        stbi_image_free(imageData);
+        return false;
+    }
+    
+    // Copy image data to staging buffer
+    void* mappedData = stagingBuffer->map();
+    if (!mappedData)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to map staging buffer");
+        stbi_image_free(imageData);
+        return false;
+    }
+    
+    FMemory::Memcpy(mappedData, imageData, imageSize);
+    stagingBuffer->unmap();
+    
+    // Free stb_image data
+    stbi_image_free(imageData);
+    
+    // Get immediate command list for texture upload
+    RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
+    if (!cmdList)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to get immediate command list");
+        return false;
+    }
+    
+    // Cast to Vulkan command list for texture upload
+    auto* vulkanCmdList = dynamic_cast<MonsterRender::RHI::Vulkan::FVulkanRHICommandListImmediate*>(cmdList);
+    if (!vulkanCmdList)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to cast to Vulkan command list");
+        return false;
+    }
+    
+    // Begin command recording if not already recording
+    bool wasRecording = vulkanCmdList->isRecording();
+    if (!wasRecording)
+    {
+        vulkanCmdList->begin();
+    }
+    
+    // Transition texture from UNDEFINED to TRANSFER_DST_OPTIMAL
+    vulkanCmdList->transitionTextureLayoutSimple(
+        m_woodTexture,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    );
+    
+    // Copy from staging buffer to texture
+    vulkanCmdList->copyBufferToTexture(
+        stagingBuffer,
+        0,              // buffer offset
+        m_woodTexture,
+        0,              // mip level
+        0,              // array layer
+        width,
+        height,
+        1               // depth
+    );
+    
+    // Transition texture from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
+    vulkanCmdList->transitionTextureLayoutSimple(
+        m_woodTexture,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+    
+    // End command recording if we started it
+    if (!wasRecording)
+    {
+        vulkanCmdList->end();
+    }
+    
+    // Submit commands and wait for completion
+    auto* vulkanDevice = dynamic_cast<MonsterRender::RHI::Vulkan::VulkanDevice*>(m_device);
+    if (vulkanDevice && vulkanDevice->getCommandListContext())
+    {
+        vulkanDevice->getCommandListContext()->submitCommands(nullptr, 0, nullptr, 0);
+    }
+    
+    // Wait for GPU to complete texture upload
+    m_device->waitForIdle();
+    
+    // Refresh command buffer for next use
+    if (vulkanDevice && vulkanDevice->getCommandListContext())
+    {
+        vulkanDevice->getCommandListContext()->refreshCommandBuffer();
+    }
+    
+    // Register texture for layout transition tracking
+    auto* vulkanTexture = dynamic_cast<MonsterRender::RHI::Vulkan::VulkanTexture*>(m_woodTexture.Get());
+    if (vulkanDevice && vulkanTexture)
+    {
+        VkImage image = vulkanTexture->getImage();
+        vulkanDevice->registerTextureForLayoutTransition(image, 1, 1);
+    }
+    
+    // Create sampler with repeat mode and linear filtering
+    RHI::SamplerDesc samplerDesc;
+    samplerDesc.filter = RHI::ESamplerFilter::Trilinear;
+    samplerDesc.addressU = RHI::ESamplerAddressMode::Wrap;
+    samplerDesc.addressV = RHI::ESamplerAddressMode::Wrap;
+    samplerDesc.addressW = RHI::ESamplerAddressMode::Wrap;
+    samplerDesc.maxAnisotropy = 16;
+    samplerDesc.debugName = "WoodSampler";
+    
+    m_woodSampler = m_device->createSampler(samplerDesc);
+    if (!m_woodSampler)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create wood sampler");
+        return false;
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Wood texture loaded successfully");
     return true;
 }
 
