@@ -1042,19 +1042,29 @@ bool CubeSceneApplication::initializeImGui()
 
 void CubeSceneApplication::shutdownImGui()
 {
+    // Early exit if ImGui was never initialized
+    if (!m_bImGuiInitialized && !m_imguiContext && !m_imguiRenderer && !m_imguiInputHandler)
+    {
+        return;
+    }
+    
     MR_LOG(LogCubeSceneApp, Log, "Shutting down ImGui...");
     
+    // Mark as not initialized first to prevent any further rendering
     m_bImGuiInitialized = false;
     
     // Shutdown in reverse order
+    // Step 1: Release input handler (doesn't need explicit shutdown)
     m_imguiInputHandler.Reset();
     
+    // Step 2: Shutdown renderer (releases GPU resources)
     if (m_imguiRenderer)
     {
         m_imguiRenderer->Shutdown();
         m_imguiRenderer.Reset();
     }
     
+    // Step 3: Shutdown context (destroys ImGui context)
     if (m_imguiContext)
     {
         m_imguiContext->Shutdown();
