@@ -674,74 +674,87 @@ void CubeSceneApplication::onShutdown()
 {
     MR_LOG(LogCubeSceneApp, Log, "Shutting down CubeSceneApplication...");
     
-    // Unregister viewport texture from ImGui before shutdown
-    if (m_imguiRenderer && m_viewportTextureID != 0)
+    // CRITICAL: Clean up in reverse order of initialization to avoid dangling pointers
+    
+    // Step 1: Shutdown ImGui first (it may reference textures)
+    shutdownImGui();
+    
+    // Step 2: Unregister viewport texture (after ImGui shutdown)
+    if (m_viewportTextureID != 0)
     {
-        m_imguiRenderer->UnregisterTexture(static_cast<ImTextureID>(m_viewportTextureID));
         m_viewportTextureID = 0;
     }
     
-    // Release viewport render targets
-    m_viewportColorTarget.Reset();
-    m_viewportDepthTarget.Reset();
-    
-    // Release shadow map texture (must be done before device shutdown)
-    m_shadowMapTexture.Reset();
-    
-    // Shutdown ImGui (DISABLED)
-    // shutdownImGui();
-    
-    // Clean up scene renderer
+    // Step 3: Clean up scene renderer (may reference scene and views)
     if (m_sceneRenderer)
     {
         delete m_sceneRenderer;
         m_sceneRenderer = nullptr;
     }
     
-    // Clean up renderer view family
+    // Step 4: Clean up renderer view family
     if (m_rendererViewFamily)
     {
         delete m_rendererViewFamily;
         m_rendererViewFamily = nullptr;
     }
     
-    // Clean up scene view
+    // Step 5: Clean up scene view
     if (m_sceneView)
     {
         delete m_sceneView;
         m_sceneView = nullptr;
     }
     
-    // Clean up view family
+    // Step 6: Clean up view family
     if (m_viewFamily)
     {
         delete m_viewFamily;
         m_viewFamily = nullptr;
     }
     
-    // Clean up FPS camera controller
-    m_fpsCameraController.Reset();
+    // Step 7: Clean up FPS camera controller BEFORE camera manager
+    // This is critical because controller may reference camera manager
+    if (m_fpsCameraController)
+    {
+        // Detach from camera manager first
+        m_fpsCameraController->SetCameraManager(nullptr);
+        m_fpsCameraController.Reset();
+    }
     
-    // Clean up camera manager
+    // Step 8: Clean up camera manager
     if (m_cameraManager)
     {
         delete m_cameraManager;
         m_cameraManager = nullptr;
     }
     
-    // Clean up actors (scene will handle this)
-    // Note: Don't delete actors directly if scene owns them
+    // Step 9: Clean up scene (this will clean up actors and components)
+    // Scene owns the actors, so we just null out our pointers
+    m_cubeActor = nullptr;
+    m_directionalLight = nullptr;
+    m_pointLight = nullptr;
     
-    // Clean up scene
     if (m_scene)
     {
         delete m_scene;
         m_scene = nullptr;
     }
     
-    m_cubeActor = nullptr;
-    m_directionalLight = nullptr;
-    m_pointLight = nullptr;
+    // Step 10: Release GPU resources (textures, buffers)
+    // These must be released AFTER scene is destroyed
+    m_viewportColorTarget.Reset();
+    m_viewportDepthTarget.Reset();
+    m_shadowMapTexture.Reset();
+    m_woodTexture.Reset();
+    m_woodSampler.Reset();
+    m_floorVertexBuffer.Reset();
+    
+    // Step 11: Clear material references
+    m_cubeMaterial.Reset();
+    
+    // Device is owned by Engine, don't delete it
+    m_device = nullptr;
     
     MR_LOG(LogCubeSceneApp, Log, "CubeSceneApplication shutdown complete");
 }
