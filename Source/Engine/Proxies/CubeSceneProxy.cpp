@@ -964,6 +964,14 @@ void FCubeSceneProxy::DrawWithShadows(
         CmdList->setShaderResource(5, ShadowMap);
     }
     
+    // Bind a default texture to binding 6 (diffuseTexture) for cube rendering
+    // The shader will detect alpha = 0 and use texture1/texture2 instead
+    // This ensures the descriptor set is complete for both cube and floor rendering
+    if (Texture1)
+    {
+        CmdList->setShaderResource(6, Texture1);
+    }
+    
     // Bind vertex buffer
     TArray<TSharedPtr<MonsterRender::RHI::IRHIBuffer>> VertexBuffers;
     VertexBuffers.Add(VertexBuffer);
