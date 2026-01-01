@@ -388,10 +388,19 @@
     <ClCompile Include="Source\Engine\Actors\CubeActor.cpp">
       <Filter>源文件\Engine\Actors</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Engine\Actors\FloorActor.cpp">
+      <Filter>源文件\Engine\Actors</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp">
       <Filter>源文件\Engine\Components</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Engine\Components\FloorMeshComponent.cpp">
+      <Filter>源文件\Engine\Components</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp">
+      <Filter>源文件\Engine\Proxies</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Proxies\FloorSceneProxy.cpp">
       <Filter>源文件\Engine\Proxies</Filter>
     </ClCompile>
     <ClCompile Include="Source\CubeSceneApplication.cpp">
