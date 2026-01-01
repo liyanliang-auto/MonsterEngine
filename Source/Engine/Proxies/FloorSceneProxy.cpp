@@ -250,14 +250,14 @@ void FFloorSceneProxy::DrawWithLighting(
     CmdList->setConstantBuffer(0, TransformUniformBuffer);
     CmdList->setConstantBuffer(3, LightUniformBuffer);
     
-    // Bind texture
+    // Bind texture to slot 6 (diffuseTexture in CubeLit shader)
     if (FloorTexture)
     {
-        CmdList->setShaderResource(1, FloorTexture);
+        CmdList->setShaderResource(6, FloorTexture);
     }
     if (Sampler)
     {
-        CmdList->setSampler(1, Sampler);
+        CmdList->setSampler(6, Sampler);
     }
     
     // Bind vertex buffer
@@ -310,17 +310,17 @@ void FFloorSceneProxy::DrawWithShadows(
     CmdList->setConstantBuffer(3, LightUniformBuffer);
     CmdList->setConstantBuffer(4, ShadowUniformBuffer);
     
-    // Bind texture
+    // Bind texture to slot 6 (diffuseTexture in CubeLit shader)
     if (FloorTexture)
     {
-        CmdList->setShaderResource(1, FloorTexture);
+        CmdList->setShaderResource(6, FloorTexture);
     }
     if (Sampler)
     {
-        CmdList->setSampler(1, Sampler);
+        CmdList->setSampler(6, Sampler);
     }
     
-    // Bind shadow map
+    // Bind shadow map to slot 5
     CmdList->setShaderResource(5, ShadowMap);
     if (ShadowSampler)
     {
