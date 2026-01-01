@@ -864,9 +864,10 @@ bool CubeSceneApplication::initializeCamera()
     
     // Set initial camera view
     // Camera at z=5 looking at origin (positive Z, looking towards negative Z)
+    // Pitch down slightly so floor appears flat
     FMinimalViewInfo viewInfo;
     viewInfo.Location = FVector(0.0, 2.0, 5.0);  // Camera at y=2, z=5 for better view
-    viewInfo.Rotation = FRotator(0.0, 180.0, 0.0);  // Rotate 180 degrees to look at origin
+    viewInfo.Rotation = FRotator(-20.0, 180.0, 0.0);  // Pitch down 20 degrees, rotate 180 to look at origin
     viewInfo.FOV = 45.0f;
     viewInfo.AspectRatio = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
     viewInfo.ProjectionMode = ECameraProjectionMode::Perspective;
@@ -879,13 +880,13 @@ bool CubeSceneApplication::initializeCamera()
     m_cameraManager->SetViewTargetPOV(viewInfo);
     
     // Create FPS camera controller
-    // Initial position: (0, 2, 5), looking towards -Z (yaw = -90 means looking along -Z)
-    // WorldUp = Y-up, Yaw = -90 (looking at -Z), Pitch = 0
+    // Initial position: (0, 2, 5), looking towards -Z with slight downward pitch
+    // WorldUp = Y-up, Yaw = -90 (looking at -Z), Pitch = -20 (looking down)
     m_fpsCameraController = MakeUnique<FFPSCameraController>(
         FVector(0.0, 2.0, 5.0),   // Position
         FVector(0.0, 1.0, 0.0),   // World up (Y-up)
         -90.0f,                    // Yaw (looking towards -Z)
-        0.0f                       // Pitch
+        -20.0f                     // Pitch (looking down 20 degrees for flat floor view)
     );
     
     // Configure FPS camera settings
