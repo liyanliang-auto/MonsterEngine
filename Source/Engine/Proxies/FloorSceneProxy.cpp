@@ -250,12 +250,12 @@ void FFloorSceneProxy::DrawWithLighting(
     CmdList->setConstantBuffer(0, TransformUniformBuffer);
     CmdList->setConstantBuffer(3, LightUniformBuffer);
     
-    // Bind texture to slot 6 (diffuseTexture in CubeLit shader)
+    // Bind texture to slot 1 (texture1 in CubeLit shader)
     // Both texture and sampler must be valid for COMBINED_IMAGE_SAMPLER
     if (FloorTexture && Sampler)
     {
-        CmdList->setShaderResource(6, FloorTexture);
-        CmdList->setSampler(6, Sampler);
+        CmdList->setShaderResource(1, FloorTexture);
+        CmdList->setSampler(1, Sampler);
     }
     else
     {
@@ -312,12 +312,12 @@ void FFloorSceneProxy::DrawWithShadows(
     CmdList->setConstantBuffer(3, LightUniformBuffer);
     CmdList->setConstantBuffer(4, ShadowUniformBuffer);
     
-    // Bind texture to slot 6 (diffuseTexture in CubeLit shader)
+    // Bind texture to slot 1 (texture1 in CubeLit shader)
     // Both texture and sampler must be valid for COMBINED_IMAGE_SAMPLER
     if (FloorTexture && Sampler)
     {
-        CmdList->setShaderResource(6, FloorTexture);
-        CmdList->setSampler(6, Sampler);
+        CmdList->setShaderResource(1, FloorTexture);
+        CmdList->setSampler(1, Sampler);
     }
     else
     {
