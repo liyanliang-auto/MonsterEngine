@@ -2010,6 +2010,40 @@ void CubeSceneApplication::renderWithRDG(
                 }
             }
             
+            // Render floor to shadow map
+            if (m_floorVertexBuffer)
+            {
+                MR_LOG(LogCubeSceneApp, Verbose, "Rendering floor depth to shadow map");
+                
+                // Floor uses identity model matrix (already positioned at world origin)
+                FMatrix floorModelMatrix = FMatrix::Identity;
+                
+                // Get cube proxy to reuse its shader and pipeline state
+                if (m_cubeActor)
+                {
+                    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+                    if (meshComp)
+                    {
+                        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+                        FCubeSceneProxy* cubeProxy = dynamic_cast<FCubeSceneProxy*>(baseProxy);
+                        
+                        if (cubeProxy && cubeProxy->AreResourcesInitialized())
+                        {
+                            // Update model matrix for floor
+                            cubeProxy->UpdateModelMatrix(floorModelMatrix);
+                            
+                            // Bind floor vertex buffer
+                            TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers;
+                            vertexBuffers.Add(m_floorVertexBuffer);
+                            rhiCmdList.setVertexBuffers(0, vertexBuffers);
+                            
+                            // Draw floor (6 vertices, 2 triangles)
+                            rhiCmdList.draw(m_floorVertexCount, 0);
+                        }
+                    }
+                }
+            }
+            
             MR_LOG(LogCubeSceneApp, Verbose, "Shadow Depth Pass complete");
         }
     );
@@ -2044,6 +2078,44 @@ void CubeSceneApplication::renderWithRDG(
                 lights,
                 lightViewProjection
             );
+            
+            // Render floor with shadows and texture
+            if (m_floorVertexBuffer && m_woodTexture && m_woodSampler)
+            {
+                MR_LOG(LogCubeSceneApp, Verbose, "Rendering floor with shadows and texture");
+                
+                // Floor uses identity model matrix
+                FMatrix floorModelMatrix = FMatrix::Identity;
+                
+                // Get cube proxy to reuse its shader and pipeline state
+                if (m_cubeActor)
+                {
+                    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+                    if (meshComp)
+                    {
+                        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+                        FCubeSceneProxy* cubeProxy = dynamic_cast<FCubeSceneProxy*>(baseProxy);
+                        
+                        if (cubeProxy && cubeProxy->AreResourcesInitialized())
+                        {
+                            // Update model matrix for floor
+                            cubeProxy->UpdateModelMatrix(floorModelMatrix);
+                            
+                            // Bind floor vertex buffer
+                            TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers;
+                            vertexBuffers.Add(m_floorVertexBuffer);
+                            rhiCmdList.setVertexBuffers(0, vertexBuffers);
+                            
+                            // Bind wood texture to binding 6 (diffuseTexture in shader)
+                            rhiCmdList.setShaderResource(6, m_woodTexture);
+                            rhiCmdList.setSampler(6, m_woodSampler);
+                            
+                            // Draw floor (6 vertices, 2 triangles)
+                            rhiCmdList.draw(m_floorVertexCount, 0);
+                        }
+                    }
+                }
+            }
         }
     );
     
