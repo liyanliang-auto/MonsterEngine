@@ -57,6 +57,13 @@ FPrimitiveSceneInfo::~FPrimitiveSceneInfo()
         LightList = Interaction->GetNextLight();
         FLightPrimitiveInteraction::Destroy(Interaction);
     }
+    
+    // Delete the scene proxy
+    if (Proxy)
+    {
+        delete Proxy;
+        Proxy = nullptr;
+    }
 }
 
 // ============================================================================
