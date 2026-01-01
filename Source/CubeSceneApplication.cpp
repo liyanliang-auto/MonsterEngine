@@ -797,6 +797,9 @@ bool CubeSceneApplication::initializeScene()
     m_cubeActor->SetScene(m_scene);
     m_cubeActor->BeginPlay();
     
+    // Set position AFTER BeginPlay to ensure components are initialized
+    m_cubeActor->SetActorLocation(FVector(0.0f, 1.5f, 0.0f));  // Lift cube 1.5 units above ground for shadow
+    
     // Add cube to scene
     UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
     if (meshComp)
