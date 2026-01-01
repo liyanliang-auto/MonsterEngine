@@ -793,7 +793,7 @@ bool CubeSceneApplication::initializeScene()
     m_cubeActor->SetRotationSpeed(0.0f);
     m_cubeActor->SetRotationEnabled(false);  // Rotation disabled
     m_cubeActor->SetRotationAxis(FVector(0.5f, 1.0f, 0.0f));
-    m_cubeActor->SetActorRotation(FRotator(45.0f, 45.0f, 0.0f));  // Initial rotation: 45 degrees
+    m_cubeActor->SetActorRotation(FRotator(0.0f, 0.0f, 0.0f));  // No rotation - cube aligned with axes
     m_cubeActor->SetScene(m_scene);
     m_cubeActor->BeginPlay();
     
