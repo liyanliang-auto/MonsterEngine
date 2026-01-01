@@ -866,12 +866,13 @@ bool CubeSceneApplication::initializeCamera()
     m_cameraManager->Initialize(nullptr);
     
     // Set initial camera view
-    // Camera at z=5 looking at origin (positive Z, looking towards negative Z)
-    // Pitch down slightly so floor appears flat
+    // Camera positioned to see both cube and floor
+    // Cube is at (0, 1.5, 0), floor is at y=-0.5
+    // Position camera at (5, 3, 5) looking at origin with downward pitch
     FMinimalViewInfo viewInfo;
-    viewInfo.Location = FVector(0.0, 2.0, 5.0);  // Camera at y=2, z=5 for better view
-    viewInfo.Rotation = FRotator(-20.0, 180.0, 0.0);  // Pitch down 20 degrees, rotate 180 to look at origin
-    viewInfo.FOV = 45.0f;
+    viewInfo.Location = FVector(5.0, 3.0, 5.0);  // Camera at (5, 3, 5) for good overview
+    viewInfo.Rotation = FRotator(-30.0, -135.0, 0.0);  // Pitch down 30 degrees, look towards origin
+    viewInfo.FOV = 60.0f;  // Wider FOV to see more of the scene
     viewInfo.AspectRatio = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
     viewInfo.ProjectionMode = ECameraProjectionMode::Perspective;
     viewInfo.OrthoNearClipPlane = 0.1f;
@@ -883,13 +884,13 @@ bool CubeSceneApplication::initializeCamera()
     m_cameraManager->SetViewTargetPOV(viewInfo);
     
     // Create FPS camera controller
-    // Initial position: (0, 2, 5), looking towards -Z with slight downward pitch
-    // WorldUp = Y-up, Yaw = -90 (looking at -Z), Pitch = -20 (looking down)
+    // Initial position: (5, 3, 5), looking towards origin (-X, -Z direction)
+    // WorldUp = Y-up, Yaw = -135 (looking towards -X, -Z), Pitch = -30 (looking down)
     m_fpsCameraController = MakeUnique<FFPSCameraController>(
-        FVector(0.0, 2.0, 5.0),   // Position
+        FVector(5.0, 3.0, 5.0),   // Position: diagonal view
         FVector(0.0, 1.0, 0.0),   // World up (Y-up)
-        -90.0f,                    // Yaw (looking towards -Z)
-        -20.0f                     // Pitch (looking down 20 degrees for flat floor view)
+        -135.0f,                   // Yaw (looking towards origin from diagonal)
+        -30.0f                     // Pitch (looking down 30 degrees to see floor)
     );
     
     // Configure FPS camera settings
