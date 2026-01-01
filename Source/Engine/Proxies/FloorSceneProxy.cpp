@@ -251,13 +251,15 @@ void FFloorSceneProxy::DrawWithLighting(
     CmdList->setConstantBuffer(3, LightUniformBuffer);
     
     // Bind texture to slot 6 (diffuseTexture in CubeLit shader)
-    if (FloorTexture)
+    // Both texture and sampler must be valid for COMBINED_IMAGE_SAMPLER
+    if (FloorTexture && Sampler)
     {
         CmdList->setShaderResource(6, FloorTexture);
-    }
-    if (Sampler)
-    {
         CmdList->setSampler(6, Sampler);
+    }
+    else
+    {
+        MR_LOG(LogFloorSceneProxy, Warning, "Floor texture or sampler is null - rendering without texture");
     }
     
     // Bind vertex buffer
@@ -311,19 +313,21 @@ void FFloorSceneProxy::DrawWithShadows(
     CmdList->setConstantBuffer(4, ShadowUniformBuffer);
     
     // Bind texture to slot 6 (diffuseTexture in CubeLit shader)
-    if (FloorTexture)
+    // Both texture and sampler must be valid for COMBINED_IMAGE_SAMPLER
+    if (FloorTexture && Sampler)
     {
         CmdList->setShaderResource(6, FloorTexture);
-    }
-    if (Sampler)
-    {
         CmdList->setSampler(6, Sampler);
+    }
+    else
+    {
+        MR_LOG(LogFloorSceneProxy, Warning, "Floor texture or sampler is null in shadow pass - rendering without texture");
     }
     
     // Bind shadow map to slot 5
-    CmdList->setShaderResource(5, ShadowMap);
-    if (ShadowSampler)
+    if (ShadowMap && ShadowSampler)
     {
+        CmdList->setShaderResource(5, ShadowMap);
         CmdList->setSampler(5, ShadowSampler);
     }
     
