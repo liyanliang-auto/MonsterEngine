@@ -15,6 +15,7 @@
 #include "Engine/Camera/CameraManager.h"
 #include "Engine/Camera/CameraTypes.h"
 #include "Engine/Camera/CameraSceneViewHelper.h"
+#include "Engine/Camera/FPSCameraController.h"
 #include "Engine/SceneView.h"
 #include "Engine/SceneRenderer.h"
 #include "Engine/LightSceneInfo.h"
@@ -88,6 +89,11 @@ CubeSceneApplication::CubeSceneApplication()
     , m_totalTime(0.0f)
     , m_cameraOrbitAngle(0.0f)
     , m_bOrbitCamera(false)
+    , m_bFPSCameraEnabled(true)  // Enable FPS camera by default
+    , m_bMouseLookActive(false)
+    , m_lastMouseX(0.0f)
+    , m_lastMouseY(0.0f)
+    , m_bFirstMouseInput(true)
     , m_bImGuiInitialized(false)
     , m_deltaTime(0.0f)
     , m_bShowSceneInfo(true)
@@ -713,6 +719,9 @@ void CubeSceneApplication::onShutdown()
         m_viewFamily = nullptr;
     }
     
+    // Clean up FPS camera controller
+    m_fpsCameraController.Reset();
+    
     // Clean up camera manager
     if (m_cameraManager)
     {
@@ -843,7 +852,7 @@ bool CubeSceneApplication::initializeCamera()
     // Set initial camera view
     // Camera at z=5 looking at origin (positive Z, looking towards negative Z)
     FMinimalViewInfo viewInfo;
-    viewInfo.Location = FVector(0.0, 0.0, 5.0);  // Camera at z=5 (moved back for better view)
+    viewInfo.Location = FVector(0.0, 2.0, 5.0);  // Camera at y=2, z=5 for better view
     viewInfo.Rotation = FRotator(0.0, 180.0, 0.0);  // Rotate 180 degrees to look at origin
     viewInfo.FOV = 45.0f;
     viewInfo.AspectRatio = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
@@ -856,10 +865,38 @@ bool CubeSceneApplication::initializeCamera()
     m_cameraManager->SetCameraCachePOV(viewInfo);
     m_cameraManager->SetViewTargetPOV(viewInfo);
     
+    // Create FPS camera controller
+    // Initial position: (0, 2, 5), looking towards -Z (yaw = -90 means looking along -Z)
+    // WorldUp = Y-up, Yaw = -90 (looking at -Z), Pitch = 0
+    m_fpsCameraController = MakeUnique<FFPSCameraController>(
+        FVector(0.0, 2.0, 5.0),   // Position
+        FVector(0.0, 1.0, 0.0),   // World up (Y-up)
+        -90.0f,                    // Yaw (looking towards -Z)
+        0.0f                       // Pitch
+    );
+    
+    // Configure FPS camera settings
+    FFPSCameraSettings& settings = m_fpsCameraController->GetSettings();
+    settings.MovementSpeed = 5.0f;
+    settings.MouseSensitivity = 0.1f;
+    settings.MinFOV = 1.0f;
+    settings.MaxFOV = 90.0f;
+    settings.MinPitch = -89.0f;
+    settings.MaxPitch = 89.0f;
+    settings.bConstrainPitch = true;
+    settings.SprintMultiplier = 2.0f;
+    
+    // Set FOV to match camera manager
+    m_fpsCameraController->SetFOV(45.0f);
+    
+    // Initialize with camera manager
+    m_fpsCameraController->Initialize(m_cameraManager);
+    
     // Verify camera was set correctly
     const FMinimalViewInfo& verifyView = m_cameraManager->GetCameraCacheView();
     MR_LOG(LogCubeSceneApp, Log, "Camera initialized: Location=(%.2f, %.2f, %.2f), FOV=%.1f",
            verifyView.Location.X, verifyView.Location.Y, verifyView.Location.Z, verifyView.FOV);
+    MR_LOG(LogCubeSceneApp, Log, "FPS Camera Controller enabled: WASD to move, Right-click + mouse to look");
     return true;
 }
 
@@ -882,8 +919,51 @@ void CubeSceneApplication::updateCamera(float DeltaTime)
         return;
     }
     
+    // FPS Camera mode - process keyboard input for movement
+    if (m_bFPSCameraEnabled && m_fpsCameraController && !m_bOrbitCamera)
+    {
+        // Get input manager from window
+        IInputManager* inputManager = getWindow() ? getWindow()->getInputManager() : nullptr;
+        if (inputManager)
+        {
+            // Check for sprint (Shift key)
+            bool bSprinting = inputManager->isKeyDown(EKey::LeftShift) || 
+                              inputManager->isKeyDown(EKey::RightShift);
+            
+            // Process WASD movement
+            if (inputManager->isKeyDown(EKey::W))
+            {
+                m_fpsCameraController->ProcessKeyboard(ECameraMovement::Forward, DeltaTime, bSprinting);
+            }
+            if (inputManager->isKeyDown(EKey::S))
+            {
+                m_fpsCameraController->ProcessKeyboard(ECameraMovement::Backward, DeltaTime, bSprinting);
+            }
+            if (inputManager->isKeyDown(EKey::A))
+            {
+                m_fpsCameraController->ProcessKeyboard(ECameraMovement::Left, DeltaTime, bSprinting);
+            }
+            if (inputManager->isKeyDown(EKey::D))
+            {
+                m_fpsCameraController->ProcessKeyboard(ECameraMovement::Right, DeltaTime, bSprinting);
+            }
+            
+            // Process vertical movement (Q/E or Space/Ctrl)
+            if (inputManager->isKeyDown(EKey::E) || inputManager->isKeyDown(EKey::Space))
+            {
+                m_fpsCameraController->ProcessKeyboard(ECameraMovement::Up, DeltaTime, bSprinting);
+            }
+            if (inputManager->isKeyDown(EKey::Q) || inputManager->isKeyDown(EKey::LeftControl))
+            {
+                m_fpsCameraController->ProcessKeyboard(ECameraMovement::Down, DeltaTime, bSprinting);
+            }
+        }
+        
+        // Update FPS camera controller (applies state to camera manager)
+        m_fpsCameraController->Update(DeltaTime);
+    }
     // Optional: Orbit camera around the cube
-    if (m_bOrbitCamera)
+    else if (m_bOrbitCamera)
     {
         m_cameraOrbitAngle += DeltaTime * 0.5f;  // Slow orbit
         
@@ -1152,6 +1232,33 @@ void CubeSceneApplication::onKeyPressed(EKey key)
     {
         requestExit();
     }
+    
+    // Toggle FPS camera mode with F key
+    if (key == EKey::F)
+    {
+        m_bFPSCameraEnabled = !m_bFPSCameraEnabled;
+        MR_LOG(LogCubeSceneApp, Log, "FPS Camera %s", m_bFPSCameraEnabled ? "enabled" : "disabled");
+    }
+    
+    // Toggle orbit camera with O key
+    if (key == EKey::O)
+    {
+        m_bOrbitCamera = !m_bOrbitCamera;
+        MR_LOG(LogCubeSceneApp, Log, "Orbit Camera %s", m_bOrbitCamera ? "enabled" : "disabled");
+    }
+    
+    // Reset camera with R key
+    if (key == EKey::R)
+    {
+        if (m_fpsCameraController)
+        {
+            m_fpsCameraController->SetPosition(FVector(0.0, 2.0, 5.0));
+            m_fpsCameraController->SetRotation(-90.0f, 0.0f);
+            m_fpsCameraController->SetFOV(45.0f);
+            m_bFirstMouseInput = true;
+            MR_LOG(LogCubeSceneApp, Log, "Camera reset to initial position");
+        }
+    }
 }
 
 void CubeSceneApplication::onKeyReleased(EKey key)
@@ -1168,6 +1275,15 @@ void CubeSceneApplication::onMouseButtonPressed(EKey button, const MousePosition
     {
         m_imguiInputHandler->OnMouseButton(button, true);
     }
+    
+    // Enable mouse look when right mouse button is pressed
+    if (button == EKey::MouseRight)
+    {
+        m_bMouseLookActive = true;
+        m_bFirstMouseInput = true;  // Reset first mouse flag to prevent jump
+        m_lastMouseX = static_cast<float>(position.x);
+        m_lastMouseY = static_cast<float>(position.y);
+    }
 }
 
 void CubeSceneApplication::onMouseButtonReleased(EKey button, const MousePosition& position)
@@ -1175,6 +1291,12 @@ void CubeSceneApplication::onMouseButtonReleased(EKey button, const MousePositio
     if (m_imguiInputHandler)
     {
         m_imguiInputHandler->OnMouseButton(button, false);
+    }
+    
+    // Disable mouse look when right mouse button is released
+    if (button == EKey::MouseRight)
+    {
+        m_bMouseLookActive = false;
     }
 }
 
@@ -1184,6 +1306,30 @@ void CubeSceneApplication::onMouseMoved(const MousePosition& position)
     {
         m_imguiInputHandler->OnMouseMove(static_cast<float>(position.x), static_cast<float>(position.y));
     }
+    
+    // Process mouse movement for FPS camera look
+    if (m_bFPSCameraEnabled && m_bMouseLookActive && m_fpsCameraController && !m_bOrbitCamera)
+    {
+        float xpos = static_cast<float>(position.x);
+        float ypos = static_cast<float>(position.y);
+        
+        if (m_bFirstMouseInput)
+        {
+            m_lastMouseX = xpos;
+            m_lastMouseY = ypos;
+            m_bFirstMouseInput = false;
+        }
+        
+        // Calculate mouse offset
+        float xoffset = xpos - m_lastMouseX;
+        float yoffset = m_lastMouseY - ypos;  // Reversed: y-coordinates go from bottom to top
+        
+        m_lastMouseX = xpos;
+        m_lastMouseY = ypos;
+        
+        // Process mouse movement for camera rotation
+        m_fpsCameraController->ProcessMouseMovement(xoffset, yoffset);
+    }
 }
 
 void CubeSceneApplication::onMouseScrolled(float64 xOffset, float64 yOffset)
@@ -1191,6 +1337,12 @@ void CubeSceneApplication::onMouseScrolled(float64 xOffset, float64 yOffset)
     if (m_imguiInputHandler)
     {
         m_imguiInputHandler->OnMouseScroll(static_cast<float>(xOffset), static_cast<float>(yOffset));
+    }
+    
+    // Process mouse scroll for FPS camera zoom
+    if (m_bFPSCameraEnabled && m_fpsCameraController && !m_bOrbitCamera)
+    {
+        m_fpsCameraController->ProcessMouseScroll(static_cast<float>(yOffset));
     }
 }
 
@@ -1533,6 +1685,7 @@ bool CubeSceneApplication::initializeFloor()
     RHI::BufferDesc vertexBufferDesc;
     vertexBufferDesc.size = vertexDataSize;
     vertexBufferDesc.usage = RHI::EResourceUsage::VertexBuffer;
+    vertexBufferDesc.cpuAccessible = true;
     vertexBufferDesc.debugName = "FloorVertexBuffer";
     
     m_floorVertexBuffer = m_device->createBuffer(vertexBufferDesc);
@@ -1611,6 +1764,7 @@ bool CubeSceneApplication::loadWoodTexture()
     RHI::BufferDesc stagingDesc;
     stagingDesc.size = imageSize;
     stagingDesc.usage = RHI::EResourceUsage::TransferSrc;
+    stagingDesc.cpuAccessible = true;
     stagingDesc.debugName = "WoodTextureStagingBuffer";
     
     TSharedPtr<RHI::IRHIBuffer> stagingBuffer = m_device->createBuffer(stagingDesc);
@@ -2107,6 +2261,7 @@ void CubeSceneApplication::renderWithRDG(
                             rhiCmdList.setVertexBuffers(0, vertexBuffers);
                             
                             // Bind wood texture to binding 6 (diffuseTexture in shader)
+                            // Note: The pipeline state and other resources are already set by DrawWithShadows
                             rhiCmdList.setShaderResource(6, m_woodTexture);
                             rhiCmdList.setSampler(6, m_woodSampler);
                             

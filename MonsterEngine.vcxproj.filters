@@ -379,6 +379,9 @@
     <ClCompile Include="Source\Engine\Camera\CameraSceneViewHelper.cpp">
       <Filter>源文件\Engine\Camera</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Engine\Camera\FPSCameraController.cpp">
+      <Filter>源文件\Engine\Camera</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Engine\Actor.cpp">
       <Filter>源文件\Engine</Filter>
     </ClCompile>

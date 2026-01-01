@@ -27,6 +27,7 @@ namespace MonsterEngine
 class FLightSceneInfo;
 class FScene;
 class FCameraManager;
+class FFPSCameraController;
 class ACubeActor;
 class UDirectionalLightComponent;
 class UPointLightComponent;
@@ -333,6 +334,26 @@ protected:
 
     /** Whether to orbit camera */
     bool m_bOrbitCamera;
+
+    // ========================================================================
+    // FPS Camera Controller
+    // ========================================================================
+
+    /** FPS camera controller for WASD + mouse look */
+    MonsterEngine::TUniquePtr<MonsterEngine::FFPSCameraController> m_fpsCameraController;
+
+    /** Whether FPS camera mode is enabled */
+    bool m_bFPSCameraEnabled;
+
+    /** Whether mouse look is active (right mouse button held) */
+    bool m_bMouseLookActive;
+
+    /** Last mouse position for delta calculation */
+    float m_lastMouseX;
+    float m_lastMouseY;
+
+    /** First mouse input flag */
+    bool m_bFirstMouseInput;
 
     // ========================================================================
     // ImGui Members
