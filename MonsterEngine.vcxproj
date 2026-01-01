@@ -203,7 +203,6 @@
     <ClCompile Include="Source\Tests\VulkanResourceManagerTest.cpp" />
     <ClCompile Include="Source\TriangleApplication.cpp" />
     <ClCompile Include="Source\TriangleRenderer.cpp" />
-    <ClCompile Include="Source\CubeApplication.cpp" />
     <ClCompile Include="Source\CubeRenderer.cpp" />
     <ClCompile Include="Source\RHI\IRHIResource.cpp" />
     <ClCompile Include="Source\RHI\RHI.cpp" />
