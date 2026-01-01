@@ -477,6 +477,12 @@ namespace MonsterRender::RHI::Vulkan {
                 continue;
             }
             
+            // For COMBINED_IMAGE_SAMPLER, both ImageView and Sampler must be valid
+            if (Binding.Sampler == VK_NULL_HANDLE) {
+                MR_LOG_WARNING("UpdateDescriptorSet: Skipping slot " + std::to_string(Slot) + " - Sampler is NULL (ImageView is valid)");
+                continue;
+            }
+            
             VkDescriptorImageInfo& ImageInfo = ImageInfos.emplace_back();
             ImageInfo.imageView = Binding.ImageView;
             ImageInfo.sampler = Binding.Sampler;
