@@ -57,6 +57,7 @@ layout(set = 0, binding = 4) uniform ShadowUBO {
 } shadow;
 
 layout(set = 0, binding = 5) uniform sampler2D shadowMap;
+layout(set = 0, binding = 6) uniform sampler2D diffuseTexture;
 
 // ============================================================================
 // Fragment Input
@@ -220,16 +221,27 @@ void main() {
     // View direction (from fragment to camera)
     vec3 viewDir = normalize(fragViewPos - fragWorldPos);
     
-    // Sample textures
+    // Sample diffuse texture for floor
+    vec4 diffuseColor = texture(diffuseTexture, fragTexCoord);
+    
+    // Sample cube textures
     vec4 texColor1 = texture(texture1, fragTexCoord);
     vec4 texColor2 = texture(texture2, fragTexCoord);
     
-    // Blend textures based on blend factor
-    float blendFactor = transform.textureBlend.x;
-    vec3 baseColor = mix(texColor1.rgb, texColor2.rgb, blendFactor);
+    // Determine base color based on which texture is valid
+    vec3 baseColor;
     
+    // If diffuse texture has valid alpha, use it (floor)
+    if (diffuseColor.a > 0.01) {
+        baseColor = diffuseColor.rgb;
+    }
+    // Otherwise blend cube textures
+    else if (texColor1.a > 0.01 || texColor2.a > 0.01) {
+        float blendFactor = transform.textureBlend.x;
+        baseColor = mix(texColor1.rgb, texColor2.rgb, blendFactor);
+    }
     // Default color if no texture
-    if (texColor1.a < 0.01 && texColor2.a < 0.01) {
+    else {
         baseColor = vec3(0.8, 0.6, 0.4);
     }
     
