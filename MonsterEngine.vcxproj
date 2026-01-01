@@ -277,8 +277,11 @@
     <ClCompile Include="Source\Engine\Camera\FPSCameraController.cpp" />
     <ClCompile Include="Source\Engine\Actor.cpp" />
     <ClCompile Include="Source\Engine\Actors\CubeActor.cpp" />
+    <ClCompile Include="Source\Engine\Actors\FloorActor.cpp" />
     <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp" />
+    <ClCompile Include="Source\Engine\Components\FloorMeshComponent.cpp" />
     <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp" />
+    <ClCompile Include="Source\Engine\Proxies\FloorSceneProxy.cpp" />
     <ClCompile Include="Source\CubeSceneApplication.cpp" />
     <ClCompile Include="Source\Engine\Material\Material.cpp" />
     <ClCompile Include="Source\Engine\Material\MaterialInstance.cpp" />
@@ -477,8 +480,11 @@
     <ClInclude Include="Include\Engine\Camera\FPSCameraController.h" />
     <ClInclude Include="Include\Engine\Actor.h" />
     <ClInclude Include="Include\Engine\Actors\CubeActor.h" />
+    <ClInclude Include="Include\Engine\Actors\FloorActor.h" />
     <ClInclude Include="Include\Engine\Components\CubeMeshComponent.h" />
+    <ClInclude Include="Include\Engine\Components\FloorMeshComponent.h" />
     <ClInclude Include="Include\Engine\Proxies\CubeSceneProxy.h" />
+    <ClInclude Include="Include\Engine\Proxies\FloorSceneProxy.h" />
     <ClInclude Include="Include\CubeSceneApplication.h" />
     <ClInclude Include="Include\Renderer\SceneTypes.h" />
     <ClInclude Include="Include\Renderer\SceneView.h" />

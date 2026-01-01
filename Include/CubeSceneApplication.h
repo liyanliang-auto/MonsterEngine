@@ -29,6 +29,7 @@ class FScene;
 class FCameraManager;
 class FFPSCameraController;
 class ACubeActor;
+class AFloorActor;
 class UDirectionalLightComponent;
 class UPointLightComponent;
 class FSceneViewFamily;
@@ -297,6 +298,9 @@ protected:
 
     /** Cube actor */
     MonsterEngine::ACubeActor* m_cubeActor;
+
+    /** Floor actor */
+    MonsterEngine::AFloorActor* m_floorActor;
 
     /** Directional light component */
     MonsterEngine::UDirectionalLightComponent* m_directionalLight;

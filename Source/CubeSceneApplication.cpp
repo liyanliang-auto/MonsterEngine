@@ -9,9 +9,12 @@
 #include "Engine/Scene.h"
 #include "Engine/Actor.h"
 #include "Engine/Actors/CubeActor.h"
+#include "Engine/Actors/FloorActor.h"
 #include "Engine/Components/CubeMeshComponent.h"
+#include "Engine/Components/FloorMeshComponent.h"
 #include "Engine/Components/LightComponent.h"
 #include "Engine/Proxies/CubeSceneProxy.h"
+#include "Engine/Proxies/FloorSceneProxy.h"
 #include "Engine/Camera/CameraManager.h"
 #include "Engine/Camera/CameraTypes.h"
 #include "Engine/Camera/CameraSceneViewHelper.h"
@@ -78,6 +81,7 @@ CubeSceneApplication::CubeSceneApplication()
     , m_scene(nullptr)
     , m_cameraManager(nullptr)
     , m_cubeActor(nullptr)
+    , m_floorActor(nullptr)
     , m_directionalLight(nullptr)
     , m_pointLight(nullptr)
     , m_viewFamily(nullptr)
@@ -732,6 +736,7 @@ void CubeSceneApplication::onShutdown()
     // Step 9: Clean up scene (this will clean up actors and components)
     // Scene owns the actors, so we just null out our pointers
     m_cubeActor = nullptr;
+    m_floorActor = nullptr;
     m_directionalLight = nullptr;
     m_pointLight = nullptr;
     
@@ -800,6 +805,10 @@ bool CubeSceneApplication::initializeScene()
     // Set position AFTER BeginPlay to ensure components are initialized
     m_cubeActor->SetActorLocation(FVector(0.0f, 1.5f, 0.0f));  // Lift cube 1.5 units above ground for shadow
     
+    // Verify the position was set correctly
+    FVector actualPos = m_cubeActor->GetActorLocation();
+    MR_LOG(LogCubeSceneApp, Log, "Cube position set to: (%.2f, %.2f, %.2f)", actualPos.X, actualPos.Y, actualPos.Z);
+    
     // Add cube to scene
     UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
     if (meshComp)
@@ -816,6 +825,40 @@ bool CubeSceneApplication::initializeScene()
             cubeProxy->InitializeResources(m_device);
         }
     }
+    
+    // Create floor actor
+    m_floorActor = new AFloorActor();
+    m_floorActor->SetFloorSize(25.0f);
+    m_floorActor->SetTextureTile(25.0f);
+    m_floorActor->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));  // Floor at origin
+    m_floorActor->SetScene(m_scene);
+    m_floorActor->BeginPlay();
+    
+    // Add floor to scene and initialize its proxy
+    UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
+    if (floorMeshComp)
+    {
+        m_scene->AddPrimitive(floorMeshComp);
+        
+        // Initialize floor proxy GPU resources
+        FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
+        if (floorProxy && m_device)
+        {
+            floorProxy->InitializeResources(m_device);
+            
+            // Set floor texture and sampler (will be set after loading)
+            if (m_woodTexture)
+            {
+                floorProxy->SetTexture(m_woodTexture);
+            }
+            if (m_woodSampler)
+            {
+                floorProxy->SetSampler(m_woodSampler);
+            }
+        }
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Floor actor created at position (0, 0, 0)");
     
     // Create directional light (sun) - main light source
     m_directionalLight = new UDirectionalLightComponent();
@@ -910,11 +953,14 @@ bool CubeSceneApplication::initializeCamera()
     // Initialize with camera manager
     m_fpsCameraController->Initialize(m_cameraManager);
     
-    // Verify camera was set correctly
-    const FMinimalViewInfo& verifyView = m_cameraManager->GetCameraCacheView();
-    MR_LOG(LogCubeSceneApp, Log, "Camera initialized: Location=(%.2f, %.2f, %.2f), FOV=%.1f",
-           verifyView.Location.X, verifyView.Location.Y, verifyView.Location.Z, verifyView.FOV);
-    MR_LOG(LogCubeSceneApp, Log, "FPS Camera Controller enabled: WASD to move, Right-click + mouse to look");
+    // Verify camera position after FPS controller initialization
+    FMinimalViewInfo finalView = m_cameraManager->GetCameraCacheView();
+    MR_LOG(LogCubeSceneApp, Log, "Final camera position: (%.2f, %.2f, %.2f), Rotation: (%.1f, %.1f, %.1f)", 
+           finalView.Location.X, finalView.Location.Y, finalView.Location.Z,
+           finalView.Rotation.Pitch, finalView.Rotation.Yaw, finalView.Rotation.Roll);
+    
+    MR_LOG(LogCubeSceneApp, Log, "Camera initialized successfully");
+    
     return true;
 }
 
@@ -2192,36 +2238,22 @@ void CubeSceneApplication::renderWithRDG(
                 }
             }
             
-            // Render floor to shadow map
-            if (m_floorVertexBuffer)
+            // Render floor to shadow map using FFloorSceneProxy
+            if (m_floorActor)
             {
                 MR_LOG(LogCubeSceneApp, Verbose, "Rendering floor depth to shadow map");
                 
-                // Floor uses identity model matrix (already positioned at world origin)
-                FMatrix floorModelMatrix = FMatrix::Identity;
-                
-                // Get cube proxy to reuse its shader and pipeline state
-                if (m_cubeActor)
+                UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
+                if (floorMeshComp)
                 {
-                    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
-                    if (meshComp)
+                    FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
+                    if (floorProxy && floorProxy->AreResourcesInitialized())
                     {
-                        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
-                        FCubeSceneProxy* cubeProxy = dynamic_cast<FCubeSceneProxy*>(baseProxy);
+                        // Update floor model matrix from actor transform
+                        floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
                         
-                        if (cubeProxy && cubeProxy->AreResourcesInitialized())
-                        {
-                            // Update model matrix for floor
-                            cubeProxy->UpdateModelMatrix(floorModelMatrix);
-                            
-                            // Bind floor vertex buffer
-                            TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers;
-                            vertexBuffers.Add(m_floorVertexBuffer);
-                            rhiCmdList.setVertexBuffers(0, vertexBuffers);
-                            
-                            // Draw floor (6 vertices, 2 triangles)
-                            rhiCmdList.draw(m_floorVertexCount, 0);
-                        }
+                        // Draw floor depth
+                        floorProxy->Draw(&rhiCmdList, lightViewProjection, lightViewProjection, FVector::ZeroVector);
                     }
                 }
             }
@@ -2261,41 +2293,42 @@ void CubeSceneApplication::renderWithRDG(
                 lightViewProjection
             );
             
-            // Render floor with shadows and texture
-            if (m_floorVertexBuffer && m_woodTexture && m_woodSampler)
+            // Render floor with shadows and texture using FFloorSceneProxy
+            if (m_floorActor)
             {
                 MR_LOG(LogCubeSceneApp, Verbose, "Rendering floor with shadows and texture");
                 
-                // Floor uses identity model matrix
-                FMatrix floorModelMatrix = FMatrix::Identity;
-                
-                // Get cube proxy to reuse its shader and pipeline state
-                if (m_cubeActor)
+                UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
+                if (floorMeshComp)
                 {
-                    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
-                    if (meshComp)
+                    FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
+                    if (floorProxy && floorProxy->AreResourcesInitialized())
                     {
-                        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
-                        FCubeSceneProxy* cubeProxy = dynamic_cast<FCubeSceneProxy*>(baseProxy);
-                        
-                        if (cubeProxy && cubeProxy->AreResourcesInitialized())
+                        // Set texture and sampler if available
+                        if (m_woodTexture)
                         {
-                            // Update model matrix for floor
-                            cubeProxy->UpdateModelMatrix(floorModelMatrix);
-                            
-                            // Bind floor vertex buffer
-                            TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers;
-                            vertexBuffers.Add(m_floorVertexBuffer);
-                            rhiCmdList.setVertexBuffers(0, vertexBuffers);
-                            
-                            // Bind wood texture to binding 6 (diffuseTexture in shader)
-                            // Note: The pipeline state and other resources are already set by DrawWithShadows
-                            rhiCmdList.setShaderResource(6, m_woodTexture);
-                            rhiCmdList.setSampler(6, m_woodSampler);
-                            
-                            // Draw floor (6 vertices, 2 triangles)
-                            rhiCmdList.draw(m_floorVertexCount, 0);
+                            floorProxy->SetTexture(m_woodTexture);
                         }
+                        if (m_woodSampler)
+                        {
+                            floorProxy->SetSampler(m_woodSampler);
+                        }
+                        
+                        // Update floor model matrix from actor transform
+                        floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
+                        
+                        // Draw floor with shadows
+                        FVector4 shadowParams(0.005f, 0.01f, 0.02f, 50.0f);
+                        floorProxy->DrawWithShadows(
+                            &rhiCmdList,
+                            viewMatrix,
+                            projectionMatrix,
+                            cameraPosition,
+                            lights,
+                            lightViewProjection,
+                            m_shadowMapTexture,
+                            shadowParams
+                        );
                     }
                 }
             }
