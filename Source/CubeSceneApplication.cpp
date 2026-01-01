@@ -1960,6 +1960,23 @@ bool CubeSceneApplication::loadWoodTexture()
     }
     
     MR_LOG(LogCubeSceneApp, Log, "Wood texture loaded successfully");
+    
+    // Set texture to floor proxy if it exists
+    if (m_floorActor)
+    {
+        UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
+        if (floorMeshComp)
+        {
+            FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
+            if (floorProxy)
+            {
+                floorProxy->SetTexture(m_woodTexture);
+                floorProxy->SetSampler(m_woodSampler);
+                MR_LOG(LogCubeSceneApp, Log, "Wood texture set to floor proxy");
+            }
+        }
+    }
+    
     return true;
 }
 
@@ -2304,16 +2321,6 @@ void CubeSceneApplication::renderWithRDG(
                     FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
                     if (floorProxy && floorProxy->AreResourcesInitialized())
                     {
-                        // Set texture and sampler if available
-                        if (m_woodTexture)
-                        {
-                            floorProxy->SetTexture(m_woodTexture);
-                        }
-                        if (m_woodSampler)
-                        {
-                            floorProxy->SetSampler(m_woodSampler);
-                        }
-                        
                         // Update floor model matrix from actor transform
                         floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
                         
