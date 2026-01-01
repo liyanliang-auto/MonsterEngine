@@ -63,24 +63,26 @@ FVulkanMemoryPool::FVulkanMemoryPool(VkDevice InDevice, VkDeviceSize InPoolSize,
 
 FVulkanMemoryPool::~FVulkanMemoryPool()
 {
+    // CRITICAL: Do NOT call FMemory::Delete() in destructor!
+    // The global memory allocator (FMallocBinned2) may already be destroyed.
+    // Memory blocks will be leaked, but this is acceptable during shutdown.
+    // Proper cleanup should be done via explicit Shutdown() before destruction.
+    
     const auto& functions = VulkanAPI::getFunctions();
     
-    // Free all block nodes
-FMemoryBlock* current = FreeList;
-    while (current) {
-        FMemoryBlock* next = current->Next;
-        FMemory::Delete(current);
-        current = next;
-    }
+    // WARNING: Intentionally NOT freeing FMemoryBlock nodes here
+    // They were allocated with FMemory::New() but we cannot safely call FMemory::Delete()
+    // during static destruction. This is a known limitation.
+    // The OS will reclaim all process memory anyway.
     FreeList = nullptr;
     
-    // Unmap memory
-if (PersistentMappedPtr) {
+    // Unmap memory (safe - just a Vulkan call)
+    if (PersistentMappedPtr) {
         functions.vkUnmapMemory(Device, DeviceMemory);
         PersistentMappedPtr = nullptr;
     }
     
-    // Free Vulkan memory
+    // Free Vulkan memory (safe - just a Vulkan call)
     if (DeviceMemory != VK_NULL_HANDLE) {
         functions.vkFreeMemory(Device, DeviceMemory, nullptr);
         DeviceMemory = VK_NULL_HANDLE;
