@@ -733,21 +733,37 @@ void CubeSceneApplication::onShutdown()
         m_cameraManager = nullptr;
     }
     
-    // Step 9: Clean up scene (this will clean up actors and components)
-    // Scene owns the actors, so we just null out our pointers
-    m_cubeActor = nullptr;
-    m_floorActor = nullptr;
-    m_directionalLight = nullptr;
-    m_pointLight = nullptr;
-    
+    // Step 9: Clean up scene first (this will clean up FPrimitiveSceneInfo which owns proxies)
     if (m_scene)
     {
         delete m_scene;
         m_scene = nullptr;
     }
     
-    // Step 10: Release GPU resources (textures, buffers)
-    // These must be released AFTER scene is destroyed
+    // Step 10: Clean up actors (they own components, which are now safe to destroy since proxies are gone)
+    if (m_floorActor)
+    {
+        delete m_floorActor;
+        m_floorActor = nullptr;
+    }
+    if (m_cubeActor)
+    {
+        delete m_cubeActor;
+        m_cubeActor = nullptr;
+    }
+    if (m_directionalLight)
+    {
+        delete m_directionalLight;
+        m_directionalLight = nullptr;
+    }
+    if (m_pointLight)
+    {
+        delete m_pointLight;
+        m_pointLight = nullptr;
+    }
+    
+    // Step 11: Release GPU resources (textures, buffers)
+    // These must be released AFTER scene and actors are destroyed
     m_viewportColorTarget.Reset();
     m_viewportDepthTarget.Reset();
     m_shadowMapTexture.Reset();
@@ -755,7 +771,7 @@ void CubeSceneApplication::onShutdown()
     m_woodSampler.Reset();
     m_floorVertexBuffer.Reset();
     
-    // Step 11: Clear material references
+    // Step 12: Clear material references
     m_cubeMaterial.Reset();
     
     // Device is owned by Engine, don't delete it
