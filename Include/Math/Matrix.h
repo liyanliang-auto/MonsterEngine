@@ -578,16 +578,16 @@ public:
 
         TMatrix<T> Result(ForceInit);
         
-        // Row-major perspective matrix for right-handed coordinate system
-        // Row 0: [sx,  0,  0,  0]
-        // Row 1: [ 0, sy,  0,  0]
-        // Row 2: [ 0,  0, sz, tz]
-        // Row 3: [ 0,  0, -1,  0]
+        // Vulkan perspective projection matrix (depth range [0, 1])
+        // Right-handed coordinate system: camera looks toward -Z
+        // Maps view space [-Near, -Far] to NDC depth [0, 1]
+        // Row-major layout: M[Row][Col]
+        // Reference: GLM frustumRH_ZO
         Result.M[0][0] = T(1) / (AspectRatio * TanHalfFov);
-        Result.M[1][1] = T(1) / TanHalfFov;  // Will be flipped by Vulkan Y-flip if needed
-        Result.M[2][2] = FarZ / (NearZ - FarZ);  // Note: NearZ - FarZ for -Z direction
+        Result.M[1][1] = T(1) / TanHalfFov;
+        Result.M[2][2] = FarZ / (NearZ - FarZ);
         Result.M[2][3] = (FarZ * NearZ) / (NearZ - FarZ);
-        Result.M[3][2] = T(-1);  // -1 for right-handed (camera looks toward -Z)
+        Result.M[3][2] = T(-1);
 
         return Result;
     }
