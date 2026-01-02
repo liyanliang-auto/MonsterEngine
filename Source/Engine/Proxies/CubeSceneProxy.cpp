@@ -956,10 +956,11 @@ void FCubeSceneProxy::DrawWithShadows(
         CmdList->setShaderResource(2, Texture2);
     }
     
-    // Bind shadow map
-    if (ShadowMap)
+    // Bind shadow map texture and sampler
+    if (ShadowMap && ShadowSampler)
     {
         CmdList->setShaderResource(5, ShadowMap);
+        CmdList->setSampler(5, ShadowSampler);
     }
     
     // Bind a default texture to binding 6 (diffuseTexture) for cube rendering
