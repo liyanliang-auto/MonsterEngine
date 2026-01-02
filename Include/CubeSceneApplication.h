@@ -223,12 +223,6 @@ protected:
     bool initializeShadowMap();
 
     /**
-     * Initialize floor geometry and vertex buffer
-     * @return True if successful
-     */
-    bool initializeFloor();
-
-    /**
      * Load wood texture for floor rendering
      * @return True if successful
      */
@@ -464,12 +458,6 @@ protected:
     // ========================================================================
     // Floor Rendering
     // ========================================================================
-
-    /** Floor vertex buffer */
-    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_floorVertexBuffer;
-
-    /** Number of floor vertices */
-    uint32 m_floorVertexCount = 6;
 
     /** Wood floor texture */
     MonsterEngine::TSharedPtr<RHI::IRHITexture> m_woodTexture;
