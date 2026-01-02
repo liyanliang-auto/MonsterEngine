@@ -172,9 +172,14 @@ namespace MonsterRender {
             m_frameCount = 0;
             m_fpsTimer = 0.0f;
             
-            // Update window title with FPS (optional)
+            // Update window title with backend name and FPS
             if (m_config.windowProperties.title.find("FPS") == String::npos) {
-                String titleWithFPS = m_config.name + " - FPS: " + std::to_string(m_fps);
+                const char* backendName = "Unknown";
+                if (m_engine && m_engine->getRHIDevice()) {
+                    RHI::ERHIBackend backend = m_engine->getRHIDevice()->getRHIBackend();
+                    backendName = (backend == RHI::ERHIBackend::Vulkan) ? "Vulkan" : "OpenGL";
+                }
+                String titleWithFPS = m_config.name + " [" + backendName + "] - FPS: " + std::to_string(m_fps);
                 m_window->setTitle(titleWithFPS);
             }
         }

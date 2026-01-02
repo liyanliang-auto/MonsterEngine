@@ -140,6 +140,16 @@ void CubeSceneApplication::onInitialize()
         return;
     }
     
+    // Update window title to show render backend
+    if (getWindow())
+    {
+        RHI::ERHIBackend backend = m_device->getRHIBackend();
+        const char* backendName = (backend == RHI::ERHIBackend::Vulkan) ? "Vulkan" : "OpenGL";
+        String windowTitle = String("MonsterEngine - CubeScene [") + backendName + "]";
+        getWindow()->setTitle(windowTitle);
+        MR_LOG(LogCubeSceneApp, Log, "Window title set to: %s", windowTitle.c_str());
+    }
+    
     // Initialize scene
     if (!initializeScene())
     {
@@ -386,7 +396,11 @@ void CubeSceneApplication::onRender()
         // Enable depth testing
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
-        glDisable(GL_CULL_FACE);
+        
+        // Enable back-face culling (CCW is front face to match Vulkan pipeline)
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glFrontFace(GL_CCW);
         
         // Render cube with or without shadows
         if (m_bShadowsEnabled && m_shadowMapTexture)
