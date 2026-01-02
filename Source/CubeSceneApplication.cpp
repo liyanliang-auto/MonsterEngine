@@ -208,10 +208,13 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
     m_totalTime += deltaTime;
     m_deltaTime = deltaTime;
     
-    // Update cube rotation speed from UI
-    if (m_cubeActor)
+    // Update cube rotation speed from UI for all cubes
+    for (auto& cubeActor : m_cubeActors)
     {
-        m_cubeActor->SetRotationSpeed(m_cubeRotationSpeed);
+        if (cubeActor)
+        {
+            cubeActor->SetRotationSpeed(m_cubeRotationSpeed);
+        }
     }
     
     // Update light properties from UI
@@ -230,10 +233,13 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
         m_cameraManager->UpdateCamera(deltaTime);
     }
     
-    // Update cube actor (rotation animation)
-    if (m_cubeActor)
+    // Update all cube actors (rotation animation)
+    for (auto& cubeActor : m_cubeActors)
     {
-        m_cubeActor->Tick(deltaTime);
+        if (cubeActor)
+        {
+            cubeActor->Tick(deltaTime);
+        }
     }
     
     // Update scene
@@ -508,30 +514,34 @@ void CubeSceneApplication::renderCube(
     const FVector& cameraPosition,
     const TArray<FLightSceneInfo*>& lights)
 {
-    if (!m_cubeActor) return;
-    
-    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
-    if (!meshComp) return;
-    
-    // Ensure component transform is up to date before getting it
-    meshComp->UpdateComponentToWorld();
-    
-    FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
-    FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
-    
-    if (cubeProxy)
+    // Render all cube actors
+    for (auto& cubeActor : m_cubeActors)
     {
-        // Initialize resources if needed
-        if (!cubeProxy->AreResourcesInitialized())
+        if (!cubeActor) continue;
+        
+        UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
+        if (!meshComp) continue;
+        
+        // Ensure component transform is up to date before getting it
+        meshComp->UpdateComponentToWorld();
+        
+        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+        FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+        
+        if (cubeProxy)
         {
-            cubeProxy->InitializeResources(m_device);
+            // Initialize resources if needed
+            if (!cubeProxy->AreResourcesInitialized())
+            {
+                cubeProxy->InitializeResources(m_device);
+            }
+            
+            // Update model matrix from actor transform
+            cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
+            
+            // Draw with lighting
+            cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
         }
-        
-        // Update model matrix from actor transform
-        cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
-        
-        // Draw with lighting
-        cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
     }
 }
 
@@ -574,10 +584,12 @@ void CubeSceneApplication::renderWithSceneRenderer(
         m_rendererViewFamily->DeltaWorldTimeSeconds = 0.016f;  // ~60fps
     }
     
-    // Ensure cube resources are initialized and update transform
-    if (m_cubeActor)
+    // Ensure cube resources are initialized and update transform for all cubes
+    for (auto& cubeActor : m_cubeActors)
     {
-        UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+        if (!cubeActor) continue;
+        
+        UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
         if (meshComp)
         {
             // Ensure component transform is up to date
@@ -591,7 +603,7 @@ void CubeSceneApplication::renderWithSceneRenderer(
                 {
                     cubeProxy->InitializeResources(m_device);
                 }
-                cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+                cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
             }
         }
     }
@@ -617,9 +629,12 @@ void CubeSceneApplication::renderWithSceneRenderer(
         }
     }
     
-    if (m_cubeActor)
+    // Render all cube actors
+    for (auto& cubeActor : m_cubeActors)
     {
-        UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+        if (!cubeActor) continue;
+        
+        UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
         if (meshComp)
         {
             FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(meshComp->GetSceneProxy());
@@ -719,7 +734,7 @@ void CubeSceneApplication::onShutdown()
     // Step 10: Clean up actors (they own components, which are now safe to destroy since proxies are gone)
     MR_LOG(LogCubeSceneApp, Log, "Destroying actors...");
     m_floorActor.Reset();
-    m_cubeActor.Reset();
+    m_cubeActors.Empty();  // Clear all cube actors
     m_directionalLight.Reset();
     m_pointLight.Reset();
     MR_LOG(LogCubeSceneApp, Log, "Actors destroyed");
@@ -770,38 +785,54 @@ bool CubeSceneApplication::initializeScene()
         return false;
     }
     
-    // Create cube actor
-    m_cubeActor = MakeUnique<ACubeActor>();
-    m_cubeActor->SetRotationSpeed(0.0f);
-    m_cubeActor->SetRotationEnabled(false);  // Rotation disabled
-    m_cubeActor->SetRotationAxis(FVector(0.5f, 1.0f, 0.0f));
-    m_cubeActor->SetActorRotation(FRotator(0.0f, 0.0f, 0.0f));  // No rotation - cube aligned with axes
-    m_cubeActor->SetScene(m_scene.Get());
-    m_cubeActor->BeginPlay();
+    // Create multiple cube actors for shadow demonstration
+    // Reference: LearnOpenGL camera tutorial - multiple cubes at different positions
+    // Cube positions: one on floor, two floating at different heights for visible shadows
+    const FVector cubePositions[] = {
+        FVector(-2.0f, 0.5f, -1.0f),   // Cube 1: on floor (Y=0.5 so bottom touches Y=0)
+        FVector(0.0f, 2.0f, 0.0f),     // Cube 2: floating high for shadow
+        FVector(2.5f, 1.2f, 1.5f)      // Cube 3: floating medium height
+    };
+    const int32 numCubes = 3;
     
-    // Set position AFTER BeginPlay to ensure components are initialized
-    m_cubeActor->SetActorLocation(FVector(0.0f, 1.5f, 0.0f));  // Lift cube 1.5 units above ground for shadow
-    
-    // Verify the position was set correctly
-    FVector actualPos = m_cubeActor->GetActorLocation();
-    MR_LOG(LogCubeSceneApp, Log, "Cube position set to: (%.2f, %.2f, %.2f)", actualPos.X, actualPos.Y, actualPos.Z);
-    
-    // Add cube to scene
-    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
-    if (meshComp)
+    for (int32 i = 0; i < numCubes; ++i)
     {
-        // Add primitive to scene
-        m_scene->AddPrimitive(meshComp);
+        TUniquePtr<ACubeActor> cubeActor = MakeUnique<ACubeActor>();
+        cubeActor->SetRotationSpeed(0.0f);
+        cubeActor->SetRotationEnabled(false);  // Rotation disabled
+        cubeActor->SetRotationAxis(FVector(0.5f, 1.0f, 0.0f));
+        cubeActor->SetActorRotation(FRotator(0.0f, 0.0f, 0.0f));
+        cubeActor->SetScene(m_scene.Get());
+        cubeActor->BeginPlay();
         
-        // Pre-initialize GPU resources for the cube proxy
-        // This must be done before any render pass begins
-        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
-        FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
-        if (cubeProxy && m_device)
+        // Set position AFTER BeginPlay to ensure components are initialized
+        cubeActor->SetActorLocation(cubePositions[i]);
+        
+        // Verify the position was set correctly
+        FVector actualPos = cubeActor->GetActorLocation();
+        MR_LOG(LogCubeSceneApp, Log, "Cube %d position set to: (%.2f, %.2f, %.2f)", 
+               i, actualPos.X, actualPos.Y, actualPos.Z);
+        
+        // Add cube to scene
+        UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
+        if (meshComp)
         {
-            cubeProxy->InitializeResources(m_device);
+            // Add primitive to scene
+            m_scene->AddPrimitive(meshComp);
+            
+            // Pre-initialize GPU resources for the cube proxy
+            FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+            FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+            if (cubeProxy && m_device)
+            {
+                cubeProxy->InitializeResources(m_device);
+            }
         }
+        
+        m_cubeActors.Add(std::move(cubeActor));
     }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Created %d cube actors for shadow demonstration", numCubes);
     
     // Create floor actor
     m_floorActor = MakeUnique<AFloorActor>();
@@ -1198,7 +1229,7 @@ void CubeSceneApplication::renderSceneInfoPanel()
         
         ImGui::Separator();
         ImGui::Text("Scene:");
-        ImGui::Text("  Cube Actor: %s", m_cubeActor ? "Active" : "None");
+        ImGui::Text("  Cube Actors: %d", static_cast<int>(m_cubeActors.Num()));
         ImGui::Text("  Lights: %d", m_scene ? m_scene->GetLights().Num() : 0);
     }
     ImGui::End();
@@ -1579,10 +1610,12 @@ void CubeSceneApplication::renderSceneToViewport(
         }
     }
     
-    // Render cube to viewport
-    if (m_cubeActor)
+    // Render all cube actors to viewport
+    for (auto& cubeActor : m_cubeActors)
     {
-        UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+        if (!cubeActor) continue;
+        
+        UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
         if (meshComp)
         {
             // Ensure component transform is up to date
@@ -1595,7 +1628,7 @@ void CubeSceneApplication::renderSceneToViewport(
                 {
                     cubeProxy->InitializeResources(m_device);
                 }
-                cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+                cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
                 cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
             }
         }
@@ -1940,7 +1973,7 @@ void CubeSceneApplication::renderShadowDepthPass(
     const FVector& lightDirection,
     FMatrix& outLightViewProjection)
 {
-    if (!cmdList || !m_shadowMapTexture || !m_cubeActor)
+    if (!cmdList || !m_shadowMapTexture || m_cubeActors.Num() == 0)
     {
         return;
     }
@@ -1979,27 +2012,29 @@ void CubeSceneApplication::renderShadowDepthPass(
     // Clear depth buffer
     cmdList->clearDepthStencil(m_shadowMapTexture, 1.0f, 0);
     
-    // Get cube mesh component and render to shadow map
-    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
-    if (meshComp)
+    // Render all cube actors to shadow map
+    FVector lightPos = -lightDirection.GetSafeNormal() * 10.0f;
+    
+    for (auto& cubeActor : m_cubeActors)
     {
-        meshComp->UpdateComponentToWorld();
+        if (!cubeActor) continue;
         
-        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
-        FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
-        
-        if (cubeProxy && cubeProxy->AreResourcesInitialized())
+        UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
+        if (meshComp)
         {
-            // Update model matrix
-            cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+            meshComp->UpdateComponentToWorld();
             
-            // For shadow depth pass, we render with light's view-projection
-            // Use identity projection since we're rendering depth only
-            FVector lightPos = -lightDirection.GetSafeNormal() * 10.0f;
-            TArray<FLightSceneInfo*> emptyLights;
+            FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+            FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
             
-            // Draw cube for shadow map (using light's matrices)
-            cubeProxy->Draw(cmdList, outLightViewProjection, FMatrix::Identity, lightPos);
+            if (cubeProxy && cubeProxy->AreResourcesInitialized())
+            {
+                // Update model matrix
+                cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
+                
+                // Draw cube for shadow map (using light's matrices)
+                cubeProxy->Draw(cmdList, outLightViewProjection, FMatrix::Identity, lightPos);
+            }
         }
     }
     
@@ -2017,35 +2052,10 @@ void CubeSceneApplication::renderCubeWithShadows(
     const TArray<FLightSceneInfo*>& lights,
     const FMatrix& lightViewProjection)
 {
-    if (!m_cubeActor || !cmdList)
+    if (m_cubeActors.Num() == 0 || !cmdList)
     {
         return;
     }
-    
-    UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
-    if (!meshComp)
-    {
-        return;
-    }
-    
-    meshComp->UpdateComponentToWorld();
-    
-    FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
-    FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
-    
-    if (!cubeProxy)
-    {
-        return;
-    }
-    
-    // Initialize resources if needed
-    if (!cubeProxy->AreResourcesInitialized())
-    {
-        cubeProxy->InitializeResources(m_device);
-    }
-    
-    // Update model matrix
-    cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
     
     // Create shadow parameters
     FVector4 shadowParams(
@@ -2055,17 +2065,42 @@ void CubeSceneApplication::renderCubeWithShadows(
         m_shadowDistance
     );
     
-    // Draw with shadows
-    cubeProxy->DrawWithShadows(
-        cmdList,
-        viewMatrix,
-        projectionMatrix,
-        cameraPosition,
-        lights,
-        lightViewProjection,
-        m_shadowMapTexture,
-        shadowParams
-    );
+    // Render all cube actors with shadows
+    for (auto& cubeActor : m_cubeActors)
+    {
+        if (!cubeActor) continue;
+        
+        UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
+        if (!meshComp) continue;
+        
+        meshComp->UpdateComponentToWorld();
+        
+        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+        FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+        
+        if (!cubeProxy) continue;
+        
+        // Initialize resources if needed
+        if (!cubeProxy->AreResourcesInitialized())
+        {
+            cubeProxy->InitializeResources(m_device);
+        }
+        
+        // Update model matrix
+        cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
+        
+        // Draw with shadows
+        cubeProxy->DrawWithShadows(
+            cmdList,
+            viewMatrix,
+            projectionMatrix,
+            cameraPosition,
+            lights,
+            lightViewProjection,
+            m_shadowMapTexture,
+            shadowParams
+        );
+    }
 }
 
 // ============================================================================
@@ -2152,10 +2187,12 @@ void CubeSceneApplication::renderWithRDG(
             TSharedPtr<RHI::IRHITexture> depthTarget(m_shadowMapTexture.Get(), [](RHI::IRHITexture*){});
             rhiCmdList.clearDepthStencil(depthTarget, true, false, 1.0f, 0);
             
-            // Render cube to shadow map
-            if (m_cubeActor)
+            // Render all cube actors to shadow map
+            for (auto& cubeActor : m_cubeActors)
             {
-                UCubeMeshComponent* meshComp = m_cubeActor->GetCubeMeshComponent();
+                if (!cubeActor) continue;
+                
+                UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
                 if (meshComp)
                 {
                     meshComp->UpdateComponentToWorld();
@@ -2164,7 +2201,7 @@ void CubeSceneApplication::renderWithRDG(
                     
                     if (cubeProxy && cubeProxy->AreResourcesInitialized())
                     {
-                        cubeProxy->UpdateModelMatrix(m_cubeActor->GetActorTransform().ToMatrixWithScale());
+                        cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
                         
                         // Draw depth only - use regular Draw method
                         // The render pass is configured to only write depth

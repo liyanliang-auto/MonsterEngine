@@ -290,8 +290,8 @@ protected:
     /** Camera manager */
     MonsterEngine::TUniquePtr<MonsterEngine::FCameraManager> m_cameraManager;
 
-    /** Cube actor */
-    MonsterEngine::TUniquePtr<MonsterEngine::ACubeActor> m_cubeActor;
+    /** Cube actors array - multiple cubes for shadow demonstration */
+    MonsterEngine::TArray<MonsterEngine::TUniquePtr<MonsterEngine::ACubeActor>> m_cubeActors;
 
     /** Floor actor */
     MonsterEngine::TUniquePtr<MonsterEngine::AFloorActor> m_floorActor;
