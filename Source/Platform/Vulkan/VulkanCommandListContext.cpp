@@ -253,16 +253,19 @@ namespace MonsterRender::RHI::Vulkan {
         uint32 numClearValues = 2; // color + depth
         
         // Determine if this is swapchain rendering or RTT
-        bool bIsSwapchain = renderTargets.empty();
+        // Note: If custom depthStencil is provided, we still need to use RTT mode
+        // to properly use the custom depth buffer instead of device's default
+        bool bIsSwapchain = renderTargets.empty() && !depthStencil;
         
         if (bIsSwapchain) {
             // ================================================================
             // Swapchain rendering mode - use device's default render pass/framebuffer
+            // Only used when NO custom depth buffer is provided
             // ================================================================
             renderPass = m_device->getRenderPass();
             framebuffer = m_device->getCurrentFramebuffer();
             
-            MR_LOG_DEBUG("setRenderTargets: Using swapchain rendering");
+            MR_LOG_DEBUG("setRenderTargets: Using swapchain rendering (default depth)");
         } else {
             // ================================================================
             // RTT mode - use cached render pass and framebuffer
@@ -274,13 +277,29 @@ namespace MonsterRender::RHI::Vulkan {
             rtInfo.bClearDepth = true;
             rtInfo.bClearStencil = false;
             
-            // Build color targets from provided textures
-            for (uint32 i = 0; i < renderTargets.size() && i < FVulkanRenderTargetInfo::MaxColorTargets; ++i) {
-                if (renderTargets[i]) {
-                    rtInfo.ColorTargets[i] = StaticCastSharedPtr<VulkanTexture>(renderTargets[i]);
-                    rtInfo.bClearColor[i] = true;
-                    rtInfo.ClearColors[i] = {{0.0f, 0.0f, 0.0f, 1.0f}};
-                    rtInfo.NumColorTargets++;
+            // Check if we need to use swapchain as color target (empty renderTargets but custom depth)
+            bool bUseSwapchainColor = renderTargets.empty() && depthStencil;
+            
+            if (bUseSwapchainColor) {
+                // Use swapchain image view as color target with custom depth
+                rtInfo.bIsSwapchain = true;  // Mark as swapchain for proper handling
+                rtInfo.SwapchainImageView = m_device->getCurrentSwapchainImageView();
+                rtInfo.NumColorTargets = 1;
+                rtInfo.bClearColor[0] = false;  // Don't clear - preserves previous content
+                // Set render area from swapchain extent
+                rtInfo.RenderAreaWidth = renderExtent.width;
+                rtInfo.RenderAreaHeight = renderExtent.height;
+                MR_LOG_DEBUG("setRenderTargets: Using swapchain color + custom depth, extent=" + 
+                            std::to_string(renderExtent.width) + "x" + std::to_string(renderExtent.height));
+            } else {
+                // Build color targets from provided textures
+                for (uint32 i = 0; i < renderTargets.size() && i < FVulkanRenderTargetInfo::MaxColorTargets; ++i) {
+                    if (renderTargets[i]) {
+                        rtInfo.ColorTargets[i] = StaticCastSharedPtr<VulkanTexture>(renderTargets[i]);
+                        rtInfo.bClearColor[i] = true;
+                        rtInfo.ClearColors[i] = {{0.0f, 0.0f, 0.0f, 1.0f}};
+                        rtInfo.NumColorTargets++;
+                    }
                 }
             }
             
@@ -289,9 +308,16 @@ namespace MonsterRender::RHI::Vulkan {
                 rtInfo.DepthStencilTarget = StaticCastSharedPtr<VulkanTexture>(depthStencil);
             }
             
-            // Set render area from first color target
+            // Set render area from first color target, or from depth target if no color targets
             if (rtInfo.NumColorTargets > 0 && rtInfo.ColorTargets[0]) {
                 auto& desc = rtInfo.ColorTargets[0]->getDesc();
+                renderExtent.width = desc.width;
+                renderExtent.height = desc.height;
+                rtInfo.RenderAreaWidth = desc.width;
+                rtInfo.RenderAreaHeight = desc.height;
+            } else if (rtInfo.DepthStencilTarget) {
+                // No color targets but have depth - use depth target dimensions
+                auto& desc = rtInfo.DepthStencilTarget->getDesc();
                 renderExtent.width = desc.width;
                 renderExtent.height = desc.height;
                 rtInfo.RenderAreaWidth = desc.width;

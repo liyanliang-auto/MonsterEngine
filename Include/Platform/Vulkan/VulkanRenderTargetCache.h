@@ -210,6 +210,9 @@ using MonsterEngine::TSharedPtr;
         // Whether this renders to swapchain (affects final layout)
         bool bIsSwapchain = false;
         
+        // Swapchain image view (used when bIsSwapchain && custom depth is provided)
+        VkImageView SwapchainImageView = VK_NULL_HANDLE;
+        
         /**
          * Build layout from this info
          */
