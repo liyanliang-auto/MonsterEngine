@@ -508,10 +508,11 @@ bool FCubeSceneProxy::CreatePipelineState()
     
     // Rasterizer state - enable backface culling
     // UE5 row-vector convention with projection + RHI viewport Y-flip:
-    // Double Y-flip restores correct orientation, CCW is front face
+    // Viewport Y-flip reverses winding order: CCW vertices appear as CW after flip
+    // So we set frontCounterClockwise = false (CW is front face after viewport flip)
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = true;  // CCW is front face
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (after viewport Y-flip)
     
     // Depth testing - enable for proper occlusion
     PipelineDesc.depthStencilState.depthEnable = true;
@@ -1134,10 +1135,10 @@ bool FCubeSceneProxy::CreateShadowPipelineState()
     PipelineDesc.vertexLayout.attributes.push_back(TexCoordAttr);
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
-    // UE5 row-vector convention with projection + RHI viewport Y-flip: CCW is front
+    // Viewport Y-flip reverses winding order: CCW vertices appear as CW after flip
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = true;
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (after viewport Y-flip)
     
     // Depth testing
     PipelineDesc.depthStencilState.depthEnable = true;
