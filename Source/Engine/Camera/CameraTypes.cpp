@@ -149,10 +149,9 @@ FMatrix FMinimalViewInfo::CalculateProjectionMatrix() const
         
         // Create perspective projection matrix
         // Note: MakePerspective expects full FOV in radians, not half FOV
-        // Use OpenGL-specific matrix for OpenGL backend (depth range [-1, 1])
-        // TODO: Add backend detection parameter to this function
-        // For now, use OpenGL matrix as it's the current default
-        ProjectionMatrix = FMatrix::MakePerspectiveGL(
+        // Use Vulkan-style matrix (depth range [0, 1])
+        // Y-flip will be handled separately in CubeSceneApplication
+        ProjectionMatrix = FMatrix::MakePerspective(
             FOVRadians,
             AspectRatio,
             NearPlane,
