@@ -187,6 +187,25 @@ void CubeSceneApplication::onInitialize()
     //     MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize ImGui, UI will be disabled");
     // }
     
+    // Adjust window size to match swapchain extent
+    // Reference: UE5 ensures window and swapchain sizes are synchronized
+    if (getWindow() && m_device)
+    {
+        auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+        if (vulkanDevice)
+        {
+            auto swapchainExtent = vulkanDevice->getSwapchainExtent();
+            if (swapchainExtent.width != m_windowWidth || swapchainExtent.height != m_windowHeight)
+            {
+                MR_LOG(LogCubeSceneApp, Log, "Adjusting window size from %ux%u to match swapchain %ux%u",
+                       m_windowWidth, m_windowHeight, swapchainExtent.width, swapchainExtent.height);
+                getWindow()->setSize(swapchainExtent.width, swapchainExtent.height);
+                m_windowWidth = swapchainExtent.width;
+                m_windowHeight = swapchainExtent.height;
+            }
+        }
+    }
+    
     // Initialize viewport render target
     if (!initializeViewportRenderTarget())
     {
@@ -1331,15 +1350,37 @@ void CubeSceneApplication::renderLightingControlPanel()
 
 void CubeSceneApplication::onWindowResize(uint32 width, uint32 height)
 {
+    // Reference: UE5 FSlateRHIRenderer::OnWindowResized
+    MR_LOG(LogCubeSceneApp, Log, "Window resized to %ux%u", width, height);
+    
     m_windowWidth = width;
     m_windowHeight = height;
     
-    // Update camera aspect ratio
-    if (m_cameraManager)
+    // Recreate swapchain with new size
+    // Reference: UE5 FVulkanDynamicRHI::RHIResizeViewport
+    if (m_device)
     {
-        FMinimalViewInfo viewInfo = m_cameraManager->GetCameraCacheView();
-        viewInfo.AspectRatio = static_cast<float>(width) / static_cast<float>(height);
-        m_cameraManager->SetCameraCachePOV(viewInfo);
+        auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+        if (vulkanDevice)
+        {
+            if (!vulkanDevice->recreateSwapchain(width, height))
+            {
+                MR_LOG(LogCubeSceneApp, Warning, "Failed to recreate swapchain on window resize");
+                return;
+            }
+            
+            // Get actual swapchain extent (may differ from window size)
+            auto swapchainExtent = vulkanDevice->getSwapchainExtent();
+            
+            // Update camera aspect ratio based on actual swapchain size
+            if (m_cameraManager)
+            {
+                FMinimalViewInfo viewInfo = m_cameraManager->GetCameraCacheView();
+                viewInfo.AspectRatio = static_cast<float>(swapchainExtent.width) / static_cast<float>(swapchainExtent.height);
+                m_cameraManager->SetCameraCachePOV(viewInfo);
+                MR_LOG(LogCubeSceneApp, Verbose, "Camera aspect ratio updated to %f", viewInfo.AspectRatio);
+            }
+        }
     }
     
     // Update ImGui renderer
