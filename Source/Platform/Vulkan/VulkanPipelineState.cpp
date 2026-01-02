@@ -405,14 +405,37 @@ namespace MonsterRender::RHI::Vulkan
             subpass.pDepthStencilAttachment = &depthReference;
         }
 
-        // Subpass dependencies
+        // Subpass dependencies - configure based on attachments
         VkSubpassDependency dependency{};
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.srcAccessMask = 0;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        
+        // Set stage masks based on what attachments we have
+        bool hasColor = !colorReferences.empty();
+        if (hasColor && hasDepth) {
+            // Both color and depth
+            dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | 
+                                      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | 
+                                      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            dependency.srcAccessMask = 0;
+            dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | 
+                                       VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        } else if (hasDepth) {
+            // Depth only (shadow map)
+            dependency.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | 
+                                      VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            dependency.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | 
+                                      VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            dependency.srcAccessMask = 0;
+            dependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        } else {
+            // Color only
+            dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.srcAccessMask = 0;
+            dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        }
 
         // Create render pass
         VkRenderPassCreateInfo renderPassInfo{};
@@ -896,11 +919,11 @@ namespace MonsterRender::RHI::Vulkan
         MR_LOG_INFO("createColorBlendAttachments: renderTargetFormats.size()=" + 
                    std::to_string(m_desc.renderTargetFormats.size()));
         
-        // CRITICAL: If no render target formats specified, we still need at least one attachment
+        // If no render target formats specified (depth-only pipeline), return empty attachments
         uint32 numAttachments = m_desc.renderTargetFormats.size();
         if (numAttachments == 0) {
-            MR_LOG_WARNING("createColorBlendAttachments: No render target formats! Adding default attachment.");
-            numAttachments = 1;
+            MR_LOG_INFO("createColorBlendAttachments: Depth-only pipeline, no color attachments needed.");
+            return attachments;
         }
 
         for (uint32 i = 0; i < numAttachments; ++i)

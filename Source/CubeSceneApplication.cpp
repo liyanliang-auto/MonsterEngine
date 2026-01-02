@@ -2364,6 +2364,7 @@ void CubeSceneApplication::renderWithRDG(
                 lights.Add(m_pointLight->GetLightSceneInfo());
             }
             
+            // renderCubeWithShadows already renders both cubes and floor with shadows
             renderCubeWithShadows(
                 &rhiCmdList,
                 viewMatrix,
@@ -2372,36 +2373,6 @@ void CubeSceneApplication::renderWithRDG(
                 lights,
                 lightViewProjection
             );
-            
-            // Render floor with shadows and texture using FFloorSceneProxy
-            if (m_floorActor)
-            {
-                MR_LOG(LogCubeSceneApp, Verbose, "Rendering floor with shadows and texture");
-                
-                UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
-                if (floorMeshComp)
-                {
-                    FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
-                    if (floorProxy && floorProxy->AreResourcesInitialized())
-                    {
-                        // Update floor model matrix from actor transform
-                        floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
-                        
-                        // Draw floor with shadows
-                        FVector4 shadowParams(0.005f, 0.01f, 0.02f, 50.0f);
-                        floorProxy->DrawWithShadows(
-                            &rhiCmdList,
-                            viewMatrix,
-                            projectionMatrix,
-                            cameraPosition,
-                            lights,
-                            lightViewProjection,
-                            m_shadowMapTexture,
-                            shadowParams
-                        );
-                    }
-                }
-            }
         }
     );
     
