@@ -507,17 +507,13 @@ bool FCubeSceneProxy::CreatePipelineState()
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
     // Rasterizer state - enable backface culling
-    // UE5 Pattern: Unified front-face convention across all backends
-    // Reference: UE5 VulkanState.h, OpenGLDrv - unified coordinate system handling
-    // 
-    // MonsterEngine uses CW (clockwise) as front face (frontCounterClockwise = false)
-    // - Vulkan: Y-flip applied in viewport (negative height), uses VK_FRONT_FACE_CLOCKWISE
-    // - OpenGL: glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE) + glFrontFace(GL_CW)
-    // 
-    // This eliminates per-backend branching and ensures consistent rendering
+    // With viewport Y-flip (negative height), the apparent winding order is reversed:
+    // - Original vertices: CW (clockwise) when viewed from front
+    // - After Y-flip: appears as CCW to Vulkan
+    // Therefore, set frontCounterClockwise = true so CCW is treated as front face
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front face (unified)
+    PipelineDesc.rasterizerState.frontCounterClockwise = true;  // CCW is front face (after Y-flip)
     
     // Depth testing - enable for proper occlusion
     PipelineDesc.depthStencilState.depthEnable = true;
@@ -1139,10 +1135,10 @@ bool FCubeSceneProxy::CreateShadowPipelineState()
     PipelineDesc.vertexLayout.attributes.push_back(TexCoordAttr);
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
-    // Rasterizer state
+    // Rasterizer state - CCW is front face after viewport Y-flip
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = false;
+    PipelineDesc.rasterizerState.frontCounterClockwise = true;
     
     // Depth testing
     PipelineDesc.depthStencilState.depthEnable = true;
