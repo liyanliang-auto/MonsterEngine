@@ -2025,7 +2025,8 @@ void CubeSceneApplication::renderShadowDepthPass(
     MR_LOG(LogCubeSceneApp, Verbose, "Rendering shadow depth pass");
     
     // Calculate light view-projection matrix
-    float sceneBoundsRadius = 5.0f;  // Approximate scene bounds
+    // Must be large enough to cover entire floor (size = 25.0f, so bounds = ±25)
+    float sceneBoundsRadius = 30.0f;  // Cover floor and cubes
     outLightViewProjection = calculateLightViewProjection(lightDirection, sceneBoundsRadius);
     
     // Set shadow map as render target (depth only)
@@ -2230,7 +2231,8 @@ void CubeSceneApplication::renderWithRDG(
     lightDirection.Normalize();
     
     // Calculate light view-projection matrix
-    Math::FMatrix lightViewProjection = calculateLightViewProjection(lightDirection, 10.0f);
+    // Must be large enough to cover entire floor (size = 25.0f, so bounds = ±25)
+    Math::FMatrix lightViewProjection = calculateLightViewProjection(lightDirection, 30.0f);
     
     // Create RDG builder
     FRDGBuilder graphBuilder(m_device, "CubeSceneRenderGraph");
