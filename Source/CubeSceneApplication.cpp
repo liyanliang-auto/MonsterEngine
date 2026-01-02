@@ -968,7 +968,10 @@ bool CubeSceneApplication::initializeCamera()
     viewInfo.Location = FVector(5.0, 3.0, 5.0);  // Camera at (5, 3, 5) for good overview
     viewInfo.Rotation = FRotator(-30.0, -135.0, 0.0);  // Pitch down 30 degrees, look towards origin
     viewInfo.FOV = 60.0f;  // Wider FOV to see more of the scene
-    viewInfo.AspectRatio = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
+    // Use swapchain extent for aspect ratio, not window size
+    auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+    auto swapchainExtent = vulkanDevice->getSwapchainExtent();
+    viewInfo.AspectRatio = static_cast<float>(swapchainExtent.width) / static_cast<float>(swapchainExtent.height);
     viewInfo.ProjectionMode = ECameraProjectionMode::Perspective;
     viewInfo.OrthoNearClipPlane = 0.1f;
     viewInfo.OrthoFarClipPlane = 100.0f;
@@ -2341,22 +2344,24 @@ void CubeSceneApplication::renderWithRDG(
             TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
             rhiCmdList.setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), m_viewportDepthTarget);
             
-            // Set viewport to window size
+            // Set viewport to swapchain size (not window size)
+            auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+            auto swapchainExtent = vulkanDevice->getSwapchainExtent();
             RHI::Viewport viewport;
             viewport.x = 0.0f;
             viewport.y = 0.0f;
-            viewport.width = static_cast<float>(m_windowWidth);
-            viewport.height = static_cast<float>(m_windowHeight);
+            viewport.width = static_cast<float>(swapchainExtent.width);
+            viewport.height = static_cast<float>(swapchainExtent.height);
             viewport.minDepth = 0.0f;
             viewport.maxDepth = 1.0f;
             rhiCmdList.setViewport(viewport);
             
-            // Set scissor rect
+            // Set scissor rect to match viewport
             RHI::ScissorRect scissor;
             scissor.left = 0;
             scissor.top = 0;
-            scissor.right = m_windowWidth;
-            scissor.bottom = m_windowHeight;
+            scissor.right = swapchainExtent.width;
+            scissor.bottom = swapchainExtent.height;
             rhiCmdList.setScissorRect(scissor);
             
             // Render cube with shadows
