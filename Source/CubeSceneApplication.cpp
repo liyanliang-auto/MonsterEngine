@@ -355,6 +355,9 @@ void CubeSceneApplication::onRender()
         // ================================================================
         FMatrix lightViewProjection = FMatrix::Identity;
         
+        MR_LOG(LogCubeSceneApp, Log, "Shadow check: enabled=%d, texture=%p, lights=%d",
+               m_bShadowsEnabled, m_shadowMapTexture.Get(), lights.Num());
+        
         if (m_bShadowsEnabled && m_shadowMapTexture && lights.Num() > 0)
         {
             // Get directional light direction from first light
@@ -370,11 +373,15 @@ void CubeSceneApplication::onRender()
                 }
             }
             
-            MR_LOG(LogCubeSceneApp, Verbose, "OpenGL: Rendering shadow pass, light dir: (%.2f, %.2f, %.2f)",
+            MR_LOG(LogCubeSceneApp, Log, "Executing shadow depth pass, light dir: (%.2f, %.2f, %.2f)",
                    lightDirection.X, lightDirection.Y, lightDirection.Z);
             
             // Render shadow depth pass
             renderShadowDepthPass(cmdList, lightDirection, lightViewProjection);
+        }
+        else
+        {
+            MR_LOG(LogCubeSceneApp, Warning, "Shadow depth pass SKIPPED");
         }
         
         // ================================================================
@@ -2242,7 +2249,14 @@ void CubeSceneApplication::renderWithRDG(
         },
         [this, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
         {
-            MR_LOG(LogCubeSceneApp, Verbose, "Executing Shadow Depth Pass");
+            MR_LOG(LogCubeSceneApp, Log, "Executing Shadow Depth Pass");
+            
+            // CRITICAL: Set shadow map as depth-only render target
+            TArray<TSharedPtr<RHI::IRHITexture>> emptyColorTargets;
+            rhiCmdList.setRenderTargets(
+                TSpan<TSharedPtr<RHI::IRHITexture>>(emptyColorTargets),
+                m_shadowMapTexture
+            );
             
             // Set viewport for shadow map
             RHI::Viewport viewport;
@@ -2263,8 +2277,7 @@ void CubeSceneApplication::renderWithRDG(
             rhiCmdList.setScissorRect(scissor);
             
             // Clear depth buffer
-            TSharedPtr<RHI::IRHITexture> depthTarget(m_shadowMapTexture.Get(), [](RHI::IRHITexture*){});
-            rhiCmdList.clearDepthStencil(depthTarget, true, false, 1.0f, 0);
+            rhiCmdList.clearDepthStencil(m_shadowMapTexture, 1.0f, 0);
             
             // Render all cube actors to shadow map
             for (auto& cubeActor : m_cubeActors)
@@ -2309,7 +2322,17 @@ void CubeSceneApplication::renderWithRDG(
                 }
             }
             
-            MR_LOG(LogCubeSceneApp, Verbose, "Shadow Depth Pass complete");
+            // End shadow render pass
+            rhiCmdList.endRenderPass();
+            
+            // Transition shadow map from depth attachment to shader resource
+            rhiCmdList.transitionResource(
+                m_shadowMapTexture,
+                RHI::EResourceUsage::DepthStencil,
+                RHI::EResourceUsage::ShaderResource
+            );
+            
+            MR_LOG(LogCubeSceneApp, Log, "Shadow Depth Pass complete");
         }
     );
     
@@ -2324,6 +2347,30 @@ void CubeSceneApplication::renderWithRDG(
         },
         [this, viewMatrix, projectionMatrix, cameraPosition, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
         {
+            MR_LOG(LogCubeSceneApp, Log, "Executing Main Render Pass with shadows");
+            
+            // Set render targets to swapchain
+            TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
+            rhiCmdList.setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+            
+            // Set viewport to window size
+            RHI::Viewport viewport;
+            viewport.x = 0.0f;
+            viewport.y = 0.0f;
+            viewport.width = static_cast<float>(m_windowWidth);
+            viewport.height = static_cast<float>(m_windowHeight);
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            rhiCmdList.setViewport(viewport);
+            
+            // Set scissor rect
+            RHI::ScissorRect scissor;
+            scissor.left = 0;
+            scissor.top = 0;
+            scissor.right = m_windowWidth;
+            scissor.bottom = m_windowHeight;
+            rhiCmdList.setScissorRect(scissor);
+            
             // Render cube with shadows
             TArray<FLightSceneInfo*> lights;
             if (m_directionalLight)
