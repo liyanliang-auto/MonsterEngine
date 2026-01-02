@@ -560,7 +560,7 @@ public:
         TMatrix<T> Result;
         Result.M[0][0] = Right.X;    Result.M[0][1] = Right.Y;    Result.M[0][2] = Right.Z;    Result.M[0][3] = -TVector<T>::DotProduct(Right, Eye);
         Result.M[1][0] = UpVec.X;    Result.M[1][1] = UpVec.Y;    Result.M[1][2] = UpVec.Z;    Result.M[1][3] = -TVector<T>::DotProduct(UpVec, Eye);
-        Result.M[2][0] = -Forward.X; Result.M[2][1] = -Forward.Y; Result.M[2][2] = -Forward.Z; Result.M[2][3] = -TVector<T>::DotProduct(Forward, Eye);
+        Result.M[2][0] = -Forward.X; Result.M[2][1] = -Forward.Y; Result.M[2][2] = -Forward.Z; Result.M[2][3] = TVector<T>::DotProduct(Forward, Eye);
         Result.M[3][0] = T(0);       Result.M[3][1] = T(0);       Result.M[3][2] = T(0);       Result.M[3][3] = T(1);
 
         return Result;
