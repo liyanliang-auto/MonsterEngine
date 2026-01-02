@@ -13,6 +13,7 @@
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanUtils.h"
+#include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
 #include "RHI/RHIBarriers.h"
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHISwapChain.h"
@@ -1117,5 +1118,134 @@ namespace MonsterRender::RHI::Vulkan {
         );
         
         MR_LOG(LogTemp, Verbose, "copyBufferToTexture: mip %u, %ux%ux%u", mipLevel, width, height, depth);
+    }
+    
+    // ============================================================================
+    // Multi-descriptor set binding implementation
+    // ============================================================================
+    
+    void FVulkanRHICommandListImmediate::bindDescriptorSets(
+        TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+        uint32 firstSet,
+        TSpan<TSharedPtr<IRHIDescriptorSet>> descriptorSets) {
+        
+        if (!m_context) {
+            MR_LOG(LogVulkanRHI, Warning, "bindDescriptorSets: No active context");
+            return;
+        }
+        
+        auto vulkanLayout = dynamic_cast<VulkanPipelineLayout*>(pipelineLayout.get());
+        if (!vulkanLayout || !vulkanLayout->isValid()) {
+            MR_LOG(LogVulkanRHI, Error, "bindDescriptorSets: Invalid pipeline layout");
+            return;
+        }
+        
+        if (descriptorSets.size() == 0) {
+            MR_LOG(LogVulkanRHI, Warning, "bindDescriptorSets: No descriptor sets to bind");
+            return;
+        }
+        
+        // Convert descriptor sets to Vulkan handles
+        TArray<VkDescriptorSet> vkDescriptorSets;
+        vkDescriptorSets.reserve(descriptorSets.size());
+        
+        for (const auto& descriptorSet : descriptorSets) {
+            auto vulkanSet = dynamic_cast<VulkanDescriptorSet*>(descriptorSet.get());
+            if (vulkanSet && vulkanSet->isValid()) {
+                vkDescriptorSets.push_back(vulkanSet->getHandle());
+            } else {
+                MR_LOG(LogVulkanRHI, Error, "bindDescriptorSets: Invalid descriptor set in array");
+                return;
+            }
+        }
+        
+        // Get command buffer
+        FVulkanCmdBuffer* cmdBuffer = m_context->getCommandBufferManager()->getActiveCmdBuffer();
+        if (!cmdBuffer) {
+            MR_LOG(LogVulkanRHI, Error, "bindDescriptorSets: No active command buffer");
+            return;
+        }
+        
+        // Bind descriptor sets to graphics pipeline
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdBindDescriptorSets(
+            cmdBuffer->getHandle(),
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            vulkanLayout->getHandle(),
+            firstSet,
+            static_cast<uint32>(vkDescriptorSets.size()),
+            vkDescriptorSets.data(),
+            0,
+            nullptr
+        );
+        
+        MR_LOG(LogVulkanRHI, VeryVerbose, "Bound %llu descriptor sets starting at set %u",
+               static_cast<uint64>(descriptorSets.size()), firstSet);
+    }
+    
+    void FVulkanRHICommandListImmediate::bindDescriptorSet(
+        TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+        uint32 setIndex,
+        TSharedPtr<IRHIDescriptorSet> descriptorSet) {
+        
+        // Use the multi-set version
+        TArray<TSharedPtr<IRHIDescriptorSet>> sets = { descriptorSet };
+        bindDescriptorSets(pipelineLayout, setIndex, TSpan<TSharedPtr<IRHIDescriptorSet>>(sets));
+    }
+    
+    void FVulkanRHICommandListImmediate::pushConstants(
+        TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+        EShaderStage shaderStages,
+        uint32 offset,
+        uint32 size,
+        const void* data) {
+        
+        if (!m_context) {
+            MR_LOG(LogVulkanRHI, Warning, "pushConstants: No active context");
+            return;
+        }
+        
+        auto vulkanLayout = dynamic_cast<VulkanPipelineLayout*>(pipelineLayout.get());
+        if (!vulkanLayout || !vulkanLayout->isValid()) {
+            MR_LOG(LogVulkanRHI, Error, "pushConstants: Invalid pipeline layout");
+            return;
+        }
+        
+        if (!data || size == 0) {
+            MR_LOG(LogVulkanRHI, Warning, "pushConstants: Invalid data or size");
+            return;
+        }
+        
+        // Convert shader stages
+        VkShaderStageFlags stageFlags = 0;
+        if (static_cast<uint32>(shaderStages) & static_cast<uint32>(EShaderStage::Vertex)) {
+            stageFlags |= VK_SHADER_STAGE_VERTEX_BIT;
+        }
+        if (static_cast<uint32>(shaderStages) & static_cast<uint32>(EShaderStage::Fragment)) {
+            stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+        }
+        if (static_cast<uint32>(shaderStages) & static_cast<uint32>(EShaderStage::Compute)) {
+            stageFlags |= VK_SHADER_STAGE_COMPUTE_BIT;
+        }
+        
+        // Get command buffer
+        FVulkanCmdBuffer* cmdBuffer = m_context->getCommandBufferManager()->getActiveCmdBuffer();
+        if (!cmdBuffer) {
+            MR_LOG(LogVulkanRHI, Error, "pushConstants: No active command buffer");
+            return;
+        }
+        
+        // Push constants
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdPushConstants(
+            cmdBuffer->getHandle(),
+            vulkanLayout->getHandle(),
+            stageFlags,
+            offset,
+            size,
+            data
+        );
+        
+        MR_LOG(LogVulkanRHI, VeryVerbose, "Pushed %u bytes of constants at offset %u", size, offset);
     }
 }

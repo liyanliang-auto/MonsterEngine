@@ -95,6 +95,24 @@ using MonsterEngine::TMap;
         void setMarker(const String& name) override;
         
         // ============================================================================
+        // Multi-descriptor set binding (New API)
+        // ============================================================================
+        
+        void bindDescriptorSets(TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+                               uint32 firstSet,
+                               TSpan<TSharedPtr<IRHIDescriptorSet>> descriptorSets) override;
+        
+        void bindDescriptorSet(TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+                              uint32 setIndex,
+                              TSharedPtr<IRHIDescriptorSet> descriptorSet) override;
+        
+        void pushConstants(TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+                          EShaderStage shaderStages,
+                          uint32 offset,
+                          uint32 size,
+                          const void* data) override;
+        
+        // ============================================================================
         // Texture operations (for texture upload, UE5-style)
         // Reference: UE5 FVulkanDynamicRHI::RHICopyTextureRegion
         // ============================================================================

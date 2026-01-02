@@ -66,6 +66,16 @@ namespace MonsterRender::RHI::Vulkan {
         TSharedPtr<IRHIPipelineState> createPipelineState(const PipelineStateDesc& desc) override;
         TSharedPtr<IRHISampler> createSampler(const SamplerDesc& desc) override;
         
+        // Descriptor set management (Multi-descriptor set support)
+        TSharedPtr<IRHIDescriptorSetLayout> createDescriptorSetLayout(
+            const FDescriptorSetLayoutDesc& desc) override;
+        
+        TSharedPtr<IRHIPipelineLayout> createPipelineLayout(
+            const FPipelineLayoutDesc& desc) override;
+        
+        TSharedPtr<IRHIDescriptorSet> allocateDescriptorSet(
+            TSharedPtr<IRHIDescriptorSetLayout> layout) override;
+        
         // UE5-style vertex and index buffer creation
         TSharedPtr<FRHIVertexBuffer> CreateVertexBuffer(
             uint32 Size,
@@ -259,8 +269,11 @@ namespace MonsterRender::RHI::Vulkan {
         // Pipeline cache
         TUniquePtr<VulkanPipelineCache> m_pipelineCache;
         
-        // Descriptor set allocator
+        // Descriptor set allocator (legacy)
         TUniquePtr<VulkanDescriptorSetAllocator> m_descriptorSetAllocator;
+        
+        // Descriptor pool manager (new multi-descriptor set support)
+        TUniquePtr<class VulkanDescriptorPoolManager> m_descriptorPoolManager;
         
         // Descriptor set layout cache (UE5-style)
         TUniquePtr<FVulkanDescriptorSetLayoutCache> m_descriptorSetLayoutCache;
