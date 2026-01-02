@@ -56,11 +56,12 @@ layout(location = 1) out float outDepth;        // Linear depth for point lights
 
 void main()
 {
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
     // Transform to world space
-    vec4 worldPosition = Object.WorldMatrix * vec4(inPosition, 1.0);
+    vec4 worldPosition = vec4(inPosition, 1.0) * Object.WorldMatrix;
     
     // Transform to light clip space
-    vec4 clipPosition = ShadowPass.LightViewProjectionMatrix * worldPosition;
+    vec4 clipPosition = worldPosition * ShadowPass.LightViewProjectionMatrix;
     
     // Apply depth bias
     // Note: Hardware depth bias is preferred, but this provides additional control

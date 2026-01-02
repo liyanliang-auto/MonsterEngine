@@ -53,21 +53,22 @@ layout(set = 1, binding = 0) uniform ObjectUniforms {
 
 void main()
 {
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
     // Transform position to world space
-    vec4 worldPos = object.modelMatrix * vec4(inPosition, 1.0);
+    vec4 worldPos = vec4(inPosition, 1.0) * object.modelMatrix;
     fragWorldPos = worldPos.xyz;
     
     // Transform position to clip space
-    gl_Position = view.viewProjMatrix * worldPos;
+    gl_Position = worldPos * view.viewProjMatrix;
     
     // Transform normal to world space
-    fragNormal = normalize(mat3(object.normalMatrix) * inNormal);
+    fragNormal = normalize(inNormal * mat3(object.normalMatrix));
     
     // Pass through texture coordinates
     fragTexCoord = inTexCoord;
     
     // Transform tangent to world space
-    fragTangent = normalize(mat3(object.modelMatrix) * inTangent.xyz);
+    fragTangent = normalize(inTangent.xyz * mat3(object.modelMatrix));
     
     // Calculate bitangent
     fragBitangent = cross(fragNormal, fragTangent) * inTangent.w;

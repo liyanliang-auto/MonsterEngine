@@ -61,11 +61,12 @@ layout(location = 0) out vec2 outTexCoord;  // For alpha test in fragment shader
 
 void main()
 {
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
     // Transform to world space
-    vec4 worldPosition = Object.WorldMatrix * vec4(inPosition, 1.0);
+    vec4 worldPosition = vec4(inPosition, 1.0) * Object.WorldMatrix;
     
     // Transform to clip space
-    gl_Position = View.ViewProjectionMatrix * worldPosition;
+    gl_Position = worldPosition * View.ViewProjectionMatrix;
     
     // Pass texture coordinates for potential alpha test
     outTexCoord = inTexCoord;

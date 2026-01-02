@@ -57,8 +57,8 @@ void main()
     // This makes the skybox appear at infinite distance
     mat4 viewRotation = mat4(mat3(View.ViewMatrix));
     
-    // Transform position
-    vec4 clipPos = View.ProjectionMatrix * viewRotation * vec4(inPosition, 1.0);
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
+    vec4 clipPos = vec4(inPosition, 1.0) * viewRotation * View.ProjectionMatrix;
     
     // Set z = w so depth is always 1.0 (at far plane)
     // This ensures skybox is rendered behind all other geometry
