@@ -575,16 +575,15 @@ public:
     {
         TMatrix<T> Result = TMatrix<T>::MakeFromQuat(Rotation);
 
-        // Apply scale to rotation columns
+        // Apply scale to rotation rows (UE5 convention)
         Result.M[0][0] *= Scale3D.X; Result.M[0][1] *= Scale3D.X; Result.M[0][2] *= Scale3D.X;
         Result.M[1][0] *= Scale3D.Y; Result.M[1][1] *= Scale3D.Y; Result.M[1][2] *= Scale3D.Y;
         Result.M[2][0] *= Scale3D.Z; Result.M[2][1] *= Scale3D.Z; Result.M[2][2] *= Scale3D.Z;
 
-        // Apply translation in column 3 (standard math convention)
-        // M[row][col] - translation goes in 4th column
-        Result.M[0][3] = Translation.X;
-        Result.M[1][3] = Translation.Y;
-        Result.M[2][3] = Translation.Z;
+        // Apply translation in row 3 (UE5 convention)
+        Result.M[3][0] = Translation.X;
+        Result.M[3][1] = Translation.Y;
+        Result.M[3][2] = Translation.Z;
 
         return Result;
     }
@@ -594,10 +593,10 @@ public:
     {
         TMatrix<T> Result = TMatrix<T>::MakeFromQuat(Rotation);
 
-        // Translation in column 3 (standard math convention)
-        Result.M[0][3] = Translation.X;
-        Result.M[1][3] = Translation.Y;
-        Result.M[2][3] = Translation.Z;
+        // Translation in row 3 (UE5 convention)
+        Result.M[3][0] = Translation.X;
+        Result.M[3][1] = Translation.Y;
+        Result.M[3][2] = Translation.Z;
 
         return Result;
     }
