@@ -214,6 +214,7 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandListContext.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanPendingState.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDevice.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanDevice_Swapchain.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanShader.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanTexture.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanSampler.cpp" />

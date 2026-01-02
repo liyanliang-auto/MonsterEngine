@@ -179,6 +179,12 @@ namespace MonsterRender::RHI::Vulkan {
         const VkExtent2D& getSwapchainExtent() const { return m_swapchainExtent; }
         VkFormat getSwapchainFormat() const { return m_swapchainImageFormat; }
         
+        /**
+         * Recreate swapchain when window is resized
+         * Reference: UE5 FVulkanDynamicRHI::RecreateSwapChain
+         */
+        bool recreateSwapchain(uint32 newWidth, uint32 newHeight);
+        
     private:
         // Initialization helper functions
         bool createInstance(const RHICreateInfo& createInfo);
