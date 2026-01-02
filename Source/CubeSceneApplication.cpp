@@ -270,21 +270,31 @@ void CubeSceneApplication::onRender()
     // Get camera view info
     const FMinimalViewInfo& cameraView = m_cameraManager->GetCameraCacheView();
     
-    // Calculate view and projection matrices using LookAt
-    // Camera looks at origin from its position
+    // Calculate view matrix using FPS camera controller if available
+    FMatrix viewMatrix;
     FVector cameraPos = cameraView.Location;
-    FVector targetPos = FVector::ZeroVector;  // Look at origin
-    FVector upVector = FVector(0.0, 1.0, 0.0);  // Y-up
     
-    // DEBUG: Log camera position before MakeLookAt
-    MR_LOG(LogCubeSceneApp, Log, "MakeLookAt input: cameraPos=(%.2f, %.2f, %.2f), target=(%.2f, %.2f, %.2f)",
-           cameraPos.X, cameraPos.Y, cameraPos.Z, targetPos.X, targetPos.Y, targetPos.Z);
-    
-    FMatrix viewMatrix = FMatrix::MakeLookAt(cameraPos, targetPos, upVector);
-    
-    // DEBUG: Log view matrix result
-    MR_LOG(LogCubeSceneApp, Log, "ViewMatrix row3 (translation): %.2f, %.2f, %.2f, %.2f",
-           viewMatrix.M[3][0], viewMatrix.M[3][1], viewMatrix.M[3][2], viewMatrix.M[3][3]);
+    if (m_fpsCameraController && m_bFPSCameraEnabled)
+    {
+        // Use FPS camera's view matrix directly - this uses the camera's orientation
+        viewMatrix = m_fpsCameraController->GetViewMatrix();
+        cameraPos = m_fpsCameraController->GetPosition();
+        
+        MR_LOG(LogCubeSceneApp, Log, "Using FPS camera: pos=(%.2f, %.2f, %.2f), yaw=%.2f, pitch=%.2f",
+               cameraPos.X, cameraPos.Y, cameraPos.Z,
+               m_fpsCameraController->GetYaw(), m_fpsCameraController->GetPitch());
+    }
+    else
+    {
+        // Fallback: look at origin using LookAt matrix
+        FVector targetPos = FVector::ZeroVector;
+        FVector upVector = FVector(0.0, 1.0, 0.0);  // Y-up
+        
+        MR_LOG(LogCubeSceneApp, Log, "Using LookAt: cameraPos=(%.2f, %.2f, %.2f), target=(%.2f, %.2f, %.2f)",
+               cameraPos.X, cameraPos.Y, cameraPos.Z, targetPos.X, targetPos.Y, targetPos.Z);
+        
+        viewMatrix = FMatrix::MakeLookAt(cameraPos, targetPos, upVector);
+    }
     
     FMatrix projectionMatrix = cameraView.CalculateProjectionMatrix();
     
