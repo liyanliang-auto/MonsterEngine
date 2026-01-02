@@ -141,6 +141,16 @@ public:
         const FVector& CameraPosition);
 
     /**
+     * Draw depth only (for shadow map generation)
+     * Uses depth-only pipeline without color output
+     * @param CmdList - Command list to record draw commands
+     * @param LightViewProjection - Light space view-projection matrix
+     */
+    void DrawDepthOnly(
+        MonsterRender::RHI::IRHICommandList* CmdList,
+        const FMatrix& LightViewProjection);
+
+    /**
      * Draw the cube with lighting
      * @param CmdList - Command list to record draw commands
      * @param ViewMatrix - View matrix
@@ -284,6 +294,12 @@ protected:
     bool CreateShadowPipelineState();
 
     /**
+     * Create depth-only pipeline state for shadow map generation
+     * @return True if successful
+     */
+    bool CreateDepthOnlyPipelineState();
+
+    /**
      * Convert FMatrix to float array (column-major for GPU)
      * @param Matrix - Source matrix
      * @param OutArray - Destination array (16 floats)
@@ -335,6 +351,9 @@ protected:
 
     /** Shadow-enabled pipeline state */
     TSharedPtr<MonsterRender::RHI::IRHIPipelineState> ShadowPipelineState;
+
+    /** Depth-only pipeline state for shadow map generation */
+    TSharedPtr<MonsterRender::RHI::IRHIPipelineState> DepthOnlyPipelineState;
 
     /** Shadow sampler for comparison */
     TSharedPtr<MonsterRender::RHI::IRHISampler> ShadowSampler;

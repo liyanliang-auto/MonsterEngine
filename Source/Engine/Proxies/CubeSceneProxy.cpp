@@ -199,6 +199,13 @@ bool FCubeSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDevi
         return false;
     }
     
+    // Create depth-only pipeline for shadow map generation
+    if (!CreateDepthOnlyPipelineState())
+    {
+        MR_LOG(LogCubeSceneProxy, Warning, "Failed to create depth-only pipeline - shadow map generation may not work");
+        // Not a fatal error, continue initialization
+    }
+    
     bResourcesInitialized = true;
     MR_LOG(LogCubeSceneProxy, Log, "CubeSceneProxy resources initialized successfully");
     
@@ -1164,6 +1171,112 @@ bool FCubeSceneProxy::CreateShadowPipelineState()
     
     MR_LOG(LogCubeSceneProxy, Log, "Shadow pipeline state created");
     return true;
+}
+
+bool FCubeSceneProxy::CreateDepthOnlyPipelineState()
+{
+    MR_LOG(LogCubeSceneProxy, Log, "Creating depth-only pipeline state for shadow map...");
+    
+    if (!VertexShader)
+    {
+        MR_LOG(LogCubeSceneProxy, Error, "Cannot create depth-only pipeline: vertex shader not available");
+        return false;
+    }
+    
+    MonsterRender::RHI::PipelineStateDesc PipelineDesc;
+    PipelineDesc.vertexShader = VertexShader;
+    PipelineDesc.pixelShader = nullptr;  // No pixel shader for depth-only
+    PipelineDesc.primitiveTopology = MonsterRender::RHI::EPrimitiveTopology::TriangleList;
+    
+    // Vertex layout: position (vec3) + normal (vec3) + texcoord (vec2)
+    MonsterRender::RHI::VertexAttribute PosAttr;
+    PosAttr.location = 0;
+    PosAttr.format = MonsterRender::RHI::EVertexFormat::Float3;
+    PosAttr.offset = 0;
+    PosAttr.semanticName = "POSITION";
+    
+    MonsterRender::RHI::VertexAttribute NormalAttr;
+    NormalAttr.location = 1;
+    NormalAttr.format = MonsterRender::RHI::EVertexFormat::Float3;
+    NormalAttr.offset = sizeof(float) * 3;
+    NormalAttr.semanticName = "NORMAL";
+    
+    MonsterRender::RHI::VertexAttribute TexCoordAttr;
+    TexCoordAttr.location = 2;
+    TexCoordAttr.format = MonsterRender::RHI::EVertexFormat::Float2;
+    TexCoordAttr.offset = sizeof(float) * 6;
+    TexCoordAttr.semanticName = "TEXCOORD";
+    
+    PipelineDesc.vertexLayout.attributes.push_back(PosAttr);
+    PipelineDesc.vertexLayout.attributes.push_back(NormalAttr);
+    PipelineDesc.vertexLayout.attributes.push_back(TexCoordAttr);
+    PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
+    
+    // Rasterizer state - same as normal pipeline
+    PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
+    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;
+    // Note: Depth bias for shadow acne is handled in shader via shadowParams
+    
+    // Depth testing - enable for shadow map generation
+    PipelineDesc.depthStencilState.depthEnable = true;
+    PipelineDesc.depthStencilState.depthWriteEnable = true;
+    PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
+    
+    // No blend state needed (no color output)
+    PipelineDesc.blendState.blendEnable = false;
+    
+    // CRITICAL: No render target formats - depth only
+    // renderTargetFormats is empty for depth-only pass
+    PipelineDesc.depthStencilFormat = MonsterRender::RHI::EPixelFormat::D32_FLOAT;
+    
+    PipelineDesc.debugName = "CubeProxy DepthOnly Pipeline";
+    
+    DepthOnlyPipelineState = Device->createPipelineState(PipelineDesc);
+    if (!DepthOnlyPipelineState)
+    {
+        MR_LOG(LogCubeSceneProxy, Error, "Failed to create depth-only pipeline state");
+        return false;
+    }
+    
+    MR_LOG(LogCubeSceneProxy, Log, "Depth-only pipeline state created");
+    return true;
+}
+
+void FCubeSceneProxy::DrawDepthOnly(
+    MonsterRender::RHI::IRHICommandList* CmdList,
+    const FMatrix& LightViewProjection)
+{
+    if (!CmdList || !bResourcesInitialized || !bVisible)
+    {
+        return;
+    }
+    
+    if (!DepthOnlyPipelineState)
+    {
+        MR_LOG(LogCubeSceneProxy, Warning, "Depth-only pipeline not available, skipping depth draw");
+        return;
+    }
+    
+    // Update transform buffer with light matrices (using light VP as both view and projection)
+    // For depth-only rendering, we just need the model and light VP matrices
+    UpdateTransformBuffer(LightViewProjection, FMatrix::Identity, FVector::ZeroVector);
+    
+    // Set depth-only pipeline state
+    CmdList->setPipelineState(DepthOnlyPipelineState);
+    
+    // Bind transform uniform buffer
+    CmdList->setConstantBuffer(0, TransformUniformBuffer);
+    
+    // Bind vertex buffer
+    TArray<TSharedPtr<MonsterRender::RHI::IRHIBuffer>> VertexBuffers;
+    VertexBuffers.Add(VertexBuffer);
+    CmdList->setVertexBuffers(0, std::span<TSharedPtr<MonsterRender::RHI::IRHIBuffer>>(VertexBuffers.GetData(), VertexBuffers.Num()));
+    
+    // Draw 36 vertices
+    CmdList->draw(36, 0);
+    
+    MR_LOG(LogCubeSceneProxy, Verbose, "Cube depth-only draw complete");
 }
 
 } // namespace MonsterEngine

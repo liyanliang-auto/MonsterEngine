@@ -2295,32 +2295,14 @@ void CubeSceneApplication::renderWithRDG(
                     {
                         cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
                         
-                        // Draw depth only - use regular Draw method
-                        // The render pass is configured to only write depth
-                        cubeProxy->Draw(&rhiCmdList, lightViewProjection, lightViewProjection, FVector::ZeroVector);
+                        // Draw depth only using depth-only pipeline (no color attachment)
+                        cubeProxy->DrawDepthOnly(&rhiCmdList, lightViewProjection);
                     }
                 }
             }
             
-            // Render floor to shadow map using FFloorSceneProxy
-            if (m_floorActor)
-            {
-                MR_LOG(LogCubeSceneApp, Verbose, "Rendering floor depth to shadow map");
-                
-                UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
-                if (floorMeshComp)
-                {
-                    FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
-                    if (floorProxy && floorProxy->AreResourcesInitialized())
-                    {
-                        // Update floor model matrix from actor transform
-                        floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
-                        
-                        // Draw floor depth
-                        floorProxy->Draw(&rhiCmdList, lightViewProjection, lightViewProjection, FVector::ZeroVector);
-                    }
-                }
-            }
+            // NOTE: Floor does NOT cast shadows, only receives them
+            // So we don't render floor to shadow map
             
             // End shadow render pass
             rhiCmdList.endRenderPass();
