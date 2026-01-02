@@ -17,8 +17,8 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 } ubo;
 
 void main() {
-    // Transform vertex position: Model -> View -> Projection
-    gl_Position = ubo.projection * ubo.view * ubo.model * vec4(inPosition, 1.0);
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
+    gl_Position = vec4(inPosition, 1.0) * ubo.model * ubo.view * ubo.projection;
     
     // Pass texture coordinates to fragment shader
     fragTexCoord = inTexCoord;
