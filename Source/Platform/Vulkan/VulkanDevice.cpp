@@ -5,6 +5,8 @@
 #include "Platform/Vulkan/VulkanShader.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
+#include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
+#include "Platform/Vulkan/VulkanDescriptorPoolManager.h"
 #include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/Vulkan/VulkanRenderTargetCache.h"
 #include "Platform/Vulkan/VulkanSampler.h"
@@ -141,12 +143,20 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Step 12: Create descriptor set allocator
+        // Step 12: Create descriptor set allocator (legacy)
         m_descriptorSetAllocator = MakeUnique<VulkanDescriptorSetAllocator>(this);
         if (!m_descriptorSetAllocator) {
             MR_LOG_ERROR("Failed to create descriptor set allocator");
             return false;
         }
+        
+        // Step 12a: Create descriptor pool manager (new multi-descriptor set support)
+        m_descriptorPoolManager = MakeUnique<VulkanDescriptorPoolManager>(this);
+        if (!m_descriptorPoolManager) {
+            MR_LOG_ERROR("Failed to create descriptor pool manager");
+            return false;
+        }
+        MR_LOG_INFO("Descriptor pool manager initialized (multi-descriptor set support)")
         
         // Step 12b: Create descriptor set layout cache (UE5-style)
         m_descriptorSetLayoutCache = MakeUnique<FVulkanDescriptorSetLayoutCache>(this);
@@ -375,17 +385,87 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("Pipeline state created successfully: " + desc.debugName);
         return pipelineState;
     }
-    
     TSharedPtr<IRHISampler> VulkanDevice::createSampler(const SamplerDesc& desc) {
         MR_LOG_DEBUG("Creating Vulkan sampler: " + desc.debugName);
         
         auto sampler = MakeShared<VulkanSampler>(this, desc);
-        if (!sampler->isValid()) {
-            MR_LOG_ERROR("Failed to create sampler: " + desc.debugName);
+        
+        if (!sampler) {
+            MR_LOG_ERROR("Failed to create Vulkan sampler");
             return nullptr;
         }
         
         return sampler;
+    }
+    
+    // ========================================================================
+    // Descriptor set management (Multi-descriptor set support)
+    // ========================================================================
+    
+    TSharedPtr<IRHIDescriptorSetLayout> VulkanDevice::createDescriptorSetLayout(
+        const FDescriptorSetLayoutDesc& desc) {
+        
+        MR_LOG(LogVulkanRHI, Verbose, "Creating descriptor set layout for set %u with %llu bindings",
+               desc.setIndex, static_cast<uint64>(desc.bindings.size()));
+        
+        auto layout = MakeShared<VulkanDescriptorSetLayout>(this, desc);
+        
+        if (!layout || !layout->isValid()) {
+            MR_LOG(LogVulkanRHI, Error, "Failed to create descriptor set layout");
+            return nullptr;
+        }
+        
+        return layout;
+    }
+    
+    TSharedPtr<IRHIPipelineLayout> VulkanDevice::createPipelineLayout(
+        const FPipelineLayoutDesc& desc) {
+        
+        MR_LOG(LogVulkanRHI, Verbose, "Creating pipeline layout with %llu descriptor sets",
+               static_cast<uint64>(desc.setLayouts.size()));
+        
+        auto layout = MakeShared<VulkanPipelineLayout>(this, desc);
+        
+        if (!layout || !layout->isValid()) {
+            MR_LOG(LogVulkanRHI, Error, "Failed to create pipeline layout");
+            return nullptr;
+        }
+        
+        return layout;
+    }
+    
+    TSharedPtr<IRHIDescriptorSet> VulkanDevice::allocateDescriptorSet(
+        TSharedPtr<IRHIDescriptorSetLayout> layout) {
+        
+        if (!layout) {
+            MR_LOG(LogVulkanRHI, Error, "allocateDescriptorSet: Invalid layout");
+            return nullptr;
+        }
+        
+        auto vulkanLayout = dynamic_cast<VulkanDescriptorSetLayout*>(layout.get());
+        if (!vulkanLayout) {
+            MR_LOG(LogVulkanRHI, Error, "allocateDescriptorSet: Layout is not a Vulkan layout");
+            return nullptr;
+        }
+        
+        if (!m_descriptorPoolManager) {
+            MR_LOG(LogVulkanRHI, Error, "allocateDescriptorSet: Descriptor pool manager not initialized");
+            return nullptr;
+        }
+        
+        // Allocate descriptor set from pool manager
+        auto descriptorSet = m_descriptorPoolManager->allocateDescriptorSet(
+            TSharedPtr<VulkanDescriptorSetLayout>(vulkanLayout, [](VulkanDescriptorSetLayout*){}));
+        
+        if (!descriptorSet) {
+            MR_LOG(LogVulkanRHI, Error, "Failed to allocate descriptor set");
+            return nullptr;
+        }
+        
+        MR_LOG(LogVulkanRHI, VeryVerbose, "Allocated descriptor set for set %u",
+               vulkanLayout->getSetIndex());
+        
+        return descriptorSet;
     }
     
     // ========================================================================

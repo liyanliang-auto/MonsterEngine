@@ -6,6 +6,7 @@
 #include "RHI/IRHIResource.h"
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHISwapChain.h"
+#include "RHI/IRHIDescriptorSet.h"
 
 namespace MonsterRender::RHI {
     
@@ -136,6 +137,43 @@ namespace MonsterRender::RHI {
          * Reference UE5: RHICreateSamplerState
          */
         virtual TSharedPtr<IRHISampler> createSampler(const SamplerDesc& desc) = 0;
+        
+        // ========================================================================
+        // Descriptor set management (Multi-descriptor set support)
+        // ========================================================================
+        
+        /**
+         * Create a descriptor set layout
+         * Defines the layout/schema for a descriptor set (Set 0, Set 1, etc.)
+         * Reference: UE5 RHICreateDescriptorSetLayout
+         * 
+         * @param desc Descriptor set layout description
+         * @return Created descriptor set layout, or nullptr on failure
+         */
+        virtual TSharedPtr<IRHIDescriptorSetLayout> createDescriptorSetLayout(
+            const FDescriptorSetLayoutDesc& desc) = 0;
+        
+        /**
+         * Create a pipeline layout
+         * Defines the complete layout of all descriptor sets and push constants
+         * Reference: UE5 RHICreatePipelineLayout
+         * 
+         * @param desc Pipeline layout description
+         * @return Created pipeline layout, or nullptr on failure
+         */
+        virtual TSharedPtr<IRHIPipelineLayout> createPipelineLayout(
+            const FPipelineLayoutDesc& desc) = 0;
+        
+        /**
+         * Allocate a descriptor set from a layout
+         * Allocates a descriptor set that can be updated and bound to a pipeline
+         * Reference: UE5 RHIAllocateDescriptorSet
+         * 
+         * @param layout Descriptor set layout to allocate from
+         * @return Allocated descriptor set, or nullptr on failure
+         */
+        virtual TSharedPtr<IRHIDescriptorSet> allocateDescriptorSet(
+            TSharedPtr<IRHIDescriptorSetLayout> layout) = 0;
         
         // Command list management
         /**

@@ -4,6 +4,7 @@
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHIResource.h"
 #include "RHI/RHIResources.h"
+#include "RHI/IRHIDescriptorSet.h"
 #include "RDG/RDGDefinitions.h"
 
 namespace MonsterRender::RHI {
@@ -103,6 +104,62 @@ namespace MonsterRender::RHI {
          * @param sampler Sampler state to bind (or nullptr for default sampler)
          */
         virtual void setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) = 0;
+        
+        // ========================================================================
+        // Multi-descriptor set binding (New API)
+        // ========================================================================
+        
+        /**
+         * Bind multiple descriptor sets to the pipeline
+         * This is the new API for multi-descriptor set support
+         * Reference: UE5 RHISetDescriptorSets / Vulkan vkCmdBindDescriptorSets
+         * 
+         * @param pipelineLayout Pipeline layout defining the descriptor set layouts
+         * @param firstSet First set number to bind (typically 0)
+         * @param descriptorSets Array of descriptor sets to bind
+         */
+        virtual void bindDescriptorSets(TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+                                       uint32 firstSet,
+                                       TSpan<TSharedPtr<IRHIDescriptorSet>> descriptorSets) {
+            // Default implementation - platforms override as needed
+            (void)pipelineLayout; (void)firstSet; (void)descriptorSets;
+        }
+        
+        /**
+         * Bind a single descriptor set to the pipeline
+         * Convenience method for binding one descriptor set
+         * Reference: UE5 RHISetDescriptorSet
+         * 
+         * @param pipelineLayout Pipeline layout defining the descriptor set layouts
+         * @param setIndex Set index to bind (0, 1, 2, ...)
+         * @param descriptorSet Descriptor set to bind
+         */
+        virtual void bindDescriptorSet(TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+                                      uint32 setIndex,
+                                      TSharedPtr<IRHIDescriptorSet> descriptorSet) {
+            // Default implementation - call bindDescriptorSets with single set
+            TArray<TSharedPtr<IRHIDescriptorSet>> sets = { descriptorSet };
+            bindDescriptorSets(pipelineLayout, setIndex, TSpan<TSharedPtr<IRHIDescriptorSet>>(sets));
+        }
+        
+        /**
+         * Push constants to the pipeline (fast uniform updates)
+         * Reference: Vulkan vkCmdPushConstants / UE5 push constants
+         * 
+         * @param pipelineLayout Pipeline layout defining push constant ranges
+         * @param shaderStages Shader stages to update
+         * @param offset Offset in bytes into the push constant block
+         * @param size Size in bytes of the data
+         * @param data Pointer to the data
+         */
+        virtual void pushConstants(TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+                                  EShaderStage shaderStages,
+                                  uint32 offset,
+                                  uint32 size,
+                                  const void* data) {
+            // Default implementation - platforms override as needed
+            (void)pipelineLayout; (void)shaderStages; (void)offset; (void)size; (void)data;
+        }
         
         // Render state
         /**
