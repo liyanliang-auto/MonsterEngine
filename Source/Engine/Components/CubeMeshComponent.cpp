@@ -133,15 +133,18 @@ void UCubeMeshComponent::GenerateCubeVertices(TArray<FCubeLitVertex>& OutVertice
         OutVertices.Add(Vertex);
     };
     
-    // Back face (z = -S, normal = (0, 0, -1))
+    // All faces use CCW winding order when viewed from outside (matches frontCounterClockwise = true)
+    // Reference: UE5 uses CCW as front face convention
+    
+    // Back face (z = -S, normal = (0, 0, -1)) - viewed from -Z direction, CCW
     AddVertex(-S, -S, -S,  0.0f, 0.0f, -1.0f,  0.0f, 0.0f);
-    AddVertex( S, -S, -S,  0.0f, 0.0f, -1.0f,  1.0f, 0.0f);
-    AddVertex( S,  S, -S,  0.0f, 0.0f, -1.0f,  1.0f, 1.0f);
-    AddVertex( S,  S, -S,  0.0f, 0.0f, -1.0f,  1.0f, 1.0f);
     AddVertex(-S,  S, -S,  0.0f, 0.0f, -1.0f,  0.0f, 1.0f);
+    AddVertex( S,  S, -S,  0.0f, 0.0f, -1.0f,  1.0f, 1.0f);
+    AddVertex( S,  S, -S,  0.0f, 0.0f, -1.0f,  1.0f, 1.0f);
+    AddVertex( S, -S, -S,  0.0f, 0.0f, -1.0f,  1.0f, 0.0f);
     AddVertex(-S, -S, -S,  0.0f, 0.0f, -1.0f,  0.0f, 0.0f);
 
-    // Front face (z = +S, normal = (0, 0, 1))
+    // Front face (z = +S, normal = (0, 0, 1)) - viewed from +Z direction, CCW
     AddVertex(-S, -S,  S,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f);
     AddVertex( S, -S,  S,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f);
     AddVertex( S,  S,  S,  0.0f, 0.0f, 1.0f,  1.0f, 1.0f);
@@ -149,37 +152,37 @@ void UCubeMeshComponent::GenerateCubeVertices(TArray<FCubeLitVertex>& OutVertice
     AddVertex(-S,  S,  S,  0.0f, 0.0f, 1.0f,  0.0f, 1.0f);
     AddVertex(-S, -S,  S,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f);
 
-    // Left face (x = -S, normal = (-1, 0, 0))
-    AddVertex(-S,  S,  S,  -1.0f, 0.0f, 0.0f,  1.0f, 0.0f);
-    AddVertex(-S,  S, -S,  -1.0f, 0.0f, 0.0f,  1.0f, 1.0f);
-    AddVertex(-S, -S, -S,  -1.0f, 0.0f, 0.0f,  0.0f, 1.0f);
-    AddVertex(-S, -S, -S,  -1.0f, 0.0f, 0.0f,  0.0f, 1.0f);
-    AddVertex(-S, -S,  S,  -1.0f, 0.0f, 0.0f,  0.0f, 0.0f);
-    AddVertex(-S,  S,  S,  -1.0f, 0.0f, 0.0f,  1.0f, 0.0f);
+    // Left face (x = -S, normal = (-1, 0, 0)) - viewed from -X direction, CCW
+    AddVertex(-S, -S, -S,  -1.0f, 0.0f, 0.0f,  0.0f, 0.0f);
+    AddVertex(-S, -S,  S,  -1.0f, 0.0f, 0.0f,  1.0f, 0.0f);
+    AddVertex(-S,  S,  S,  -1.0f, 0.0f, 0.0f,  1.0f, 1.0f);
+    AddVertex(-S,  S,  S,  -1.0f, 0.0f, 0.0f,  1.0f, 1.0f);
+    AddVertex(-S,  S, -S,  -1.0f, 0.0f, 0.0f,  0.0f, 1.0f);
+    AddVertex(-S, -S, -S,  -1.0f, 0.0f, 0.0f,  0.0f, 0.0f);
 
-    // Right face (x = +S, normal = (1, 0, 0))
-    AddVertex( S,  S,  S,  1.0f, 0.0f, 0.0f,  1.0f, 0.0f);
-    AddVertex( S,  S, -S,  1.0f, 0.0f, 0.0f,  1.0f, 1.0f);
-    AddVertex( S, -S, -S,  1.0f, 0.0f, 0.0f,  0.0f, 1.0f);
-    AddVertex( S, -S, -S,  1.0f, 0.0f, 0.0f,  0.0f, 1.0f);
+    // Right face (x = +S, normal = (1, 0, 0)) - viewed from +X direction, CCW
     AddVertex( S, -S,  S,  1.0f, 0.0f, 0.0f,  0.0f, 0.0f);
-    AddVertex( S,  S,  S,  1.0f, 0.0f, 0.0f,  1.0f, 0.0f);
+    AddVertex( S, -S, -S,  1.0f, 0.0f, 0.0f,  1.0f, 0.0f);
+    AddVertex( S,  S, -S,  1.0f, 0.0f, 0.0f,  1.0f, 1.0f);
+    AddVertex( S,  S, -S,  1.0f, 0.0f, 0.0f,  1.0f, 1.0f);
+    AddVertex( S,  S,  S,  1.0f, 0.0f, 0.0f,  0.0f, 1.0f);
+    AddVertex( S, -S,  S,  1.0f, 0.0f, 0.0f,  0.0f, 0.0f);
 
-    // Bottom face (y = -S, normal = (0, -1, 0))
-    AddVertex(-S, -S, -S,  0.0f, -1.0f, 0.0f,  0.0f, 1.0f);
-    AddVertex( S, -S, -S,  0.0f, -1.0f, 0.0f,  1.0f, 1.0f);
-    AddVertex( S, -S,  S,  0.0f, -1.0f, 0.0f,  1.0f, 0.0f);
-    AddVertex( S, -S,  S,  0.0f, -1.0f, 0.0f,  1.0f, 0.0f);
-    AddVertex(-S, -S,  S,  0.0f, -1.0f, 0.0f,  0.0f, 0.0f);
-    AddVertex(-S, -S, -S,  0.0f, -1.0f, 0.0f,  0.0f, 1.0f);
+    // Bottom face (y = -S, normal = (0, -1, 0)) - viewed from -Y direction, CCW
+    AddVertex(-S, -S, -S,  0.0f, -1.0f, 0.0f,  0.0f, 0.0f);
+    AddVertex( S, -S, -S,  0.0f, -1.0f, 0.0f,  1.0f, 0.0f);
+    AddVertex( S, -S,  S,  0.0f, -1.0f, 0.0f,  1.0f, 1.0f);
+    AddVertex( S, -S,  S,  0.0f, -1.0f, 0.0f,  1.0f, 1.0f);
+    AddVertex(-S, -S,  S,  0.0f, -1.0f, 0.0f,  0.0f, 1.0f);
+    AddVertex(-S, -S, -S,  0.0f, -1.0f, 0.0f,  0.0f, 0.0f);
 
-    // Top face (y = +S, normal = (0, 1, 0))
-    AddVertex(-S,  S, -S,  0.0f, 1.0f, 0.0f,  0.0f, 1.0f);
-    AddVertex( S,  S, -S,  0.0f, 1.0f, 0.0f,  1.0f, 1.0f);
-    AddVertex( S,  S,  S,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f);
-    AddVertex( S,  S,  S,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f);
+    // Top face (y = +S, normal = (0, 1, 0)) - viewed from +Y direction, CCW
     AddVertex(-S,  S,  S,  0.0f, 1.0f, 0.0f,  0.0f, 0.0f);
+    AddVertex( S,  S,  S,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f);
+    AddVertex( S,  S, -S,  0.0f, 1.0f, 0.0f,  1.0f, 1.0f);
+    AddVertex( S,  S, -S,  0.0f, 1.0f, 0.0f,  1.0f, 1.0f);
     AddVertex(-S,  S, -S,  0.0f, 1.0f, 0.0f,  0.0f, 1.0f);
+    AddVertex(-S,  S,  S,  0.0f, 1.0f, 0.0f,  0.0f, 0.0f);
     
     MR_LOG(LogCubeMeshComponent, Verbose, "Generated %d cube vertices", OutVertices.Num());
 }
