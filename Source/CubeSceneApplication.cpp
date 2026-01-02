@@ -554,6 +554,30 @@ void CubeSceneApplication::renderCube(
             cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
         }
     }
+    
+    // Render floor with lighting (no shadows in this path)
+    if (m_floorActor)
+    {
+        UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
+        if (floorMeshComp)
+        {
+            FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
+            if (floorProxy)
+            {
+                // Initialize resources if needed
+                if (!floorProxy->AreResourcesInitialized())
+                {
+                    floorProxy->InitializeResources(m_device);
+                }
+                
+                // Update floor model matrix
+                floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
+                
+                // Draw floor with lighting
+                floorProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -2049,6 +2073,9 @@ void CubeSceneApplication::renderShadowDepthPass(
         }
     }
     
+    // Note: Floor does not cast shadows (it only receives shadows)
+    // So we don't render floor to shadow map
+    
     // End shadow render pass
     cmdList->endRenderPass();
     
@@ -2111,6 +2138,39 @@ void CubeSceneApplication::renderCubeWithShadows(
             m_shadowMapTexture,
             shadowParams
         );
+    }
+    
+    // Render floor with shadows (floor receives shadows from cubes)
+    if (m_floorActor)
+    {
+        UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
+        if (floorMeshComp)
+        {
+            FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
+            if (floorProxy)
+            {
+                // Initialize resources if needed
+                if (!floorProxy->AreResourcesInitialized())
+                {
+                    floorProxy->InitializeResources(m_device);
+                }
+                
+                // Update floor model matrix
+                floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
+                
+                // Draw floor with shadows
+                floorProxy->DrawWithShadows(
+                    cmdList,
+                    viewMatrix,
+                    projectionMatrix,
+                    cameraPosition,
+                    lights,
+                    lightViewProjection,
+                    m_shadowMapTexture,
+                    shadowParams
+                );
+            }
+        }
     }
 }
 
