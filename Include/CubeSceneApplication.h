@@ -291,34 +291,34 @@ protected:
     RHI::IRHIDevice* m_device;
 
     /** Scene containing all actors */
-    MonsterEngine::FScene* m_scene;
+    MonsterEngine::TUniquePtr<MonsterEngine::FScene> m_scene;
 
     /** Camera manager */
-    MonsterEngine::FCameraManager* m_cameraManager;
+    MonsterEngine::TUniquePtr<MonsterEngine::FCameraManager> m_cameraManager;
 
     /** Cube actor */
-    MonsterEngine::ACubeActor* m_cubeActor;
+    MonsterEngine::TUniquePtr<MonsterEngine::ACubeActor> m_cubeActor;
 
     /** Floor actor */
-    MonsterEngine::AFloorActor* m_floorActor;
+    MonsterEngine::TUniquePtr<MonsterEngine::AFloorActor> m_floorActor;
 
     /** Directional light component */
-    MonsterEngine::UDirectionalLightComponent* m_directionalLight;
+    MonsterEngine::TUniquePtr<MonsterEngine::UDirectionalLightComponent> m_directionalLight;
 
     /** Point light component */
-    MonsterEngine::UPointLightComponent* m_pointLight;
+    MonsterEngine::TUniquePtr<MonsterEngine::UPointLightComponent> m_pointLight;
 
     /** Scene view family (Engine namespace - for camera) */
-    MonsterEngine::FSceneViewFamily* m_viewFamily;
+    MonsterEngine::TUniquePtr<MonsterEngine::FSceneViewFamily> m_viewFamily;
 
     /** Scene view for rendering (Engine namespace) */
-    MonsterEngine::FSceneView* m_sceneView;
+    MonsterEngine::TUniquePtr<MonsterEngine::FSceneView> m_sceneView;
 
     /** Renderer view family (Renderer namespace - for FSceneRenderer) */
-    MonsterEngine::Renderer::FSceneViewFamily* m_rendererViewFamily = nullptr;
+    MonsterEngine::TUniquePtr<MonsterEngine::Renderer::FSceneViewFamily> m_rendererViewFamily;
 
     /** Scene renderer (UE5-style) */
-    MonsterEngine::Renderer::FSceneRenderer* m_sceneRenderer = nullptr;
+    MonsterEngine::TUniquePtr<MonsterEngine::Renderer::FSceneRenderer> m_sceneRenderer;
 
     /** Flag to use FSceneRenderer for rendering */
     bool m_bUseSceneRenderer;
