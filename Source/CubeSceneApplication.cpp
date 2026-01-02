@@ -313,12 +313,9 @@ void CubeSceneApplication::onRender()
     }
     
     FMatrix projectionMatrix = cameraView.CalculateProjectionMatrix();
-    
-    // Flip Y for Vulkan
-    if (backend == RHI::ERHIBackend::Vulkan)
-    {
-        projectionMatrix.M[1][1] *= -1.0f;
-    }
+    // Note: MakePerspective already includes Y-flip for Vulkan (negative M[1][1])
+    // Combined with RHI viewport negative height, this produces correct rendering
+    // Do NOT apply additional Y-flip here to avoid double-flip
     
     // Get camera position
     FVector cameraPosition = cameraView.Location;

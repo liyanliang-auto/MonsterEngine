@@ -587,13 +587,14 @@ public:
         TMatrix<T> Result(ForceInit);
         
         // UE5-style perspective matrix (row-vector convention: v * M)
-        // Vulkan needs Y-flip: negative M[1][1] + RHI viewport negative height = correct
+        // Y-flip is handled by RHI viewport (negative height), NOT in projection matrix
+        // Reference: UE5 FReversedZPerspectiveMatrix - uses positive M[1][1]
         // Row 0: [sx,  0,  0,  0]
-        // Row 1: [0, -sy,  0,  0]  <- Negative for Vulkan (combined with RHI viewport flip)
+        // Row 1: [0,  sy,  0,  0]  <- Positive (Y-flip done by viewport)
         // Row 2: [0,   0,  A,  1]  <- W component for perspective divide
         // Row 3: [0,   0,  B,  0]  <- Z offset
         Result.M[0][0] = T(1) / (AspectRatio * TanHalfFov);
-        Result.M[1][1] = -T(1) / TanHalfFov;                 // Negative for Vulkan Y-flip
+        Result.M[1][1] = T(1) / TanHalfFov;                  // Positive (viewport handles Y-flip)
         Result.M[2][2] = FarZ / (FarZ - NearZ);              // A: depth scale
         Result.M[2][3] = T(1);                               // W = Z (for perspective divide)
         Result.M[3][2] = -(NearZ * FarZ) / (FarZ - NearZ);   // B: depth offset
