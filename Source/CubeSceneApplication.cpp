@@ -568,6 +568,8 @@ void CubeSceneApplication::renderCube(
         UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
         if (floorMeshComp)
         {
+            floorMeshComp->UpdateComponentToWorld();
+            
             FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
             if (floorProxy)
             {
@@ -2161,6 +2163,8 @@ void CubeSceneApplication::renderCubeWithShadows(
         UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
         if (floorMeshComp)
         {
+            floorMeshComp->UpdateComponentToWorld();
+            
             FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
             if (floorProxy)
             {
