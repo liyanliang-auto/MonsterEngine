@@ -78,15 +78,6 @@ static ApplicationConfig CreateCubeSceneConfig()
 CubeSceneApplication::CubeSceneApplication()
     : Application(CreateCubeSceneConfig())
     , m_device(nullptr)
-    , m_scene(nullptr)
-    , m_cameraManager(nullptr)
-    , m_cubeActor(nullptr)
-    , m_floorActor(nullptr)
-    , m_directionalLight(nullptr)
-    , m_pointLight(nullptr)
-    , m_viewFamily(nullptr)
-    , m_sceneView(nullptr)
-    , m_sceneRenderer(nullptr)
     , m_bUseSceneRenderer(true)  // Enable FSceneRenderer for UE5-style rendering
     , m_windowWidth(1280)
     , m_windowHeight(720)
@@ -652,7 +643,7 @@ bool CubeSceneApplication::initializeSceneRenderer()
     // Create Renderer::FSceneViewFamily for FSceneRenderer
     if (!m_rendererViewFamily)
     {
-        m_rendererViewFamily = new MonsterEngine::Renderer::FSceneViewFamily();
+        m_rendererViewFamily = MakeUnique<MonsterEngine::Renderer::FSceneViewFamily>();
         m_rendererViewFamily->Scene = nullptr;  // Renderer::FScene is different from Engine::FScene
         m_rendererViewFamily->RenderTarget = nullptr;
         m_rendererViewFamily->FrameNumber = 0;
@@ -663,7 +654,7 @@ bool CubeSceneApplication::initializeSceneRenderer()
     }
     
     // Create FForwardShadingSceneRenderer
-    m_sceneRenderer = new MonsterEngine::Renderer::FForwardShadingSceneRenderer(m_rendererViewFamily);
+    m_sceneRenderer = MakeUnique<MonsterEngine::Renderer::FForwardShadingSceneRenderer>(m_rendererViewFamily.Get());
     if (!m_sceneRenderer)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to create FSceneRenderer");
@@ -690,32 +681,16 @@ void CubeSceneApplication::onShutdown()
     }
     
     // Step 3: Clean up scene renderer (may reference scene and views)
-    if (m_sceneRenderer)
-    {
-        delete m_sceneRenderer;
-        m_sceneRenderer = nullptr;
-    }
+    m_sceneRenderer.Reset();
     
     // Step 4: Clean up renderer view family
-    if (m_rendererViewFamily)
-    {
-        delete m_rendererViewFamily;
-        m_rendererViewFamily = nullptr;
-    }
+    m_rendererViewFamily.Reset();
     
     // Step 5: Clean up scene view
-    if (m_sceneView)
-    {
-        delete m_sceneView;
-        m_sceneView = nullptr;
-    }
+    m_sceneView.Reset();
     
     // Step 6: Clean up view family
-    if (m_viewFamily)
-    {
-        delete m_viewFamily;
-        m_viewFamily = nullptr;
-    }
+    m_viewFamily.Reset();
     
     // Step 7: Clean up FPS camera controller BEFORE camera manager
     // This is critical because controller may reference camera manager
@@ -727,40 +702,16 @@ void CubeSceneApplication::onShutdown()
     }
     
     // Step 8: Clean up camera manager
-    if (m_cameraManager)
-    {
-        delete m_cameraManager;
-        m_cameraManager = nullptr;
-    }
+    m_cameraManager.Reset();
     
     // Step 9: Clean up scene first (this will clean up FPrimitiveSceneInfo which owns proxies)
-    if (m_scene)
-    {
-        delete m_scene;
-        m_scene = nullptr;
-    }
+    m_scene.Reset();
     
     // Step 10: Clean up actors (they own components, which are now safe to destroy since proxies are gone)
-    if (m_floorActor)
-    {
-        delete m_floorActor;
-        m_floorActor = nullptr;
-    }
-    if (m_cubeActor)
-    {
-        delete m_cubeActor;
-        m_cubeActor = nullptr;
-    }
-    if (m_directionalLight)
-    {
-        delete m_directionalLight;
-        m_directionalLight = nullptr;
-    }
-    if (m_pointLight)
-    {
-        delete m_pointLight;
-        m_pointLight = nullptr;
-    }
+    m_floorActor.Reset();
+    m_cubeActor.Reset();
+    m_directionalLight.Reset();
+    m_pointLight.Reset();
     
     // Step 11: Release GPU resources (textures, buffers)
     // These must be released AFTER scene and actors are destroyed
@@ -803,19 +754,19 @@ bool CubeSceneApplication::initializeScene()
     MR_LOG(LogCubeSceneApp, Log, "Initializing scene...");
     
     // Create scene
-    m_scene = new FScene(nullptr, false);
+    m_scene = MakeUnique<FScene>(nullptr, false);
     if (!m_scene)
     {
         return false;
     }
     
     // Create cube actor
-    m_cubeActor = new ACubeActor();
+    m_cubeActor = MakeUnique<ACubeActor>();
     m_cubeActor->SetRotationSpeed(0.0f);
     m_cubeActor->SetRotationEnabled(false);  // Rotation disabled
     m_cubeActor->SetRotationAxis(FVector(0.5f, 1.0f, 0.0f));
     m_cubeActor->SetActorRotation(FRotator(0.0f, 0.0f, 0.0f));  // No rotation - cube aligned with axes
-    m_cubeActor->SetScene(m_scene);
+    m_cubeActor->SetScene(m_scene.Get());
     m_cubeActor->BeginPlay();
     
     // Set position AFTER BeginPlay to ensure components are initialized
@@ -843,11 +794,11 @@ bool CubeSceneApplication::initializeScene()
     }
     
     // Create floor actor
-    m_floorActor = new AFloorActor();
+    m_floorActor = MakeUnique<AFloorActor>();
     m_floorActor->SetFloorSize(25.0f);
     m_floorActor->SetTextureTile(25.0f);
     m_floorActor->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));  // Floor at origin
-    m_floorActor->SetScene(m_scene);
+    m_floorActor->SetScene(m_scene.Get());
     m_floorActor->BeginPlay();
     
     // Add floor to scene and initialize its proxy
@@ -877,11 +828,11 @@ bool CubeSceneApplication::initializeScene()
     MR_LOG(LogCubeSceneApp, Log, "Floor actor created at position (0, 0, 0)");
     
     // Create directional light (sun) - main light source
-    m_directionalLight = new UDirectionalLightComponent();
+    m_directionalLight = MakeUnique<UDirectionalLightComponent>();
     m_directionalLight->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f));  // Pure white
     m_directionalLight->SetIntensity(3.0f);  // Increased intensity for brighter scene
     m_directionalLight->SetWorldRotation(FRotator(-45.0f, 30.0f, 0.0f));
-    m_scene->AddLight(m_directionalLight);
+    m_scene->AddLight(m_directionalLight.Get());
     
     // Point light disabled for now
     // m_pointLight = new UPointLightComponent();
@@ -889,8 +840,8 @@ bool CubeSceneApplication::initializeScene()
     // m_pointLight->SetIntensity(2.0f);
     // m_pointLight->SetWorldLocation(FVector(2.0f, 1.0f, -1.0f));
     // m_pointLight->SetAttenuationRadius(10.0f);
-    // m_scene->AddLight(m_pointLight);
-    m_pointLight = nullptr;
+    // m_scene->AddLight(m_pointLight.Get());
+    m_pointLight.Reset();
     
     // Create and configure cube material
     m_cubeMaterial = MakeShared<FMaterial>(FName("CubeMaterial"));
@@ -921,7 +872,7 @@ bool CubeSceneApplication::initializeCamera()
     MR_LOG(LogCubeSceneApp, Log, "Initializing camera...");
     
     // Create camera manager
-    m_cameraManager = new FCameraManager();
+    m_cameraManager = MakeUnique<FCameraManager>();
     m_cameraManager->Initialize(nullptr);
     
     // Set initial camera view
@@ -967,7 +918,7 @@ bool CubeSceneApplication::initializeCamera()
     m_fpsCameraController->SetFOV(45.0f);
     
     // Initialize with camera manager
-    m_fpsCameraController->Initialize(m_cameraManager);
+    m_fpsCameraController->Initialize(m_cameraManager.Get());
     
     // Verify camera position after FPS controller initialization
     FMinimalViewInfo finalView = m_cameraManager->GetCameraCacheView();
