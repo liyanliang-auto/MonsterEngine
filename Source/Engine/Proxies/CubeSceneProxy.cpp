@@ -507,11 +507,11 @@ bool FCubeSceneProxy::CreatePipelineState()
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
     // Rasterizer state - enable backface culling
-    // UE5 row-vector convention with transpose upload:
-    // Combined with viewport Y-flip, the winding order is CW for front faces
+    // UE5 row-vector convention with projection Y-flip:
+    // The Y-flip in projection matrix flips winding, so CCW is front face
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front face
+    PipelineDesc.rasterizerState.frontCounterClockwise = true;  // CCW is front face (after Y-flip)
     
     // Depth testing - enable for proper occlusion
     PipelineDesc.depthStencilState.depthEnable = true;
@@ -1134,10 +1134,10 @@ bool FCubeSceneProxy::CreateShadowPipelineState()
     PipelineDesc.vertexLayout.attributes.push_back(TexCoordAttr);
     PipelineDesc.vertexLayout.stride = sizeof(FCubeLitVertex);
     
-    // UE5 row-vector convention: CW is front face
+    // UE5 row-vector convention with projection Y-flip: CCW is front face
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = false;
+    PipelineDesc.rasterizerState.frontCounterClockwise = true;
     
     // Depth testing
     PipelineDesc.depthStencilState.depthEnable = true;
