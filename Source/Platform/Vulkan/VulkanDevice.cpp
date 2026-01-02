@@ -1054,14 +1054,22 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Choose swap extent
+        // Reference: UE5 FVulkanSwapChain::Create - always use requested size, clamped to capabilities
         VkExtent2D extent;
-        if (capabilities.currentExtent.width != UINT32_MAX) {
-            extent = capabilities.currentExtent;
-        } else {
-            extent = {createInfo.windowWidth, createInfo.windowHeight};
-            extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-            extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-        }
+        extent.width = createInfo.windowWidth;
+        extent.height = createInfo.windowHeight;
+        
+        // Log surface capabilities for debugging
+        MR_LOG_INFO("Surface capabilities - currentExtent: " + std::to_string(capabilities.currentExtent.width) + "x" + std::to_string(capabilities.currentExtent.height) +
+                    ", minExtent: " + std::to_string(capabilities.minImageExtent.width) + "x" + std::to_string(capabilities.minImageExtent.height) +
+                    ", maxExtent: " + std::to_string(capabilities.maxImageExtent.width) + "x" + std::to_string(capabilities.maxImageExtent.height));
+        MR_LOG_INFO("Requested window size: " + std::to_string(createInfo.windowWidth) + "x" + std::to_string(createInfo.windowHeight));
+        
+        // Clamp to valid range
+        extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+        
+        MR_LOG_INFO("Final swapchain extent: " + std::to_string(extent.width) + "x" + std::to_string(extent.height));
         
         // Choose image count
         uint32 imageCount = capabilities.minImageCount + 1;

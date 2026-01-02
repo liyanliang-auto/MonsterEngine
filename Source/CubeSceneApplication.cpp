@@ -1522,13 +1522,23 @@ void CubeSceneApplication::onMouseScrolled(float64 xOffset, float64 yOffset)
 
 bool CubeSceneApplication::initializeViewportRenderTarget()
 {
-    MR_LOG(LogCubeSceneApp, Log, "Initializing viewport render target (%ux%u)...", m_viewportWidth, m_viewportHeight);
-    
     if (!m_device)
     {
         MR_LOG(LogCubeSceneApp, Error, "Cannot create viewport render target: no device");
         return false;
     }
+    
+    // Get swapchain extent for viewport depth target
+    // Reference: UE5 ensures depth buffer matches swapchain size
+    auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+    auto swapchainExtent = vulkanDevice->getSwapchainExtent();
+    
+    // Update viewport dimensions to match swapchain
+    m_viewportWidth = swapchainExtent.width;
+    m_viewportHeight = swapchainExtent.height;
+    
+    MR_LOG(LogCubeSceneApp, Log, "Initializing viewport render target (%ux%u) to match swapchain...", 
+           m_viewportWidth, m_viewportHeight);
     
     // Create color render target texture
     // Use B8G8R8A8_SRGB to match swapchain format for pipeline compatibility
