@@ -847,13 +847,14 @@ void FCubeSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
 
 void FCubeSceneProxy::MatrixToFloatArray(const FMatrix& Matrix, float* OutArray)
 {
-    // UE5 row-vector convention: shader uses v * M
-    // No transpose needed - copy row-major directly
+    // UE5 row-vector convention with GLSL v * M:
+    // GLSL mat4 is column-major, need to transpose CPU row-major matrix
+    // so that GPU rows match CPU rows for correct v * M computation
     for (int32 Row = 0; Row < 4; ++Row)
     {
         for (int32 Col = 0; Col < 4; ++Col)
         {
-            OutArray[Row * 4 + Col] = static_cast<float>(Matrix.M[Row][Col]);
+            OutArray[Col * 4 + Row] = static_cast<float>(Matrix.M[Row][Col]);
         }
     }
 }
