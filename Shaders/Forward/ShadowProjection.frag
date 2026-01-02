@@ -22,6 +22,12 @@
 #define SHADOW_QUALITY 3
 #endif
 
+// Utility function - must be defined before use
+float saturate(float x)
+{
+    return clamp(x, 0.0, 1.0);
+}
+
 // ============================================================================
 // Fragment Input
 // ============================================================================
@@ -304,11 +310,3 @@ void main()
     outShadowMask = vec4(shadow, shadow, shadow, 1.0);
 }
 
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-float saturate(float x)
-{
-    return clamp(x, 0.0, 1.0);
-}

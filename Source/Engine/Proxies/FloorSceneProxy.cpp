@@ -527,7 +527,7 @@ bool FFloorSceneProxy::CreatePipelineState()
     PipelineDesc.depthStencilState.depthWriteEnable = true;
     PipelineDesc.depthStencilState.depthFunc = MonsterRender::RHI::EComparisonFunc::Less;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = true;  // CCW is front (projection Y-flip)
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (RHI Y-flip)
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.debugName = "FloorProxy Pipeline State";
     
@@ -634,7 +634,7 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
     PipelineDesc.depthStencilState.depthWriteEnable = true;
     PipelineDesc.depthStencilState.depthFunc = MonsterRender::RHI::EComparisonFunc::Less;
     PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = true;  // CCW is front (projection Y-flip)
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (RHI Y-flip)
     PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
     PipelineDesc.debugName = "FloorProxy Shadow Pipeline State";
     

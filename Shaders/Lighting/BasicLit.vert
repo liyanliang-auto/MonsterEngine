@@ -55,15 +55,16 @@ layout(location = 4) out vec3 fragViewDir;
 
 void main()
 {
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
     // Transform position to world space
-    vec4 worldPos = Object.ModelMatrix * vec4(inPosition, 1.0);
+    vec4 worldPos = vec4(inPosition, 1.0) * Object.ModelMatrix;
     fragWorldPos = worldPos.xyz;
     
     // Transform normal to world space (using normal matrix for non-uniform scaling)
-    fragNormal = normalize(mat3(Object.NormalMatrix) * inNormal);
+    fragNormal = normalize(inNormal * mat3(Object.NormalMatrix));
     
     // Transform tangent to world space
-    fragTangent = normalize(mat3(Object.NormalMatrix) * inTangent);
+    fragTangent = normalize(inTangent * mat3(Object.NormalMatrix));
     
     // Pass through texture coordinates
     fragTexCoord = inTexCoord;
@@ -72,5 +73,5 @@ void main()
     fragViewDir = normalize(View.CameraPosition - fragWorldPos);
     
     // Transform to clip space
-    gl_Position = View.ViewProjectionMatrix * worldPos;
+    gl_Position = worldPos * View.ViewProjectionMatrix;
 }
