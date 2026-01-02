@@ -396,18 +396,18 @@ public:
         );
     }
 
-    /** Get the origin (translation) from this matrix */
+    /** Get the origin (translation) from this matrix (column 3) */
     MR_NODISCARD FORCEINLINE TVector<T> GetOrigin() const
     {
-        return TVector<T>(M[3][0], M[3][1], M[3][2]);
+        return TVector<T>(M[0][3], M[1][3], M[2][3]);
     }
 
-    /** Set the origin (translation) of this matrix */
+    /** Set the origin (translation) of this matrix (column 3) */
     FORCEINLINE void SetOrigin(const TVector<T>& NewOrigin)
     {
-        M[3][0] = NewOrigin.X;
-        M[3][1] = NewOrigin.Y;
-        M[3][2] = NewOrigin.Z;
+        M[0][3] = NewOrigin.X;
+        M[1][3] = NewOrigin.Y;
+        M[2][3] = NewOrigin.Z;
     }
 
     /** Get the X axis of this matrix */
@@ -463,14 +463,14 @@ public:
     // Static Factory Functions
     // ========================================================================
 
-    /** Create a translation matrix */
+    /** Create a translation matrix (translation in column 3) */
     MR_NODISCARD static TMatrix<T> MakeTranslation(const TVector<T>& Translation)
     {
         TMatrix<T> Result;
         Result.SetIdentity();
-        Result.M[3][0] = Translation.X;
-        Result.M[3][1] = Translation.Y;
-        Result.M[3][2] = Translation.Z;
+        Result.M[0][3] = Translation.X;
+        Result.M[1][3] = Translation.Y;
+        Result.M[2][3] = Translation.Z;
         return Result;
     }
 
