@@ -106,6 +106,8 @@ FFloorSceneProxy::FFloorSceneProxy(const UFloorMeshComponent* InComponent)
 
 FFloorSceneProxy::~FFloorSceneProxy()
 {
+    MR_LOG(LogFloorSceneProxy, Log, "FloorSceneProxy destructor called - releasing GPU resources");
+    
     // Release GPU resources
     VertexBuffer.Reset();
     TransformUniformBuffer.Reset();
@@ -121,7 +123,7 @@ FFloorSceneProxy::~FFloorSceneProxy()
     ShadowPipelineState.Reset();
     ShadowSampler.Reset();
     
-    MR_LOG(LogFloorSceneProxy, Verbose, "FloorSceneProxy destroyed");
+    MR_LOG(LogFloorSceneProxy, Log, "FloorSceneProxy destroyed - all resources released");
 }
 
 // ============================================================================
