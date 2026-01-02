@@ -2079,6 +2079,14 @@ void CubeSceneApplication::renderShadowDepthPass(
     // End shadow render pass
     cmdList->endRenderPass();
     
+    // Transition shadow map from depth attachment to shader resource for sampling
+    // This is critical for Vulkan - the image layout must be correct for shader reads
+    cmdList->transitionResource(
+        m_shadowMapTexture,
+        RHI::EResourceUsage::DepthStencil,
+        RHI::EResourceUsage::ShaderResource
+    );
+    
     MR_LOG(LogCubeSceneApp, Verbose, "Shadow depth pass complete");
 }
 
