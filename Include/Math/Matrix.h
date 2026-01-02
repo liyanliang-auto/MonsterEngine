@@ -544,21 +544,24 @@ public:
     /** Create a look-at matrix (row-major layout: M[Row][Col]) */
     MR_NODISCARD static TMatrix<T> MakeLookAt(const TVector<T>& Eye, const TVector<T>& Target, const TVector<T>& Up)
     {
-        // Forward direction (from eye to target, then negated for right-handed coordinate system)
-        TVector<T> Forward = (Eye - Target).GetSafeNormal();  // Points away from target
-        TVector<T> Right = TVector<T>::CrossProduct(Up, Forward).GetSafeNormal();
-        TVector<T> UpVec = TVector<T>::CrossProduct(Forward, Right);
+        // Calculate camera basis vectors (OpenGL/GLM style)
+        // Forward: direction from eye to target (camera looks toward -Z in view space)
+        TVector<T> Forward = (Target - Eye).GetSafeNormal();
+        
+        // Right: perpendicular to forward and world up
+        TVector<T> Right = TVector<T>::CrossProduct(Forward, Up).GetSafeNormal();
+        
+        // Up: perpendicular to right and forward
+        TVector<T> UpVec = TVector<T>::CrossProduct(Right, Forward);
 
-        // Row-major layout: each row is [Right, Up, Forward, Translation]
-        // Row 0: Right vector
-        // Row 1: Up vector  
-        // Row 2: Forward vector
-        // Row 3: Translation (dot products)
+        // View matrix transforms world space to view space
+        // In view space: +X is right, +Y is up, -Z is forward (OpenGL convention)
+        // Row-major layout
         TMatrix<T> Result;
-        Result.M[0][0] = Right.X;   Result.M[0][1] = Right.Y;   Result.M[0][2] = Right.Z;   Result.M[0][3] = -TVector<T>::DotProduct(Right, Eye);
-        Result.M[1][0] = UpVec.X;   Result.M[1][1] = UpVec.Y;   Result.M[1][2] = UpVec.Z;   Result.M[1][3] = -TVector<T>::DotProduct(UpVec, Eye);
-        Result.M[2][0] = Forward.X; Result.M[2][1] = Forward.Y; Result.M[2][2] = Forward.Z; Result.M[2][3] = -TVector<T>::DotProduct(Forward, Eye);
-        Result.M[3][0] = T(0);      Result.M[3][1] = T(0);      Result.M[3][2] = T(0);      Result.M[3][3] = T(1);
+        Result.M[0][0] = Right.X;    Result.M[0][1] = Right.Y;    Result.M[0][2] = Right.Z;    Result.M[0][3] = -TVector<T>::DotProduct(Right, Eye);
+        Result.M[1][0] = UpVec.X;    Result.M[1][1] = UpVec.Y;    Result.M[1][2] = UpVec.Z;    Result.M[1][3] = -TVector<T>::DotProduct(UpVec, Eye);
+        Result.M[2][0] = -Forward.X; Result.M[2][1] = -Forward.Y; Result.M[2][2] = -Forward.Z; Result.M[2][3] = TVector<T>::DotProduct(Forward, Eye);
+        Result.M[3][0] = T(0);       Result.M[3][1] = T(0);       Result.M[3][2] = T(0);       Result.M[3][3] = T(1);
 
         return Result;
     }
