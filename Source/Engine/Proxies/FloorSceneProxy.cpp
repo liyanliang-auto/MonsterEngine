@@ -829,12 +829,13 @@ void FFloorSceneProxy::UpdateShadowBuffer(
 
 void FFloorSceneProxy::MatrixToFloatArray(const FMatrix& Matrix, float* OutArray)
 {
-    // Convert to column-major order for GPU
-    for (int32 Col = 0; Col < 4; ++Col)
+    // UE5 row-vector convention: shader uses v * M
+    // No transpose needed - copy row-major directly
+    for (int32 Row = 0; Row < 4; ++Row)
     {
-        for (int32 Row = 0; Row < 4; ++Row)
+        for (int32 Col = 0; Col < 4; ++Col)
         {
-            OutArray[Col * 4 + Row] = static_cast<float>(Matrix.M[Row][Col]);
+            OutArray[Row * 4 + Col] = static_cast<float>(Matrix.M[Row][Col]);
         }
     }
 }

@@ -50,23 +50,24 @@ layout(location = 5) flat out int vertexID;
 // ============================================================================
 
 void main() {
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
     // Transform to world space
-    vec4 worldPos = transform.model * vec4(inPosition, 1.0);
+    vec4 worldPos = vec4(inPosition, 1.0) * transform.model;
     
     // Transform to view space
-    vec4 viewPos = transform.view * worldPos;
+    vec4 viewPos = worldPos * transform.view;
     
     // Transform to clip space
-    vec4 clipPos = transform.projection * viewPos;
+    vec4 clipPos = viewPos * transform.projection;
     
     // Transform to light space for shadow mapping
-    vec4 shadowPos = shadow.lightViewProjection * worldPos;
+    vec4 shadowPos = worldPos * shadow.lightViewProjection;
     
     // Apply normal offset bias to reduce shadow acne
-    vec3 worldNormal = normalize(mat3(transform.normalMatrix) * inNormal);
+    vec3 worldNormal = normalize(inNormal * mat3(transform.normalMatrix));
     float normalBias = shadow.shadowParams.z;
     vec4 biasedWorldPos = worldPos + vec4(worldNormal * normalBias, 0.0);
-    vec4 biasedShadowPos = shadow.lightViewProjection * biasedWorldPos;
+    vec4 biasedShadowPos = biasedWorldPos * shadow.lightViewProjection;
     
     // Pass to fragment shader
     fragWorldPos = worldPos.xyz;

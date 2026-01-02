@@ -70,22 +70,23 @@ layout(location = 6) out vec4 outClipPosition;      // Clip-space position (for 
 
 void main()
 {
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
     // Transform position to world space
-    vec4 worldPosition = Object.WorldMatrix * vec4(inPosition, 1.0);
+    vec4 worldPosition = vec4(inPosition, 1.0) * Object.WorldMatrix;
     outWorldPosition = worldPosition.xyz;
     
     // Transform normal to world space (using inverse transpose)
     // This correctly handles non-uniform scaling
-    outWorldNormal = normalize(mat3(Object.WorldMatrixIT) * inNormal);
+    outWorldNormal = normalize(inNormal * mat3(Object.WorldMatrixIT));
     
     // Transform tangent to world space
-    outWorldTangent = normalize(mat3(Object.WorldMatrix) * inTangent);
+    outWorldTangent = normalize(inTangent * mat3(Object.WorldMatrix));
     
     // Calculate bitangent
     // If bitangent is provided, transform it; otherwise, compute from normal and tangent
     if (length(inBitangent) > 0.001)
     {
-        outWorldBitangent = normalize(mat3(Object.WorldMatrix) * inBitangent);
+        outWorldBitangent = normalize(inBitangent * mat3(Object.WorldMatrix));
     }
     else
     {
@@ -103,8 +104,8 @@ void main()
     // Calculate view direction (from surface to camera)
     outViewDirection = normalize(View.ViewOrigin.xyz - outWorldPosition);
     
-    // Transform to clip space
-    vec4 clipPosition = View.ViewProjectionMatrix * worldPosition;
+    // Transform to clip space (row-vector: v * VP)
+    vec4 clipPosition = worldPosition * View.ViewProjectionMatrix;
     outClipPosition = clipPosition;
     
     // Output final clip-space position

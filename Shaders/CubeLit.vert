@@ -20,14 +20,14 @@ layout(location = 3) out vec3 fragViewPos;
 layout(location = 4) flat out int vertexID;
 
 void main() {
-    // Apply MVP transform
-    vec4 worldPos = transform.model * vec4(inPosition, 1.0);
-    vec4 viewPos = transform.view * worldPos;
-    vec4 clipPos = transform.projection * viewPos;
+    // UE5 row-vector convention: v * M (position on left, matrix on right)
+    vec4 worldPos = vec4(inPosition, 1.0) * transform.model;
+    vec4 viewPos = worldPos * transform.view;
+    vec4 clipPos = viewPos * transform.projection;
 
     // Pass to fragment shader
     fragWorldPos = worldPos.xyz;
-    fragNormal = mat3(transform.normalMatrix) * inNormal;
+    fragNormal = inNormal * mat3(transform.normalMatrix);
     fragTexCoord = inTexCoord;
     fragViewPos = transform.cameraPosition.xyz;
     vertexID = gl_VertexIndex;
