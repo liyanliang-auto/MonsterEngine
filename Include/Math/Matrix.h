@@ -396,18 +396,18 @@ public:
         );
     }
 
-    /** Get the origin (translation) from this matrix (column 3) */
+    /** Get the origin (translation) from this matrix (row 3, UE5 convention) */
     MR_NODISCARD FORCEINLINE TVector<T> GetOrigin() const
     {
-        return TVector<T>(M[0][3], M[1][3], M[2][3]);
+        return TVector<T>(M[3][0], M[3][1], M[3][2]);
     }
 
-    /** Set the origin (translation) of this matrix (column 3) */
+    /** Set the origin (translation) of this matrix (row 3, UE5 convention) */
     FORCEINLINE void SetOrigin(const TVector<T>& NewOrigin)
     {
-        M[0][3] = NewOrigin.X;
-        M[1][3] = NewOrigin.Y;
-        M[2][3] = NewOrigin.Z;
+        M[3][0] = NewOrigin.X;
+        M[3][1] = NewOrigin.Y;
+        M[3][2] = NewOrigin.Z;
     }
 
     /** Get the X axis of this matrix */
@@ -463,14 +463,14 @@ public:
     // Static Factory Functions
     // ========================================================================
 
-    /** Create a translation matrix (translation in column 3) */
+    /** Create a translation matrix (translation in row 3, UE5 convention) */
     MR_NODISCARD static TMatrix<T> MakeTranslation(const TVector<T>& Translation)
     {
         TMatrix<T> Result;
         Result.SetIdentity();
-        Result.M[0][3] = Translation.X;
-        Result.M[1][3] = Translation.Y;
-        Result.M[2][3] = Translation.Z;
+        Result.M[3][0] = Translation.X;
+        Result.M[3][1] = Translation.Y;
+        Result.M[3][2] = Translation.Z;
         return Result;
     }
 
@@ -541,36 +541,49 @@ public:
         return MakeFromQuat(R.Quaternion());
     }
 
-    /** Create a look-at matrix (row-major layout: M[Row][Col]) */
+    /** 
+     * Create a look-at view matrix (UE5 convention: row-major, translation in row 3)
+     * Reference: UE5 TLookFromMatrix
+     * 
+     * @param Eye Camera position in world space
+     * @param Target Point to look at in world space
+     * @param Up World up vector (typically Y-up)
+     */
     MR_NODISCARD static TMatrix<T> MakeLookAt(const TVector<T>& Eye, const TVector<T>& Target, const TVector<T>& Up)
     {
-        // Calculate camera basis vectors (OpenGL/GLM style)
-        // Forward: direction from eye to target (camera looks toward -Z in view space)
-        TVector<T> Forward = (Target - Eye).GetSafeNormal();
+        // Calculate camera basis vectors
+        // ZAxis: direction from eye to target (camera looks toward +Z in UE5 convention)
+        TVector<T> ZAxis = (Target - Eye).GetSafeNormal();
         
-        // Right: perpendicular to forward and world up
-        TVector<T> Right = TVector<T>::CrossProduct(Forward, Up).GetSafeNormal();
+        // XAxis: perpendicular to up and forward (right vector)
+        TVector<T> XAxis = TVector<T>::CrossProduct(Up, ZAxis).GetSafeNormal();
         
-        // Up: perpendicular to right and forward
-        TVector<T> UpVec = TVector<T>::CrossProduct(Right, Forward);
+        // YAxis: perpendicular to forward and right (actual up vector)
+        TVector<T> YAxis = TVector<T>::CrossProduct(ZAxis, XAxis);
 
         // View matrix transforms world space to view space
-        // In view space: +X is right, +Y is up, -Z is forward (OpenGL convention)
-        // Row-major layout
+        // UE5 convention: row-major layout, translation in row 3
         TMatrix<T> Result;
-        Result.M[0][0] = Right.X;    Result.M[0][1] = Right.Y;    Result.M[0][2] = Right.Z;    Result.M[0][3] = -TVector<T>::DotProduct(Right, Eye);
-        Result.M[1][0] = UpVec.X;    Result.M[1][1] = UpVec.Y;    Result.M[1][2] = UpVec.Z;    Result.M[1][3] = -TVector<T>::DotProduct(UpVec, Eye);
-        Result.M[2][0] = -Forward.X; Result.M[2][1] = -Forward.Y; Result.M[2][2] = -Forward.Z; Result.M[2][3] = TVector<T>::DotProduct(Forward, Eye);
-        Result.M[3][0] = T(0);       Result.M[3][1] = T(0);       Result.M[3][2] = T(0);       Result.M[3][3] = T(1);
+        Result.M[0][0] = XAxis.X;  Result.M[0][1] = YAxis.X;  Result.M[0][2] = ZAxis.X;  Result.M[0][3] = T(0);
+        Result.M[1][0] = XAxis.Y;  Result.M[1][1] = YAxis.Y;  Result.M[1][2] = ZAxis.Y;  Result.M[1][3] = T(0);
+        Result.M[2][0] = XAxis.Z;  Result.M[2][1] = YAxis.Z;  Result.M[2][2] = ZAxis.Z;  Result.M[2][3] = T(0);
+        Result.M[3][0] = -TVector<T>::DotProduct(Eye, XAxis);
+        Result.M[3][1] = -TVector<T>::DotProduct(Eye, YAxis);
+        Result.M[3][2] = -TVector<T>::DotProduct(Eye, ZAxis);
+        Result.M[3][3] = T(1);
 
         return Result;
     }
 
     /** 
-     * Create a perspective projection matrix for Vulkan (Y-down, Z [0,1])
-     * Assumes right-handed view space where camera looks toward -Z
-     * (objects in front of camera have negative Z in view space)
-     * Row-major layout: M[Row][Col]
+     * Create a perspective projection matrix for Vulkan (depth range [0,1])
+     * UE5 convention: row-major layout, left-handed coordinate system
+     * Reference: UE5 TPerspectiveMatrix
+     * 
+     * @param FovY Vertical field of view in radians
+     * @param AspectRatio Width / Height
+     * @param NearZ Near clip plane distance (positive)
+     * @param FarZ Far clip plane distance (positive)
      */
     MR_NODISCARD static TMatrix<T> MakePerspective(T FovY, T AspectRatio, T NearZ, T FarZ)
     {
@@ -578,16 +591,16 @@ public:
 
         TMatrix<T> Result(ForceInit);
         
-        // Vulkan perspective projection matrix (depth range [0, 1])
-        // Right-handed coordinate system: camera looks toward -Z
-        // Maps view space [-Near, -Far] to NDC depth [0, 1]
-        // Row-major layout: M[Row][Col]
-        // Reference: GLM frustumRH_ZO
+        // UE5-style perspective matrix (row-major, LH coordinate system)
+        // Row 0: [sx, 0,  0,  0]
+        // Row 1: [0,  sy, 0,  0]
+        // Row 2: [0,  0,  A,  1]  <- W component for perspective divide
+        // Row 3: [0,  0,  B,  0]  <- Z offset
         Result.M[0][0] = T(1) / (AspectRatio * TanHalfFov);
         Result.M[1][1] = T(1) / TanHalfFov;
-        Result.M[2][2] = FarZ / (NearZ - FarZ);
-        Result.M[2][3] = (FarZ * NearZ) / (NearZ - FarZ);
-        Result.M[3][2] = T(-1);
+        Result.M[2][2] = FarZ / (FarZ - NearZ);              // A: depth scale
+        Result.M[2][3] = T(1);                               // W = Z (for perspective divide)
+        Result.M[3][2] = -(NearZ * FarZ) / (FarZ - NearZ);   // B: depth offset
 
         return Result;
     }
