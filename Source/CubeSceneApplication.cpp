@@ -662,10 +662,14 @@ void CubeSceneApplication::onShutdown()
 {
     MR_LOG(LogCubeSceneApp, Log, "Shutting down CubeSceneApplication...");
     
+    MR_LOG(LogCubeSceneApp, Log, "=== CubeSceneApplication::onShutdown() called ===");
+    
     // CRITICAL: Clean up in reverse order of initialization to avoid dangling pointers
     
     // Step 1: Shutdown ImGui first (it may reference textures)
+    MR_LOG(LogCubeSceneApp, Log, "Step 1: Shutting down ImGui...");
     shutdownImGui();
+    MR_LOG(LogCubeSceneApp, Log, "ImGui shutdown complete");
     
     // Step 2: Unregister viewport texture (after ImGui shutdown)
     if (m_viewportTextureID != 0)
@@ -698,13 +702,17 @@ void CubeSceneApplication::onShutdown()
     m_cameraManager.Reset();
     
     // Step 9: Clean up scene first (this will clean up FPrimitiveSceneInfo which owns proxies)
+    MR_LOG(LogCubeSceneApp, Log, "Destroying scene...");
     m_scene.Reset();
+    MR_LOG(LogCubeSceneApp, Log, "Scene destroyed");
     
     // Step 10: Clean up actors (they own components, which are now safe to destroy since proxies are gone)
+    MR_LOG(LogCubeSceneApp, Log, "Destroying actors...");
     m_floorActor.Reset();
     m_cubeActor.Reset();
     m_directionalLight.Reset();
     m_pointLight.Reset();
+    MR_LOG(LogCubeSceneApp, Log, "Actors destroyed");
     
     // Step 11: Release GPU resources (textures, buffers)
     // These must be released AFTER scene and actors are destroyed

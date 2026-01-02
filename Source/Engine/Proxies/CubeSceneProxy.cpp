@@ -104,6 +104,8 @@ FCubeSceneProxy::FCubeSceneProxy(const UCubeMeshComponent* InComponent)
 
 FCubeSceneProxy::~FCubeSceneProxy()
 {
+    MR_LOG(LogCubeSceneProxy, Log, "CubeSceneProxy destructor called - releasing GPU resources");
+    
     // Release GPU resources
     VertexBuffer.Reset();
     TransformUniformBuffer.Reset();
@@ -115,7 +117,7 @@ FCubeSceneProxy::~FCubeSceneProxy()
     PixelShader.Reset();
     PipelineState.Reset();
     
-    MR_LOG(LogCubeSceneProxy, Verbose, "CubeSceneProxy destroyed");
+    MR_LOG(LogCubeSceneProxy, Log, "CubeSceneProxy destroyed - all resources released");
 }
 
 // ============================================================================

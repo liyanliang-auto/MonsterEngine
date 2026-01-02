@@ -50,6 +50,8 @@ FPrimitiveSceneInfo::FPrimitiveSceneInfo(UPrimitiveComponent* InComponent, FScen
 
 FPrimitiveSceneInfo::~FPrimitiveSceneInfo()
 {
+    MR_LOG(LogPrimitiveSceneInfo, Verbose, "FPrimitiveSceneInfo destructor called");
+    
     // Clean up light interactions
     while (LightList)
     {
@@ -61,9 +63,12 @@ FPrimitiveSceneInfo::~FPrimitiveSceneInfo()
     // Delete the scene proxy
     if (Proxy)
     {
+        MR_LOG(LogPrimitiveSceneInfo, Verbose, "Deleting scene proxy");
         delete Proxy;
         Proxy = nullptr;
     }
+    
+    MR_LOG(LogPrimitiveSceneInfo, Verbose, "FPrimitiveSceneInfo destroyed");
 }
 
 // ============================================================================

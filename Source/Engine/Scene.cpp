@@ -71,27 +71,35 @@ FScene::FScene(UWorld* InWorld, bool bInRequiresHitProxies, bool bInIsEditorScen
 
 FScene::~FScene()
 {
-    MR_LOG(LogScene, Log, "FScene destroyed");
+    MR_LOG(LogScene, Log, "FScene destructor called - cleaning up %d primitives and %d lights", 
+           Primitives.Num(), Lights.Num());
     
     // Clean up primitives
+    int32 primitiveCount = 0;
     for (FPrimitiveSceneInfo* Primitive : Primitives)
     {
         if (Primitive)
         {
+            primitiveCount++;
+            MR_LOG(LogScene, Verbose, "Deleting primitive %d", primitiveCount);
             delete Primitive;
         }
     }
     Primitives.Empty();
+    MR_LOG(LogScene, Log, "Deleted %d primitives", primitiveCount);
     
     // Clean up lights
+    int32 lightCount = 0;
     for (auto& LightCompact : Lights)
     {
         if (LightCompact.LightSceneInfo)
         {
+            lightCount++;
             delete LightCompact.LightSceneInfo;
         }
     }
     Lights.Empty();
+    MR_LOG(LogScene, Log, "FScene destroyed - deleted %d lights", lightCount);
 }
 
 // ============================================================================
