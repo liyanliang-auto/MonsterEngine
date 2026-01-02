@@ -2335,9 +2335,9 @@ void CubeSceneApplication::renderWithRDG(
         {
             MR_LOG(LogCubeSceneApp, Log, "Executing Main Render Pass with shadows");
             
-            // Set render targets to swapchain
+            // Set render targets to swapchain with viewport depth buffer
             TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
-            rhiCmdList.setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+            rhiCmdList.setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), m_viewportDepthTarget);
             
             // Set viewport to window size
             RHI::Viewport viewport;
