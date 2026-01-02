@@ -521,21 +521,15 @@ bool FFloorSceneProxy::CreatePipelineState()
 {
     MR_LOG(LogFloorSceneProxy, Log, "Creating floor pipeline state...");
     
+    MonsterRender::RHI::EPixelFormat RenderTargetFormat = Device->getSwapChainFormat();
+    MonsterRender::RHI::EPixelFormat DepthFormat = Device->getDepthFormat();
+    
     MonsterRender::RHI::PipelineStateDesc PipelineDesc;
     PipelineDesc.vertexShader = VertexShader;
     PipelineDesc.pixelShader = PixelShader;
     PipelineDesc.primitiveTopology = MonsterRender::RHI::EPrimitiveTopology::TriangleList;
-    PipelineDesc.depthStencilState.depthEnable = true;
-    PipelineDesc.depthStencilState.depthWriteEnable = true;
-    PipelineDesc.depthStencilState.depthFunc = MonsterRender::RHI::EComparisonFunc::Less;
-    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (after viewport Y-flip)
-    PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
-    PipelineDesc.debugName = "FloorProxy Pipeline State";
     
     // Vertex input layout: Position(3) + Normal(3) + TexCoord(2) = 32 bytes stride
-    PipelineDesc.vertexLayout.stride = 32;
-    
     MonsterRender::RHI::VertexAttribute positionAttr;
     positionAttr.location = 0;
     positionAttr.format = MonsterRender::RHI::EVertexFormat::Float3;
@@ -556,6 +550,27 @@ bool FFloorSceneProxy::CreatePipelineState()
     texCoordAttr.offset = 24;  // 6 floats * 4 bytes
     texCoordAttr.semanticName = "TEXCOORD";
     PipelineDesc.vertexLayout.attributes.Add(texCoordAttr);
+    
+    PipelineDesc.vertexLayout.stride = 32;
+    
+    // Rasterizer state - match cube settings
+    PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
+    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (after viewport Y-flip)
+    
+    // Depth testing - use depthCompareOp like cube
+    PipelineDesc.depthStencilState.depthEnable = true;
+    PipelineDesc.depthStencilState.depthWriteEnable = true;
+    PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
+    
+    // Blend state
+    PipelineDesc.blendState.blendEnable = false;
+    
+    // Render target format - MUST be set like cube
+    PipelineDesc.renderTargetFormats.push_back(RenderTargetFormat);
+    PipelineDesc.depthStencilFormat = DepthFormat;
+    
+    PipelineDesc.debugName = "FloorProxy Pipeline State";
     
     PipelineState = Device->createPipelineState(PipelineDesc);
     if (!PipelineState)
@@ -628,21 +643,15 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
 {
     MR_LOG(LogFloorSceneProxy, Log, "Creating shadow pipeline state...");
     
+    MonsterRender::RHI::EPixelFormat RenderTargetFormat = Device->getSwapChainFormat();
+    MonsterRender::RHI::EPixelFormat DepthFormat = Device->getDepthFormat();
+    
     MonsterRender::RHI::PipelineStateDesc PipelineDesc;
     PipelineDesc.vertexShader = ShadowVertexShader;
     PipelineDesc.pixelShader = ShadowPixelShader;
     PipelineDesc.primitiveTopology = MonsterRender::RHI::EPrimitiveTopology::TriangleList;
-    PipelineDesc.depthStencilState.depthEnable = true;
-    PipelineDesc.depthStencilState.depthWriteEnable = true;
-    PipelineDesc.depthStencilState.depthFunc = MonsterRender::RHI::EComparisonFunc::Less;
-    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
-    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (after viewport Y-flip)
-    PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
-    PipelineDesc.debugName = "FloorProxy Shadow Pipeline State";
     
-    // Same vertex layout: Position(3) + Normal(3) + TexCoord(2) = 32 bytes stride
-    PipelineDesc.vertexLayout.stride = 32;
-    
+    // Vertex layout: Position(3) + Normal(3) + TexCoord(2) = 32 bytes stride
     MonsterRender::RHI::VertexAttribute positionAttr;
     positionAttr.location = 0;
     positionAttr.format = MonsterRender::RHI::EVertexFormat::Float3;
@@ -663,6 +672,27 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
     texCoordAttr.offset = 24;
     texCoordAttr.semanticName = "TEXCOORD";
     PipelineDesc.vertexLayout.attributes.Add(texCoordAttr);
+    
+    PipelineDesc.vertexLayout.stride = 32;
+    
+    // Rasterizer state - match cube settings
+    PipelineDesc.rasterizerState.fillMode = MonsterRender::RHI::EFillMode::Solid;
+    PipelineDesc.rasterizerState.cullMode = MonsterRender::RHI::ECullMode::Back;
+    PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (after viewport Y-flip)
+    
+    // Depth testing - use depthCompareOp like cube
+    PipelineDesc.depthStencilState.depthEnable = true;
+    PipelineDesc.depthStencilState.depthWriteEnable = true;
+    PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
+    
+    // Blend state
+    PipelineDesc.blendState.blendEnable = false;
+    
+    // Render target format - MUST be set like cube
+    PipelineDesc.renderTargetFormats.push_back(RenderTargetFormat);
+    PipelineDesc.depthStencilFormat = DepthFormat;
+    
+    PipelineDesc.debugName = "FloorProxy Shadow Pipeline State";
     
     ShadowPipelineState = Device->createPipelineState(PipelineDesc);
     if (!ShadowPipelineState)
