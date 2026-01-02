@@ -175,6 +175,7 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         VkFramebuffer getCurrentFramebuffer() const;
+        VkImageView getCurrentSwapchainImageView() const;
         const VkExtent2D& getSwapchainExtent() const { return m_swapchainExtent; }
         VkFormat getSwapchainFormat() const { return m_swapchainImageFormat; }
         

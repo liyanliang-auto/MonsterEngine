@@ -411,17 +411,26 @@ namespace MonsterRender::RHI::Vulkan {
         key.RenderPass = RenderPass;
         key.NumAttachments = 0;
         
-        // Determine dimensions from first color target
+        // Determine dimensions from first color target or depth target
         if (NumColorTargets > 0 && ColorTargets[0]) {
             auto& desc = ColorTargets[0]->getDesc();
             key.Width = RenderAreaWidth > 0 ? RenderAreaWidth : desc.width;
             key.Height = RenderAreaHeight > 0 ? RenderAreaHeight : desc.height;
+        } else if (RenderAreaWidth > 0 && RenderAreaHeight > 0) {
+            // Use explicitly set render area (for swapchain + custom depth case)
+            key.Width = RenderAreaWidth;
+            key.Height = RenderAreaHeight;
         }
         
-        // Color attachments
-        for (uint32 i = 0; i < NumColorTargets; ++i) {
-            if (ColorTargets[i]) {
-                key.Attachments[key.NumAttachments++] = ColorTargets[i]->getImageView();
+        // Color attachments - check for swapchain image view first
+        if (bIsSwapchain && SwapchainImageView != VK_NULL_HANDLE) {
+            // Use swapchain image view as color attachment
+            key.Attachments[key.NumAttachments++] = SwapchainImageView;
+        } else {
+            for (uint32 i = 0; i < NumColorTargets; ++i) {
+                if (ColorTargets[i]) {
+                    key.Attachments[key.NumAttachments++] = ColorTargets[i]->getImageView();
+                }
             }
         }
         

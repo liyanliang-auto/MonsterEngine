@@ -1377,6 +1377,14 @@ namespace MonsterRender::RHI::Vulkan {
         return m_swapchainFramebuffers[m_currentImageIndex];
     }
     
+    VkImageView VulkanDevice::getCurrentSwapchainImageView() const {
+        if (m_currentImageIndex >= m_swapchainImageViews.size()) {
+            MR_LOG_ERROR("Current image index out of range: " + std::to_string(m_currentImageIndex));
+            return VK_NULL_HANDLE;
+        }
+        return m_swapchainImageViews[m_currentImageIndex];
+    }
+    
     bool VulkanDevice::createCommandPool() {
         MR_LOG_INFO("Creating command pool...");
         
