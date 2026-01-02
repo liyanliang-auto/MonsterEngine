@@ -375,18 +375,20 @@ bool FFloorSceneProxy::CreateVertexBuffer()
 {
     MR_LOG(LogFloorSceneProxy, Log, "Creating floor vertex buffer...");
     
-    // Floor vertices: 2 triangles forming a large plane
+    // Floor vertices: 2 triangles forming a large plane at Y=0
     // Format: Position(3) + Normal(3) + TexCoord(2) = 8 floats per vertex
     // Texture coordinates are scaled by TextureTile to create tiling effect
+    // Winding order: CW when viewed from +Y (top), matches frontCounterClockwise = false
     float planeVertices[] = {
         // Positions               // Normals          // TexCoords
-         FloorSize, -0.5f,  FloorSize, 0.0f, 1.0f, 0.0f, TextureTile, 0.0f,
-        -FloorSize, -0.5f,  FloorSize, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-        -FloorSize, -0.5f, -FloorSize, 0.0f, 1.0f, 0.0f, 0.0f, TextureTile,
-
-         FloorSize, -0.5f,  FloorSize, 0.0f, 1.0f, 0.0f, TextureTile, 0.0f,
-        -FloorSize, -0.5f, -FloorSize, 0.0f, 1.0f, 0.0f, 0.0f, TextureTile,
-         FloorSize, -0.5f, -FloorSize, 0.0f, 1.0f, 0.0f, TextureTile, TextureTile
+        // Triangle 1: CW from top view (right-front -> left-back -> left-front)
+         FloorSize, 0.0f,  FloorSize, 0.0f, 1.0f, 0.0f, TextureTile, 0.0f,
+        -FloorSize, 0.0f, -FloorSize, 0.0f, 1.0f, 0.0f, 0.0f, TextureTile,
+        -FloorSize, 0.0f,  FloorSize, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+        // Triangle 2: CW from top view (right-front -> right-back -> left-back)
+         FloorSize, 0.0f,  FloorSize, 0.0f, 1.0f, 0.0f, TextureTile, 0.0f,
+         FloorSize, 0.0f, -FloorSize, 0.0f, 1.0f, 0.0f, TextureTile, TextureTile,
+        -FloorSize, 0.0f, -FloorSize, 0.0f, 1.0f, 0.0f, 0.0f, TextureTile
     };
     
     uint32 vertexDataSize = sizeof(planeVertices);
