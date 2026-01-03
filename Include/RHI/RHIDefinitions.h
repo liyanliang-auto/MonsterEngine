@@ -419,6 +419,44 @@ namespace MonsterRender::RHI {
         TessellationEvaluation = 1 << 5
     };
     
+    // Enable bitwise operations for EShaderStage
+    inline constexpr EShaderStage operator|(EShaderStage lhs, EShaderStage rhs) {
+        return static_cast<EShaderStage>(
+            static_cast<uint32>(lhs) | static_cast<uint32>(rhs)
+        );
+    }
+    
+    inline constexpr EShaderStage operator&(EShaderStage lhs, EShaderStage rhs) {
+        return static_cast<EShaderStage>(
+            static_cast<uint32>(lhs) & static_cast<uint32>(rhs)
+        );
+    }
+    
+    inline constexpr EShaderStage operator^(EShaderStage lhs, EShaderStage rhs) {
+        return static_cast<EShaderStage>(
+            static_cast<uint32>(lhs) ^ static_cast<uint32>(rhs)
+        );
+    }
+    
+    inline constexpr EShaderStage operator~(EShaderStage rhs) {
+        return static_cast<EShaderStage>(~static_cast<uint32>(rhs));
+    }
+    
+    inline constexpr EShaderStage& operator|=(EShaderStage& lhs, EShaderStage rhs) {
+        lhs = lhs | rhs;
+        return lhs;
+    }
+    
+    inline constexpr EShaderStage& operator&=(EShaderStage& lhs, EShaderStage rhs) {
+        lhs = lhs & rhs;
+        return lhs;
+    }
+    
+    inline constexpr EShaderStage& operator^=(EShaderStage& lhs, EShaderStage rhs) {
+        lhs = lhs ^ rhs;
+        return lhs;
+    }
+    
     // Vertex attribute format
     enum class EVertexFormat : uint32 {
         Float1,     // R32_SFLOAT
