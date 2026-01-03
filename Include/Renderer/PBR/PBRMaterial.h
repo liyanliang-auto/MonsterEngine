@@ -127,6 +127,18 @@ public:
     /** Set double-sided flag */
     void setDoubleSided(bool doubleSided);
     
+    /** Set normal map scale factor [0, 2] */
+    void setNormalScale(float scale);
+    
+    /** Set occlusion texture strength [0, 1] */
+    void setOcclusionStrength(float strength);
+    
+    /** Set index of refraction for dielectric materials */
+    void setIOR(float ior);
+    
+    /** Set use alpha mask flag */
+    void setUseAlphaMask(bool useAlphaMask);
+    
     // ========================================================================
     // Textures
     // ========================================================================

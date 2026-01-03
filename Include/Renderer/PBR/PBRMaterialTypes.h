@@ -100,7 +100,7 @@ enum class EPBRTextureSlot : uint8
  * 
  * This structure is designed to be uploaded directly to GPU as a uniform buffer.
  * Memory layout is optimized for GPU access (16-byte aligned).
- * Total size: 64 bytes (4 x float4)
+ * Total size: 80 bytes (5 x float4)
  * 
  * Reference:
  * - Filament: MaterialInputs struct
@@ -208,6 +208,35 @@ struct alignas(16) FPBRMaterialParams
     float MaterialFlags;
     
     // ========================================================================
+    // Extended Parameters (float4) - 16 bytes
+    // ========================================================================
+    
+    /**
+     * Normal map scale factor [0, 2]
+     * Controls the strength of normal map effect
+     * Default: 1.0
+     */
+    float NormalScale;
+    
+    /**
+     * Occlusion texture strength [0, 1]
+     * Controls how much the occlusion texture affects the final result
+     * Default: 1.0
+     */
+    float OcclusionStrength;
+    
+    /**
+     * Index of refraction for dielectric materials
+     * Default: 1.5 (glass)
+     */
+    float IOR;
+    
+    /**
+     * Padding for 16-byte alignment
+     */
+    float _Padding0;
+    
+    // ========================================================================
     // Constructors and Helpers
     // ========================================================================
     
@@ -224,6 +253,10 @@ struct alignas(16) FPBRMaterialParams
         , ClearCoatRoughness(0.0f)
         , AlphaCutoff(0.5f)
         , MaterialFlags(0.0f)
+        , NormalScale(1.0f)
+        , OcclusionStrength(1.0f)
+        , IOR(PBRConstants::DEFAULT_IOR)
+        , _Padding0(0.0f)
     {}
     
     /** Set material flag bit */
@@ -266,7 +299,7 @@ struct alignas(16) FPBRMaterialParams
 };
 
 // Verify struct size for GPU alignment
-static_assert(sizeof(FPBRMaterialParams) == 64, "FPBRMaterialParams must be 64 bytes");
+static_assert(sizeof(FPBRMaterialParams) == 80, "FPBRMaterialParams must be 80 bytes");
 static_assert(alignof(FPBRMaterialParams) == 16, "FPBRMaterialParams must be 16-byte aligned");
 
 // ============================================================================
