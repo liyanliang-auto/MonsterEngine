@@ -70,6 +70,16 @@ public:
     virtual TSharedPtr<MonsterRender::RHI::IRHISampler> createSampler(
         const MonsterRender::RHI::SamplerDesc& desc) override;
     
+    // Descriptor set management (Multi-descriptor set support)
+    virtual TSharedPtr<MonsterRender::RHI::IRHIDescriptorSetLayout> createDescriptorSetLayout(
+        const MonsterRender::RHI::FDescriptorSetLayoutDesc& desc) override;
+    
+    virtual TSharedPtr<MonsterRender::RHI::IRHIPipelineLayout> createPipelineLayout(
+        const MonsterRender::RHI::FPipelineLayoutDesc& desc) override;
+    
+    virtual TSharedPtr<MonsterRender::RHI::IRHIDescriptorSet> allocateDescriptorSet(
+        TSharedPtr<MonsterRender::RHI::IRHIDescriptorSetLayout> layout) override;
+    
     // UE5-style vertex and index buffer creation
     virtual TSharedPtr<MonsterRender::RHI::FRHIVertexBuffer> CreateVertexBuffer(
         uint32 Size,
@@ -146,6 +156,13 @@ public:
      */
     TSharedPtr<FOpenGLSampler> CreateSamplerGL(const FSamplerDesc& desc);
     
+    /**
+     * Get descriptor pool manager
+     */
+    class FOpenGLDescriptorPoolManager* getDescriptorPoolManager() const { 
+        return m_descriptorPoolManager.get(); 
+    }
+    
 private:
     /**
      * Query device capabilities
@@ -176,6 +193,9 @@ private:
     // Default resources
     TSharedPtr<FOpenGLSampler> m_defaultSampler;
     TSharedPtr<FOpenGLTexture> m_defaultTexture;
+    
+    // Descriptor pool manager (UBO binding management)
+    TUniquePtr<class FOpenGLDescriptorPoolManager> m_descriptorPoolManager;
     
     // Backbuffer info
     uint32 m_backbufferWidth = 0;

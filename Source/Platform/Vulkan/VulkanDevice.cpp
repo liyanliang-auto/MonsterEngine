@@ -15,11 +15,14 @@
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include "Platform/Vulkan/VulkanCommandListContext.h"
 #include "Core/Log.h"
+#include "Core/Logging/LogMacros.h"
 
 #include <set>
 #include <algorithm>
 #include <vector>
 #include <unordered_set>
+
+DEFINE_LOG_CATEGORY_STATIC(LogVulkanRHI, Log, All);
 
 namespace MonsterRender::RHI::Vulkan {
     
@@ -383,11 +386,6 @@ namespace MonsterRender::RHI::Vulkan {
         
         auto sampler = MakeShared<VulkanSampler>(this, desc);
         
-        if (!sampler) {
-            MR_LOG_ERROR("Failed to create Vulkan sampler");
-            return nullptr;
-        }
-        
         return sampler;
     }
     
@@ -403,7 +401,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         auto layout = MakeShared<VulkanDescriptorSetLayout>(this, desc);
         
-        if (!layout || !layout->isValid()) {
+        if (!layout->isValid()) {
             MR_LOG(LogVulkanRHI, Error, "Failed to create descriptor set layout");
             return nullptr;
         }
@@ -419,7 +417,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         auto layout = MakeShared<VulkanPipelineLayout>(this, desc);
         
-        if (!layout || !layout->isValid()) {
+        if (!layout->isValid()) {
             MR_LOG(LogVulkanRHI, Error, "Failed to create pipeline layout");
             return nullptr;
         }
