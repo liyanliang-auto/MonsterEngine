@@ -5,6 +5,38 @@
 namespace MonsterRender::RHI {
     
     /**
+     * Descriptor binding constants (UE5-style)
+     * These constants define the mapping between Vulkan-style (set, binding) and OpenGL binding points
+     * Reference: UE5 uses similar constants for descriptor set management
+     */
+    {
+        /**
+         * Maximum number of bindings per descriptor set
+         * This is used to calculate OpenGL UBO binding points: actualBindingPoint = setIndex * MAX_BINDINGS_PER_SET + binding
+         * Must be coordinated with shader layout and device capabilities
+         */
+        constexpr uint32 MAX_BINDINGS_PER_SET = 16;
+        
+        /**
+         * Maximum number of descriptor sets
+         * Typical values: 4-8 sets (set 0, 1, 2, 3...)
+         */
+        constexpr uint32 MAX_DESCRIPTOR_SETS = 4;
+        
+        /**
+         * Maximum texture units per descriptor set
+         * OpenGL typically supports 16-32 texture units per shader stage
+         */
+        constexpr uint32 MAX_TEXTURE_UNITS_PER_SET = 16;
+        
+        /**
+         * Total maximum UBO binding points required
+         * = MAX_DESCRIPTOR_SETS * MAX_BINDINGS_PER_SET
+         */
+        constexpr uint32 MAX_TOTAL_UBO_BINDING_POINTS = MAX_DESCRIPTOR_SETS * MAX_BINDINGS_PER_SET;
+    }
+    
+    /**
      * RHI Backend type enumeration
      * Identifies which graphics API implementation a resource belongs to
      */

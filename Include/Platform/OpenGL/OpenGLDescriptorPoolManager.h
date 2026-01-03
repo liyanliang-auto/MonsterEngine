@@ -39,14 +39,26 @@ public:
     virtual ~FOpenGLDescriptorSet();
     
     // IRHIDescriptorSet interface
-    virtual void updateBuffer(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHIBuffer> buffer,
-                             uint64 offset, uint64 range) override;
+    virtual void updateUniformBuffer(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHIBuffer> buffer,
+                                    uint32 offset = 0, uint32 range = 0) override;
     
-    virtual void updateTexture(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHITexture> texture,
-                              MonsterRender::RHI::IRHISampler* sampler) override;
+    virtual void updateTexture(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHITexture> texture) override;
     
-    virtual void updateBuffers(MonsterRender::TSpan<const MonsterRender::RHI::FDescriptorBufferUpdate> updates) override;
-    virtual void updateTextures(MonsterRender::TSpan<const MonsterRender::RHI::FDescriptorTextureUpdate> updates) override;
+    virtual void updateSampler(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHISampler> sampler) override;
+    
+    virtual void updateCombinedTextureSampler(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHITexture> texture,
+                                             TSharedPtr<MonsterRender::RHI::IRHISampler> sampler) override;
+    
+    virtual TSharedPtr<MonsterRender::RHI::IRHIDescriptorSetLayout> getLayout() const override;
+    
+    // IRHIResource interface
+    virtual MonsterRender::RHI::ERHIBackend getBackendType() const override {
+        return MonsterRender::RHI::ERHIBackend::OpenGL;
+    }
+    
+    // OpenGL-specific helper methods
+    void updateBuffer(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHIBuffer> buffer,
+                     uint64 offset, uint64 range);
     
     // OpenGL-specific methods
     
@@ -94,16 +106,16 @@ public:
                                const MonsterRender::RHI::FDescriptorSetLayoutDesc& desc);
     virtual ~FOpenGLDescriptorSetLayout();
     
-    /**
-     * Get set index
-     */
-    uint32 getSetIndex() const { return m_setIndex; }
+    // IRHIDescriptorSetLayout interface
+    virtual uint32 getSetIndex() const override { return m_setIndex; }
     
-    /**
-     * Get bindings
-     */
-    const TArray<MonsterRender::RHI::FDescriptorSetLayoutBinding>& getBindings() const { 
+    virtual const TArray<MonsterRender::RHI::FDescriptorSetLayoutBinding>& getBindings() const override { 
         return m_bindings; 
+    }
+    
+    // IRHIResource interface
+    virtual MonsterRender::RHI::ERHIBackend getBackendType() const override {
+        return MonsterRender::RHI::ERHIBackend::OpenGL;
     }
     
     /**
@@ -128,11 +140,16 @@ public:
                          const MonsterRender::RHI::FPipelineLayoutDesc& desc);
     virtual ~FOpenGLPipelineLayout();
     
-    /**
-     * Get descriptor set layouts
-     */
-    const TArray<TSharedPtr<MonsterRender::RHI::IRHIDescriptorSetLayout>>& getSetLayouts() const {
+    // IRHIPipelineLayout interface
+    virtual const TArray<TSharedPtr<MonsterRender::RHI::IRHIDescriptorSetLayout>>& getSetLayouts() const override {
         return m_setLayouts;
+    }
+    
+    virtual const TArray<MonsterRender::RHI::FPushConstantRange>& getPushConstantRanges() const override;
+    
+    // IRHIResource interface
+    virtual MonsterRender::RHI::ERHIBackend getBackendType() const override {
+        return MonsterRender::RHI::ERHIBackend::OpenGL;
     }
     
     /**
@@ -143,6 +160,7 @@ public:
 private:
     FOpenGLDevice* m_device;
     TArray<TSharedPtr<MonsterRender::RHI::IRHIDescriptorSetLayout>> m_setLayouts;
+    TArray<MonsterRender::RHI::FPushConstantRange> m_pushConstantRanges;
     bool m_valid = false;
 };
 
@@ -182,7 +200,6 @@ public:
     struct Stats {
         uint32 totalSetsAllocated;
         uint32 currentFrameAllocations;
-        uint32 maxBindingPointsUsed;
     };
     Stats getStats() const;
     
@@ -190,17 +207,6 @@ public:
      * Reset all descriptor sets (for cleanup or testing)
      */
     void resetAll();
-    
-    /**
-     * Allocate a UBO binding point
-     * OpenGL has a limited number of UBO binding points (typically 36-96)
-     */
-    uint32 allocateBindingPoint();
-    
-    /**
-     * Free a UBO binding point
-     */
-    void freeBindingPoint(uint32 bindingPoint);
     
 private:
     FOpenGLDevice* m_device;
@@ -211,11 +217,6 @@ private:
     // Statistics
     mutable Stats m_stats;
     mutable std::mutex m_mutex;
-    
-    // UBO binding point management
-    static constexpr uint32 MAX_UBO_BINDING_POINTS = 96; // GL_MAX_UNIFORM_BUFFER_BINDINGS
-    TArray<bool> m_bindingPointsInUse;
-    uint32 m_nextBindingPoint = 0;
     
     // Track allocated descriptor sets for cleanup
     TArray<TWeakPtr<FOpenGLDescriptorSet>> m_allocatedSets;

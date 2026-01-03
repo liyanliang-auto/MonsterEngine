@@ -1,8 +1,9 @@
 #include "Platform/OpenGL/OpenGLDescriptorPoolManager.h"
 #include "Platform/OpenGL/OpenGLDevice.h"
 #include "Platform/OpenGL/OpenGLResources.h"
+#include "Platform/OpenGL/OpenGLFunctions.h"
 #include "Core/Logging/LogMacros.h"
-#include "glad/glad.h"
+#include "RHI/RHIDefinitions.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOpenGLRHI, Log, All);
 
@@ -25,6 +26,65 @@ FOpenGLDescriptorSet::~FOpenGLDescriptorSet()
     m_textureBindings.clear();
 }
 
+// IRHIDescriptorSet interface implementation
+void FOpenGLDescriptorSet::updateUniformBuffer(uint32 binding, 
+                                              TSharedPtr<MonsterRender::RHI::IRHIBuffer> buffer,
+                                              uint32 offset, uint32 range)
+{
+    updateBuffer(binding, buffer, offset, range);
+}
+
+void FOpenGLDescriptorSet::updateTexture(uint32 binding, 
+                                        TSharedPtr<MonsterRender::RHI::IRHITexture> texture)
+{
+    TextureBinding textureBinding;
+    textureBinding.texture = texture;
+    textureBinding.sampler = nullptr;
+    
+    m_textureBindings[binding] = textureBinding;
+    m_dirty = true;
+    
+    MR_LOG(LogOpenGLRHI, VeryVerbose, "Updated texture binding %u in descriptor set %u", 
+           binding, m_setIndex);
+}
+
+void FOpenGLDescriptorSet::updateSampler(uint32 binding, 
+                                        TSharedPtr<MonsterRender::RHI::IRHISampler> sampler)
+{
+    // In OpenGL, samplers are typically combined with textures
+    // Store sampler for later combination
+    if (m_textureBindings.Find(binding) != nullptr) {
+        m_textureBindings[binding].sampler = sampler.get();
+        m_dirty = true;
+    }
+    
+    MR_LOG(LogOpenGLRHI, VeryVerbose, "Updated sampler binding %u in descriptor set %u", 
+           binding, m_setIndex);
+}
+
+void FOpenGLDescriptorSet::updateCombinedTextureSampler(uint32 binding, 
+                                                       TSharedPtr<MonsterRender::RHI::IRHITexture> texture,
+                                                       TSharedPtr<MonsterRender::RHI::IRHISampler> sampler)
+{
+    TextureBinding textureBinding;
+    textureBinding.texture = texture;
+    textureBinding.sampler = sampler.get();
+    
+    m_textureBindings[binding] = textureBinding;
+    m_dirty = true;
+    
+    MR_LOG(LogOpenGLRHI, VeryVerbose, "Updated combined texture+sampler binding %u in descriptor set %u", 
+           binding, m_setIndex);
+}
+
+TSharedPtr<MonsterRender::RHI::IRHIDescriptorSetLayout> FOpenGLDescriptorSet::getLayout() const
+{
+    // OpenGL descriptor sets don't store layout reference
+    // This would need to be added if required
+    return nullptr;
+}
+
+// OpenGL-specific helper method
 void FOpenGLDescriptorSet::updateBuffer(uint32 binding, 
                                         TSharedPtr<MonsterRender::RHI::IRHIBuffer> buffer,
                                         uint64 offset, uint64 range)
@@ -41,37 +101,6 @@ void FOpenGLDescriptorSet::updateBuffer(uint32 binding,
            binding, m_setIndex);
 }
 
-void FOpenGLDescriptorSet::updateTexture(uint32 binding, 
-                                         TSharedPtr<MonsterRender::RHI::IRHITexture> texture,
-                                         MonsterRender::RHI::IRHISampler* sampler)
-{
-    TextureBinding textureBinding;
-    textureBinding.texture = texture;
-    textureBinding.sampler = sampler;
-    
-    m_textureBindings[binding] = textureBinding;
-    m_dirty = true;
-    
-    MR_LOG(LogOpenGLRHI, VeryVerbose, "Updated texture binding %u in descriptor set %u", 
-           binding, m_setIndex);
-}
-
-void FOpenGLDescriptorSet::updateBuffers(
-    MonsterRender::TSpan<const MonsterRender::RHI::FDescriptorBufferUpdate> updates)
-{
-    for (const auto& update : updates) {
-        updateBuffer(update.binding, update.buffer, update.offset, update.range);
-    }
-}
-
-void FOpenGLDescriptorSet::updateTextures(
-    MonsterRender::TSpan<const MonsterRender::RHI::FDescriptorTextureUpdate> updates)
-{
-    for (const auto& update : updates) {
-        updateTexture(update.binding, update.texture, update.sampler);
-    }
-}
-
 void FOpenGLDescriptorSet::applyBindings()
 {
     if (!m_dirty) {
@@ -80,17 +109,18 @@ void FOpenGLDescriptorSet::applyBindings()
     
     // Apply buffer bindings (UBOs)
     for (const auto& pair : m_bufferBindings) {
-        uint32 binding = pair.first;
-        const BufferBinding& bufferBinding = pair.second;
+        uint32 binding = pair.Key;
+        const BufferBinding& bufferBinding = pair.Value;
         
         if (bufferBinding.buffer) {
             auto* glBuffer = dynamic_cast<FOpenGLBuffer*>(bufferBinding.buffer.get());
             if (glBuffer) {
                 GLuint bufferHandle = glBuffer->GetGLBuffer();
                 
-                // Calculate actual binding point: setIndex * MAX_BINDINGS_PER_SET + binding
-                // This ensures different sets don't conflict
-                uint32 actualBindingPoint = m_setIndex * 16 + binding;
+                // Calculate actual binding point using unified constant: setIndex * MAX_BINDINGS_PER_SET + binding
+                // This ensures deterministic mapping from (set, binding) to OpenGL binding point
+                // Reference: UE5 uses similar fixed mapping for descriptor sets
+                uint32 actualBindingPoint = m_setIndex * MonsterRender::RHI::RHILimits::MAX_BINDINGS_PER_SET + binding;
                 
                 if (bufferBinding.range > 0) {
                     glBindBufferRange(GL_UNIFORM_BUFFER, actualBindingPoint, bufferHandle,
@@ -109,8 +139,8 @@ void FOpenGLDescriptorSet::applyBindings()
     // Apply texture bindings
     uint32 textureUnit = 0;
     for (const auto& pair : m_textureBindings) {
-        uint32 binding = pair.first;
-        const TextureBinding& textureBinding = pair.second;
+        uint32 binding = pair.Key;
+        const TextureBinding& textureBinding = pair.Value;
         
         if (textureBinding.texture) {
             auto* glTexture = dynamic_cast<FOpenGLTexture*>(textureBinding.texture.get());
@@ -149,11 +179,38 @@ FOpenGLDescriptorSetLayout::FOpenGLDescriptorSetLayout(
     : m_device(device)
     , m_setIndex(desc.setIndex)
     , m_bindings(desc.bindings)
-    , m_valid(true)
+    , m_valid(false)
 {
+    // Validate set index
+    if (m_setIndex >= MonsterRender::RHI::RHILimits::MAX_DESCRIPTOR_SETS) {
+        MR_LOG(LogOpenGLRHI, Error, 
+               "Descriptor set index %u exceeds maximum allowed (%u)",
+               m_setIndex, MonsterRender::RHI::RHILimits::MAX_DESCRIPTOR_SETS);
+        return;
+    }
+    
+    // Validate binding indices and count
+    // Reference: UE5 validates descriptor set layout against device limits
+    uint32 maxBindingIndex = 0;
+    for (const auto& binding : m_bindings) {
+        if (binding.binding >= MonsterRender::RHI::RHILimits::MAX_BINDINGS_PER_SET) {
+            MR_LOG(LogOpenGLRHI, Error, 
+                   "Binding index %u in set %u exceeds maximum allowed (%u)",
+                   binding.binding, m_setIndex, MonsterRender::RHI::RHILimits::MAX_BINDINGS_PER_SET);
+            return;
+        }
+        maxBindingIndex = (maxBindingIndex > binding.binding) ? maxBindingIndex : binding.binding;
+    }
+    
+    // Calculate actual OpenGL binding point range for this set
+    const uint32 baseBindingPoint = m_setIndex * MonsterRender::RHI::RHILimits::MAX_BINDINGS_PER_SET;
+    const uint32 maxBindingPoint = baseBindingPoint + maxBindingIndex;
+    
     MR_LOG(LogOpenGLRHI, Verbose, 
-           "Created OpenGL descriptor set layout for set %u with %llu bindings",
-           m_setIndex, static_cast<uint64>(m_bindings.size()));
+           "Created OpenGL descriptor set layout: set=%u, bindings=%llu, GL binding range=[%u, %u]",
+           m_setIndex, static_cast<uint64>(m_bindings.size()), baseBindingPoint, maxBindingPoint);
+    
+    m_valid = true;
 }
 
 FOpenGLDescriptorSetLayout::~FOpenGLDescriptorSetLayout()
@@ -170,6 +227,7 @@ FOpenGLPipelineLayout::FOpenGLPipelineLayout(
     const MonsterRender::RHI::FPipelineLayoutDesc& desc)
     : m_device(device)
     , m_setLayouts(desc.setLayouts)
+    , m_pushConstantRanges(desc.pushConstantRanges)
     , m_valid(true)
 {
     MR_LOG(LogOpenGLRHI, Verbose, 
@@ -180,6 +238,12 @@ FOpenGLPipelineLayout::FOpenGLPipelineLayout(
 FOpenGLPipelineLayout::~FOpenGLPipelineLayout()
 {
     m_setLayouts.clear();
+    m_pushConstantRanges.Empty();
+}
+
+const TArray<MonsterRender::RHI::FPushConstantRange>& FOpenGLPipelineLayout::getPushConstantRanges() const
+{
+    return m_pushConstantRanges;
 }
 
 // ============================================================================
@@ -189,17 +253,10 @@ FOpenGLPipelineLayout::~FOpenGLPipelineLayout()
 FOpenGLDescriptorPoolManager::FOpenGLDescriptorPoolManager(FOpenGLDevice* device)
     : m_device(device)
 {
-    // Initialize binding point tracking
-    m_bindingPointsInUse.resize(MAX_UBO_BINDING_POINTS);
-    for (uint32 i = 0; i < MAX_UBO_BINDING_POINTS; ++i) {
-        m_bindingPointsInUse[i] = false;
-    }
-    
     m_stats.totalSetsAllocated = 0;
     m_stats.currentFrameAllocations = 0;
-    m_stats.maxBindingPointsUsed = 0;
     
-    MR_LOG(LogOpenGLRHI, Log, "Initialized OpenGL descriptor pool manager");
+    MR_LOG(LogOpenGLRHI, Log, "Initialized OpenGL descriptor pool manager with deterministic binding mapping");
 }
 
 FOpenGLDescriptorPoolManager::~FOpenGLDescriptorPoolManager()
@@ -207,7 +264,6 @@ FOpenGLDescriptorPoolManager::~FOpenGLDescriptorPoolManager()
     std::lock_guard<std::mutex> lock(m_mutex);
     
     m_allocatedSets.clear();
-    m_bindingPointsInUse.clear();
     
     MR_LOG(LogOpenGLRHI, Log, "Destroyed OpenGL descriptor pool manager");
 }
@@ -223,15 +279,10 @@ TSharedPtr<FOpenGLDescriptorSet> FOpenGLDescriptorPoolManager::allocateDescripto
     }
     
     // Create descriptor set
-    auto descriptorSet = MakeShared<FOpenGLDescriptorSet>(m_device, layout->getSetIndex());
-    
-    if (!descriptorSet) {
-        MR_LOG(LogOpenGLRHI, Error, "Failed to create OpenGL descriptor set");
-        return nullptr;
-    }
+    TSharedPtr<FOpenGLDescriptorSet> descriptorSet = MakeShared<FOpenGLDescriptorSet>(m_device, layout->getSetIndex());
     
     // Track the allocated set
-    m_allocatedSets.push_back(descriptorSet);
+    m_allocatedSets.Add(descriptorSet);
     
     // Update statistics
     ++m_stats.totalSetsAllocated;
@@ -253,9 +304,9 @@ void FOpenGLDescriptorPoolManager::beginFrame(uint64 frameNumber)
     
     // Clean up expired weak pointers
     uint32 cleanedCount = 0;
-    for (int32 i = m_allocatedSets.size() - 1; i >= 0; --i) {
-        if (m_allocatedSets[i].expired()) {
-            m_allocatedSets.erase(m_allocatedSets.begin() + i);
+    for (int32 i = static_cast<int32>(m_allocatedSets.Num()) - 1; i >= 0; --i) {
+        if (!m_allocatedSets[i].IsValid()) {
+            m_allocatedSets.RemoveAt(i);
             ++cleanedCount;
         }
     }
@@ -279,66 +330,11 @@ void FOpenGLDescriptorPoolManager::resetAll()
     
     m_allocatedSets.clear();
     
-    // Reset binding points
-    for (uint32 i = 0; i < MAX_UBO_BINDING_POINTS; ++i) {
-        m_bindingPointsInUse[i] = false;
-    }
-    m_nextBindingPoint = 0;
-    
     m_stats.totalSetsAllocated = 0;
     m_stats.currentFrameAllocations = 0;
-    m_stats.maxBindingPointsUsed = 0;
     
     MR_LOG(LogOpenGLRHI, Verbose, "Reset all OpenGL descriptor sets");
 }
 
-uint32 FOpenGLDescriptorPoolManager::allocateBindingPoint()
-{
-    std::lock_guard<std::mutex> lock(m_mutex);
-    
-    // Find next available binding point
-    for (uint32 i = 0; i < MAX_UBO_BINDING_POINTS; ++i) {
-        uint32 candidatePoint = (m_nextBindingPoint + i) % MAX_UBO_BINDING_POINTS;
-        
-        if (!m_bindingPointsInUse[candidatePoint]) {
-            m_bindingPointsInUse[candidatePoint] = true;
-            m_nextBindingPoint = (candidatePoint + 1) % MAX_UBO_BINDING_POINTS;
-            
-            // Update max used
-            uint32 usedCount = 0;
-            for (uint32 j = 0; j < MAX_UBO_BINDING_POINTS; ++j) {
-                if (m_bindingPointsInUse[j]) {
-                    ++usedCount;
-                }
-            }
-            m_stats.maxBindingPointsUsed = usedCount > m_stats.maxBindingPointsUsed 
-                                          ? usedCount 
-                                          : m_stats.maxBindingPointsUsed;
-            
-            MR_LOG(LogOpenGLRHI, VeryVerbose, 
-                   "Allocated UBO binding point %u (total in use: %u)",
-                   candidatePoint, usedCount);
-            
-            return candidatePoint;
-        }
-    }
-    
-    MR_LOG(LogOpenGLRHI, Error, 
-           "Failed to allocate UBO binding point - all %u points are in use",
-           MAX_UBO_BINDING_POINTS);
-    
-    return 0; // Return 0 as fallback (will likely cause issues)
-}
-
-void FOpenGLDescriptorPoolManager::freeBindingPoint(uint32 bindingPoint)
-{
-    std::lock_guard<std::mutex> lock(m_mutex);
-    
-    if (bindingPoint < MAX_UBO_BINDING_POINTS) {
-        m_bindingPointsInUse[bindingPoint] = false;
-        
-        MR_LOG(LogOpenGLRHI, VeryVerbose, "Freed UBO binding point %u", bindingPoint);
-    }
-}
 
 } // namespace MonsterEngine::OpenGL

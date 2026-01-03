@@ -3,7 +3,9 @@
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanSampler.h"
-#include "Core/Log.h"
+#include "Core/Logging/LogMacros.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogVulkanRHI, Log, All);
 
 namespace MonsterRender::RHI::Vulkan {
     
