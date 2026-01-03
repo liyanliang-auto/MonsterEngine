@@ -61,6 +61,11 @@ namespace MonsterRender::RHI::Vulkan {
         FVulkanDescriptorPoolSetContainer* getDescriptorPool() const { return m_descriptorPool.get(); }
         
         /**
+         * Get command buffer manager for this context
+         */
+        FVulkanCommandBufferManager* getCommandBufferManager() const { return m_manager; }
+        
+        /**
          * Begin recording commands
          */
         void beginRecording();

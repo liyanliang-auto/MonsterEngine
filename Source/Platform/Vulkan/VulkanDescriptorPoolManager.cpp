@@ -206,6 +206,56 @@ namespace MonsterRender::RHI::Vulkan {
         return descriptorSet;
     }
     
+    VkDescriptorSet VulkanDescriptorPoolManager::allocateRawDescriptorSet(VkDescriptorSetLayout layout) {
+        if (layout == VK_NULL_HANDLE) {
+            MR_LOG(LogVulkanRHI, Error, "Invalid descriptor set layout handle");
+            return VK_NULL_HANDLE;
+        }
+        
+        std::lock_guard<std::mutex> lock(m_mutex);
+        
+        // Get current pool or create new one if full
+        VulkanDescriptorPool* pool = _getCurrentPool();
+        if (!pool) {
+            MR_LOG(LogVulkanRHI, Error, "Failed to get descriptor pool");
+            return VK_NULL_HANDLE;
+        }
+        
+        // Try to allocate from current pool
+        VkDescriptorSet vkSet = pool->allocate(layout);
+        
+        // If allocation failed due to full pool, create new pool and retry
+        if (vkSet == VK_NULL_HANDLE && pool->isFull()) {
+            MR_LOG(LogVulkanRHI, Verbose, "Current pool is full, creating new pool for raw allocation");
+            
+            pool = _createNewPool();
+            if (!pool) {
+                MR_LOG(LogVulkanRHI, Error, "Failed to create new descriptor pool");
+                return VK_NULL_HANDLE;
+            }
+            
+            vkSet = pool->allocate(layout);
+        }
+        
+        if (vkSet == VK_NULL_HANDLE) {
+            MR_LOG(LogVulkanRHI, Error, "Failed to allocate raw descriptor set");
+            return VK_NULL_HANDLE;
+        }
+        
+        // Update statistics
+        m_stats.totalSetsAllocated++;
+        m_stats.currentFrameAllocations++;
+        
+        // Mark pool as used in current frame
+        if (m_currentPoolIndex < m_poolFrameNumbers.size()) {
+            m_poolFrameNumbers[m_currentPoolIndex] = m_currentFrame;
+        }
+        
+        MR_LOG(LogVulkanRHI, VeryVerbose, "Allocated raw descriptor set from pool");
+        
+        return vkSet;
+    }
+    
     void VulkanDescriptorPoolManager::beginFrame(uint64 frameNumber) {
         std::lock_guard<std::mutex> lock(m_mutex);
         
