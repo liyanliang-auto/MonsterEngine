@@ -8,10 +8,12 @@
 #include "Platform/OpenGL/OpenGLDevice.h"
 #include "Platform/OpenGL/OpenGLCommandList.h"
 #include "Platform/OpenGL/OpenGLFunctions.h"
+#include "Platform/OpenGL/OpenGLDescriptorPoolManager.h"
 #include "Core/Logging/LogMacros.h"
 
-// Define log category
+// Define log categories
 DEFINE_LOG_CATEGORY_STATIC(LogOpenGLDevice, Log, All);
+DEFINE_LOG_CATEGORY_STATIC(LogOpenGLRHI, Log, All);
 
 namespace MonsterEngine::OpenGL {
 
@@ -100,6 +102,14 @@ bool FOpenGLDevice::Initialize(void* windowHandle, const FOpenGLContextConfig& c
     // Create framebuffer for render targets
     m_currentFramebuffer = MakeUnique<FOpenGLFramebuffer>();
     
+    // Create descriptor pool manager (UBO binding management)
+    m_descriptorPoolManager = MakeUnique<FOpenGLDescriptorPoolManager>(this);
+    if (!m_descriptorPoolManager) {
+        OutputDebugStringA("OpenGL: Failed to create descriptor pool manager\n");
+        return false;
+    }
+    OutputDebugStringA("OpenGL: Descriptor pool manager initialized\n");
+    
     // Get initial backbuffer size
     m_backbufferWidth = 1280;
     m_backbufferHeight = 720;
@@ -125,6 +135,9 @@ void FOpenGLDevice::Shutdown()
     
     // Destroy resources
     DestroyDefaultResources();
+    
+    // Destroy descriptor pool manager
+    m_descriptorPoolManager.Reset();
     
     m_immediateCommandList.Reset();
     m_currentFramebuffer.Reset();
@@ -481,6 +494,78 @@ void FOpenGLDevice::DestroyDefaultResources()
 {
     m_defaultSampler.Reset();
     m_defaultTexture.Reset();
+}
+
+// ============================================================================
+// Descriptor Set Management
+// ============================================================================
+
+TSharedPtr<IRHIDescriptorSetLayout> FOpenGLDevice::createDescriptorSetLayout(
+    const FDescriptorSetLayoutDesc& desc)
+{
+    MR_LOG(LogOpenGLRHI, Verbose, 
+           "Creating OpenGL descriptor set layout for set %u with %llu bindings",
+           desc.setIndex, static_cast<uint64>(desc.bindings.size()));
+    
+    auto layout = MakeShared<FOpenGLDescriptorSetLayout>(this, desc);
+    
+    if (!layout || !layout->isValid()) {
+        MR_LOG(LogOpenGLRHI, Error, "Failed to create OpenGL descriptor set layout");
+        return nullptr;
+    }
+    
+    return layout;
+}
+
+TSharedPtr<IRHIPipelineLayout> FOpenGLDevice::createPipelineLayout(
+    const FPipelineLayoutDesc& desc)
+{
+    MR_LOG(LogOpenGLRHI, Verbose, 
+           "Creating OpenGL pipeline layout with %llu descriptor sets",
+           static_cast<uint64>(desc.setLayouts.size()));
+    
+    auto layout = MakeShared<FOpenGLPipelineLayout>(this, desc);
+    
+    if (!layout || !layout->isValid()) {
+        MR_LOG(LogOpenGLRHI, Error, "Failed to create OpenGL pipeline layout");
+        return nullptr;
+    }
+    
+    return layout;
+}
+
+TSharedPtr<IRHIDescriptorSet> FOpenGLDevice::allocateDescriptorSet(
+    TSharedPtr<IRHIDescriptorSetLayout> layout)
+{
+    if (!layout) {
+        MR_LOG(LogOpenGLRHI, Error, "allocateDescriptorSet: Invalid layout");
+        return nullptr;
+    }
+    
+    auto* glLayout = dynamic_cast<FOpenGLDescriptorSetLayout*>(layout.get());
+    if (!glLayout) {
+        MR_LOG(LogOpenGLRHI, Error, "allocateDescriptorSet: Layout is not an OpenGL layout");
+        return nullptr;
+    }
+    
+    if (!m_descriptorPoolManager) {
+        MR_LOG(LogOpenGLRHI, Error, "allocateDescriptorSet: Descriptor pool manager not initialized");
+        return nullptr;
+    }
+    
+    // Allocate descriptor set from pool manager
+    auto descriptorSet = m_descriptorPoolManager->allocateDescriptorSet(
+        TSharedPtr<FOpenGLDescriptorSetLayout>(glLayout, [](FOpenGLDescriptorSetLayout*){}));
+    
+    if (!descriptorSet) {
+        MR_LOG(LogOpenGLRHI, Error, "Failed to allocate OpenGL descriptor set");
+        return nullptr;
+    }
+    
+    MR_LOG(LogOpenGLRHI, VeryVerbose, "Allocated OpenGL descriptor set for set %u",
+           glLayout->getSetIndex());
+    
+    return descriptorSet;
 }
 
 // ============================================================================

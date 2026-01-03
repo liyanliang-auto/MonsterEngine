@@ -244,6 +244,7 @@
     <ClCompile Include="Source\Platform\OpenGL\OpenGLShaders.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLPipeline.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLDevice.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLDescriptorPoolManager.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLCommandList.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLSwapChain.cpp" />
     <ClCompile Include="Source\Engine\Scene.cpp" />
@@ -437,6 +438,7 @@
     <ClInclude Include="Include\Platform\OpenGL\OpenGLShaders.h" />
     <ClInclude Include="Include\Platform\OpenGL\OpenGLPipeline.h" />
     <ClInclude Include="Include\Platform\OpenGL\OpenGLDevice.h" />
+    <ClInclude Include="Include\Platform\OpenGL\OpenGLDescriptorPoolManager.h" />
     <ClInclude Include="Include\Platform\OpenGL\OpenGLCommandList.h" />
     <ClInclude Include="Include\Platform\OpenGL\OpenGLRHI.h" />
     <ClInclude Include="Include\Platform\OpenGL\OpenGLSwapChain.h" />
