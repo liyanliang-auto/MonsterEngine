@@ -443,6 +443,38 @@ void FOpenGLDevice::QueryCapabilities()
     m_capabilities.maxVertexInputAttributes = value;
     m_capabilities.maxVertexInputBindings = value;
     
+    // Query descriptor binding limits (critical for RHI compatibility)
+    GLint maxUBOBindings = 0;
+    glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &maxUBOBindings);
+    
+    GLint maxTextureUnits = 0;
+    glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &maxTextureUnits);
+    
+    // Validate against engine requirements
+    // Reference: UE5 validates device capabilities against minimum requirements
+    const uint32 requiredUBOBindings = MonsterRender::RHI::RHILimits::MAX_TOTAL_UBO_BINDING_POINTS;
+    const uint32 requiredTextureUnits = MonsterRender::RHI::RHILimits::MAX_DESCRIPTOR_SETS * MonsterRender::RHI::RHILimits::MAX_TEXTURE_UNITS_PER_SET;
+    
+    if (static_cast<uint32>(maxUBOBindings) < requiredUBOBindings) {
+        MR_LOG(LogOpenGLDevice, Warning, 
+               "GL_MAX_UNIFORM_BUFFER_BINDINGS (%d) is less than required (%u). Descriptor binding may fail.",
+               maxUBOBindings, requiredUBOBindings);
+    } else {
+        MR_LOG(LogOpenGLDevice, Log, 
+               "GL_MAX_UNIFORM_BUFFER_BINDINGS: %d (required: %u)",
+               maxUBOBindings, requiredUBOBindings);
+    }
+    
+    if (static_cast<uint32>(maxTextureUnits) < requiredTextureUnits) {
+        MR_LOG(LogOpenGLDevice, Warning, 
+               "GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS (%d) is less than required (%u). Texture binding may fail.",
+               maxTextureUnits, requiredTextureUnits);
+    } else {
+        MR_LOG(LogOpenGLDevice, Log, 
+               "GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS: %d (required: %u)",
+               maxTextureUnits, requiredTextureUnits);
+    }
+    
     // Feature support
     m_capabilities.supportsGeometryShader = true;  // GL 4.6 always supports this
     m_capabilities.supportsTessellation = true;
@@ -507,9 +539,9 @@ TSharedPtr<IRHIDescriptorSetLayout> FOpenGLDevice::createDescriptorSetLayout(
            "Creating OpenGL descriptor set layout for set %u with %llu bindings",
            desc.setIndex, static_cast<uint64>(desc.bindings.size()));
     
-    auto layout = MakeShared<FOpenGLDescriptorSetLayout>(this, desc);
+    TSharedPtr<FOpenGLDescriptorSetLayout> layout = MakeShared<FOpenGLDescriptorSetLayout>(this, desc);
     
-    if (!layout || !layout->isValid()) {
+    if (!layout->isValid()) {
         MR_LOG(LogOpenGLRHI, Error, "Failed to create OpenGL descriptor set layout");
         return nullptr;
     }
@@ -524,9 +556,9 @@ TSharedPtr<IRHIPipelineLayout> FOpenGLDevice::createPipelineLayout(
            "Creating OpenGL pipeline layout with %llu descriptor sets",
            static_cast<uint64>(desc.setLayouts.size()));
     
-    auto layout = MakeShared<FOpenGLPipelineLayout>(this, desc);
+    TSharedPtr<FOpenGLPipelineLayout> layout = MakeShared<FOpenGLPipelineLayout>(this, desc);
     
-    if (!layout || !layout->isValid()) {
+    if (!layout->isValid()) {
         MR_LOG(LogOpenGLRHI, Error, "Failed to create OpenGL pipeline layout");
         return nullptr;
     }

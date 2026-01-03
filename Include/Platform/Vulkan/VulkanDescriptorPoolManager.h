@@ -3,6 +3,7 @@
 #include "Core/CoreMinimal.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
+#include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Containers/Array.h"
 #include <mutex>
 
@@ -12,62 +13,6 @@ namespace MonsterRender::RHI::Vulkan {
     
     // Forward declarations
     class VulkanDevice;
-    
-    /**
-     * Descriptor pool for allocating descriptor sets
-     * Reference: UE5 FVulkanDescriptorPool
-     */
-    class VulkanDescriptorPool {
-    public:
-        VulkanDescriptorPool(VulkanDevice* device, uint32 maxSets);
-        ~VulkanDescriptorPool();
-        
-        // Non-copyable, non-movable
-        VulkanDescriptorPool(const VulkanDescriptorPool&) = delete;
-        VulkanDescriptorPool& operator=(const VulkanDescriptorPool&) = delete;
-        
-        /**
-         * Allocate a descriptor set from this pool
-         * @param layout Descriptor set layout
-         * @return Allocated descriptor set handle, or VK_NULL_HANDLE on failure
-         */
-        VkDescriptorSet allocate(VkDescriptorSetLayout layout);
-        
-        /**
-         * Reset the pool (frees all allocated descriptor sets)
-         */
-        void reset();
-        
-        /**
-         * Check if pool is full
-         */
-        bool isFull() const { return m_allocatedSets >= m_maxSets; }
-        
-        /**
-         * Get current allocation count
-         */
-        uint32 getAllocatedCount() const { return m_allocatedSets; }
-        
-        /**
-         * Get maximum sets capacity
-         */
-        uint32 getMaxSets() const { return m_maxSets; }
-        
-        /**
-         * Get Vulkan pool handle
-         */
-        VkDescriptorPool getHandle() const { return m_pool; }
-        
-    private:
-        VulkanDevice* m_device;
-        VkDescriptorPool m_pool = VK_NULL_HANDLE;
-        uint32 m_maxSets;
-        uint32 m_allocatedSets = 0;
-        
-        bool _createPool();
-        void _destroyPool();
-        TArray<VkDescriptorPoolSize> _getDefaultPoolSizes() const;
-    };
     
     /**
      * Descriptor pool manager with automatic pool creation and recycling
@@ -120,7 +65,7 @@ namespace MonsterRender::RHI::Vulkan {
         Stats getStats() const;
         
         /**
-         * Force reset all pools (for cleanup or testing)
+         * Reset all pools (for cleanup or testing)
          */
         void resetAll();
         

@@ -1,94 +1,16 @@
 #include "Platform/Vulkan/VulkanDescriptorPoolManager.h"
 #include "Platform/Vulkan/VulkanDevice.h"
-#include "Core/Log.h"
+#include "Core/Logging/LogMacros.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogVulkanRHI, Log, All);
 
 namespace MonsterRender::RHI::Vulkan {
     
     // ========================================================================
-    // VulkanDescriptorPool Implementation
+    // Helper function to get default pool sizes
     // ========================================================================
     
-    VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice* device, uint32 maxSets)
-        : m_device(device)
-        , m_maxSets(maxSets)
-    {
-        if (!_createPool()) {
-            MR_LOG(LogVulkanRHI, Error, "Failed to create Vulkan descriptor pool");
-        }
-    }
-    
-    VulkanDescriptorPool::~VulkanDescriptorPool() {
-        _destroyPool();
-    }
-    
-    VkDescriptorSet VulkanDescriptorPool::allocate(VkDescriptorSetLayout layout) {
-        if (isFull()) {
-            MR_LOG(LogVulkanRHI, Warning, "Descriptor pool is full, cannot allocate more sets");
-            return VK_NULL_HANDLE;
-        }
-        
-        VkDescriptorSetAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = m_pool;
-        allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &layout;
-        
-        VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-        VkResult result = vkAllocateDescriptorSets(m_device->getDevice(), &allocInfo, &descriptorSet);
-        
-        if (result != VK_SUCCESS) {
-            MR_LOG(LogVulkanRHI, Error, "vkAllocateDescriptorSets failed with result %d", result);
-            return VK_NULL_HANDLE;
-        }
-        
-        m_allocatedSets++;
-        
-        MR_LOG(LogVulkanRHI, VeryVerbose, "Allocated descriptor set from pool (count: %u/%u)",
-               m_allocatedSets, m_maxSets);
-        
-        return descriptorSet;
-    }
-    
-    void VulkanDescriptorPool::reset() {
-        if (m_pool != VK_NULL_HANDLE) {
-            vkResetDescriptorPool(m_device->getDevice(), m_pool, 0);
-            m_allocatedSets = 0;
-            
-            MR_LOG(LogVulkanRHI, VeryVerbose, "Reset descriptor pool");
-        }
-    }
-    
-    bool VulkanDescriptorPool::_createPool() {
-        TArray<VkDescriptorPoolSize> poolSizes = _getDefaultPoolSizes();
-        
-        VkDescriptorPoolCreateInfo poolInfo = {};
-        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        poolInfo.maxSets = m_maxSets;
-        poolInfo.poolSizeCount = static_cast<uint32>(poolSizes.size());
-        poolInfo.pPoolSizes = poolSizes.data();
-        
-        VkResult result = vkCreateDescriptorPool(m_device->getDevice(), &poolInfo, 
-                                                nullptr, &m_pool);
-        
-        if (result != VK_SUCCESS) {
-            MR_LOG(LogVulkanRHI, Error, "vkCreateDescriptorPool failed with result %d", result);
-            return false;
-        }
-        
-        MR_LOG(LogVulkanRHI, Verbose, "Created descriptor pool with capacity for %u sets", m_maxSets);
-        
-        return true;
-    }
-    
-    void VulkanDescriptorPool::_destroyPool() {
-        if (m_pool != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(m_device->getDevice(), m_pool, nullptr);
-            m_pool = VK_NULL_HANDLE;
-        }
-    }
-    
-    TArray<VkDescriptorPoolSize> VulkanDescriptorPool::_getDefaultPoolSizes() const {
+    static TArray<VkDescriptorPoolSize> GetDefaultPoolSizes(uint32 maxSets) {
         // Allocate pool sizes for common descriptor types
         // These ratios are based on typical usage patterns
         TArray<VkDescriptorPoolSize> poolSizes;
@@ -96,38 +18,26 @@ namespace MonsterRender::RHI::Vulkan {
         // Uniform buffers (most common)
         VkDescriptorPoolSize uniformBufferSize = {};
         uniformBufferSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uniformBufferSize.descriptorCount = m_maxSets * 4; // 4 UBOs per set on average
-        poolSizes.push_back(uniformBufferSize);
+        uniformBufferSize.descriptorCount = maxSets * 4; // 4 UBOs per set on average
+        poolSizes.Add(uniformBufferSize);
         
         // Combined image samplers (textures)
         VkDescriptorPoolSize samplerSize = {};
         samplerSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplerSize.descriptorCount = m_maxSets * 8; // 8 textures per set on average
-        poolSizes.push_back(samplerSize);
+        samplerSize.descriptorCount = maxSets * 4; // 4 textures per set on average
+        poolSizes.Add(samplerSize);
         
-        // Sampled images (separate textures)
-        VkDescriptorPoolSize imageSize = {};
-        imageSize.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-        imageSize.descriptorCount = m_maxSets * 4;
-        poolSizes.push_back(imageSize);
-        
-        // Samplers (separate samplers)
-        VkDescriptorPoolSize separateSamplerSize = {};
-        separateSamplerSize.type = VK_DESCRIPTOR_TYPE_SAMPLER;
-        separateSamplerSize.descriptorCount = m_maxSets * 2;
-        poolSizes.push_back(separateSamplerSize);
-        
-        // Storage buffers
+        // Storage buffers (for compute)
         VkDescriptorPoolSize storageBufferSize = {};
         storageBufferSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        storageBufferSize.descriptorCount = m_maxSets * 2;
-        poolSizes.push_back(storageBufferSize);
+        storageBufferSize.descriptorCount = maxSets * 2; // 2 storage buffers per set
+        poolSizes.Add(storageBufferSize);
         
-        // Storage images
+        // Storage images (for compute)
         VkDescriptorPoolSize storageImageSize = {};
         storageImageSize.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        storageImageSize.descriptorCount = m_maxSets * 2;
-        poolSizes.push_back(storageImageSize);
+        storageImageSize.descriptorCount = maxSets * 2; // 2 storage images per set
+        poolSizes.Add(storageImageSize);
         
         return poolSizes;
     }
@@ -326,9 +236,10 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     VulkanDescriptorPool* VulkanDescriptorPoolManager::_createNewPool() {
-        auto pool = MakeUnique<VulkanDescriptorPool>(m_device, SETS_PER_POOL);
+        TArray<VkDescriptorPoolSize> poolSizes = GetDefaultPoolSizes(SETS_PER_POOL);
+        auto pool = MakeUnique<VulkanDescriptorPool>(m_device, SETS_PER_POOL, poolSizes);
         
-        if (!pool || pool->getHandle() == VK_NULL_HANDLE) {
+        if (!pool || pool->getPool() == VK_NULL_HANDLE) {
             MR_LOG(LogVulkanRHI, Error, "Failed to create descriptor pool");
             return nullptr;
         }

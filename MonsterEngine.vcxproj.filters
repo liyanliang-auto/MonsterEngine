@@ -69,6 +69,12 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanDescriptorSet.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Platform\Vulkan\VulkanDescriptorSetLayout.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Platform\Vulkan\VulkanDescriptorPoolManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Platform\Vulkan\VulkanPipelineState.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
