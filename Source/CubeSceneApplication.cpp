@@ -67,7 +67,7 @@ using MonsterRender::LogCubeSceneApp;
 static ApplicationConfig CreateCubeSceneConfig()
 {
     ApplicationConfig config;
-    config.name = "CubeScene Application";
+    config.name = "Monster Engine";
     config.preferredBackend = RHI::ERHIBackend::Vulkan;  // Use Vulkan backend
     config.windowProperties.width = 1280;
     config.windowProperties.height = 1024;
