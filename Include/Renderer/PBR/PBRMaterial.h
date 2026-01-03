@@ -94,11 +94,8 @@ public:
     /** Set material name */
     void setName(const FName& name) { m_name = name; }
     
-    /** Get material parameters (read-only) */
+    /** Get material parameters (read-only, use setters to modify) */
     const FPBRMaterialParams& getParams() const { return m_params; }
-    
-    /** Get material parameters (mutable) */
-    FPBRMaterialParams& getParams() { return m_params; m_dirty = true; }
     
     /** Set base color factor */
     void setBaseColor(const FVector4f& color);
