@@ -7,6 +7,8 @@
 
 #include "Renderer/PBR/PBRMaterial.h"
 #include "Renderer/PBR/PBRDescriptorSetLayouts.h"
+#include "Renderer/PBR/PBRDefaultTextures.h"
+#include "Engine/Texture/Texture2D.h"
 #include "RHI/IRHIDevice.h"
 #include "RHI/IRHIResource.h"
 #include "RHI/IRHIDescriptorSet.h"
@@ -173,6 +175,31 @@ void FPBRMaterial::setDoubleSided(bool doubleSided)
     m_dirty = true;
 }
 
+void FPBRMaterial::setNormalScale(float scale)
+{
+    m_params.NormalScale = (scale < 0.0f) ? 0.0f : ((scale > 2.0f) ? 2.0f : scale);
+    m_dirty = true;
+}
+
+void FPBRMaterial::setOcclusionStrength(float strength)
+{
+    m_params.OcclusionStrength = (strength < 0.0f) ? 0.0f : ((strength > 1.0f) ? 1.0f : strength);
+    m_dirty = true;
+}
+
+void FPBRMaterial::setIOR(float ior)
+{
+    // IOR typically ranges from 1.0 (vacuum) to ~2.5 (diamond)
+    m_params.IOR = (ior < 1.0f) ? 1.0f : ((ior > 3.0f) ? 3.0f : ior);
+    m_dirty = true;
+}
+
+void FPBRMaterial::setUseAlphaMask(bool useAlphaMask)
+{
+    m_params.setUseAlphaMask(useAlphaMask);
+    m_dirty = true;
+}
+
 // ============================================================================
 // Textures
 // ============================================================================
@@ -291,14 +318,71 @@ void FPBRMaterial::_updateDescriptorSet()
         static_cast<uint32>(EPBRPerMaterialBinding::MaterialUBO),
         m_materialBuffer);
     
-    // TODO: Texture binding will be implemented when FTexture2D class is available
-    // For now, materials work with uniform buffer parameters only
-    // Texture support requires:
-    // 1. FTexture2D class with getRHITexture() method
-    // 2. Default fallback textures (white, normal, black)
-    // 3. Sampler binding
+    // Get default textures for fallback
+    FPBRDefaultTextures& defaults = FPBRDefaultTextures::get();
+    if (!defaults.isInitialized()) {
+        MR_LOG(LogPBRMaterial, Warning, "Default textures not initialized, skipping texture binding");
+        return;
+    }
     
-    MR_LOG(LogPBRMaterial, VeryVerbose, "Updated material descriptor set (textures pending)");
+    TSharedPtr<IRHISampler> sampler = defaults.getDefaultSampler();
+    
+    // Bind BaseColor texture (or default white)
+    TSharedPtr<IRHITexture> baseColorTex = defaults.getWhiteRHITexture();
+    if (m_textures.BaseColorTexture && m_textures.BaseColorTexture->isValid()) {
+        baseColorTex = m_textures.BaseColorTexture->getRHITexture();
+    }
+    if (baseColorTex && sampler) {
+        m_descriptorSet->updateCombinedTextureSampler(
+            static_cast<uint32>(EPBRPerMaterialBinding::BaseColorTexture),
+            baseColorTex, sampler);
+    }
+    
+    // Bind MetallicRoughness texture (or default)
+    TSharedPtr<IRHITexture> metallicRoughnessTex = defaults.getMetallicRoughnessRHITexture();
+    if (m_textures.MetallicRoughnessTexture && m_textures.MetallicRoughnessTexture->isValid()) {
+        metallicRoughnessTex = m_textures.MetallicRoughnessTexture->getRHITexture();
+    }
+    if (metallicRoughnessTex && sampler) {
+        m_descriptorSet->updateCombinedTextureSampler(
+            static_cast<uint32>(EPBRPerMaterialBinding::MetallicRoughnessTexture),
+            metallicRoughnessTex, sampler);
+    }
+    
+    // Bind Normal texture (or default flat normal)
+    TSharedPtr<IRHITexture> normalTex = defaults.getNormalRHITexture();
+    if (m_textures.NormalTexture && m_textures.NormalTexture->isValid()) {
+        normalTex = m_textures.NormalTexture->getRHITexture();
+    }
+    if (normalTex && sampler) {
+        m_descriptorSet->updateCombinedTextureSampler(
+            static_cast<uint32>(EPBRPerMaterialBinding::NormalTexture),
+            normalTex, sampler);
+    }
+    
+    // Bind Occlusion texture (or default white = no occlusion)
+    TSharedPtr<IRHITexture> occlusionTex = defaults.getOcclusionRHITexture();
+    if (m_textures.OcclusionTexture && m_textures.OcclusionTexture->isValid()) {
+        occlusionTex = m_textures.OcclusionTexture->getRHITexture();
+    }
+    if (occlusionTex && sampler) {
+        m_descriptorSet->updateCombinedTextureSampler(
+            static_cast<uint32>(EPBRPerMaterialBinding::OcclusionTexture),
+            occlusionTex, sampler);
+    }
+    
+    // Bind Emissive texture (or default black = no emission)
+    TSharedPtr<IRHITexture> emissiveTex = defaults.getBlackRHITexture();
+    if (m_textures.EmissiveTexture && m_textures.EmissiveTexture->isValid()) {
+        emissiveTex = m_textures.EmissiveTexture->getRHITexture();
+    }
+    if (emissiveTex && sampler) {
+        m_descriptorSet->updateCombinedTextureSampler(
+            static_cast<uint32>(EPBRPerMaterialBinding::EmissiveTexture),
+            emissiveTex, sampler);
+    }
+    
+    MR_LOG(LogPBRMaterial, VeryVerbose, "Updated material descriptor set with textures: %s", *m_name.ToString());
 }
 
 // ============================================================================
