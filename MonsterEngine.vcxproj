@@ -303,6 +303,10 @@
     <ClCompile Include="Source\Renderer\RenderQueue.cpp" />
     <ClCompile Include="Source\Renderer\ShadowRendering.cpp" />
     <ClCompile Include="Source\Renderer\ShadowDepthPass.cpp" />
+    <!-- PBR Module Source Files -->
+    <ClCompile Include="Source\Renderer\PBR\PBRDescriptorSetLayouts.cpp" />
+    <ClCompile Include="Source\Renderer\PBR\PBRMaterial.cpp" />
+    <ClCompile Include="Source\Renderer\PBR\PBRRenderer.cpp" />
     <ClCompile Include="Source\Tests\CubeSceneRendererTest.cpp" />
     <ClCompile Include="Source\Tests\CubeSceneRendererTestApp.cpp" />
     <!-- ImGui Source Files - PCH disabled for third-party code -->
@@ -500,6 +504,12 @@
     <ClInclude Include="Include\Renderer\RenderQueue.h" />
     <ClInclude Include="Include\Renderer\ShadowRendering.h" />
     <ClInclude Include="Include\Renderer\ShadowDepthPass.h" />
+    <!-- PBR Module Headers -->
+    <ClInclude Include="Include\Renderer\PBR\PBRMaterialTypes.h" />
+    <ClInclude Include="Include\Renderer\PBR\PBRUniformBuffers.h" />
+    <ClInclude Include="Include\Renderer\PBR\PBRDescriptorSetLayouts.h" />
+    <ClInclude Include="Include\Renderer\PBR\PBRMaterial.h" />
+    <ClInclude Include="Include\Renderer\PBR\PBRRenderer.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTest.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTestApp.h" />
     <!-- RDG Module Headers -->
