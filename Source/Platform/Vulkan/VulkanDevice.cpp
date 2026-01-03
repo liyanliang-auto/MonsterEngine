@@ -143,20 +143,13 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Step 12: Create descriptor set allocator (legacy)
-        m_descriptorSetAllocator = MakeUnique<VulkanDescriptorSetAllocator>(this);
-        if (!m_descriptorSetAllocator) {
-            MR_LOG_ERROR("Failed to create descriptor set allocator");
-            return false;
-        }
-        
-        // Step 12a: Create descriptor pool manager (new multi-descriptor set support)
+        // Step 12: Create descriptor pool manager (multi-descriptor set support, UE5-style)
         m_descriptorPoolManager = MakeUnique<VulkanDescriptorPoolManager>(this);
         if (!m_descriptorPoolManager) {
             MR_LOG_ERROR("Failed to create descriptor pool manager");
             return false;
         }
-        MR_LOG_INFO("Descriptor pool manager initialized (multi-descriptor set support)")
+        MR_LOG_INFO("Descriptor pool manager initialized (multi-descriptor set support)");
         
         // Step 12b: Create descriptor set layout cache (UE5-style)
         m_descriptorSetLayoutCache = MakeUnique<FVulkanDescriptorSetLayoutCache>(this);
@@ -287,7 +280,7 @@ namespace MonsterRender::RHI::Vulkan {
             // Clean up high-level systems before device destruction
             // (m_immediateCommandList already reset before command pool destruction)
             m_pipelineCache.reset();
-            m_descriptorSetAllocator.reset();
+            m_descriptorPoolManager.reset();
             
             // Clean up render target caches
             m_framebufferCache.reset();
@@ -592,9 +585,9 @@ namespace MonsterRender::RHI::Vulkan {
         // Advance frame index AFTER present for next frame
         m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
         
-        // Begin new frame for descriptor set allocator (for next frame)
-        if (m_descriptorSetAllocator) {
-            m_descriptorSetAllocator->beginFrame(m_currentFrame);
+        // Begin new frame for descriptor pool manager (for next frame)
+        if (m_descriptorPoolManager) {
+            m_descriptorPoolManager->beginFrame(m_currentFrame);
         }
         
         // Reset descriptor set cache for new frame (UE5-style frame-local caching)

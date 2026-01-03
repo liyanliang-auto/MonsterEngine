@@ -18,7 +18,7 @@ namespace MonsterRender::RHI::Vulkan {
     // Forward declarations
     class VulkanPipelineState;
     class VulkanPipelineCache;
-    class VulkanDescriptorSetAllocator;
+    class VulkanDescriptorPoolManager;
     class FVulkanDescriptorSetLayoutCache;
     class FVulkanDescriptorSetCache;
     class FVulkanCommandBufferManager;
@@ -126,7 +126,7 @@ namespace MonsterRender::RHI::Vulkan {
         const QueueFamily& getPresentQueueFamily() const { return m_presentQueueFamily; }
         const VkPhysicalDeviceMemoryProperties& getMemoryProperties() const { return m_memoryProperties; }
         
-        VulkanDescriptorSetAllocator* getDescriptorSetAllocator() const { return m_descriptorSetAllocator.get(); }
+        VulkanDescriptorPoolManager* getDescriptorPoolManager() const { return m_descriptorPoolManager.get(); }
         
         // Descriptor set layout and cache (UE5-style)
         FVulkanDescriptorSetLayoutCache* GetDescriptorSetLayoutCache() const { return m_descriptorSetLayoutCache.get(); }
@@ -269,11 +269,8 @@ namespace MonsterRender::RHI::Vulkan {
         // Pipeline cache
         TUniquePtr<VulkanPipelineCache> m_pipelineCache;
         
-        // Descriptor set allocator (legacy)
-        TUniquePtr<VulkanDescriptorSetAllocator> m_descriptorSetAllocator;
-        
-        // Descriptor pool manager (new multi-descriptor set support)
-        TUniquePtr<class VulkanDescriptorPoolManager> m_descriptorPoolManager;
+        // Descriptor pool manager (multi-descriptor set support, UE5-style)
+        TUniquePtr<VulkanDescriptorPoolManager> m_descriptorPoolManager;
         
         // Descriptor set layout cache (UE5-style)
         TUniquePtr<FVulkanDescriptorSetLayoutCache> m_descriptorSetLayoutCache;
