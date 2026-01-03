@@ -6,8 +6,12 @@
 #include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
+#include "Platform/Vulkan/VulkanDescriptorPoolManager.h"
 #include "Core/Log.h"
+#include "Core/Logging/LogMacros.h"
 #include <algorithm>
+
+DEFINE_LOG_CATEGORY_STATIC(LogVulkanRHI, Log, All);
 
 namespace MonsterRender::RHI::Vulkan {
 
@@ -413,39 +417,27 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     VkDescriptorSet FVulkanDescriptorSetCache::AllocateAndUpdate(const FVulkanDescriptorSetKey& Key) {
-        // Note: This cache is for low-level Vulkan descriptor sets
-        // For now, we'll use direct Vulkan allocation instead of going through the pool manager
-        // This is a temporary solution - ideally this cache should be refactored to work with the new pool manager
-        
-        const auto& functions = VulkanAPI::getFunctions();
-        VkDevice vkDevice = Device->getDevice();
-        
-        // Get a pool from the descriptor pool manager
+        // Use the new VulkanDescriptorPoolManager for allocation
         auto* poolManager = Device->getDescriptorPoolManager();
         if (!poolManager) {
-            MR_LOG_ERROR("FVulkanDescriptorSetCache: No descriptor pool manager available");
+            MR_LOG(LogVulkanRHI, Error, "FVulkanDescriptorSetCache: No descriptor pool manager available");
             return VK_NULL_HANDLE;
         }
         
-        // For now, allocate directly using Vulkan API
-        // TODO: Refactor this to use the pool manager properly
-        VkDescriptorSetAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &Key.Layout;
+        // Allocate descriptor set using the low-level API
+        // The pool manager handles the underlying VkDescriptorPool management
+        VkDescriptorSet Set = poolManager->allocateRawDescriptorSet(Key.Layout);
         
-        // We need a temporary pool for this allocation
-        // This is not ideal but maintains compatibility
-        VkDescriptorSet Set = VK_NULL_HANDLE;
+        if (Set == VK_NULL_HANDLE) {
+            MR_LOG(LogVulkanRHI, Error, "FVulkanDescriptorSetCache: Failed to allocate descriptor set");
+            return VK_NULL_HANDLE;
+        }
         
-        MR_LOG_WARNING("FVulkanDescriptorSetCache: Using legacy allocation path - needs refactoring");
-        return VK_NULL_HANDLE; // Temporarily disable this path
-        
-        // Update with bindings
+        // Update descriptor set with bindings
         UpdateDescriptorSet(Set, Key);
         
         Stats.TotalAllocations++;
-        MR_LOG_DEBUG("FVulkanDescriptorSetCache: Allocated and updated new descriptor set");
+        MR_LOG(LogVulkanRHI, VeryVerbose, "FVulkanDescriptorSetCache: Allocated and updated descriptor set");
         
         return Set;
     }

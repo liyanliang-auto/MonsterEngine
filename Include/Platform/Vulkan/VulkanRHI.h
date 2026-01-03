@@ -112,6 +112,7 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkCmdBindPipeline vkCmdBindPipeline = nullptr;
         PFN_vkCmdSetViewport vkCmdSetViewport = nullptr;
         PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
+        PFN_vkCmdPushConstants vkCmdPushConstants = nullptr;
         
         // Transfer operations
         PFN_vkCmdCopyBuffer vkCmdCopyBuffer = nullptr;

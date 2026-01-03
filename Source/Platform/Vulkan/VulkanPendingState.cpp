@@ -6,6 +6,9 @@
 #include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Core/Log.h"
+#include "Core/Logging/LogMacros.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogVulkanRHI, Log, All);
 
 namespace MonsterRender::RHI::Vulkan {
     
@@ -441,29 +444,12 @@ namespace MonsterRender::RHI::Vulkan {
             }
         }
         
-        // Fallback to direct allocation if cache is not available
-        // Note: This is a legacy path that needs refactoring to use the new pool manager
-        auto* poolManager = m_device->getDescriptorPoolManager();
-        if (!poolManager) {
-            MR_LOG_WARNING("updateAndBindDescriptorSets: No descriptor pool manager available");
-            return VK_NULL_HANDLE;
-        }
-        
-        // For now, return null to disable this legacy path
-        // TODO: Refactor to properly use the new descriptor pool manager
-        MR_LOG_WARNING("updateAndBindDescriptorSets: Legacy allocation path disabled - needs refactoring");
+        // Fallback path: descriptor set cache is not available
+        // This is a rare case - most descriptor sets should come from the cache
+        // For now, we log a warning and return null, forcing the caller to use the cache
+        MR_LOG(LogVulkanRHI, Warning, 
+               "updateAndBindDescriptorSets: Descriptor set cache unavailable, cannot allocate descriptor set");
         return VK_NULL_HANDLE;
-        
-        // NOTE: The code below is unreachable and commented out for now
-        // It needs to be refactored to work with the new VulkanDescriptorPoolManager
-        /*
-        // Update descriptor set with bound resources - use std::vector for Vulkan API compatibility
-        std::vector<VkWriteDescriptorSet> Writes;
-        std::vector<VkDescriptorBufferInfo> BufferInfos;
-        std::vector<VkDescriptorImageInfo> ImageInfos;
-        
-        // ... rest of the legacy code ...
-        */
     }
     
     FVulkanDescriptorSetKey FVulkanPendingState::buildDescriptorSetKey() const {

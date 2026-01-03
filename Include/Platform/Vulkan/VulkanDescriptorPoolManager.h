@@ -84,13 +84,22 @@ namespace MonsterRender::RHI::Vulkan {
         VulkanDescriptorPoolManager& operator=(const VulkanDescriptorPoolManager&) = delete;
         
         /**
-         * Allocate a descriptor set
+         * Allocate a descriptor set (high-level API)
          * Automatically creates new pools if current pool is full
          * @param layout Descriptor set layout
          * @return Allocated descriptor set, or nullptr on failure
          */
         TSharedPtr<VulkanDescriptorSet> allocateDescriptorSet(
             TSharedPtr<VulkanDescriptorSetLayout> layout);
+        
+        /**
+         * Allocate a raw Vulkan descriptor set (low-level API)
+         * Used by descriptor set cache for direct Vulkan allocation
+         * Automatically creates new pools if current pool is full
+         * @param layout Vulkan descriptor set layout handle
+         * @return Allocated descriptor set handle, or VK_NULL_HANDLE on failure
+         */
+        VkDescriptorSet allocateRawDescriptorSet(VkDescriptorSetLayout layout);
         
         /**
          * Begin new frame - reset old pools for reuse
