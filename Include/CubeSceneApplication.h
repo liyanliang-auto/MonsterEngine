@@ -37,6 +37,12 @@ class FSceneView;
 class FMaterial;
 class FMaterialInstance;
 
+// glTF types forward declarations
+struct FGLTFModel;
+struct FGLTFMesh;
+struct FGLTFPrimitive;
+struct FGLTFMaterial;
+
 } // namespace MonsterEngine
 
 // Forward declarations for Renderer namespace (in MonsterEngine)
@@ -227,6 +233,75 @@ protected:
      * @return True if successful
      */
     bool loadWoodTexture();
+
+    // ========================================================================
+    // PBR Helmet Rendering
+    // ========================================================================
+
+    /**
+     * Initialize PBR helmet rendering resources
+     * @return True if successful
+     */
+    bool initializeHelmetPBR();
+
+    /**
+     * Load the DamagedHelmet glTF model
+     * @return True if successful
+     */
+    bool loadHelmetModel();
+
+    /**
+     * Create PBR pipeline state objects
+     * @return True if successful
+     */
+    bool createPBRPipeline();
+
+    /**
+     * Create PBR textures from glTF model
+     * @return True if successful
+     */
+    bool createHelmetTextures();
+
+    /**
+     * Create vertex and index buffers for helmet mesh
+     * @return True if successful
+     */
+    bool createHelmetBuffers();
+
+    /**
+     * Create uniform buffers for PBR rendering
+     * @return True if successful
+     */
+    bool createPBRUniformBuffers();
+
+    /**
+     * Update PBR uniform buffers with current frame data
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     */
+    void updatePBRUniforms(
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
+
+    /**
+     * Render the helmet with PBR shading
+     * @param cmdList Command list
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     */
+    void renderHelmetWithPBR(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
+
+    /**
+     * Shutdown PBR helmet resources
+     */
+    void shutdownHelmetPBR();
 
     /**
      * Render shadow depth pass
@@ -464,6 +539,91 @@ protected:
 
     /** Wood texture sampler */
     MonsterEngine::TSharedPtr<RHI::IRHISampler> m_woodSampler;
+
+    // ========================================================================
+    // PBR Helmet Rendering
+    // ========================================================================
+
+    /** Whether PBR helmet rendering is enabled */
+    bool m_bHelmetPBREnabled = true;
+
+    /** Whether helmet resources are initialized */
+    bool m_bHelmetInitialized = false;
+
+    /** Loaded glTF model data */
+    MonsterEngine::TSharedPtr<MonsterEngine::FGLTFModel> m_helmetModel;
+
+    /** PBR pipeline state (Vulkan) */
+    MonsterEngine::TSharedPtr<RHI::IRHIPipelineState> m_pbrPipelineState;
+
+    /** PBR vertex shader */
+    MonsterEngine::TSharedPtr<RHI::IRHIShader> m_pbrVertexShader;
+
+    /** PBR fragment shader */
+    MonsterEngine::TSharedPtr<RHI::IRHIShader> m_pbrFragmentShader;
+
+    /** Helmet vertex buffer */
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_helmetVertexBuffer;
+
+    /** Helmet index buffer */
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_helmetIndexBuffer;
+
+    /** Helmet index count */
+    uint32 m_helmetIndexCount = 0;
+
+    /** Helmet vertex count */
+    uint32 m_helmetVertexCount = 0;
+
+    // PBR Textures
+    /** Base color (albedo) texture */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_helmetBaseColorTexture;
+
+    /** Normal map texture */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_helmetNormalTexture;
+
+    /** Metallic-roughness texture */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_helmetMetallicRoughnessTexture;
+
+    /** Occlusion texture */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_helmetOcclusionTexture;
+
+    /** Emissive texture */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_helmetEmissiveTexture;
+
+    /** PBR texture sampler */
+    MonsterEngine::TSharedPtr<RHI::IRHISampler> m_pbrSampler;
+
+    // Uniform Buffers
+    /** View uniform buffer (Set 0, Binding 0) */
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_pbrViewUniformBuffer;
+
+    /** Light uniform buffer (Set 0, Binding 1) */
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_pbrLightUniformBuffer;
+
+    /** Material uniform buffer (Set 1, Binding 0) */
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_pbrMaterialUniformBuffer;
+
+    /** Object uniform buffer (Set 2, Binding 0) */
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_pbrObjectUniformBuffer;
+
+    // Descriptor Sets (Vulkan)
+    /** Per-frame descriptor set (Set 0) */
+    MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSet> m_pbrPerFrameDescriptorSet;
+
+    /** Per-material descriptor set (Set 1) */
+    MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSet> m_pbrPerMaterialDescriptorSet;
+
+    /** Per-object descriptor set (Set 2) */
+    MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSet> m_pbrPerObjectDescriptorSet;
+
+    /** Helmet model matrix */
+    MonsterEngine::Math::FMatrix m_helmetModelMatrix;
+
+    /** Helmet rotation angle */
+    float m_helmetRotationAngle = 0.0f;
+
+    /** Helmet rotation speed */
+    float m_helmetRotationSpeed = 0.5f;
 };
 
 } // namespace MonsterRender
