@@ -314,6 +314,8 @@
     <ClCompile Include="Source\Engine\Asset\GLTFLoader.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <!-- PBR Helmet Rendering -->
+    <ClCompile Include="Source\CubeSceneApplicationPBR.cpp" />
     <ClCompile Include="Source\Tests\CubeSceneRendererTest.cpp" />
     <ClCompile Include="Source\Tests\CubeSceneRendererTestApp.cpp" />
     <!-- ImGui Source Files - PCH disabled for third-party code -->
