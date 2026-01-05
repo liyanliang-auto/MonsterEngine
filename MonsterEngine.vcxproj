@@ -118,7 +118,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;PLATFORM_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Include;$(ProjectDir)3rd-party\imgui;$(VULKAN_SDK)\Include;$(GLFW_DIR)\include;$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Include;$(ProjectDir)3rd-party;$(ProjectDir)3rd-party\imgui;$(VULKAN_SDK)\Include;$(GLFW_DIR)\include;$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -310,6 +310,10 @@
     <ClCompile Include="Source\Renderer\PBR\PBRDefaultTextures.cpp" />
     <!-- Engine Texture Module Source Files -->
     <ClCompile Include="Source\Engine\Texture\Texture2D.cpp" />
+    <!-- Engine Asset Module Source Files -->
+    <ClCompile Include="Source\Engine\Asset\GLTFLoader.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="Source\Tests\CubeSceneRendererTest.cpp" />
     <ClCompile Include="Source\Tests\CubeSceneRendererTestApp.cpp" />
     <!-- ImGui Source Files - PCH disabled for third-party code -->
@@ -516,6 +520,9 @@
     <ClInclude Include="Include\Renderer\PBR\PBRDefaultTextures.h" />
     <!-- Engine Texture Module Headers -->
     <ClInclude Include="Include\Engine\Texture\Texture2D.h" />
+    <!-- Engine Asset Module Headers -->
+    <ClInclude Include="Include\Engine\Asset\GLTFTypes.h" />
+    <ClInclude Include="Include\Engine\Asset\GLTFLoader.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTest.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTestApp.h" />
     <!-- RDG Module Headers -->
