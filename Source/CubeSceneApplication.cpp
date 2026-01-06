@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 /**
  * @file CubeSceneApplication.cpp
@@ -227,6 +227,17 @@ void CubeSceneApplication::onInitialize()
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to load wood texture");
         return;
+    }
+    
+    // Initialize PBR helmet rendering
+    if (m_bHelmetPBREnabled)
+    {
+        MR_LOG(LogCubeSceneApp, Log, "PBR helmet enabled, initializing...");
+        if (!initializeHelmetPBR())
+        {
+            MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize PBR helmet");
+            m_bHelmetPBREnabled = false;
+        }
     }
     
     MR_LOG(LogCubeSceneApp, Log, "CubeSceneApplication initialized successfully");
