@@ -281,6 +281,29 @@ protected:
     bool createPBRDescriptorSets();
 
     /**
+     * Create default textures for missing PBR maps
+     * @return True if successful
+     */
+    bool createDefaultTextures();
+
+    /**
+     * Create OpenGL PBR shader program
+     * @return True if successful
+     */
+    bool createOpenGLPBRProgram();
+
+    /**
+     * Set OpenGL PBR uniforms for rendering
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     */
+    void _setOpenGLPBRUniforms(
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
+
+    /**
      * Update PBR uniform buffers with current frame data
      * @param viewMatrix View matrix
      * @param projectionMatrix Projection matrix
@@ -567,6 +590,19 @@ protected:
 
     /** PBR fragment shader */
     MonsterEngine::TSharedPtr<RHI::IRHIShader> m_pbrFragmentShader;
+
+    /** OpenGL PBR shader program handle */
+    uint32 m_pbrGLProgram = 0;
+
+    // Default textures for missing PBR maps
+    /** Default white texture (1x1 white pixel) */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_defaultWhiteTexture;
+
+    /** Default normal texture (1x1 flat normal) */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_defaultNormalTexture;
+
+    /** Default black texture (1x1 black pixel) */
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_defaultBlackTexture;
 
     /** Helmet vertex buffer */
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_helmetVertexBuffer;

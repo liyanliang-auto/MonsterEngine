@@ -32,6 +32,7 @@
 #include <cstring>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace MonsterRender
 {
@@ -155,6 +156,12 @@ bool CubeSceneApplication::initializeHelmetPBR()
     
     printf("[PBR] Device available, loading model...\n");
     
+    // Create default textures first (needed for missing PBR maps)
+    if (!createDefaultTextures())
+    {
+        MR_LOG(LogCubeSceneApp, Warning, "Failed to create default textures");
+    }
+    
     if (!loadHelmetModel()) return false;
     if (!createPBRPipeline()) return false;
     if (!createHelmetTextures()) { /* Continue without textures */ }
@@ -274,6 +281,16 @@ bool CubeSceneApplication::createPBRPipeline()
             return false;
         }
         MR_LOG(LogCubeSceneApp, Log, "PBR Vulkan pipeline created");
+    }
+    else if (backend == RHI::ERHIBackend::OpenGL)
+    {
+        // OpenGL path: load GLSL shaders
+        if (!createOpenGLPBRProgram())
+        {
+            MR_LOG(LogCubeSceneApp, Error, "Failed to create OpenGL PBR program");
+            return false;
+        }
+        MR_LOG(LogCubeSceneApp, Log, "PBR OpenGL pipeline created");
     }
     
     // Create sampler
@@ -571,19 +588,28 @@ bool CubeSceneApplication::createPBRDescriptorSets()
         {
             m_pbrPerMaterialDescriptorSet->updateUniformBuffer(0, m_pbrMaterialUniformBuffer, 0, sizeof(FPBRMaterialUniforms));
             
-            // Bind textures (use default white texture if not available)
-            auto bindTexture = [this](uint32 binding, TSharedPtr<RHI::IRHITexture> tex) {
-                if (tex && m_pbrSampler)
+            // Bind textures with fallback to default textures
+            auto bindTextureWithDefault = [this](uint32 binding, 
+                TSharedPtr<RHI::IRHITexture> tex, 
+                TSharedPtr<RHI::IRHITexture> defaultTex) 
+            {
+                TSharedPtr<RHI::IRHITexture> texToUse = tex ? tex : defaultTex;
+                if (texToUse && m_pbrSampler)
                 {
-                    m_pbrPerMaterialDescriptorSet->updateCombinedTextureSampler(binding, tex, m_pbrSampler);
+                    m_pbrPerMaterialDescriptorSet->updateCombinedTextureSampler(binding, texToUse, m_pbrSampler);
                 }
             };
             
-            bindTexture(1, m_helmetBaseColorTexture);
-            bindTexture(2, m_helmetNormalTexture);
-            bindTexture(3, m_helmetMetallicRoughnessTexture);
-            bindTexture(4, m_helmetOcclusionTexture);
-            bindTexture(5, m_helmetEmissiveTexture);
+            // Binding 1: BaseColor - use white if missing
+            bindTextureWithDefault(1, m_helmetBaseColorTexture, m_defaultWhiteTexture);
+            // Binding 2: Normal - use flat normal if missing
+            bindTextureWithDefault(2, m_helmetNormalTexture, m_defaultNormalTexture);
+            // Binding 3: MetallicRoughness - use white (metallic=1, roughness=1) if missing
+            bindTextureWithDefault(3, m_helmetMetallicRoughnessTexture, m_defaultWhiteTexture);
+            // Binding 4: Occlusion - use white (no occlusion) if missing
+            bindTextureWithDefault(4, m_helmetOcclusionTexture, m_defaultWhiteTexture);
+            // Binding 5: Emissive - use black (no emission) if missing
+            bindTextureWithDefault(5, m_helmetEmissiveTexture, m_defaultBlackTexture);
         }
         
         // Set 2: Object UBO
@@ -782,6 +808,216 @@ void CubeSceneApplication::renderHelmetWithPBR(
 }
 
 // ============================================================================
+// Default Textures Creation
+// ============================================================================
+
+bool CubeSceneApplication::createDefaultTextures()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Creating default PBR textures...");
+    
+    // Default white texture (1x1 RGBA white)
+    {
+        uint8 whitePixel[4] = { 255, 255, 255, 255 };
+        
+        RHI::TextureDesc desc;
+        desc.width = 1;
+        desc.height = 1;
+        desc.depth = 1;
+        desc.mipLevels = 1;
+        desc.arraySize = 1;
+        desc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
+        desc.usage = RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferDst;
+        desc.initialData = whitePixel;
+        desc.initialDataSize = sizeof(whitePixel);
+        desc.debugName = "DefaultWhiteTexture";
+        
+        m_defaultWhiteTexture = m_device->createTexture(desc);
+        if (!m_defaultWhiteTexture)
+        {
+            MR_LOG(LogCubeSceneApp, Warning, "Failed to create default white texture");
+        }
+    }
+    
+    // Default normal texture (1x1 flat normal: RGB = 128, 128, 255)
+    {
+        uint8 normalPixel[4] = { 128, 128, 255, 255 };
+        
+        RHI::TextureDesc desc;
+        desc.width = 1;
+        desc.height = 1;
+        desc.depth = 1;
+        desc.mipLevels = 1;
+        desc.arraySize = 1;
+        desc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
+        desc.usage = RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferDst;
+        desc.initialData = normalPixel;
+        desc.initialDataSize = sizeof(normalPixel);
+        desc.debugName = "DefaultNormalTexture";
+        
+        m_defaultNormalTexture = m_device->createTexture(desc);
+        if (!m_defaultNormalTexture)
+        {
+            MR_LOG(LogCubeSceneApp, Warning, "Failed to create default normal texture");
+        }
+    }
+    
+    // Default black texture (1x1 RGBA black)
+    {
+        uint8 blackPixel[4] = { 0, 0, 0, 255 };
+        
+        RHI::TextureDesc desc;
+        desc.width = 1;
+        desc.height = 1;
+        desc.depth = 1;
+        desc.mipLevels = 1;
+        desc.arraySize = 1;
+        desc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
+        desc.usage = RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferDst;
+        desc.initialData = blackPixel;
+        desc.initialDataSize = sizeof(blackPixel);
+        desc.debugName = "DefaultBlackTexture";
+        
+        m_defaultBlackTexture = m_device->createTexture(desc);
+        if (!m_defaultBlackTexture)
+        {
+            MR_LOG(LogCubeSceneApp, Warning, "Failed to create default black texture");
+        }
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Default PBR textures created");
+    return m_defaultWhiteTexture && m_defaultNormalTexture && m_defaultBlackTexture;
+}
+
+// ============================================================================
+// OpenGL PBR Program Creation
+// ============================================================================
+
+bool CubeSceneApplication::createOpenGLPBRProgram()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Creating OpenGL PBR shader program...");
+    
+    RHI::ERHIBackend backend = m_device->getRHIBackend();
+    if (backend != RHI::ERHIBackend::OpenGL)
+    {
+        MR_LOG(LogCubeSceneApp, Log, "Not OpenGL backend, skipping GL program creation");
+        return true;
+    }
+    
+#if PLATFORM_WINDOWS || PLATFORM_ANDROID
+    // Read GLSL shader source files
+    String vertexPath = "Shaders/PBR/PBR_GL.vert";
+    String fragmentPath = "Shaders/PBR/PBR_GL.frag";
+    
+    std::vector<uint8> vertexSourceVec = ShaderCompiler::readFileBytes(vertexPath);
+    std::vector<uint8> fragmentSourceVec = ShaderCompiler::readFileBytes(fragmentPath);
+    
+    if (vertexSourceVec.empty() || fragmentSourceVec.empty())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to read OpenGL PBR shader files");
+        return false;
+    }
+    
+    // Convert to TArray and null-terminate the source strings
+    TArray<uint8> vertexSource;
+    TArray<uint8> fragmentSource;
+    vertexSource.Reserve(static_cast<int32>(vertexSourceVec.size() + 1));
+    fragmentSource.Reserve(static_cast<int32>(fragmentSourceVec.size() + 1));
+    
+    for (uint8 byte : vertexSourceVec) vertexSource.push_back(byte);
+    for (uint8 byte : fragmentSourceVec) fragmentSource.push_back(byte);
+    vertexSource.push_back(0);
+    fragmentSource.push_back(0);
+    
+    // Create shaders using device interface
+    TSpan<const uint8> vertSpan(vertexSource.GetData(), vertexSource.Num() - 1);
+    TSpan<const uint8> fragSpan(fragmentSource.GetData(), fragmentSource.Num() - 1);
+    
+    auto vertexShader = m_device->createVertexShader(vertSpan);
+    auto fragmentShader = m_device->createPixelShader(fragSpan);
+    
+    if (!vertexShader || !fragmentShader)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to compile OpenGL PBR shaders");
+        return false;
+    }
+    
+    // Store shaders for later use
+    m_pbrVertexShader = vertexShader;
+    m_pbrFragmentShader = fragmentShader;
+    
+    // Create pipeline state for OpenGL
+    RHI::PipelineStateDesc pipelineDesc;
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.pixelShader = fragmentShader;
+    pipelineDesc.primitiveTopology = RHI::EPrimitiveTopology::TriangleList;
+    
+    // Vertex layout (same as Vulkan)
+    RHI::VertexAttribute attr;
+    attr.location = 0; attr.format = RHI::EVertexFormat::Float3;
+    attr.offset = offsetof(FPBRVertex, Position);
+    pipelineDesc.vertexLayout.attributes.push_back(attr);
+    
+    attr.location = 1; attr.format = RHI::EVertexFormat::Float3;
+    attr.offset = offsetof(FPBRVertex, Normal);
+    pipelineDesc.vertexLayout.attributes.push_back(attr);
+    
+    attr.location = 2; attr.format = RHI::EVertexFormat::Float4;
+    attr.offset = offsetof(FPBRVertex, Tangent);
+    pipelineDesc.vertexLayout.attributes.push_back(attr);
+    
+    attr.location = 3; attr.format = RHI::EVertexFormat::Float2;
+    attr.offset = offsetof(FPBRVertex, TexCoord0);
+    pipelineDesc.vertexLayout.attributes.push_back(attr);
+    
+    attr.location = 4; attr.format = RHI::EVertexFormat::Float2;
+    attr.offset = offsetof(FPBRVertex, TexCoord1);
+    pipelineDesc.vertexLayout.attributes.push_back(attr);
+    
+    attr.location = 5; attr.format = RHI::EVertexFormat::Float4;
+    attr.offset = offsetof(FPBRVertex, Color);
+    pipelineDesc.vertexLayout.attributes.push_back(attr);
+    
+    pipelineDesc.vertexLayout.stride = sizeof(FPBRVertex);
+    pipelineDesc.rasterizerState.fillMode = RHI::EFillMode::Solid;
+    pipelineDesc.rasterizerState.cullMode = RHI::ECullMode::Back;
+    pipelineDesc.rasterizerState.frontCounterClockwise = false;
+    pipelineDesc.depthStencilState.depthEnable = true;
+    pipelineDesc.depthStencilState.depthWriteEnable = true;
+    pipelineDesc.depthStencilState.depthCompareOp = RHI::ECompareOp::Less;
+    pipelineDesc.blendState.blendEnable = false;
+    pipelineDesc.renderTargetFormats.push_back(m_device->getSwapChainFormat());
+    pipelineDesc.depthStencilFormat = m_device->getDepthFormat();
+    pipelineDesc.debugName = "PBR Helmet Pipeline (OpenGL)";
+    
+    m_pbrPipelineState = m_device->createPipelineState(pipelineDesc);
+    if (!m_pbrPipelineState)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create OpenGL PBR pipeline state");
+        return false;
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "OpenGL PBR shader program created successfully");
+#endif
+    
+    return true;
+}
+
+void CubeSceneApplication::_setOpenGLPBRUniforms(
+    const FMatrix& viewMatrix,
+    const FMatrix& projectionMatrix,
+    const FVector& cameraPosition)
+{
+    // OpenGL uniform setting is handled through the pipeline state
+    // The actual uniform values are set via the uniform buffers
+    // which are mapped and updated in updatePBRUniforms()
+    
+    // For OpenGL, we need to bind textures to texture units
+    // This is done through the command list interface
+    
+    MR_LOG(LogCubeSceneApp, Verbose, "OpenGL PBR uniforms set");
+}
+
+// ============================================================================
 // PBR Helmet Shutdown
 // ============================================================================
 
@@ -813,6 +1049,11 @@ void CubeSceneApplication::shutdownHelmetPBR()
     m_helmetOcclusionTexture.Reset();
     m_helmetEmissiveTexture.Reset();
     m_pbrSampler.Reset();
+    
+    // Release default textures
+    m_defaultWhiteTexture.Reset();
+    m_defaultNormalTexture.Reset();
+    m_defaultBlackTexture.Reset();
     
     // Release buffers
     m_helmetVertexBuffer.Reset();
