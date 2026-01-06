@@ -160,6 +160,7 @@ bool CubeSceneApplication::initializeHelmetPBR()
     if (!createHelmetTextures()) { /* Continue without textures */ }
     if (!createHelmetBuffers()) return false;
     if (!createPBRUniformBuffers()) return false;
+    if (!createPBRDescriptorSets()) return false;
     
     m_helmetModelMatrix = FMatrix::Identity;
     m_helmetRotationAngle = 0.0f;
@@ -428,6 +429,181 @@ bool CubeSceneApplication::createPBRUniformBuffers()
            m_pbrMaterialUniformBuffer && m_pbrObjectUniformBuffer;
 }
 
+bool CubeSceneApplication::createPBRDescriptorSets()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Creating PBR descriptor sets...");
+    
+    RHI::ERHIBackend backend = m_device->getRHIBackend();
+    
+    if (backend == RHI::ERHIBackend::Vulkan)
+    {
+        // ====================================================================
+        // Set 0: Per-Frame (View + Light UBOs)
+        // ====================================================================
+        {
+            RHI::FDescriptorSetLayoutDesc set0Desc;
+            set0Desc.setIndex = 0;
+            
+            // Binding 0: ViewUniformBuffer
+            RHI::FDescriptorSetLayoutBinding viewBinding;
+            viewBinding.binding = 0;
+            viewBinding.descriptorType = RHI::EDescriptorType::UniformBuffer;
+            viewBinding.descriptorCount = 1;
+            viewBinding.shaderStages = RHI::EShaderStage::Vertex | RHI::EShaderStage::Fragment;
+            set0Desc.bindings.push_back(viewBinding);
+            
+            // Binding 1: LightUniformBuffer
+            RHI::FDescriptorSetLayoutBinding lightBinding;
+            lightBinding.binding = 1;
+            lightBinding.descriptorType = RHI::EDescriptorType::UniformBuffer;
+            lightBinding.descriptorCount = 1;
+            lightBinding.shaderStages = RHI::EShaderStage::Fragment;
+            set0Desc.bindings.push_back(lightBinding);
+            
+            m_pbrSet0Layout = m_device->createDescriptorSetLayout(set0Desc);
+            if (!m_pbrSet0Layout)
+            {
+                MR_LOG(LogCubeSceneApp, Error, "Failed to create PBR Set 0 layout");
+                return false;
+            }
+        }
+        
+        // ====================================================================
+        // Set 1: Per-Material (Material UBO + 5 Textures)
+        // ====================================================================
+        {
+            RHI::FDescriptorSetLayoutDesc set1Desc;
+            set1Desc.setIndex = 1;
+            
+            // Binding 0: MaterialUniformBuffer
+            RHI::FDescriptorSetLayoutBinding matBinding;
+            matBinding.binding = 0;
+            matBinding.descriptorType = RHI::EDescriptorType::UniformBuffer;
+            matBinding.descriptorCount = 1;
+            matBinding.shaderStages = RHI::EShaderStage::Fragment;
+            set1Desc.bindings.push_back(matBinding);
+            
+            // Bindings 1-5: Texture samplers
+            for (uint32 i = 1; i <= 5; ++i)
+            {
+                RHI::FDescriptorSetLayoutBinding texBinding;
+                texBinding.binding = i;
+                texBinding.descriptorType = RHI::EDescriptorType::CombinedTextureSampler;
+                texBinding.descriptorCount = 1;
+                texBinding.shaderStages = RHI::EShaderStage::Fragment;
+                set1Desc.bindings.push_back(texBinding);
+            }
+            
+            m_pbrSet1Layout = m_device->createDescriptorSetLayout(set1Desc);
+            if (!m_pbrSet1Layout)
+            {
+                MR_LOG(LogCubeSceneApp, Error, "Failed to create PBR Set 1 layout");
+                return false;
+            }
+        }
+        
+        // ====================================================================
+        // Set 2: Per-Object (Object UBO)
+        // ====================================================================
+        {
+            RHI::FDescriptorSetLayoutDesc set2Desc;
+            set2Desc.setIndex = 2;
+            
+            // Binding 0: ObjectUniformBuffer
+            RHI::FDescriptorSetLayoutBinding objBinding;
+            objBinding.binding = 0;
+            objBinding.descriptorType = RHI::EDescriptorType::UniformBuffer;
+            objBinding.descriptorCount = 1;
+            objBinding.shaderStages = RHI::EShaderStage::Vertex;
+            set2Desc.bindings.push_back(objBinding);
+            
+            m_pbrSet2Layout = m_device->createDescriptorSetLayout(set2Desc);
+            if (!m_pbrSet2Layout)
+            {
+                MR_LOG(LogCubeSceneApp, Error, "Failed to create PBR Set 2 layout");
+                return false;
+            }
+        }
+        
+        // ====================================================================
+        // Create Pipeline Layout
+        // ====================================================================
+        {
+            RHI::FPipelineLayoutDesc pipelineLayoutDesc;
+            pipelineLayoutDesc.setLayouts.push_back(m_pbrSet0Layout);
+            pipelineLayoutDesc.setLayouts.push_back(m_pbrSet1Layout);
+            pipelineLayoutDesc.setLayouts.push_back(m_pbrSet2Layout);
+            
+            m_pbrPipelineLayout = m_device->createPipelineLayout(pipelineLayoutDesc);
+            if (!m_pbrPipelineLayout)
+            {
+                MR_LOG(LogCubeSceneApp, Error, "Failed to create PBR pipeline layout");
+                return false;
+            }
+        }
+        
+        // ====================================================================
+        // Allocate Descriptor Sets
+        // ====================================================================
+        m_pbrPerFrameDescriptorSet = m_device->allocateDescriptorSet(m_pbrSet0Layout);
+        m_pbrPerMaterialDescriptorSet = m_device->allocateDescriptorSet(m_pbrSet1Layout);
+        m_pbrPerObjectDescriptorSet = m_device->allocateDescriptorSet(m_pbrSet2Layout);
+        
+        if (!m_pbrPerFrameDescriptorSet || !m_pbrPerMaterialDescriptorSet || !m_pbrPerObjectDescriptorSet)
+        {
+            MR_LOG(LogCubeSceneApp, Error, "Failed to allocate PBR descriptor sets");
+            return false;
+        }
+        
+        // ====================================================================
+        // Update Descriptor Sets with resources
+        // ====================================================================
+        
+        // Set 0: View + Light UBOs
+        if (m_pbrPerFrameDescriptorSet)
+        {
+            m_pbrPerFrameDescriptorSet->updateUniformBuffer(0, m_pbrViewUniformBuffer, 0, sizeof(FPBRViewUniforms));
+            m_pbrPerFrameDescriptorSet->updateUniformBuffer(1, m_pbrLightUniformBuffer, 0, sizeof(FPBRLightUniforms));
+        }
+        
+        // Set 1: Material UBO + Textures
+        if (m_pbrPerMaterialDescriptorSet)
+        {
+            m_pbrPerMaterialDescriptorSet->updateUniformBuffer(0, m_pbrMaterialUniformBuffer, 0, sizeof(FPBRMaterialUniforms));
+            
+            // Bind textures (use default white texture if not available)
+            auto bindTexture = [this](uint32 binding, TSharedPtr<RHI::IRHITexture> tex) {
+                if (tex && m_pbrSampler)
+                {
+                    m_pbrPerMaterialDescriptorSet->updateCombinedTextureSampler(binding, tex, m_pbrSampler);
+                }
+            };
+            
+            bindTexture(1, m_helmetBaseColorTexture);
+            bindTexture(2, m_helmetNormalTexture);
+            bindTexture(3, m_helmetMetallicRoughnessTexture);
+            bindTexture(4, m_helmetOcclusionTexture);
+            bindTexture(5, m_helmetEmissiveTexture);
+        }
+        
+        // Set 2: Object UBO
+        if (m_pbrPerObjectDescriptorSet)
+        {
+            m_pbrPerObjectDescriptorSet->updateUniformBuffer(0, m_pbrObjectUniformBuffer, 0, sizeof(FPBRObjectUniforms));
+        }
+        
+        MR_LOG(LogCubeSceneApp, Log, "PBR descriptor sets created successfully");
+    }
+    else if (backend == RHI::ERHIBackend::OpenGL)
+    {
+        // OpenGL uses uniform locations directly, no descriptor sets needed
+        // Uniform binding will be done in renderHelmetWithPBR()
+        MR_LOG(LogCubeSceneApp, Log, "OpenGL backend: descriptor sets not required");
+    }
+    
+    return true;
+}
+
 // ============================================================================
 // PBR Uniform Update
 // ============================================================================
@@ -567,15 +743,41 @@ void CubeSceneApplication::renderHelmetWithPBR(
     
     if (backend == RHI::ERHIBackend::Vulkan && m_pbrPipelineState)
     {
+        // Set pipeline state
         cmdList->setPipelineState(m_pbrPipelineState);
         
+        // Bind descriptor sets (Set 0, 1, 2)
+        if (m_pbrPipelineLayout && m_pbrPerFrameDescriptorSet && 
+            m_pbrPerMaterialDescriptorSet && m_pbrPerObjectDescriptorSet)
+        {
+            TArray<TSharedPtr<RHI::IRHIDescriptorSet>> descriptorSets;
+            descriptorSets.push_back(m_pbrPerFrameDescriptorSet);    // Set 0
+            descriptorSets.push_back(m_pbrPerMaterialDescriptorSet); // Set 1
+            descriptorSets.push_back(m_pbrPerObjectDescriptorSet);   // Set 2
+            
+            cmdList->bindDescriptorSets(
+                m_pbrPipelineLayout,
+                0,  // firstSet
+                TSpan<TSharedPtr<RHI::IRHIDescriptorSet>>(descriptorSets.GetData(), descriptorSets.Num())
+            );
+        }
+        
+        // Bind vertex and index buffers
         TArray<TSharedPtr<RHI::IRHIBuffer>> vbs;
         vbs.push_back(m_helmetVertexBuffer);
         cmdList->setVertexBuffers(0, TSpan<TSharedPtr<RHI::IRHIBuffer>>(vbs.GetData(), vbs.Num()));
         cmdList->setIndexBuffer(m_helmetIndexBuffer, true);
+        
+        // Draw indexed
         cmdList->drawIndexed(m_helmetIndexCount, 0, 0);
         
         MR_LOG(LogCubeSceneApp, Verbose, "PBR helmet rendered: %u indices", m_helmetIndexCount);
+    }
+    else if (backend == RHI::ERHIBackend::OpenGL)
+    {
+        // OpenGL path: bind uniforms directly via uniform locations
+        // TODO: Implement OpenGL uniform binding
+        MR_LOG(LogCubeSceneApp, Verbose, "OpenGL PBR rendering not yet implemented");
     }
 }
 
@@ -587,24 +789,41 @@ void CubeSceneApplication::shutdownHelmetPBR()
 {
     MR_LOG(LogCubeSceneApp, Log, "Shutting down PBR helmet resources...");
     
+    // Release descriptor sets first
     m_pbrPerFrameDescriptorSet.Reset();
     m_pbrPerMaterialDescriptorSet.Reset();
     m_pbrPerObjectDescriptorSet.Reset();
+    
+    // Release pipeline layout and descriptor set layouts
+    m_pbrPipelineLayout.Reset();
+    m_pbrSet0Layout.Reset();
+    m_pbrSet1Layout.Reset();
+    m_pbrSet2Layout.Reset();
+    
+    // Release uniform buffers
     m_pbrViewUniformBuffer.Reset();
     m_pbrLightUniformBuffer.Reset();
     m_pbrMaterialUniformBuffer.Reset();
     m_pbrObjectUniformBuffer.Reset();
+    
+    // Release textures
     m_helmetBaseColorTexture.Reset();
     m_helmetNormalTexture.Reset();
     m_helmetMetallicRoughnessTexture.Reset();
     m_helmetOcclusionTexture.Reset();
     m_helmetEmissiveTexture.Reset();
     m_pbrSampler.Reset();
+    
+    // Release buffers
     m_helmetVertexBuffer.Reset();
     m_helmetIndexBuffer.Reset();
+    
+    // Release pipeline and shaders
     m_pbrPipelineState.Reset();
     m_pbrVertexShader.Reset();
     m_pbrFragmentShader.Reset();
+    
+    // Release model
     m_helmetModel.Reset();
     
     m_bHelmetInitialized = false;
