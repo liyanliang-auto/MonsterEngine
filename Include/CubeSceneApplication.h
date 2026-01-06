@@ -275,6 +275,12 @@ protected:
     bool createPBRUniformBuffers();
 
     /**
+     * Create descriptor set layouts, pipeline layout, and descriptor sets for PBR
+     * @return True if successful
+     */
+    bool createPBRDescriptorSets();
+
+    /**
      * Update PBR uniform buffers with current frame data
      * @param viewMatrix View matrix
      * @param projectionMatrix Projection matrix
@@ -605,6 +611,19 @@ protected:
 
     /** Object uniform buffer (Set 2, Binding 0) */
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_pbrObjectUniformBuffer;
+
+    // Descriptor Set Layouts (Vulkan)
+    /** Per-frame descriptor set layout (Set 0) */
+    MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSetLayout> m_pbrSet0Layout;
+
+    /** Per-material descriptor set layout (Set 1) */
+    MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSetLayout> m_pbrSet1Layout;
+
+    /** Per-object descriptor set layout (Set 2) */
+    MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSetLayout> m_pbrSet2Layout;
+
+    /** PBR pipeline layout */
+    MonsterEngine::TSharedPtr<RHI::IRHIPipelineLayout> m_pbrPipelineLayout;
 
     // Descriptor Sets (Vulkan)
     /** Per-frame descriptor set (Set 0) */
