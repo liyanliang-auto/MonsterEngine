@@ -568,20 +568,37 @@ bool FGLTFLoader::_loadImageData(
     const FGLTFLoadOptions& Options,
     FGLTFImage& OutImage)
 {
+    if (!Image)
+    {
+        MR_LOG(LogGLTFLoader, Error, "Image pointer is null");
+        return false;
+    }
+    
     int width = 0, height = 0, channels = 0;
     unsigned char* data = nullptr;
     
-    if (Image->buffer_view && Image->buffer_view->buffer->data)
+    if (Image->buffer_view && Image->buffer_view->buffer && Image->buffer_view->buffer->data)
     {
         const uint8* bufferData = static_cast<const uint8*>(Image->buffer_view->buffer->data);
         bufferData += Image->buffer_view->offset;
+        MR_LOG(LogGLTFLoader, Verbose, "Loading image from buffer view, size: %zu", Image->buffer_view->size);
         data = stbi_load_from_memory(bufferData, static_cast<int>(Image->buffer_view->size),
                                      &width, &height, &channels, 4);
     }
-    else if (Image->uri)
+    else if (Image->uri && Image->uri[0] != '\0')
     {
         String imagePath = CombinePaths(BasePath, Image->uri);
+        MR_LOG(LogGLTFLoader, Verbose, "Loading image from file: %s", imagePath.c_str());
         data = stbi_load(imagePath.c_str(), &width, &height, &channels, 4);
+        if (!data)
+        {
+            MR_LOG(LogGLTFLoader, Warning, "Failed to load image: %s", imagePath.c_str());
+        }
+    }
+    else
+    {
+        MR_LOG(LogGLTFLoader, Warning, "Image has no valid buffer_view or uri");
+        return false;
     }
     
     if (!data) return false;

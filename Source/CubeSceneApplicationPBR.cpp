@@ -159,13 +159,51 @@ bool CubeSceneApplication::initializeHelmetPBR()
     {
         MR_LOG(LogCubeSceneApp, Warning, "Failed to create default textures");
     }
+    MR_LOG(LogCubeSceneApp, Log, "Step 1: Default textures created");
     
-    if (!loadHelmetModel()) return false;
-    if (!createPBRPipeline()) return false;
-    if (!createHelmetTextures()) { /* Continue without textures */ }
-    if (!createHelmetBuffers()) return false;
-    if (!createPBRUniformBuffers()) return false;
-    if (!createPBRDescriptorSets()) return false;
+    if (!loadHelmetModel())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Step 2: Failed to load helmet model");
+        return false;
+    }
+    MR_LOG(LogCubeSceneApp, Log, "Step 2: Helmet model loaded");
+    
+    if (!createPBRPipeline())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Step 3: Failed to create PBR pipeline");
+        return false;
+    }
+    MR_LOG(LogCubeSceneApp, Log, "Step 3: PBR pipeline created");
+    
+    if (!createHelmetTextures())
+    {
+        MR_LOG(LogCubeSceneApp, Warning, "Step 4: Failed to create helmet textures, using defaults");
+    }
+    else
+    {
+        MR_LOG(LogCubeSceneApp, Log, "Step 4: Helmet textures created");
+    }
+    
+    if (!createHelmetBuffers())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Step 5: Failed to create helmet buffers");
+        return false;
+    }
+    MR_LOG(LogCubeSceneApp, Log, "Step 5: Helmet buffers created");
+    
+    if (!createPBRUniformBuffers())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Step 6: Failed to create PBR uniform buffers");
+        return false;
+    }
+    MR_LOG(LogCubeSceneApp, Log, "Step 6: PBR uniform buffers created");
+    
+    if (!createPBRDescriptorSets())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Step 7: Failed to create PBR descriptor sets");
+        return false;
+    }
+    MR_LOG(LogCubeSceneApp, Log, "Step 7: PBR descriptor sets created");
     
     m_helmetModelMatrix = FMatrix::Identity;
     m_helmetRotationAngle = 0.0f;
