@@ -144,17 +144,15 @@ static bool LoadShaderBytecode(const String& path, TArray<uint8>& outBytecode)
 
 bool CubeSceneApplication::initializeHelmetPBR()
 {
-    printf("[PBR] initializeHelmetPBR() called\n");
     MR_LOG(LogCubeSceneApp, Log, "=== Initializing PBR helmet rendering ===");
     
     if (!m_device)
     {
-        printf("[PBR] ERROR: No RHI device\n");
         MR_LOG(LogCubeSceneApp, Error, "Cannot initialize PBR: no RHI device");
         return false;
     }
     
-    printf("[PBR] Device available, loading model...\n");
+    MR_LOG(LogCubeSceneApp, Log, "RHI device available, starting PBR initialization...");
     
     // Create default textures first (needed for missing PBR maps)
     if (!createDefaultTextures())
