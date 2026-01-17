@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 /**
  * @file CubeSceneApplicationPBR.cpp
@@ -796,8 +796,24 @@ void CubeSceneApplication::renderHelmetWithPBR(
     const FMatrix& projectionMatrix,
     const FVector& cameraPosition)
 {
-    if (!m_bHelmetPBREnabled || !m_bHelmetInitialized) return;
-    if (!cmdList || !m_helmetVertexBuffer || !m_helmetIndexBuffer) return;
+    // Log entry once
+    static bool bLoggedEntry = false;
+    if (!bLoggedEntry)
+    {
+        MR_LOG(LogCubeSceneApp, Log, "renderHelmetWithPBR called: enabled=%d, initialized=%d",
+               m_bHelmetPBREnabled, m_bHelmetInitialized);
+        bLoggedEntry = true;
+    }
+    
+    if (!m_bHelmetPBREnabled || !m_bHelmetInitialized)
+    {
+        return;
+    }
+    if (!cmdList || !m_helmetVertexBuffer || !m_helmetIndexBuffer)
+    {
+        MR_LOG(LogCubeSceneApp, Warning, "renderHelmetWithPBR: Missing resources");
+        return;
+    }
     
     updatePBRUniforms(viewMatrix, projectionMatrix, cameraPosition);
     
@@ -805,6 +821,10 @@ void CubeSceneApplication::renderHelmetWithPBR(
     
     if (backend == RHI::ERHIBackend::Vulkan && m_pbrPipelineState)
     {
+        // Ensure we are in a render pass - set render targets to swapchain
+        TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
+        cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+        
         // Set pipeline state
         cmdList->setPipelineState(m_pbrPipelineState);
         
@@ -833,7 +853,7 @@ void CubeSceneApplication::renderHelmetWithPBR(
         // Draw indexed
         cmdList->drawIndexed(m_helmetIndexCount, 0, 0);
         
-        MR_LOG(LogCubeSceneApp, Verbose, "PBR helmet rendered: %u indices", m_helmetIndexCount);
+        MR_LOG(LogCubeSceneApp, Log, "PBR helmet rendered: %u indices", m_helmetIndexCount);
     }
     else if (backend == RHI::ERHIBackend::OpenGL)
     {

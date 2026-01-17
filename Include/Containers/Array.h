@@ -638,10 +638,15 @@ public:
         
         if (NewNum > ArrayMax)
         {
+            // Set ArrayNum to NewNum before ResizeGrow so it calculates correct capacity
+            ArrayNum = NewNum;
             ResizeGrow(OldNum);
         }
+        else
+        {
+            ArrayNum = NewNum;
+        }
         
-        ArrayNum = NewNum;
         return OldNum;
     }
     

@@ -603,16 +603,38 @@ bool FGLTFLoader::_loadImageData(
     
     if (!data) return false;
     
+    // Validate image dimensions
+    if (width <= 0 || height <= 0)
+    {
+        MR_LOG(LogGLTFLoader, Error, "Invalid image dimensions: %dx%d", width, height);
+        stbi_image_free(data);
+        return false;
+    }
+    
     OutImage.Width = static_cast<uint32>(width);
     OutImage.Height = static_cast<uint32>(height);
     OutImage.Channels = 4;
     
+    // Calculate data size and validate it fits in int32
     uint64 dataSize = static_cast<uint64>(width) * static_cast<uint64>(height) * 4;
+    
+    // Check for overflow - max int32 is about 2GB
+    constexpr uint64 maxInt32 = static_cast<uint64>(INT32_MAX);
+    if (dataSize > maxInt32)
+    {
+        MR_LOG(LogGLTFLoader, Error, "Image data size too large: %llu bytes (max: %llu)", dataSize, maxInt32);
+        stbi_image_free(data);
+        return false;
+    }
+    
+    MR_LOG(LogGLTFLoader, Verbose, "Allocating image data: %dx%d, size=%llu bytes", width, height, dataSize);
+    
     OutImage.Data.SetNum(static_cast<int32>(dataSize));
     std::memcpy(OutImage.Data.GetData(), data, dataSize);
     OutImage.bIsLoaded = true;
     
     stbi_image_free(data);
+    MR_LOG(LogGLTFLoader, Verbose, "Image loaded successfully: %dx%d", width, height);
     return true;
 }
 
