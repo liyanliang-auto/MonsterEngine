@@ -6,54 +6,59 @@
 [![Vulkan](https://img.shields.io/badge/API-Vulkan-red.svg)](https://www.vulkan.org)
 [![OpenGL](https://img.shields.io/badge/API-OpenGL-orange.svg)](https://www.opengl.org)
 
-MonsterEngine is a modern 3D rendering engine built with Vulkan and OpenGL, inspired by Unreal Engine 5 architecture. It is designed to be cross-platform, high-performance, and feature-rich for real-time physically-based rendering.
+MonsterEngine 是一个基于 Vulkan 和 OpenGL 构建的现代 3D 渲染引擎，架构设计参考 Unreal Engine 5。引擎设计目标是跨平台、高性能，并为实时 physically-based rendering 提供丰富的功能支持。
 
-**Reference**: [Unreal Engine 5](https://github.com/EpicGames/UnrealEngine) | [Google Filament](https://github.com/google/filament)
-
----
-
-## Download
-
-MonsterEngine is currently in active development. To use the engine, please build from source following the [build instructions](#building).
+**参考项目**: [Unreal Engine 5](https://github.com/EpicGames/UnrealEngine) | [Google Filament](https://github.com/google/filament)
 
 ---
 
-## Documentation
+## 下载
 
-- **[Engine Architecture](devDocument/引擎的架构和设计.md)** - In-depth explanation of the engine architecture, RHI design, and implementation details
-- **[Shader Documentation](Shaders/README.md)** - Shader system overview and shader authoring guide
-- **Development Rules** - Coding standards and best practices (`.windsurf/rules/`)
+MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说明](#构建) 从源码编译。
 
 ---
 
-## Features
+## 文档
+
+- **[引擎架构](devDocument/引擎的架构和设计.md)** - 深入讲解引擎架构、RHI 设计和实现细节
+- **[Shader 文档](Shaders/README.md)** - Shader 系统概述和着色器编写指南
+
+---
+
+## 示例效果
+
+![PBR Cube and Floor Scene](docs/images/samples/example_cube_and_floor.jpg)
+
+---
+
+## 功能特性
 
 ### APIs
 
-- **Native C++ API** for Windows and Android
-- **RHI Abstraction Layer** - Unified rendering interface across multiple backends
+- **Native C++ API** 支持 Windows 和 Android
+- **RHI Abstraction Layer** - 跨多个后端的统一渲染接口
 
 ### Backends
 
-- **Vulkan 1.0+** for Windows and Android (primary backend)
-- **OpenGL 4.5+** for Windows
-- **OpenGL ES 3.0+** for Android
-- Planned: **Direct3D 12** for Windows, **Metal** for macOS/iOS
+- **Vulkan 1.0+** 支持 Windows 和 Android（主要后端）
+- **OpenGL 4.5+** 支持 Windows
+- **OpenGL ES 3.0+** 支持 Android
+- 计划支持：**Direct3D 12** for Windows, **Metal** for macOS/iOS
 
-### Core Architecture
+### 核心架构
 
-- **RHI (Render Hardware Interface)** - UE5-style hardware abstraction layer
+- **RHI (Render Hardware Interface)** - UE5 风格的硬件抽象层
   - Platform-agnostic rendering commands
-  - Automatic resource lifetime management with RAII
+  - 基于 RAII 的自动资源生命周期管理
   - Modern command list architecture
-  - Efficient pipeline state management
-- **Cross-platform Support** - Windows, Android (Linux and macOS planned)
-- **Modern C++20** - Using latest language features and best practices
-- **Custom Memory Management** - FMemory, FMemoryManager, FMallocBinned2
-- **Custom Container System** - TArray, TMap, TSet, FString, FName, FText
-- **Smart Pointer System** - TSharedPtr, TUniquePtr, TWeakPtr
+  - 高效的 pipeline state management
+- **跨平台支持** - Windows, Android（计划支持 Linux 和 macOS）
+- **Modern C++20** - 使用最新语言特性和最佳实践
+- **自定义内存管理** - FMemory, FMemoryManager, FMallocBinned2
+- **自定义容器系统** - TArray, TMap, TSet, FString, FName, FText
+- **智能指针系统** - TSharedPtr, TUniquePtr, TWeakPtr
 
-### Rendering
+### 渲染系统
 
 - **Physically-Based Rendering (PBR)**
   - Cook-Torrance microfacet specular BRDF
@@ -66,98 +71,97 @@ MonsterEngine is currently in active development. To use the engine, please buil
   - Clustered forward rendering
   - Multi-pass rendering support
   - Depth pre-pass optimization
-- **Lighting System**
+- **光照系统**
   - Directional lights with cascaded shadow maps
   - Point lights and spot lights
   - Ambient lighting
-  - Dynamic light management
+  - 动态光源管理
   - Per-pixel lighting calculations
-- **Shadow Rendering**
-  - Cascaded shadow maps (CSM)
+- **阴影渲染**
   - Shadow projection and filtering
-  - Configurable shadow quality
-- **Material System**
+  - 可配置的阴影质量
+- **材质系统**
   - PBR material parameters (metallic, roughness, reflectance)
-  - Texture support (base color, metallic-roughness, normal, occlusion, emissive)
+  - 纹理支持（base color, metallic-roughness, normal, occlusion, emissive）
   - Material instancing and caching
-  - Default material fallbacks
-- **Texture System**
+  - 默认材质回退机制
+- **纹理系统**
   - 2D texture support with mipmap generation
   - Texture streaming manager
-  - Virtual texture system (planned)
-  - Default texture management (white, black, normal, etc.)
+  - Virtual texture system（计划中）
+  - 默认纹理管理（white, black, normal 等）
 - **Descriptor Set Management**
   - Per-frame, per-material, per-object descriptor sets
-  - Efficient descriptor pooling and caching
-  - Automatic descriptor updates
+  - 高效的 descriptor pooling and caching
+  - 自动 descriptor 更新
 
-### Scene Management
+### 场景管理
 
-- **Scene Graph** - UE5-style scene representation
+- **Scene Graph** - UE5 风格的场景表示
   - Primitive scene proxies
   - Light scene info and proxies
   - Scene visibility computation
-- **Camera System**
+- **相机系统**
   - Camera manager with view target blending
   - FPS camera controller
   - Camera modifiers and effects
   - Orthographic and perspective projection
-- **Culling System**
+- **剔除系统**
   - Frustum culling
-  - Occlusion culling (planned)
+  - Occlusion culling（计划中）
   - Octree spatial partitioning
-- **Render Queue**
+- **渲染队列**
   - Mesh batch collection
   - Render command sorting
   - Multi-pass rendering support
 
-### Shader System
+### Shader 系统
 
-- **Shader Manager** - Centralized shader compilation and caching
+- **Shader Manager** - 集中式 shader 编译和缓存
   - GLSL shader compilation to SPIR-V
   - Shader hot-reload support
   - Bytecode caching for fast startup
-- **Shader Library**
+- **Shader 库**
   - PBR shading models
   - BRDF implementations
   - Lighting calculations
   - Shadow mapping utilities
   - Common shader utilities
 
-### Platform Layer
+### 平台层
 
-- **Window System** - GLFW-based cross-platform windowing
+- **窗口系统** - 基于 GLFW 的跨平台窗口管理
   - Native surface integration for Vulkan
   - Event-driven input handling
-  - Multiple window support
-- **Input System**
-  - Keyboard and mouse input
+  - 多窗口支持
+- **输入系统**
+  - 键盘和鼠标输入
   - Event callbacks and polling
   - Input mapping and binding
-- **Memory Management**
+- **内存管理**
   - Vulkan memory manager (VMA-style)
   - GPU resource tracking
   - Memory budget management
 
-### Editor & Tools
+### 编辑器与工具
 
-- **ImGui Integration** - Immediate mode GUI for debugging
-  - Render statistics display
-  - Material parameter editing
-  - Scene hierarchy viewer
-- **Shader Compiler** - Offline shader compilation tools
-- **Asset Pipeline** (planned)
+- **ImGui Integration** - 用于调试的即时模式 GUI
+  - 渲染统计信息显示
+  - 材质参数编辑
+  - 场景层级查看器
+- **Shader Compiler** - 离线 shader 编译工具
+- **资源管线**（计划中）
   - Mesh import (glTF 2.0)
   - Texture import and compression
   - Material authoring
 
 ---
 
-## Rendering with MonsterEngine
+## 使用 MonsterEngine 进行渲染
 
 ### Windows
 
-Create an `Engine`, initialize the RHI device, and set up your renderer:
+创建 `Engine`，初始化 RHI device，并设置 renderer：
 
 ```cpp
 #include "Engine.h"
@@ -194,7 +198,7 @@ if (!pbrRenderer->initialize(device)) {
 }
 ```
 
-To render a frame, set up the view and render objects:
+渲染一帧，设置视图并渲染物体：
 
 ```cpp
 // Begin frame
@@ -237,9 +241,9 @@ device->present();
 pbrRenderer->endFrame();
 ```
 
-### Creating PBR Materials
+### 创建 PBR 材质
 
-Materials are created with the `FPBRMaterial` class:
+使用 `FPBRMaterial` 类创建材质：
 
 ```cpp
 #include "Renderer/PBR/PBRMaterial.h"
@@ -270,9 +274,9 @@ material->setNormalTexture(normalTex.get());
 material->updateGPUResources();
 ```
 
-### Scene Management
+### 场景管理
 
-Build a scene with primitives and lights:
+使用 primitives 和 lights 构建场景：
 
 ```cpp
 #include "Renderer/Scene.h"
@@ -300,104 +304,104 @@ scene->UpdateAllPrimitiveSceneInfos();
 
 ---
 
-## Building
+## 构建
 
-### Prerequisites
+### 前置要求
 
 **Windows:**
 - Visual Studio 2022
-- Vulkan SDK (latest from [LunarG](https://vulkan.lunarg.com/))
+- Vulkan SDK（最新版本，从 [LunarG](https://vulkan.lunarg.com/) 下载）
 - GLFW 3.3+
-- CMake 3.20+ (optional, for future cross-platform builds)
+- CMake 3.20+（可选，用于未来的跨平台构建）
 
 **Android:**
 - Android Studio
 - Android NDK r21+
 - Vulkan SDK for Android
 
-### Environment Setup
+### 环境设置
 
-Set the following environment variables:
+设置以下环境变量：
 
 ```batch
 set VULKAN_SDK=C:\VulkanSDK\1.3.xxx.x
 set GLFW_DIR=C:\Libraries\glfw-3.3.x
 ```
 
-### Build Steps
+### 构建步骤
 
 **Windows:**
 
-1. Clone the repository:
+1. 克隆仓库：
    ```bash
    git clone https://github.com/yourusername/MonsterEngine.git
    cd MonsterEngine
    ```
 
-2. Open `MonsterEngine.sln` in Visual Studio 2022
+2. 在 Visual Studio 2022 中打开 `MonsterEngine.sln`
 
-3. Set configuration to `Debug x64` or `Release x64`
+3. 设置配置为 `Debug x64` 或 `Release x64`
 
-4. Build solution (Ctrl+Shift+B)
+4. 构建解决方案（Ctrl+Shift+B）
 
-5. Run the application:
+5. 运行应用程序：
    ```bash
    .\x64\Debug\MonsterEngine.exe
    ```
 
-**Compile Shaders:**
+**编译 Shaders:**
 
 ```bash
 cd Shaders
 compile_shaders.bat
 ```
 
-This will compile all GLSL shaders to SPIR-V bytecode.
+这将把所有 GLSL shaders 编译为 SPIR-V bytecode。
 
 ---
 
-## Directory Structure
+## 目录结构
 
-This repository contains the core MonsterEngine, supporting libraries, and tools.
+本仓库包含 MonsterEngine 核心、支持库和工具。
 
-- `Include/` - Public header files
-  - `Core/` - Core engine systems (Log, Memory, Assert, Application)
-  - `Containers/` - Custom container types (TArray, TMap, FString, FName)
-  - `Math/` - Math library (Vector, Matrix, Quaternion)
-  - `RHI/` - Render Hardware Interface (abstract rendering API)
-  - `Platform/` - Platform-specific implementations
+- `Include/` - 公共头文件
+  - `Core/` - 核心引擎系统（Log, Memory, Assert, Application）
+  - `Containers/` - 自定义容器类型（TArray, TMap, FString, FName）
+  - `Math/` - 数学库（Vector, Matrix, Quaternion）
+  - `RHI/` - Render Hardware Interface（抽象渲染 API）
+  - `Platform/` - 平台特定实现
     - `Vulkan/` - Vulkan backend implementation
     - `OpenGL/` - OpenGL backend implementation
     - `GLFW/` - GLFW window system
-  - `Renderer/` - High-level rendering systems
+  - `Renderer/` - 高级渲染系统
     - `PBR/` - Physically-based rendering
     - `Scene/` - Scene management
-  - `Engine/` - Engine-level systems
+  - `Engine/` - 引擎级系统
     - `Camera/` - Camera management
     - `Shader/` - Shader management
     - `Texture/` - Texture management
     - `Material/` - Material system
-  - `Editor/` - Editor and tools
+  - `Editor/` - 编辑器和工具
     - `ImGui/` - ImGui integration
-- `Source/` - Implementation files (mirrors Include structure)
-- `Shaders/` - Shader source files
+- `Source/` - 实现文件（镜像 Include 结构）
+- `Shaders/` - Shader 源文件
   - `Common/` - Common shader utilities (BRDF, lighting, shadows)
   - `PBR/` - PBR shaders
   - `Forward/` - Forward rendering passes
   - `Material/` - Material shaders
   - `Lighting/` - Lighting shaders
-- `3rd-party/` - Third-party libraries
+- `3rd-party/` - 第三方库
   - `imgui/` - Dear ImGui
   - `stb/` - STB image library
   - `cgltf/` - glTF loader
-- `devDocument/` - Development documentation
-- `Tests/` - Unit tests and integration tests
+- `devDocument/` - 开发文档
+- `Tests/` - 单元测试和集成测试
 
 ---
 
-## Examples
+## 示例
 
-### Triangle Rendering
+### 三角形渲染
 
 ```cpp
 #include "TriangleRenderer.h"
@@ -420,7 +424,7 @@ class TriangleApp : public MonsterRender::Application {
 };
 ```
 
-### PBR Cube Scene
+### PBR 立方体场景
 
 ```cpp
 #include "CubeSceneApplication.h"
@@ -432,36 +436,36 @@ app->run();
 
 ---
 
-## Performance Considerations
+## 性能考虑
 
-### GPU Performance
+### GPU 性能
 
-- **Descriptor Set Pooling** - Efficient descriptor allocation and reuse
-- **Command Buffer Pooling** - Minimize command buffer allocation overhead
-- **Pipeline State Caching** - Cache pipeline states for fast lookup
-- **Resource State Tracking** - Minimize unnecessary resource transitions
+- **Descriptor Set Pooling** - 高效的 descriptor 分配和重用
+- **Command Buffer Pooling** - 最小化 command buffer 分配开销
+- **Pipeline State Caching** - 缓存 pipeline states 以快速查找
+- **Resource State Tracking** - 最小化不必要的资源转换
 
-### CPU Performance
+### CPU 性能
 
-- **Multi-threaded Command Recording** - Parallel command list generation (planned)
-- **Job System** - Task-based parallelism for CPU work (planned)
-- **Memory Pooling** - Custom allocators for frequent allocations
-- **SIMD Math** - Vectorized math operations (planned)
+- **Multi-threaded Command Recording** - 并行 command list 生成（计划中）
+- **Job System** - 基于任务的 CPU 并行工作（计划中）
+- **Memory Pooling** - 为频繁分配使用自定义分配器
+- **SIMD Math** - 向量化数学运算（计划中）
 
-### Memory Performance
+### 内存性能
 
-- **GPU Memory Manager** - VMA-style memory allocation
-- **Texture Streaming** - Load textures on demand
-- **Resource Budgets** - Track and manage memory usage
-- **Smart Pointers** - Automatic resource cleanup
+- **GPU Memory Manager** - VMA 风格的内存分配
+- **Texture Streaming** - 按需加载纹理
+- **Resource Budgets** - 跟踪和管理内存使用
+- **Smart Pointers** - 自动资源清理
 
 ---
 
-## Debugging
+## 调试
 
-### RenderDoc Integration
+### RenderDoc 集成
 
-Capture frames with RenderDoc:
+使用 RenderDoc 捕获帧：
 
 ```bash
 "C:\Program Files\RenderDoc\renderdoccmd.exe" capture --working-dir "E:\MonsterEngine" "E:\MonsterEngine\x64\Debug\MonsterEngine.exe" --cube-scene
@@ -469,7 +473,7 @@ Capture frames with RenderDoc:
 
 ### Validation Layers
 
-Enable Vulkan validation layers in debug builds:
+在 debug 构建中启用 Vulkan validation layers：
 
 ```cpp
 RHICreateInfo rhiInfo;
@@ -477,9 +481,9 @@ rhiInfo.enableValidation = true;  // Enable validation
 rhiInfo.enableDebugMarkers = true; // Enable debug markers
 ```
 
-### Logging
+### 日志系统
 
-Use the logging system for debugging:
+使用日志系统进行调试：
 
 ```cpp
 MR_LOG(LogRenderer, Log, "Rendering frame %u", frameIndex);
@@ -487,30 +491,30 @@ MR_LOG(LogRenderer, Warning, "Material not found: %s", *materialName.ToString())
 MR_LOG(LogRenderer, Error, "Failed to create pipeline state");
 ```
 
-Log levels: `VeryVerbose`, `Verbose`, `Log`, `Warning`, `Error`, `Fatal`
+日志级别：`VeryVerbose`, `Verbose`, `Log`, `Warning`, `Error`, `Fatal`
 
 ---
 
-## Contributing
+## 贡献
 
-1. Follow the [coding standards](.windsurf/rules/wind-monster-peoject-rule.md)
-2. All code must compile warning-free in Visual Studio 2022
-3. Test on both Vulkan and OpenGL backends
-4. Document public APIs with Doxygen-style comments
-5. Follow UE5 naming conventions and architecture patterns
-6. Use English for all code comments and logs
-7. Ensure thread safety for multi-threaded code
-8. Test with RenderDoc to verify correct rendering
-
----
-
-## License
-
-This project is for educational and development purposes. Please respect all third-party library licenses.
+1. 遵循 [编码规范](.windsurf/rules/wind-monster-peoject-rule.md)
+2. 所有代码必须在 Visual Studio 2022 中无警告编译
+3. 在 Vulkan 和 OpenGL 后端上测试
+4. 使用 Doxygen 风格注释记录公共 API
+5. 遵循 UE5 命名约定和架构模式
+6. 所有代码注释和日志使用英文
+7. 确保多线程代码的线程安全
+8. 使用 RenderDoc 测试以验证正确渲染
 
 ---
 
-## Dependencies
+## 许可证
+
+本项目用于教育和开发目的。请尊重所有第三方库的许可证。
+
+---
+
+## 依赖项
 
 - **Vulkan SDK** - Graphics API ([Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0))
 - **GLFW** - Window and input library ([zlib License](https://www.glfw.org/license.html))
@@ -520,9 +524,9 @@ This project is for educational and development purposes. Please respect all thi
 
 ---
 
-## Acknowledgments
+## 致谢
 
-- **Unreal Engine 5** - Architecture and design inspiration
-- **Google Filament** - PBR rendering and material system reference
-- **Vulkan Tutorial** - Vulkan API learning resource
-- **LearnOpenGL** - Graphics programming tutorials
+- **Unreal Engine 5** - 架构和设计灵感
+- **Google Filament** - PBR 渲染和材质系统参考
+- **Vulkan Tutorial** - Vulkan API 学习资源
+- **LearnOpenGL** - 图形编程教程
