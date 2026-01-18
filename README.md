@@ -16,6 +16,8 @@ MonsterEngine 是一个基于 Vulkan 和 OpenGL 构建的现代 3D 渲染引擎�
 
 MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说明](#构建) 从源码编译。
 
+如果您想从源码构建 MonsterEngine，请参考我们的 [构建手册](BUILD.md)。
+
 ---
 
 ## 文档
@@ -308,48 +310,86 @@ scene->UpdateAllPrimitiveSceneInfos();
 
 ### 前置要求
 
-**Windows:**
-- Visual Studio 2022
-- Vulkan SDK（最新版本，从 [LunarG](https://vulkan.lunarg.com/) 下载）
-- GLFW 3.3+
-- CMake 3.20+（可选，用于未来的跨平台构建）
+| 软件 | 最低版本 | 推荐版本 | 说明 |
+|------|---------|---------|------|
+| **CMake** | 3.20 | 3.28+ | 构建系统生成器 |
+| **Visual Studio** | 2022 | 2022 | MSVC 编译器（Windows） |
+| **Vulkan SDK** | 1.3.x | 1.4.x | 图形 API |
+| **Windows SDK** | 10.0 | 10.0.22621.0 | Windows 开发工具 |
 
-**Android:**
+**Android (计划支持):**
 - Android Studio
 - Android NDK r21+
 - Vulkan SDK for Android
 
-### 环境设置
+### 环境变量
 
-设置以下环境变量：
+确保以下环境变量已正确设置：
 
-```batch
-set VULKAN_SDK=C:\VulkanSDK\1.3.xxx.x
-set GLFW_DIR=C:\Libraries\glfw-3.3.x
+```powershell
+# 检查 Vulkan SDK
+echo $env:VULKAN_SDK
+# 应输出: C:\VulkanSDK\1.4.xxx.x
+
+# 检查 CMake
+cmake --version
+# 应输出: cmake version 3.20 或更高
 ```
 
-### 构建步骤
+### 快速开始
 
-**Windows:**
+#### 方法 1: 使用 CMake + Visual Studio 2022 (推荐)
 
-1. 克隆仓库：
-   ```bash
-   git clone https://github.com/yourusername/MonsterEngine.git
-   cd MonsterEngine
-   ```
+```powershell
+# 1. 克隆仓库
+git clone https://github.com/yourusername/MonsterEngine.git
+cd MonsterEngine
 
-2. 在 Visual Studio 2022 中打开 `MonsterEngine.sln`
+# 2. 创建构建目录
+mkdir build
+cd build
 
-3. 设置配置为 `Debug x64` 或 `Release x64`
+# 3. 生成 Visual Studio 解决方案
+cmake .. -G "Visual Studio 17 2022" -A x64
 
-4. 构建解决方案（Ctrl+Shift+B）
+# 4. 打开生成的解决方案
+start MonsterEngine.sln
 
-5. 运行应用程序：
-   ```bash
-   .\x64\Debug\MonsterEngine.exe
-   ```
+# 5. 在 Visual Studio 中按 F5 编译并运行
+```
 
-**编译 Shaders:**
+#### 方法 2: 使用 CMake 命令行
+
+```powershell
+# 1. 创建构建目录
+mkdir build
+cd build
+
+# 2. 配置项目 (Debug)
+cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Debug
+
+# 3. 编译项目
+cmake --build . --config Debug --parallel 8
+
+# 4. 运行程序
+.\bin\Debug\MonsterEngine.exe
+```
+
+#### 方法 3: 使用传统 Visual Studio 项目
+
+```powershell
+# 1. 在 Visual Studio 2022 中打开 MonsterEngine.sln
+# 2. 设置配置为 Debug x64 或 Release x64
+# 3. 构建解决方案 (Ctrl+Shift+B)
+# 4. 运行应用程序
+.\x64\Debug\MonsterEngine.exe
+```
+
+### 详细构建说明
+
+完整的构建说明、故障排除和高级选项，请参考 [BUILD.md](BUILD.md)。
+
+### 编译 Shaders
 
 ```bash
 cd Shaders
