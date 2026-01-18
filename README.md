@@ -29,6 +29,7 @@ MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说�
 
 ## 示例效果
 
+![Vulkan Triangle](docs/images/samples/vulkan_triangle.jpg)
 ![PBR Cube and Floor Scene](docs/images/samples/example_cube_and_floor.jpg)
 
 ---
