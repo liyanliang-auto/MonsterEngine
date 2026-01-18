@@ -427,8 +427,9 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Try to use descriptor set cache first (UE5-style optimization)
+        // Skip cache if explicitly disabled (e.g., for PBR rendering with pre-updated descriptor sets)
         auto* Cache = m_device->GetDescriptorSetCache();
-        if (Cache) {
+        if (Cache && m_descriptorSetCacheEnabled) {
             // Build key from current bindings
             FVulkanDescriptorSetKey Key = buildDescriptorSetKey();
             Key.Layout = DescriptorLayouts[0];
@@ -442,6 +443,12 @@ namespace MonsterRender::RHI::Vulkan {
                 MR_LOG_DEBUG("updateAndBindDescriptorSets: Used cached descriptor set");
                 return CachedSet;
             }
+        }
+        
+        // If cache is disabled, skip descriptor set binding from pending state
+        if (!m_descriptorSetCacheEnabled) {
+            MR_LOG_DEBUG("updateAndBindDescriptorSets: Cache disabled, skipping automatic binding");
+            return VK_NULL_HANDLE;
         }
         
         // Fallback path: descriptor set cache is not available

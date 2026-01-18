@@ -20,12 +20,16 @@
 #include "Core/ShaderCompiler.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanRHICommandList.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
+#include "Platform/Vulkan/VulkanPendingState.h"
 #include "RHI/RHIDefinitions.h"
 #include "RHI/RHIResources.h"
 #include "RHI/IRHIResource.h"
 #include "RHI/IRHIDescriptorSet.h"
+#include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
+#include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Containers/SparseArray.h"
 #include "Math/MonsterMath.h"
 
@@ -618,10 +622,26 @@ bool CubeSceneApplication::createPBRDescriptorSets()
         // ====================================================================
         
         // Set 0: View + Light UBOs
+        MR_LOG(LogCubeSceneApp, Error, "DEBUG: Starting Set 0 descriptor updates");
         if (m_pbrPerFrameDescriptorSet)
         {
+            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Updating Set 0 - View UBO (binding 0)");
+            if (!m_pbrViewUniformBuffer) {
+                MR_LOG(LogCubeSceneApp, Error, "ERROR: View uniform buffer is null!");
+            }
             m_pbrPerFrameDescriptorSet->updateUniformBuffer(0, m_pbrViewUniformBuffer, 0, sizeof(FPBRViewUniforms));
+            
+            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Updating Set 0 - Light UBO (binding 1)");
+            if (!m_pbrLightUniformBuffer) {
+                MR_LOG(LogCubeSceneApp, Error, "ERROR: Light uniform buffer is null!");
+            }
             m_pbrPerFrameDescriptorSet->updateUniformBuffer(1, m_pbrLightUniformBuffer, 0, sizeof(FPBRLightUniforms));
+            
+            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Set 0 descriptor updates complete");
+        }
+        else
+        {
+            MR_LOG(LogCubeSceneApp, Error, "ERROR: m_pbrPerFrameDescriptorSet is null!");
         }
         
         // Set 1: Material UBO + Textures
@@ -828,6 +848,15 @@ void CubeSceneApplication::renderHelmetWithPBR(
     {
         // Already in render pass, no need to set render targets
         
+        // Disable descriptor set cache for PBR rendering
+        // We use pre-updated descriptor sets instead of the automatic cache system
+        auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+        auto* cmdContext = vulkanDevice->getCommandListContext();
+        if (cmdContext && cmdContext->getPendingState()) {
+            cmdContext->getPendingState()->setDescriptorSetCacheEnabled(false);
+            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Disabled descriptor set cache for PBR rendering");
+        }
+        
         // Set pipeline state
         cmdList->setPipelineState(m_pbrPipelineState);
         
@@ -835,6 +864,12 @@ void CubeSceneApplication::renderHelmetWithPBR(
         if (m_pbrPipelineLayout && m_pbrPerFrameDescriptorSet && 
             m_pbrPerMaterialDescriptorSet && m_pbrPerObjectDescriptorSet)
         {
+            // Log descriptor set handles
+            auto* vulkanSet0 = dynamic_cast<RHI::Vulkan::VulkanDescriptorSet*>(m_pbrPerFrameDescriptorSet.get());
+            if (vulkanSet0) {
+                MR_LOG(LogCubeSceneApp, Error, "DEBUG: Binding Set 0 with handle 0x%llx", (uint64)vulkanSet0->getHandle());
+            }
+            
             TArray<TSharedPtr<RHI::IRHIDescriptorSet>> descriptorSets;
             descriptorSets.push_back(m_pbrPerFrameDescriptorSet);    // Set 0
             descriptorSets.push_back(m_pbrPerMaterialDescriptorSet); // Set 1
@@ -855,6 +890,14 @@ void CubeSceneApplication::renderHelmetWithPBR(
         
         // Draw indexed
         cmdList->drawIndexed(m_helmetIndexCount, 0, 0);
+        
+        // Re-enable descriptor set cache after PBR rendering
+        auto* vulkanDevice2 = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+        auto* cmdContext2 = vulkanDevice2->getCommandListContext();
+        if (cmdContext2 && cmdContext2->getPendingState()) {
+            cmdContext2->getPendingState()->setDescriptorSetCacheEnabled(true);
+            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Re-enabled descriptor set cache");
+        }
         
         MR_LOG(LogCubeSceneApp, Log, "PBR helmet rendered: %u indices", m_helmetIndexCount);
     }
