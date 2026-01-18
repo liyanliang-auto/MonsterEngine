@@ -2469,6 +2469,12 @@ void CubeSceneApplication::renderWithRDG(
                 lights,
                 lightViewProjection
             );
+            
+            // Render PBR helmet in the same render pass
+            if (m_bHelmetPBREnabled && m_bHelmetInitialized)
+            {
+                renderHelmetWithPBR(&rhiCmdList, viewMatrix, projectionMatrix, cameraPosition);
+            }
         }
     );
     
