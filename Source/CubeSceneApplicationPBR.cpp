@@ -826,9 +826,7 @@ void CubeSceneApplication::renderHelmetWithPBR(
     
     if (backend == RHI::ERHIBackend::Vulkan && m_pbrPipelineState)
     {
-        // Ensure we are in a render pass - set render targets to swapchain
-        TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
-        cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+        // Already in render pass, no need to set render targets
         
         // Set pipeline state
         cmdList->setPipelineState(m_pbrPipelineState);

@@ -524,7 +524,7 @@ protected:
     float m_shadowDistance = 50.0f;
 
     /** Whether shadows are enabled */
-    bool m_bShadowsEnabled = true;
+    bool m_bShadowsEnabled = false;
 
     /** Whether to use RDG for rendering */
     bool m_bUseRDG = true;  // Temporarily disabled for debugging
@@ -578,6 +578,9 @@ protected:
 
     /** Whether helmet resources are initialized */
     bool m_bHelmetInitialized = false;
+
+    /** Whether to render the cube (disabled for PBR debugging) */
+    bool m_bRenderCube = false;
 
     /** Loaded glTF model data */
     MonsterEngine::TSharedPtr<MonsterEngine::FGLTFModel> m_helmetModel;
