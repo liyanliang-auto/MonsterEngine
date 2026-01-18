@@ -448,6 +448,12 @@ void CubeSceneApplication::onRender()
             renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
         }
         
+        // Render PBR helmet
+        if (m_bHelmetPBREnabled && m_bHelmetInitialized)
+        {
+            renderHelmetWithPBR(cmdList, viewMatrix, projectionMatrix, cameraPosition);
+        }
+        
         // Swap buffers
         getWindow()->swapBuffers();
     }
@@ -547,6 +553,12 @@ void CubeSceneApplication::onRender()
             {
                 MR_LOG(LogCubeSceneApp, Verbose, "Rendering cube without shadows");
                 renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+            }
+            
+            // Render PBR helmet
+            if (m_bHelmetPBREnabled && m_bHelmetInitialized)
+            {
+                renderHelmetWithPBR(cmdList, viewMatrix, projectionMatrix, cameraPosition);
             }
         }
         
@@ -2098,7 +2110,7 @@ void CubeSceneApplication::renderShadowDepthPass(
     MR_LOG(LogCubeSceneApp, Verbose, "Rendering shadow depth pass");
     
     // Calculate light view-projection matrix
-    // Must be large enough to cover entire floor (size = 25.0f, so bounds = ¡À25)
+    // Must be large enough to cover entire floor (size = 25.0f, so bounds = ï¿½ï¿½25)
     float sceneBoundsRadius = 30.0f;  // Cover floor and cubes
     outLightViewProjection = calculateLightViewProjection(lightDirection, sceneBoundsRadius);
     
@@ -2307,7 +2319,7 @@ void CubeSceneApplication::renderWithRDG(
     lightDirection.Normalize();
     
     // Calculate light view-projection matrix
-    // Must be large enough to cover entire floor (size = 25.0f, so bounds = ¡À25)
+    // Must be large enough to cover entire floor (size = 25.0f, so bounds = Â±25)
     Math::FMatrix lightViewProjection = calculateLightViewProjection(lightDirection, 30.0f);
     
     // Create RDG builder
