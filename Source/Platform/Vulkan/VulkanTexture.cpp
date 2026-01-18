@@ -123,6 +123,28 @@ namespace MonsterRender::RHI::Vulkan {
             // Not fatal - sampler can be provided externally
         }
         
+        // Upload initial data and transition layout if provided
+        if (m_desc.initialData && m_desc.initialDataSize > 0) {
+            if (!uploadInitialData()) {
+                MR_LOG_ERROR("Failed to upload initial data for texture: " + m_desc.debugName);
+                return false;
+            }
+        } else {
+            // Check if this is a depth texture - skip layout transition for depth textures
+            bool isDepthTexture = (static_cast<uint32>(m_desc.usage) & static_cast<uint32>(EResourceUsage::DepthStencil)) != 0;
+            
+            if (!isDepthTexture) {
+                // No initial data, just transition layout to SHADER_READ_ONLY_OPTIMAL
+                if (!transitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
+                    MR_LOG_ERROR("Failed to transition image layout for texture: " + m_desc.debugName);
+                    return false;
+                }
+            } else {
+                // Depth textures stay in UNDEFINED layout until first use
+                MR_LOG_DEBUG("Skipping layout transition for depth texture: " + m_desc.debugName);
+            }
+        }
+        
         MR_LOG_DEBUG("Successfully created Vulkan texture: " + m_desc.debugName);
         return true;
     }
@@ -257,6 +279,215 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         MR_LOG_DEBUG("Created default sampler for texture: " + m_desc.debugName);
+        return true;
+    }
+    
+    bool VulkanTexture::transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout) {
+        const auto& functions = VulkanAPI::getFunctions();
+        VkDevice device = m_device->getDevice();
+        
+        // Create a one-time command buffer for layout transition
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = m_device->getCommandPool();
+        allocInfo.commandBufferCount = 1;
+        
+        VkCommandBuffer commandBuffer;
+        VkResult result = functions.vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to allocate command buffer for layout transition");
+            return false;
+        }
+        
+        // Begin command buffer
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        
+        functions.vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        
+        // Setup image memory barrier for layout transition
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = oldLayout;
+        barrier.newLayout = newLayout;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = m_image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = m_desc.mipLevels;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = m_desc.arraySize;
+        
+        // Determine pipeline stages and access masks based on layouts
+        VkPipelineStageFlags sourceStage;
+        VkPipelineStageFlags destinationStage;
+        
+        if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        } else {
+            MR_LOG_ERROR("Unsupported layout transition");
+            functions.vkFreeCommandBuffers(device, m_device->getCommandPool(), 1, &commandBuffer);
+            return false;
+        }
+        
+        functions.vkCmdPipelineBarrier(
+            commandBuffer,
+            sourceStage, destinationStage,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier
+        );
+        
+        // End command buffer
+        functions.vkEndCommandBuffer(commandBuffer);
+        
+        // Submit command buffer
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        
+        result = functions.vkQueueSubmit(m_device->getGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to submit layout transition command buffer");
+            functions.vkFreeCommandBuffers(device, m_device->getCommandPool(), 1, &commandBuffer);
+            return false;
+        }
+        
+        // Wait for completion
+        functions.vkQueueWaitIdle(m_device->getGraphicsQueue());
+        
+        // Free command buffer
+        functions.vkFreeCommandBuffers(device, m_device->getCommandPool(), 1, &commandBuffer);
+        
+        // Update current layout
+        m_currentLayout = newLayout;
+        
+        MR_LOG_DEBUG("Transitioned texture layout: " + m_desc.debugName);
+        return true;
+    }
+    
+    bool VulkanTexture::uploadInitialData() {
+        const auto& functions = VulkanAPI::getFunctions();
+        VkDevice device = m_device->getDevice();
+        
+        // Create staging buffer
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = m_desc.initialDataSize;
+        bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        
+        VkBuffer stagingBuffer;
+        VkResult result = functions.vkCreateBuffer(device, &bufferInfo, nullptr, &stagingBuffer);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create staging buffer");
+            return false;
+        }
+        
+        // Allocate staging buffer memory
+        VkMemoryRequirements memRequirements;
+        functions.vkGetBufferMemoryRequirements(device, stagingBuffer, &memRequirements);
+        
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, 
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        
+        VkDeviceMemory stagingMemory;
+        result = functions.vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to allocate staging buffer memory");
+            functions.vkDestroyBuffer(device, stagingBuffer, nullptr);
+            return false;
+        }
+        
+        functions.vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+        
+        // Copy data to staging buffer
+        void* data;
+        functions.vkMapMemory(device, stagingMemory, 0, m_desc.initialDataSize, 0, &data);
+        std::memcpy(data, m_desc.initialData, m_desc.initialDataSize);
+        functions.vkUnmapMemory(device, stagingMemory);
+        
+        // Transition image layout: UNDEFINED -> TRANSFER_DST_OPTIMAL
+        if (!transitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)) {
+            functions.vkFreeMemory(device, stagingMemory, nullptr);
+            functions.vkDestroyBuffer(device, stagingBuffer, nullptr);
+            return false;
+        }
+        
+        // Copy buffer to image
+        VkCommandBufferAllocateInfo cmdAllocInfo{};
+        cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdAllocInfo.commandPool = m_device->getCommandPool();
+        cmdAllocInfo.commandBufferCount = 1;
+        
+        VkCommandBuffer commandBuffer;
+        functions.vkAllocateCommandBuffers(device, &cmdAllocInfo, &commandBuffer);
+        
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        functions.vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        
+        VkBufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {m_desc.width, m_desc.height, m_desc.depth};
+        
+        functions.vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, m_image, 
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        
+        functions.vkEndCommandBuffer(commandBuffer);
+        
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        
+        functions.vkQueueSubmit(m_device->getGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        functions.vkQueueWaitIdle(m_device->getGraphicsQueue());
+        
+        functions.vkFreeCommandBuffers(device, m_device->getCommandPool(), 1, &commandBuffer);
+        
+        // Transition image layout: TRANSFER_DST_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
+        if (!transitionImageLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
+            functions.vkFreeMemory(device, stagingMemory, nullptr);
+            functions.vkDestroyBuffer(device, stagingBuffer, nullptr);
+            return false;
+        }
+        
+        // Cleanup staging resources
+        functions.vkFreeMemory(device, stagingMemory, nullptr);
+        functions.vkDestroyBuffer(device, stagingBuffer, nullptr);
+        
+        MR_LOG_DEBUG("Uploaded initial data for texture: " + m_desc.debugName);
         return true;
     }
 }

@@ -51,6 +51,10 @@ using MonsterRender::RHI::FVulkanAllocation;
         bool createImageView();
         bool createDefaultSampler();
         
+        // Layout transition and data upload helpers
+        bool transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout);
+        bool uploadInitialData();
+        
     private:
         VulkanDevice* m_device;
         VkImage m_image = VK_NULL_HANDLE;
