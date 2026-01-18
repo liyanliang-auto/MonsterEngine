@@ -112,6 +112,11 @@ namespace MonsterRender::RHI::Vulkan {
          */
         void setInsideRenderPass(bool inside) { m_insideRenderPass = inside; }
         
+        /**
+         * Disable descriptor set cache (for PBR rendering with pre-updated descriptor sets)
+         */
+        void setDescriptorSetCacheEnabled(bool enabled) { m_descriptorSetCacheEnabled = enabled; }
+        
     private:
         /**
          * Update and bind descriptor sets using cache
@@ -177,6 +182,9 @@ namespace MonsterRender::RHI::Vulkan {
         
         bool m_descriptorsDirty = true;
         VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
+        
+        // Descriptor set cache control
+        bool m_descriptorSetCacheEnabled = true;
         
         // Render pass state
         bool m_insideRenderPass;

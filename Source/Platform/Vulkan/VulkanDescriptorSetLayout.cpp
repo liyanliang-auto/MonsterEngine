@@ -333,8 +333,11 @@ namespace MonsterRender::RHI::Vulkan {
         write.pBufferInfo = bufferInfo;
         write.pImageInfo = imageInfo;
         
+        MR_LOG(LogVulkanRHI, Error, "DEBUG: About to call vkUpdateDescriptorSets for binding %u, descriptorSet=0x%llx", 
+               binding, (uint64)m_descriptorSet);
+        
         vkUpdateDescriptorSets(m_device->getDevice(), 1, &write, 0, nullptr);
         
-        MR_LOG(LogVulkanRHI, VeryVerbose, "Updated descriptor set binding %u", binding);
+        MR_LOG(LogVulkanRHI, Error, "DEBUG: vkUpdateDescriptorSets completed for binding %u", binding);
     }
 }
