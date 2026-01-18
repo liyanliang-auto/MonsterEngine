@@ -59,13 +59,27 @@ namespace MonsterRender::RHI::Vulkan
             return false;
         }
 
-        // Use device's main render pass for swapchain rendering
-        // This is the standard render pass with finalLayout=PRESENT_SRC_KHR
-        m_renderPass = m_device->getRenderPass();
-        if (m_renderPass == VK_NULL_HANDLE)
+        // Determine which render pass to use
+        if (m_desc.renderTargetFormats.empty() && m_desc.depthStencilFormat != EPixelFormat::Unknown)
         {
-            MR_LOG_ERROR("Device render pass is null");
-            return false;
+            // Depth-only pipeline: create custom render pass
+            MR_LOG_INFO("Creating depth-only render pass for pipeline: " + m_desc.debugName);
+            if (!createRenderPass())
+            {
+                MR_LOG_ERROR("Failed to create depth-only render pass");
+                return false;
+            }
+        }
+        else
+        {
+            // Use device's main render pass for swapchain rendering
+            // This is the standard render pass with finalLayout=PRESENT_SRC_KHR
+            m_renderPass = m_device->getRenderPass();
+            if (m_renderPass == VK_NULL_HANDLE)
+            {
+                MR_LOG_ERROR("Device render pass is null");
+                return false;
+            }
         }
 
         MR_LOG_DEBUG("Using device render pass for pipeline");
@@ -916,13 +930,12 @@ namespace MonsterRender::RHI::Vulkan
     {
         std::vector<VkPipelineColorBlendAttachmentState> attachments;
 
-        MR_LOG_INFO("createColorBlendAttachments: renderTargetFormats.size()=" + 
-                   std::to_string(m_desc.renderTargetFormats.size()));
-        
-        // If no render target formats specified (depth-only pipeline), return empty attachments
+        // Color blend attachments must match the number of color attachments in RenderPass
+        // For depth-only pipelines, renderTargetFormats will be empty, so no color blend attachments needed
         uint32 numAttachments = m_desc.renderTargetFormats.size();
+        
         if (numAttachments == 0) {
-            MR_LOG_INFO("createColorBlendAttachments: Depth-only pipeline, no color attachments needed.");
+            // Depth-only pipeline, no color attachments
             return attachments;
         }
 

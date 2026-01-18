@@ -568,6 +568,8 @@ void CubeSceneApplication::renderCube(
     const FVector& cameraPosition,
     const TArray<FLightSceneInfo*>& lights)
 {
+    if (!m_bRenderCube)
+        return;
     // Render all cube actors
     for (auto& cubeActor : m_cubeActors)
     {
@@ -2179,6 +2181,9 @@ void CubeSceneApplication::renderCubeWithShadows(
     const TArray<FLightSceneInfo*>& lights,
     const FMatrix& lightViewProjection)
 {
+    if (!m_bRenderCube) 
+        return;
+
     if (m_cubeActors.Num() == 0 || !cmdList)
     {
         return;
