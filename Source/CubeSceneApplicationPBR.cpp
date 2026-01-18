@@ -310,6 +310,11 @@ bool CubeSceneApplication::createPBRPipeline()
         pipelineDesc.depthStencilFormat = m_device->getDepthFormat();
         pipelineDesc.debugName = "PBR Helmet Pipeline";
         
+        MR_LOG(LogCubeSceneApp, Log, "PBR Pipeline: renderTargetFormats.size() = %d", 
+               pipelineDesc.renderTargetFormats.Num());
+        MR_LOG(LogCubeSceneApp, Log, "PBR Pipeline: swapchain format = %d", 
+               static_cast<int>(m_device->getSwapChainFormat()));
+        
         m_pbrPipelineState = m_device->createPipelineState(pipelineDesc);
         if (!m_pbrPipelineState)
         {
