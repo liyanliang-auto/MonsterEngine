@@ -1236,13 +1236,10 @@ void FForwardShadingSceneRenderer::RenderShadowDepthMaps(IRHICommandList& RHICmd
 {
     MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps");
     
-    if (!ShadowDepthPass)
+    if (!bShadowsEnabled || !ShadowDepthPass)
     {
         return;
     }
-    
-    // Clear previous shadow data
-    ShadowDataArray.Empty();
     
     // Gather shadow-casting lights
     TArray<FLightSceneInfo*> ShadowCastingLights;
@@ -1254,12 +1251,16 @@ void FForwardShadingSceneRenderer::RenderShadowDepthMaps(IRHICommandList& RHICmd
         return;
     }
     
-    MR_LOG(LogRenderer, Verbose, "Rendering shadow maps for %d lights", ShadowCastingLights.Num());
+    MR_LOG(LogRenderer, Log, "Rendering shadow maps for %d lights", ShadowCastingLights.Num());
     
-    // Render shadow map for each shadow-casting light
+    // Clear shadow data array
+    ShadowDataArray.Empty();
+    ShadowDataArray.Reserve(ShadowCastingLights.Num());
+    
+    // Render shadow map for each light
     for (FLightSceneInfo* LightInfo : ShadowCastingLights)
     {
-        if (!LightInfo)
+        if (!LightInfo || !LightInfo->GetProxy())
         {
             continue;
         }

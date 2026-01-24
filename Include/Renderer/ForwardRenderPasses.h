@@ -24,6 +24,12 @@
 #include "Engine/SceneRenderer.h"
 #include "Math/Vector.h"
 #include "Math/Matrix.h"
+#include "Core/Templates/SharedPointer.h"
+
+// Forward declarations for RHI types
+namespace MonsterRender { namespace RHI {
+    class IRHITexture;
+}}
 
 namespace MonsterEngine
 {
@@ -81,6 +87,9 @@ struct FShadowMapConfig
     /** Shadow distance (far plane) */
     float ShadowDistance = 100.0f;
     
+    /** Scene bounds radius for shadow map coverage */
+    float SceneBoundsRadius = 30.0f;
+    
     /** Enable PCF filtering */
     bool bEnablePCF = true;
     
@@ -97,7 +106,7 @@ struct FShadowData
     FLightSceneInfo* Light = nullptr;
     
     /** Shadow map texture handle */
-    void* ShadowMapTexture = nullptr;
+    TSharedPtr<MonsterRender::RHI::IRHITexture> ShadowMapTexture;
     
     /** Light view-projection matrix */
     FMatrix LightViewProjection;
