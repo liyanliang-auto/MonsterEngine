@@ -14,20 +14,19 @@
  */
 
 #include "Renderer/ForwardRenderPasses.h"
-#include "Renderer/RenderPass.h"
-#include "Engine/PrimitiveSceneInfo.h"
+#include "Renderer/SceneRenderer.h"
+#include "Renderer/Scene.h"
+#include "Renderer/SceneView.h"
+#include "Renderer/MeshBatch.h"
+#include "Renderer/MeshElementCollector.h"
+#include "Engine/LightSceneInfo.h"
+#include "Engine/LightSceneProxy.h"
 #include "Engine/PrimitiveSceneProxy.h"
 #include "Engine/Proxies/CubeSceneProxy.h"
 #include "Engine/Proxies/FloorSceneProxy.h"
-#include "Engine/LightSceneInfo.h"
-#include "Engine/LightSceneProxy.h"
-#include "Renderer/SceneView.h"
-#include "Core/Logging/LogMacros.h"
-#include "RHI/IRHICommandList.h"
 #include "RHI/IRHITexture.h"
-#include "Containers/Map.h"
 #include "Core/Logging/LogMacros.h"
-#include "Math/MathFunctions.h"
+#include "Math/MonsterMath.h"
 
 namespace MonsterEngine
 {
@@ -194,13 +193,30 @@ void FOpaquePass::Execute(FRenderPassContext& Context)
     // Set viewport
     SetViewport(Context);
     
-    // Render each opaque primitive with lighting
+    // Create mesh element collector for gathering dynamic mesh elements (UE5 style)
+    FMeshElementCollector MeshCollector;
+    
+    // Setup collector for the current view
+    TArray<const FSceneView*> Views;
+    Views.Add(Context.View);
+    MeshCollector.SetupViews(Views);
+    
+    // Gather mesh elements from all visible opaque primitives
     for (FPrimitiveSceneInfo* Primitive : *Context.VisibleOpaquePrimitives)
     {
         if (!Primitive)
         {
             continue;
         }
+        
+        FPrimitiveSceneProxy* Proxy = Primitive->GetProxy();
+        if (!Proxy || !Proxy->IsVisible())
+        {
+            continue;
+        }
+        
+        // Set current primitive for the collector
+        MeshCollector.SetPrimitive(Proxy);
         
         // Gather lights affecting this primitive
         TempAffectingLights.Reset();
@@ -209,129 +225,121 @@ void FOpaquePass::Execute(FRenderPassContext& Context)
             GatherAffectingLights(Context, Primitive, TempAffectingLights);
         }
         
-        // Render the primitive with gathered lights
-        RenderOpaquePrimitive(Context, Primitive, TempAffectingLights);
+        // Call GetDynamicMeshElements to collect mesh batches (UE5 pattern)
+        // VisibilityMap: bit 0 = view 0 is visible
+        uint32 VisibilityMap = 1; // Single view, always visible
+        FSceneViewFamily ViewFamily; // Empty view family for now
+        
+        Proxy->GetDynamicMeshElements(Views, ViewFamily, VisibilityMap, MeshCollector);
+    }
+    
+    // Render all collected mesh batches
+    const int32 ViewIndex = 0;
+    const TArray<FMeshBatchAndRelevance>* MeshBatches = MeshCollector.GetMeshBatches(ViewIndex);
+    
+    if (MeshBatches)
+    {
+        MR_LOG(LogForwardRenderer, Verbose, "Rendering %d mesh batches", MeshBatches->Num());
+        
+        for (const FMeshBatchAndRelevance& MeshBatchAndRelevance : *MeshBatches)
+        {
+            const FMeshBatch* MeshBatch = MeshBatchAndRelevance.Mesh;
+            const FPrimitiveSceneProxy* Proxy = MeshBatchAndRelevance.PrimitiveSceneProxy;
+            
+            if (!MeshBatch || !Proxy)
+            {
+                continue;
+            }
+            
+            // Render this mesh batch
+            RenderMeshBatch(Context, MeshBatch, Proxy);
+        }
     }
 }
 
-void FOpaquePass::RenderOpaquePrimitive(
+void FOpaquePass::RenderMeshBatch(
     FRenderPassContext& Context,
-    FPrimitiveSceneInfo* Primitive,
-    const TArray<FLightSceneInfo*>& AffectingLights)
+    const FMeshBatch* MeshBatch,
+    const FPrimitiveSceneProxy* Proxy)
 {
-    if (!Primitive || !Context.RHICmdList || !Context.View)
+    if (!MeshBatch || !Proxy || !Context.RHICmdList || !Context.View)
     {
         return;
     }
     
-    // Get primitive's scene proxy
-    FPrimitiveSceneProxy* Proxy = Primitive->GetProxy();
-    if (!Proxy)
+    // Validate mesh batch has draw calls
+    if (!MeshBatch->HasAnyDrawCalls())
     {
-        MR_LOG(LogForwardRenderer, Warning, "Primitive has no scene proxy");
+        MR_LOG(LogForwardRenderer, VeryVerbose, "Skipping mesh batch with no draw calls");
         return;
     }
     
-    // Check if proxy is visible
-    if (!Proxy->IsVisible())
-    {
-        return;
-    }
-    
-    // Setup light uniform buffer if lighting is enabled
-    if (bLightingEnabled && AffectingLights.Num() > 0)
-    {
-        SetupLightBuffer(Context, AffectingLights);
-    }
-    
-    // Get view matrices
+    // Get view matrices for uniform buffer updates
     const FMatrix& ViewMatrix = Context.View->ViewMatrices.GetViewMatrix();
     const FMatrix& ProjectionMatrix = Context.View->ViewMatrices.GetProjectionMatrix();
     const FVector& CameraPosition = Context.View->ViewMatrices.GetViewOrigin();
     
-    // Cast to specific proxy types and call their Draw methods
-    // Note: In UE5, this would use FMeshElementCollector and FMeshBatch system
-    // For now, we directly call proxy-specific draw methods
-    
-    // Try FCubeSceneProxy (use MonsterEngine namespace)
-    MonsterEngine::FCubeSceneProxy* CubeProxy = dynamic_cast<MonsterEngine::FCubeSceneProxy*>(Proxy);
-    if (CubeProxy)
+    // Iterate through all elements in the mesh batch
+    for (const FMeshBatchElement& Element : MeshBatch->Elements)
     {
-        // Draw cube with lighting and shadows
-        if (ShadowData.Num() > 0 && ShadowData[0].bValid)
+        // Validate element has primitives to draw
+        if (Element.NumPrimitives == 0)
         {
-            // Draw with shadows
-            const FShadowData& Shadow = ShadowData[0];
-            FVector4 ShadowParams(0.005f, 1.0f, 0.0f, 100.0f); // bias, slope bias, normal bias, distance
+            continue;
+        }
+        
+        // Validate required resources
+        if (!Element.VertexBuffer || !Element.PipelineState)
+        {
+            MR_LOG(LogForwardRenderer, Warning, "Mesh batch element missing required resources");
+            continue;
+        }
+        
+        // Set pipeline state
+        Context.RHICmdList->setPipelineState(Element.PipelineState);
+        
+        // Bind vertex buffer
+        TArray<TSharedPtr<MonsterRender::RHI::IRHIBuffer>> VertexBuffers;
+        VertexBuffers.Add(Element.VertexBuffer);
+        Context.RHICmdList->setVertexBuffers(0, VertexBuffers);
+        
+        // TODO: Update uniform buffers with view/projection matrices and lighting data
+        // This requires the proxy to expose methods for updating its uniform buffers
+        // For now, we rely on the proxy having already set up its uniform buffers
+        // In a full implementation, we would:
+        // 1. Get or create per-frame uniform buffer
+        // 2. Update with current view/projection matrices
+        // 3. Update with lighting data from TempAffectingLights
+        // 4. Bind uniform buffer to shader
+        
+        // Draw the mesh element
+        if (Element.IndexBuffer)
+        {
+            // Indexed drawing
+            Context.RHICmdList->setIndexBuffer(Element.IndexBuffer);
             
-            CubeProxy->DrawWithShadows(
-                Context.RHICmdList,
-                ViewMatrix,
-                ProjectionMatrix,
-                CameraPosition,
-                AffectingLights,
-                Shadow.LightViewProjection,
-                Shadow.ShadowMapTexture,
-                ShadowParams
+            const uint32 IndexCount = Element.NumPrimitives * 3; // Assuming triangles
+            Context.RHICmdList->drawIndexed(
+                IndexCount,
+                Element.FirstIndex,
+                Element.BaseVertexIndex
             );
+            
+            MR_LOG(LogForwardRenderer, VeryVerbose, 
+                   "Drew indexed mesh: %d primitives, %d indices",
+                   Element.NumPrimitives, IndexCount);
         }
         else
         {
-            // Draw without shadows
-            CubeProxy->DrawWithLighting(
-                Context.RHICmdList,
-                ViewMatrix,
-                ProjectionMatrix,
-                CameraPosition,
-                AffectingLights
-            );
-        }
-        
-        MR_LOG(LogForwardRenderer, VeryVerbose, "Rendered cube primitive with %d lights", AffectingLights.Num());
-        return;
-    }
-    
-    // Try FFloorSceneProxy (use MonsterEngine namespace)
-    MonsterEngine::FFloorSceneProxy* FloorProxy = dynamic_cast<MonsterEngine::FFloorSceneProxy*>(Proxy);
-    if (FloorProxy)
-    {
-        // Draw floor with lighting and shadows
-        if (ShadowData.Num() > 0 && ShadowData[0].bValid)
-        {
-            // Draw with shadows
-            const FShadowData& Shadow = ShadowData[0];
-            FVector4 ShadowParams(0.005f, 1.0f, 0.0f, 100.0f);
+            // Non-indexed drawing
+            const uint32 VertexCount = Element.NumPrimitives * 3; // Assuming triangles
+            Context.RHICmdList->draw(VertexCount, Element.BaseVertexIndex);
             
-            FloorProxy->DrawWithShadows(
-                Context.RHICmdList,
-                ViewMatrix,
-                ProjectionMatrix,
-                CameraPosition,
-                AffectingLights,
-                Shadow.LightViewProjection,
-                Shadow.ShadowMapTexture,
-                ShadowParams
-            );
+            MR_LOG(LogForwardRenderer, VeryVerbose,
+                   "Drew non-indexed mesh: %d primitives, %d vertices",
+                   Element.NumPrimitives, VertexCount);
         }
-        else
-        {
-            // Draw without shadows
-            FloorProxy->DrawWithLighting(
-                Context.RHICmdList,
-                ViewMatrix,
-                ProjectionMatrix,
-                CameraPosition,
-                AffectingLights
-            );
-        }
-        
-        MR_LOG(LogForwardRenderer, VeryVerbose, "Rendered floor primitive with %d lights", AffectingLights.Num());
-        return;
     }
-    
-    // Generic fallback for other proxy types
-    // In the future, this should use FMeshElementCollector pattern
-    MR_LOG(LogForwardRenderer, Warning, "Unsupported primitive proxy type for rendering");
 }
 
 void FOpaquePass::GatherAffectingLights(

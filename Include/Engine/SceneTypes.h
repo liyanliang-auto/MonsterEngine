@@ -477,17 +477,7 @@ struct FPrimitiveViewRelevance
 // Depth Priority Group
 // ============================================================================
 
-/**
- * Scene depth priority groups for rendering order
- */
-enum class ESceneDepthPriorityGroup : uint8
-{
-    /** World scene depth priority group */
-    World,
-    
-    /** Foreground scene depth priority group */
-    Foreground
-};
+// ESceneDepthPriorityGroup is now defined in Renderer/MeshBatch.h
 
 // ============================================================================
 // Static Constants

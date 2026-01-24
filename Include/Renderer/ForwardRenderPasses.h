@@ -228,15 +228,15 @@ public:
     
 protected:
     /**
-     * Render a single opaque primitive with lighting
+     * Render a mesh batch with RHI commands (UE5 style)
      * @param Context - Render context
-     * @param Primitive - Primitive to render
-     * @param AffectingLights - Lights affecting this primitive
+     * @param MeshBatch - Mesh batch to render
+     * @param Proxy - Primitive scene proxy that owns this mesh
      */
-    virtual void RenderOpaquePrimitive(
+    virtual void RenderMeshBatch(
         FRenderPassContext& Context,
-        FPrimitiveSceneInfo* Primitive,
-        const TArray<FLightSceneInfo*>& AffectingLights);
+        const struct FMeshBatch* MeshBatch,
+        const FPrimitiveSceneProxy* Proxy);
     
     /**
      * Gather lights affecting a primitive
