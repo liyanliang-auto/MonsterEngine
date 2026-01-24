@@ -167,28 +167,28 @@ void FRDGBuilder::execute(RHI::IRHICommandList& rhiCmdList)
     // Phase 1: Validate graph
     IF_RDG_ENABLE_DEBUG(_validateGraph());
     
-    // Phase 2: Build dependency graph (TODO: Implement in Phase 2)
+    // Phase 2: Build dependency graph 
     _buildDependencyGraph();
     
-    // Phase 3: Topological sort (TODO: Implement in Phase 2)
+    // Phase 3: Topological sort 
     _topologicalSort();
     
-    // Phase 4: Analyze resource lifetimes (TODO: Implement in Phase 3)
+    // Phase 4: Analyze resource lifetimes 
     _analyzeResourceLifetimes();
     
-    // Phase 5: Insert transitions (TODO: Implement in Phase 3)
+    // Phase 5: Insert transitions
     _insertTransitions();
     
     m_bCompiled = true;
     
-    // Phase 6: Allocate RHI resources (TODO: Implement in Phase 4)
+    // Phase 6: Allocate RHI resources 
     _allocateResources(rhiCmdList);
     
 #if RDG_ENABLE_DEBUG
     m_bAllowRHIAccess = true;
 #endif
     
-    // Phase 7: Execute passes (TODO: Implement in Phase 4)
+    // Phase 7: Execute passes
     for (FRDGPass* pass : m_sortedPasses)
     {
         if (!pass->isCulled())
@@ -201,7 +201,7 @@ void FRDGBuilder::execute(RHI::IRHICommandList& rhiCmdList)
     m_bAllowRHIAccess = false;
 #endif
     
-    // Phase 8: Release resources (TODO: Implement in Phase 4)
+    // Phase 8: Release resources
     _releaseResources();
     
     m_bExecuted = true;
