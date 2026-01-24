@@ -410,13 +410,16 @@ void FOpaquePass::RenderMeshBatch(
         Context.RHICmdList->setVertexBuffers(0, VertexBuffers);
         
         // Bind material uniform buffer to shader
-        // Material data is bound to Set 1, Binding 0 (following UE5 convention)
-        // Set 0 is typically used for per-frame/per-view data
-        // Set 1 is typically used for per-material data
+        // Material data is bound to binding 4 (matching shader layout)
+        // Binding 0: TransformUBO
+        // Binding 1: texture1
+        // Binding 2: texture2
+        // Binding 3: LightingUBO
+        // Binding 4: MaterialUBO
         if (MaterialUniformBuffer)
         {
-            Context.RHICmdList->setConstantBuffer(1, MaterialUniformBuffer);
-            MR_LOG(LogForwardRenderer, VeryVerbose, "Bound material uniform buffer to Set 1");
+            Context.RHICmdList->setConstantBuffer(4, MaterialUniformBuffer);
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Bound material uniform buffer to binding 4");
         }
         
         // TODO: Update uniform buffers with view/projection matrices and lighting data

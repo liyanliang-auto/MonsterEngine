@@ -27,6 +27,16 @@ layout(binding = 3) uniform LightingUBO {
     float padding3;
 } lighting;
 
+// Material uniform buffer (Set 1, Binding 0 in descriptor set layout)
+// For now using binding 4 in the same set for compatibility
+layout(binding = 4) uniform MaterialUBO {
+    vec4 baseColor;     // Base color (RGBA)
+    float metallic;     // Metallic value [0,1]
+    float roughness;    // Roughness value [0,1]
+    float specular;     // Specular intensity [0,1]
+    float padding;      // Padding for alignment
+} material;
+
 layout(binding = 1) uniform sampler2D texture1;
 layout(binding = 2) uniform sampler2D texture2;
 
@@ -87,17 +97,27 @@ void main() {
     // View direction (from fragment to camera)
     vec3 viewDir = normalize(fragViewPos - fragWorldPos);
     
-    // Sample textures
-    vec4 texColor1 = texture(texture1, fragTexCoord);
-    vec4 texColor2 = texture(texture2, fragTexCoord);
+    // Get base color from material UBO
+    // If material base color is valid (not default white), use it
+    // Otherwise fall back to texture sampling
+    vec3 baseColor = material.baseColor.rgb;
     
-    // Blend textures based on blend factor from UBO
-    float blendFactor = transform.textureBlend.x;
-    vec3 baseColor = mix(texColor1.rgb, texColor2.rgb, blendFactor);
-    
-    // If no texture, use a default color
-    if (texColor1.a < 0.01 && texColor2.a < 0.01) {
-        baseColor = vec3(0.8, 0.6, 0.4);  // Default brownish color
+    // If material base color is default (1,1,1), try to use textures
+    if (abs(material.baseColor.r - 1.0) < 0.01 && 
+        abs(material.baseColor.g - 1.0) < 0.01 && 
+        abs(material.baseColor.b - 1.0) < 0.01) {
+        // Sample textures
+        vec4 texColor1 = texture(texture1, fragTexCoord);
+        vec4 texColor2 = texture(texture2, fragTexCoord);
+        
+        // Blend textures based on blend factor from UBO
+        float blendFactor = transform.textureBlend.x;
+        baseColor = mix(texColor1.rgb, texColor2.rgb, blendFactor);
+        
+        // If no texture, use material base color
+        if (texColor1.a < 0.01 && texColor2.a < 0.01) {
+            baseColor = material.baseColor.rgb;
+        }
     }
     
     // Ambient lighting
@@ -112,10 +132,11 @@ void main() {
     }
     
     // Final color = ambient + diffuse + specular
-    vec3 result = ambient + totalLighting * baseColor;
+    // Apply material specular intensity
+    vec3 result = ambient + totalLighting * baseColor * material.specular;
     
     // Tone mapping (simple Reinhard)
     result = result / (result + vec3(1.0));
     
-    outColor = vec4(result, 1.0);
+    outColor = vec4(result, material.baseColor.a);
 }
