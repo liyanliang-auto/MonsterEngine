@@ -11,8 +11,13 @@
 #include "Engine/Components/FloorMeshComponent.h"
 #include "Engine/LightSceneInfo.h"
 #include "Engine/LightSceneProxy.h"
+#include "Renderer/MeshBatch.h"
+#include "Renderer/MeshElementCollector.h"
+#include "Renderer/SceneView.h"
 #include "Core/Logging/LogMacros.h"
 #include "Core/ShaderCompiler.h"
+#include "Core/Color.h"
+#include "Renderer/FTextureLoader.h"
 #include "Math/MonsterMath.h"
 #include <cstring>
 #include <filesystem>
@@ -134,6 +139,70 @@ SIZE_T FFloorSceneProxy::GetTypeHash() const
 {
     static SIZE_T TypeHash = 0x87654321;  // Unique hash for floor proxy
     return TypeHash;
+}
+
+void FFloorSceneProxy::GetDynamicMeshElements(
+    const TArray<const FSceneView*>& Views,
+    const FSceneViewFamily& ViewFamily,
+    uint32 VisibilityMap,
+    FMeshElementCollector& Collector) const
+{
+    // Check if resources are initialized
+    if (!bResourcesInitialized || !VertexBuffer || !PipelineState)
+    {
+        MR_LOG(LogFloorSceneProxy, Warning, "GetDynamicMeshElements called but resources not initialized");
+        return;
+    }
+    
+    // Iterate through all views
+    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+    {
+        // Check if this proxy is visible in this view
+        if (!(VisibilityMap & (1 << ViewIndex)))
+        {
+            continue;
+        }
+        
+        const FSceneView* View = Views[ViewIndex];
+        if (!View)
+        {
+            continue;
+        }
+        
+        // Allocate a mesh batch from the collector
+        FMeshBatch& MeshBatch = Collector.AllocateMesh();
+        
+        // Setup mesh batch properties
+        MeshBatch.Type = EPrimitiveType::PT_TriangleList;
+        MeshBatch.DepthPriorityGroup = ESceneDepthPriorityGroup::SDPG_World;
+        MeshBatch.bCastShadow = CastsShadow();
+        MeshBatch.bUseForMaterial = true;
+        MeshBatch.bUseForDepthPass = true;
+        MeshBatch.MaterialRenderProxy = nullptr;  // TODO: Set material proxy
+        MeshBatch.LODIndex = 0;
+        MeshBatch.MeshIdInPrimitive = 0;
+        
+        // Add a mesh batch element
+        FMeshBatchElement BatchElement;
+        MeshBatch.Elements.Add(BatchElement);
+        FMeshBatchElement& BatchElementRef = MeshBatch.Elements[MeshBatch.Elements.Num() - 1];
+        BatchElementRef.VertexBuffer = VertexBuffer;
+        BatchElementRef.IndexBuffer = nullptr;  // Non-indexed drawing
+        BatchElementRef.PipelineState = PipelineState;
+        BatchElementRef.NumPrimitives = 2;  // 2 triangles for a quad floor
+        BatchElementRef.FirstIndex = 0;
+        BatchElementRef.BaseVertexIndex = 0;
+        BatchElementRef.MinVertexIndex = 0;
+        BatchElementRef.MaxVertexIndex = 5;  // 6 vertices (0-5)
+        BatchElementRef.NumInstances = 1;
+        
+        // Add the mesh batch to the collector
+        Collector.AddMesh(ViewIndex, MeshBatch);
+        
+        MR_LOG(LogFloorSceneProxy, VeryVerbose, 
+               "Added floor mesh batch to view %d (primitives: %d)", 
+               ViewIndex, BatchElementRef.NumPrimitives);
+    }
 }
 
 // ============================================================================

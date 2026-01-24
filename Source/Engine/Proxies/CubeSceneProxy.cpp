@@ -10,6 +10,9 @@
 #include "Engine/Proxies/CubeSceneProxy.h"
 #include "Engine/LightSceneInfo.h"
 #include "Engine/LightSceneProxy.h"
+#include "Renderer/MeshBatch.h"
+#include "Renderer/MeshElementCollector.h"
+#include "Renderer/SceneView.h"
 #include "Core/Logging/LogMacros.h"
 #include "Core/ShaderCompiler.h"
 #include "Core/Color.h"
@@ -128,6 +131,70 @@ SIZE_T FCubeSceneProxy::GetTypeHash() const
 {
     static SIZE_T TypeHash = 0x12345678;  // Unique hash for cube proxy
     return TypeHash;
+}
+
+void FCubeSceneProxy::GetDynamicMeshElements(
+    const TArray<const FSceneView*>& Views,
+    const FSceneViewFamily& ViewFamily,
+    uint32 VisibilityMap,
+    FMeshElementCollector& Collector) const
+{
+    // Check if resources are initialized
+    if (!bResourcesInitialized || !VertexBuffer || !PipelineState)
+    {
+        MR_LOG(LogCubeSceneProxy, Warning, "GetDynamicMeshElements called but resources not initialized");
+        return;
+    }
+    
+    // Iterate through all views
+    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+    {
+        // Check if this proxy is visible in this view
+        if (!(VisibilityMap & (1 << ViewIndex)))
+        {
+            continue;
+        }
+        
+        const FSceneView* View = Views[ViewIndex];
+        if (!View)
+        {
+            continue;
+        }
+        
+        // Allocate a mesh batch from the collector
+        FMeshBatch& MeshBatch = Collector.AllocateMesh();
+        
+        // Setup mesh batch properties
+        MeshBatch.Type = EPrimitiveType::PT_TriangleList;
+        MeshBatch.DepthPriorityGroup = ESceneDepthPriorityGroup::SDPG_World;
+        MeshBatch.bCastShadow = CastsShadow();
+        MeshBatch.bUseForMaterial = true;
+        MeshBatch.bUseForDepthPass = true;
+        MeshBatch.MaterialRenderProxy = nullptr;  // TODO: Set material proxy
+        MeshBatch.LODIndex = 0;
+        MeshBatch.MeshIdInPrimitive = 0;
+        
+        // Add a mesh batch element
+        FMeshBatchElement BatchElement;
+        MeshBatch.Elements.Add(BatchElement);
+        FMeshBatchElement& BatchElementRef = MeshBatch.Elements[MeshBatch.Elements.Num() - 1];
+        BatchElementRef.VertexBuffer = VertexBuffer;
+        BatchElementRef.IndexBuffer = nullptr;  // Non-indexed drawing
+        BatchElementRef.PipelineState = PipelineState;
+        BatchElementRef.NumPrimitives = 12;  // 12 triangles for a cube (6 faces * 2 triangles)
+        BatchElementRef.FirstIndex = 0;
+        BatchElementRef.BaseVertexIndex = 0;
+        BatchElementRef.MinVertexIndex = 0;
+        BatchElementRef.MaxVertexIndex = 35;  // 36 vertices (0-35)
+        BatchElementRef.NumInstances = 1;
+        
+        // Add the mesh batch to the collector
+        Collector.AddMesh(ViewIndex, MeshBatch);
+        
+        MR_LOG(LogCubeSceneProxy, VeryVerbose, 
+               "Added cube mesh batch to view %d (primitives: %d)", 
+               ViewIndex, BatchElementRef.NumPrimitives);
+    }
 }
 
 // ============================================================================

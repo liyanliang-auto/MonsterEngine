@@ -105,6 +105,19 @@ public:
     virtual SIZE_T GetTypeHash() const override;
 
     /**
+     * Gather dynamic mesh elements for rendering (UE5 style)
+     * @param Views - Array of views to render
+     * @param ViewFamily - View family information
+     * @param VisibilityMap - Visibility flags for each view
+     * @param Collector - Mesh element collector to add meshes to
+     */
+    virtual void GetDynamicMeshElements(
+        const TArray<const class FSceneView*>& Views,
+        const class FSceneViewFamily& ViewFamily,
+        uint32 VisibilityMap,
+        class FMeshElementCollector& Collector) const override;
+
+    /**
      * Check if this proxy should be rendered
      * @return True if should render
      */
