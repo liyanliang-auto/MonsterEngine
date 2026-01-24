@@ -846,7 +846,10 @@ void CubeSceneApplication::renderHelmetWithPBR(
     
     if (backend == RHI::ERHIBackend::Vulkan && m_pbrPipelineState)
     {
-        // Already in render pass, no need to set render targets
+        // NOTE: Do NOT call setRenderTargets here!
+        // This function is called from within RDG MainRenderPass or traditional render pass.
+        // Calling setRenderTargets would start a new render pass and break the current one.
+        // The viewport and scissor are already set by the caller (RDG or traditional path).
         
         // Disable descriptor set cache for PBR rendering
         // We use pre-updated descriptor sets instead of the automatic cache system

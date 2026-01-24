@@ -524,7 +524,7 @@ protected:
     float m_shadowDistance = 50.0f;
 
     /** Whether shadows are enabled */
-    bool m_bShadowsEnabled = false;
+    bool m_bShadowsEnabled = true;
 
     /** Whether to use RDG for rendering */
     bool m_bUseRDG = true;  // Temporarily disabled for debugging

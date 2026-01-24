@@ -1,4 +1,4 @@
-#include "Platform/Vulkan/VulkanCommandListContext.h"
+﻿#include "Platform/Vulkan/VulkanCommandListContext.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include "Platform/Vulkan/VulkanPendingState.h"
@@ -476,6 +476,11 @@ namespace MonsterRender::RHI::Vulkan {
                 return;
             }
             
+            // Check if we are inside a render pass
+            if (!m_pendingState->isInsideRenderPass()) {
+                MR_LOG_ERROR("drawIndexed: Not inside render pass! Draw call will be ignored by GPU.");
+            }
+            
             if (!m_pendingState->prepareForDraw()) {
                 MR_LOG_ERROR("drawIndexed: Failed to prepare for draw - aborting draw call");
                 return;
@@ -484,6 +489,7 @@ namespace MonsterRender::RHI::Vulkan {
             const auto& functions = VulkanAPI::getFunctions();
             functions.vkCmdDrawIndexed(m_cmdBuffer->getHandle(), indexCount, 1,
                                      startIndexLocation, baseVertexLocation, 0);
+            MR_LOG_INFO("drawIndexed: vkCmdDrawIndexed called with " + std::to_string(indexCount) + " indices");
         }
     }
     
