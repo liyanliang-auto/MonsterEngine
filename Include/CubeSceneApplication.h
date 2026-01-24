@@ -127,7 +127,9 @@ protected:
     void updateCamera(float DeltaTime);
 
     /**
-     * Render the cube with lighting (legacy path)
+     * Render the cube with lighting (DEPRECATED - legacy path)
+     * @deprecated Use renderWithSceneRenderer() instead. This method will be removed in future versions.
+     * @note Currently still used by OpenGL backend and legacy rendering path
      * @param cmdList - Command list to record commands
      * @param viewMatrix - View matrix
      * @param projectionMatrix - Projection matrix
@@ -333,7 +335,9 @@ protected:
     void shutdownHelmetPBR();
 
     /**
-     * Render shadow depth pass
+     * Render shadow depth pass (DEPRECATED - legacy path)
+     * @deprecated Use FForwardShadingSceneRenderer which handles shadow passes internally. Will be removed in future versions.
+     * @note Currently still used by OpenGL backend and legacy rendering path
      * @param cmdList Command list
      * @param lightDirection Direction of the directional light
      * @param outLightViewProjection Output light view-projection matrix
@@ -344,7 +348,9 @@ protected:
         MonsterEngine::Math::FMatrix& outLightViewProjection);
 
     /**
-     * Render cube with shadows
+     * Render cube with shadows (DEPRECATED - legacy path)
+     * @deprecated Use renderWithSceneRenderer() instead. This method will be removed in future versions.
+     * @note Currently still used by OpenGL backend and legacy rendering path
      * @param cmdList Command list
      * @param viewMatrix View matrix
      * @param projectionMatrix Projection matrix
