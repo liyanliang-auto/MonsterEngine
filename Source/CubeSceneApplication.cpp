@@ -218,7 +218,7 @@ void CubeSceneApplication::onInitialize()
         if (!initializeShadowMap())
         {
             MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize shadow map, shadows will be disabled");
-            m_bShadowsEnabled = false;
+            m_bShadowsEnabled = true;
         }
     }
     
@@ -476,16 +476,11 @@ void CubeSceneApplication::onRender()
         // ================================================================
         // Choose rendering path: RDG or traditional
         // ================================================================
-        if (m_bUseRDG && m_bShadowsEnabled)
+        if (m_bUseRDG/* && m_bShadowsEnabled*/)
         {
             MR_LOG(LogCubeSceneApp, Log, "Using RDG rendering path");
             renderWithRDG(cmdList, viewMatrix, projectionMatrix, cameraPosition);
-
-            // Render PBR helmet after RDG pass
-            if (m_bHelmetPBREnabled && m_bHelmetInitialized)
-            {
-                renderHelmetWithPBR(cmdList, viewMatrix, projectionMatrix, cameraPosition);
-            }
+            // NOTE: PBR helmet rendering is integrated into RDG MainRenderPass
         }
         else
         {
