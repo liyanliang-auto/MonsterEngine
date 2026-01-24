@@ -622,22 +622,22 @@ bool CubeSceneApplication::createPBRDescriptorSets()
         // ====================================================================
         
         // Set 0: View + Light UBOs
-        MR_LOG(LogCubeSceneApp, Error, "DEBUG: Starting Set 0 descriptor updates");
+        MR_LOG(LogCubeSceneApp, Verbose, "DEBUG: Starting Set 0 descriptor updates");
         if (m_pbrPerFrameDescriptorSet)
         {
-            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Updating Set 0 - View UBO (binding 0)");
+            MR_LOG(LogCubeSceneApp, Verbose, "DEBUG: Updating Set 0 - View UBO (binding 0)");
             if (!m_pbrViewUniformBuffer) {
                 MR_LOG(LogCubeSceneApp, Error, "ERROR: View uniform buffer is null!");
             }
             m_pbrPerFrameDescriptorSet->updateUniformBuffer(0, m_pbrViewUniformBuffer, 0, sizeof(FPBRViewUniforms));
             
-            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Updating Set 0 - Light UBO (binding 1)");
+            MR_LOG(LogCubeSceneApp, Verbose, "DEBUG: Updating Set 0 - Light UBO (binding 1)");
             if (!m_pbrLightUniformBuffer) {
                 MR_LOG(LogCubeSceneApp, Error, "ERROR: Light uniform buffer is null!");
             }
             m_pbrPerFrameDescriptorSet->updateUniformBuffer(1, m_pbrLightUniformBuffer, 0, sizeof(FPBRLightUniforms));
             
-            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Set 0 descriptor updates complete");
+            MR_LOG(LogCubeSceneApp, Verbose, "DEBUG: Set 0 descriptor updates complete");
         }
         else
         {
@@ -854,7 +854,7 @@ void CubeSceneApplication::renderHelmetWithPBR(
         auto* cmdContext = vulkanDevice->getCommandListContext();
         if (cmdContext && cmdContext->getPendingState()) {
             cmdContext->getPendingState()->setDescriptorSetCacheEnabled(false);
-            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Disabled descriptor set cache for PBR rendering");
+            MR_LOG(LogCubeSceneApp, Verbose, "DEBUG: Disabled descriptor set cache for PBR rendering");
         }
         
         // Set pipeline state
@@ -867,7 +867,7 @@ void CubeSceneApplication::renderHelmetWithPBR(
             // Log descriptor set handles
             auto* vulkanSet0 = dynamic_cast<RHI::Vulkan::VulkanDescriptorSet*>(m_pbrPerFrameDescriptorSet.get());
             if (vulkanSet0) {
-                MR_LOG(LogCubeSceneApp, Error, "DEBUG: Binding Set 0 with handle 0x%llx", (uint64)vulkanSet0->getHandle());
+                MR_LOG(LogCubeSceneApp, Verbose, "DEBUG: Binding Set 0 with handle 0x%llx", (uint64)vulkanSet0->getHandle());
             }
             
             TArray<TSharedPtr<RHI::IRHIDescriptorSet>> descriptorSets;
@@ -896,7 +896,7 @@ void CubeSceneApplication::renderHelmetWithPBR(
         auto* cmdContext2 = vulkanDevice2->getCommandListContext();
         if (cmdContext2 && cmdContext2->getPendingState()) {
             cmdContext2->getPendingState()->setDescriptorSetCacheEnabled(true);
-            MR_LOG(LogCubeSceneApp, Error, "DEBUG: Re-enabled descriptor set cache");
+            MR_LOG(LogCubeSceneApp, Verbose, "DEBUG: Re-enabled descriptor set cache");
         }
         
         MR_LOG(LogCubeSceneApp, Log, "PBR helmet rendered: %u indices", m_helmetIndexCount);
