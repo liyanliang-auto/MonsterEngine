@@ -18,6 +18,7 @@
 #include "Renderer/SceneTypes.h"
 #include "Renderer/SceneView.h"
 #include "Renderer/Scene.h"
+#include "Renderer/ForwardRenderPasses.h"
 
 // Forward declarations for RHI types (in MonsterRender::RHI namespace)
 namespace MonsterRender { namespace RHI {
@@ -29,6 +30,15 @@ namespace MonsterRender { namespace RHI {
 
 namespace MonsterEngine
 {
+
+// Forward declarations for render pass classes
+class FDepthPrepass;
+class FOpaquePass;
+class FSkyboxPass;
+class FTransparentPass;
+class FShadowDepthPass;
+struct FShadowMapConfig;
+struct FShadowData;
 
 // Renderer namespace for low-level rendering classes
 namespace Renderer
@@ -642,17 +652,103 @@ public:
     virtual bool ShouldRenderPrePass() const override;
     
 protected:
+    // ========================================================================
+    // Rendering Passes - Following UE5 FMobileSceneRenderer pattern
+    // ========================================================================
+    
     /**
-     * Render the main forward pass
+     * Render shadow depth maps for all shadow-casting lights
+     * @param RHICmdList The command list
+     */
+    void RenderShadowDepthMaps(IRHICommandList& RHICmdList);
+    
+    /**
+     * Render the depth prepass (Early-Z optimization)
+     * @param RHICmdList The command list
+     */
+    void RenderPrePass(IRHICommandList& RHICmdList);
+    
+    /**
+     * Render the main forward pass (opaque geometry with lighting)
      * @param RHICmdList The command list
      */
     void RenderForwardPass(IRHICommandList& RHICmdList);
+    
+    /**
+     * Render opaque geometry in forward pass
+     * @param RHICmdList The command list
+     */
+    void RenderOpaqueGeometry(IRHICommandList& RHICmdList);
+    
+    /**
+     * Render skybox/environment
+     * @param RHICmdList The command list
+     */
+    void RenderSkybox(IRHICommandList& RHICmdList);
     
     /**
      * Render translucent objects
      * @param RHICmdList The command list
      */
     void RenderTranslucency(IRHICommandList& RHICmdList);
+    
+    /**
+     * Render post-processing effects
+     * @param RHICmdList The command list
+     */
+    void RenderPostProcessing(IRHICommandList& RHICmdList);
+    
+    // ========================================================================
+    // Helper Methods
+    // ========================================================================
+    
+    /**
+     * Gather shadow-casting lights from visible lights
+     * @param OutLights Array to receive shadow-casting lights
+     */
+    void _gatherShadowCastingLights(TArray<FLightSceneInfo*>& OutLights);
+    
+    /**
+     * Setup light uniform buffer for forward shading
+     * @param RHICmdList The command list
+     * @param Lights Array of lights affecting the scene
+     */
+    void _setupLightBuffer(IRHICommandList& RHICmdList, const TArray<FLightSceneInfo*>& Lights);
+    
+private:
+    // ========================================================================
+    // Render Pass Instances (owned by this renderer)
+    // ========================================================================
+    
+    /** Depth prepass instance */
+    TUniquePtr<FDepthPrepass> DepthPrepass;
+    
+    /** Opaque pass instance */
+    TUniquePtr<FOpaquePass> OpaquePass;
+    
+    /** Skybox pass instance */
+    TUniquePtr<FSkyboxPass> SkyboxPass;
+    
+    /** Transparent pass instance */
+    TUniquePtr<FTransparentPass> TransparentPass;
+    
+    /** Shadow depth pass instance */
+    TUniquePtr<FShadowDepthPass> ShadowDepthPass;
+    
+    /** Shadow configuration */
+    FShadowMapConfig ShadowConfig;
+    
+    /** Generated shadow data for all lights */
+    TArray<FShadowData> ShadowDataArray;
+    
+    /** Whether depth prepass is enabled */
+    bool bDepthPrepassEnabled = false;
+    
+    /** Whether skybox is enabled */
+    bool bSkyboxEnabled = false;
+    
+    /** Whether shadows are enabled */
+    bool bShadowsEnabled = true;
 };
 
 } // namespace Renderer

@@ -14,6 +14,7 @@
 #include "Renderer/ShadowRendering.h"
 #include "Renderer/ShadowDepthPass.h"
 #include "Renderer/ShadowProjectionPass.h"
+#include "Renderer/ForwardRenderPasses.h"
 #include "Core/Logging/Logging.h"
 #include "Math/MathFunctions.h"
 #include "RHI/IRHICommandList.h"
@@ -1129,67 +1130,354 @@ void FDeferredShadingSceneRenderer::_projectShadowToView(
 
 FForwardShadingSceneRenderer::FForwardShadingSceneRenderer(const FSceneViewFamily* InViewFamily)
     : FSceneRenderer(InViewFamily)
+    , bDepthPrepassEnabled(false)
+    , bSkyboxEnabled(false)
+    , bShadowsEnabled(true)
 {
-    MR_LOG(LogRenderer, Verbose, "FForwardShadingSceneRenderer created");
+    MR_LOG(LogRenderer, Log, "FForwardShadingSceneRenderer created");
+    
+    // Create render pass instances using MakeUnique
+    DepthPrepass = MakeUnique<FDepthPrepass>();
+    OpaquePass = MakeUnique<FOpaquePass>();
+    SkyboxPass = MakeUnique<FSkyboxPass>();
+    TransparentPass = MakeUnique<FTransparentPass>();
+    ShadowDepthPass = MakeUnique<FShadowDepthPass>();
+    
+    // Configure shadow settings
+    ShadowConfig.Resolution = 2048;
+    ShadowConfig.Type = EShadowMapType::Standard2D;
+    ShadowConfig.DepthBias = 0.005f;
+    ShadowConfig.SlopeScaledDepthBias = 1.0f;
+    
+    // Reserve space for shadow data
+    ShadowDataArray.Reserve(8);
 }
 
 FForwardShadingSceneRenderer::~FForwardShadingSceneRenderer()
 {
-    MR_LOG(LogRenderer, Verbose, "FForwardShadingSceneRenderer destroyed");
+    MR_LOG(LogRenderer, Log, "FForwardShadingSceneRenderer destroyed");
+    
+    // TUniquePtr will automatically clean up pass instances
 }
 
-void FForwardShadingSceneRenderer::Render(RHI::IRHICommandList& RHICmdList)
+void FForwardShadingSceneRenderer::Render(IRHICommandList& RHICmdList)
 {
-    MR_LOG(LogRenderer, Verbose, "FForwardShadingSceneRenderer::Render begin");
+    MR_LOG(LogRenderer, Log, "FForwardShadingSceneRenderer::Render begin - Frame %u", ViewFamily.FrameNumber);
     
-    // Pre-visibility setup
+    // Reference: UE5 FMobileSceneRenderer::Render()
+    // @E:\UnrealEngine\Engine\Source\Runtime\Renderer\Private\MobileShadingRenderer.cpp:821
+    
+    // Step 1: Pre-visibility setup
     PreVisibilityFrameSetup();
     
-    // Compute visibility
+    // Step 2: Compute visibility (frustum culling, occlusion culling)
     ComputeViewVisibility(RHICmdList);
     ComputeLightVisibility();
     
-    // Post-visibility setup
+    // Step 3: Post-visibility setup
     PostVisibilityFrameSetup();
     
-    // Gather dynamic mesh elements
+    // Step 4: Gather dynamic mesh elements from visible primitives
     GatherDynamicMeshElements();
     
-    // Render forward pass
+    // Step 5: Render shadow depth maps (if shadows enabled)
+    if (bShadowsEnabled)
+    {
+        RenderShadowDepthMaps(RHICmdList);
+    }
+    
+    // Step 6: Render depth prepass (if enabled)
+    if (bDepthPrepassEnabled)
+    {
+        RenderPrePass(RHICmdList);
+    }
+    
+    // Step 7: Render main forward pass (opaque geometry with lighting)
     RenderForwardPass(RHICmdList);
     
-    // Render translucency
+    // Step 8: Render skybox (if enabled)
+    if (bSkyboxEnabled)
+    {
+        RenderSkybox(RHICmdList);
+    }
+    
+    // Step 9: Render translucency
     if (ShouldRenderTranslucency())
     {
         RenderTranslucency(RHICmdList);
     }
     
-    // Finish rendering
+    // Step 10: Render post-processing
+    RenderPostProcessing(RHICmdList);
+    
+    // Step 11: Finish rendering
     RenderFinish(RHICmdList);
     
-    MR_LOG(LogRenderer, Verbose, "FForwardShadingSceneRenderer::Render end");
+    MR_LOG(LogRenderer, Log, "FForwardShadingSceneRenderer::Render end - Frame %u", ViewFamily.FrameNumber);
 }
 
 bool FForwardShadingSceneRenderer::ShouldRenderVelocities() const
 {
+    // Forward shading doesn't support velocity rendering
     return false;
 }
 
 bool FForwardShadingSceneRenderer::ShouldRenderPrePass() const
 {
-    return false;
+    // Depth prepass is optional in forward rendering
+    return bDepthPrepassEnabled;
 }
 
-void FForwardShadingSceneRenderer::RenderForwardPass(RHI::IRHICommandList& RHICmdList)
+// ============================================================================
+// Rendering Pass Implementations
+// ============================================================================
+
+void FForwardShadingSceneRenderer::RenderShadowDepthMaps(IRHICommandList& RHICmdList)
+{
+    MR_LOG(LogRenderer, Verbose, "RenderShadowDepthMaps");
+    
+    if (!ShadowDepthPass)
+    {
+        return;
+    }
+    
+    // Clear previous shadow data
+    ShadowDataArray.Empty();
+    
+    // Gather shadow-casting lights
+    TArray<FLightSceneInfo*> ShadowCastingLights;
+    _gatherShadowCastingLights(ShadowCastingLights);
+    
+    if (ShadowCastingLights.Num() == 0)
+    {
+        MR_LOG(LogRenderer, Verbose, "No shadow-casting lights found");
+        return;
+    }
+    
+    MR_LOG(LogRenderer, Verbose, "Rendering shadow maps for %d lights", ShadowCastingLights.Num());
+    
+    // Render shadow map for each shadow-casting light
+    for (FLightSceneInfo* LightInfo : ShadowCastingLights)
+    {
+        if (!LightInfo)
+        {
+            continue;
+        }
+        
+        // Setup shadow pass for this light
+        ShadowDepthPass->SetLight(LightInfo);
+        ShadowDepthPass->SetShadowConfig(ShadowConfig);
+        
+        // Setup render pass context for each view
+        for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+        {
+            FViewInfo& ViewInfo = Views[ViewIndex];
+            
+            FRenderPassContext Context;
+            Context.Scene = Scene;
+            Context.View = &ViewInfo;
+            Context.ViewIndex = ViewIndex;
+            Context.RHICmdList = &RHICmdList;
+            Context.FrameNumber = ViewFamily.FrameNumber;
+            Context.VisibleOpaquePrimitives = &ViewInfo.VisibleDynamicPrimitives;
+            Context.VisibleLights = &VisibleLightInfos;
+            
+            // Execute shadow depth pass
+            if (ShadowDepthPass->ShouldExecute(Context))
+            {
+                ShadowDepthPass->Setup(Context);
+                ShadowDepthPass->Execute(Context);
+                ShadowDepthPass->Cleanup(Context);
+                
+                // Store generated shadow data
+                const FShadowData& ShadowData = ShadowDepthPass->GetShadowData();
+                if (ShadowData.bValid)
+                {
+                    ShadowDataArray.Add(ShadowData);
+                }
+            }
+        }
+    }
+    
+    MR_LOG(LogRenderer, Verbose, "Generated %d shadow maps", ShadowDataArray.Num());
+}
+
+void FForwardShadingSceneRenderer::RenderPrePass(IRHICommandList& RHICmdList)
+{
+    MR_LOG(LogRenderer, Verbose, "RenderPrePass (Depth Prepass)");
+    
+    if (!DepthPrepass)
+    {
+        return;
+    }
+    
+    // Render depth prepass for each view
+    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+    {
+        FViewInfo& ViewInfo = Views[ViewIndex];
+        
+        FRenderPassContext Context;
+        Context.Scene = Scene;
+        Context.View = &ViewInfo;
+        Context.ViewIndex = ViewIndex;
+        Context.RHICmdList = &RHICmdList;
+        Context.FrameNumber = ViewFamily.FrameNumber;
+        Context.VisibleOpaquePrimitives = &ViewInfo.VisibleDynamicPrimitives;
+        
+        if (DepthPrepass->ShouldExecute(Context))
+        {
+            DepthPrepass->Setup(Context);
+            DepthPrepass->Execute(Context);
+            DepthPrepass->Cleanup(Context);
+        }
+    }
+}
+
+void FForwardShadingSceneRenderer::RenderForwardPass(IRHICommandList& RHICmdList)
 {
     MR_LOG(LogRenderer, Verbose, "RenderForwardPass");
-    // Render forward shading pass
+    
+    // Render opaque geometry with forward lighting
+    RenderOpaqueGeometry(RHICmdList);
 }
 
-void FForwardShadingSceneRenderer::RenderTranslucency(RHI::IRHICommandList& RHICmdList)
+void FForwardShadingSceneRenderer::RenderOpaqueGeometry(IRHICommandList& RHICmdList)
 {
-    MR_LOG(LogRenderer, Verbose, "RenderTranslucency (Forward)");
-    // Render translucent objects
+    MR_LOG(LogRenderer, Verbose, "RenderOpaqueGeometry");
+    
+    if (!OpaquePass)
+    {
+        return;
+    }
+    
+    // Pass shadow data to opaque pass
+    if (bShadowsEnabled && ShadowDataArray.Num() > 0)
+    {
+        OpaquePass->SetShadowData(ShadowDataArray);
+    }
+    
+    // Render opaque geometry for each view
+    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+    {
+        FViewInfo& ViewInfo = Views[ViewIndex];
+        
+        FRenderPassContext Context;
+        Context.Scene = Scene;
+        Context.View = &ViewInfo;
+        Context.ViewIndex = ViewIndex;
+        Context.RHICmdList = &RHICmdList;
+        Context.FrameNumber = ViewFamily.FrameNumber;
+        Context.VisibleOpaquePrimitives = &ViewInfo.VisibleDynamicPrimitives;
+        Context.VisibleLights = &VisibleLightInfos;
+        
+        if (OpaquePass->ShouldExecute(Context))
+        {
+            OpaquePass->Setup(Context);
+            OpaquePass->Execute(Context);
+            OpaquePass->Cleanup(Context);
+        }
+    }
+}
+
+void FForwardShadingSceneRenderer::RenderSkybox(IRHICommandList& RHICmdList)
+{
+    MR_LOG(LogRenderer, Verbose, "RenderSkybox");
+    
+    if (!SkyboxPass)
+    {
+        return;
+    }
+    
+    // Render skybox for each view
+    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+    {
+        FViewInfo& ViewInfo = Views[ViewIndex];
+        
+        FRenderPassContext Context;
+        Context.Scene = Scene;
+        Context.View = &ViewInfo;
+        Context.ViewIndex = ViewIndex;
+        Context.RHICmdList = &RHICmdList;
+        Context.FrameNumber = ViewFamily.FrameNumber;
+        
+        if (SkyboxPass->ShouldExecute(Context))
+        {
+            SkyboxPass->Setup(Context);
+            SkyboxPass->Execute(Context);
+            SkyboxPass->Cleanup(Context);
+        }
+    }
+}
+
+void FForwardShadingSceneRenderer::RenderTranslucency(IRHICommandList& RHICmdList)
+{
+    MR_LOG(LogRenderer, Verbose, "RenderTranslucency");
+    
+    if (!TransparentPass)
+    {
+        return;
+    }
+    
+    // Render translucent geometry for each view
+    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+    {
+        FViewInfo& ViewInfo = Views[ViewIndex];
+        
+        FRenderPassContext Context;
+        Context.Scene = Scene;
+        Context.View = &ViewInfo;
+        Context.ViewIndex = ViewIndex;
+        Context.RHICmdList = &RHICmdList;
+        Context.FrameNumber = ViewFamily.FrameNumber;
+        Context.VisibleTransparentPrimitives = &ViewInfo.VisibleTranslucentPrimitives;
+        Context.VisibleLights = &VisibleLightInfos;
+        
+        if (TransparentPass->ShouldExecute(Context))
+        {
+            TransparentPass->Setup(Context);
+            TransparentPass->Execute(Context);
+            TransparentPass->Cleanup(Context);
+        }
+    }
+}
+
+void FForwardShadingSceneRenderer::RenderPostProcessing(IRHICommandList& RHICmdList)
+{
+    MR_LOG(LogRenderer, Verbose, "RenderPostProcessing");
+    
+    // TODO: Implement post-processing pipeline
+    // - Tone mapping
+    // - Bloom
+    // - Color grading
+    // - Anti-aliasing (FXAA/TAA)
+}
+
+// ============================================================================
+// Helper Methods
+// ============================================================================
+
+void FForwardShadingSceneRenderer::_gatherShadowCastingLights(TArray<FLightSceneInfo*>& OutLights)
+{
+    OutLights.Empty();
+    
+    // Gather lights that cast dynamic shadows
+    for (FVisibleLightInfo& LightInfo : VisibleLightInfos)
+    {
+        // TODO: Check if light casts shadows
+        // For now, assume all visible lights can cast shadows
+        // In UE5, this checks LightSceneInfo->Proxy->CastsDynamicShadow()
+    }
+    
+    MR_LOG(LogRenderer, Verbose, "Gathered %d shadow-casting lights", OutLights.Num());
+}
+
+void FForwardShadingSceneRenderer::_setupLightBuffer(IRHICommandList& RHICmdList, const TArray<FLightSceneInfo*>& Lights)
+{
+    // TODO: Setup light uniform buffer for forward shading
+    // This will pack light data into GPU-friendly format
+    // Reference: UE5 FMobileSceneRenderer::UpdateDirectionalLightUniformBuffers
+    
+    MR_LOG(LogRenderer, Verbose, "Setup light buffer for %d lights", Lights.Num());
 }
 
 } // namespace Renderer
