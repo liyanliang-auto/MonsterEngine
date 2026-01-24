@@ -25,9 +25,11 @@
 #include "Engine/LightSceneProxy.h"
 #include "Engine/Material/Material.h"
 #include "Engine/Material/MaterialTypes.h"
+#include "Engine/Texture/Texture2D.h"
 #include "Renderer/SceneRenderer.h"
 #include "Renderer/SceneView.h"
 #include "Renderer/Scene.h"
+#include "Renderer/FTextureStreamingManager.h"
 #include "Editor/ImGui/ImGuiContext.h"
 #include "Editor/ImGui/ImGuiRenderer.h"
 #include "Editor/ImGui/ImGuiInputHandler.h"
@@ -58,6 +60,151 @@ using namespace MonsterEngine;
 
 // Use global log category (defined in LogCategories.cpp)
 using MonsterRender::LogCubeSceneApp;
+
+// ============================================================================
+// Mipmap Utility Functions
+// ============================================================================
+
+/**
+ * Calculate the number of mip levels for a texture
+ * @param width Texture width
+ * @param height Texture height
+ * @return Number of mip levels
+ */
+static uint32 CalculateMipLevels(uint32 width, uint32 height)
+{
+    uint32 maxDimension = FMath::Max(width, height);
+    uint32 mipLevels = 1;
+    
+    while (maxDimension > 1)
+    {
+        maxDimension >>= 1;
+        mipLevels++;
+    }
+    
+    return mipLevels;
+}
+
+/**
+ * Downsample image using simple 2x2 box filter
+ * @param srcData Source image data (RGBA8)
+ * @param srcWidth Source width
+ * @param srcHeight Source height
+ * @param dstData Destination buffer (must be pre-allocated)
+ * @param dstWidth Destination width (srcWidth / 2)
+ * @param dstHeight Destination height (srcHeight / 2)
+ */
+static void DownsampleBoxFilter(
+    const unsigned char* srcData,
+    uint32 srcWidth,
+    uint32 srcHeight,
+    unsigned char* dstData,
+    uint32 dstWidth,
+    uint32 dstHeight)
+{
+    for (uint32 y = 0; y < dstHeight; ++y)
+    {
+        for (uint32 x = 0; x < dstWidth; ++x)
+        {
+            // Sample 2x2 block from source
+            uint32 srcX = x * 2;
+            uint32 srcY = y * 2;
+            
+            // Accumulate RGBA values from 2x2 block
+            uint32 r = 0, g = 0, b = 0, a = 0;
+            
+            for (uint32 dy = 0; dy < 2; ++dy)
+            {
+                for (uint32 dx = 0; dx < 2; ++dx)
+                {
+                    uint32 sx = FMath::Min(srcX + dx, srcWidth - 1);
+                    uint32 sy = FMath::Min(srcY + dy, srcHeight - 1);
+                    uint32 srcIndex = (sy * srcWidth + sx) * 4;
+                    
+                    r += srcData[srcIndex + 0];
+                    g += srcData[srcIndex + 1];
+                    b += srcData[srcIndex + 2];
+                    a += srcData[srcIndex + 3];
+                }
+            }
+            
+            // Average the 2x2 block
+            uint32 dstIndex = (y * dstWidth + x) * 4;
+            dstData[dstIndex + 0] = static_cast<unsigned char>(r / 4);
+            dstData[dstIndex + 1] = static_cast<unsigned char>(g / 4);
+            dstData[dstIndex + 2] = static_cast<unsigned char>(b / 4);
+            dstData[dstIndex + 3] = static_cast<unsigned char>(a / 4);
+        }
+    }
+}
+
+/**
+ * Generate mipmap chain using CPU (simple box filter)
+ * @param sourceData Source image data (RGBA8)
+ * @param sourceWidth Source image width
+ * @param sourceHeight Source image height
+ * @param mipLevels Number of mip levels to generate
+ * @param outMipData Output array of mip level data (caller must free)
+ * @param outMipSizes Output array of mip level sizes
+ * @return true if successful
+ */
+static bool GenerateMipmapsCPU(
+    const unsigned char* sourceData,
+    uint32 sourceWidth,
+    uint32 sourceHeight,
+    uint32 mipLevels,
+    TArray<unsigned char*>& outMipData,
+    TArray<uint32>& outMipSizes)
+{
+    if (!sourceData || sourceWidth == 0 || sourceHeight == 0 || mipLevels == 0)
+    {
+        return false;
+    }
+    
+    outMipData.Reserve(mipLevels);
+    outMipSizes.Reserve(mipLevels);
+    
+    // First mip level is the original image
+    uint32 currentWidth = sourceWidth;
+    uint32 currentHeight = sourceHeight;
+    
+    for (uint32 mipLevel = 0; mipLevel < mipLevels; ++mipLevel)
+    {
+        uint32 mipSize = currentWidth * currentHeight * 4; // RGBA format
+        unsigned char* mipData = nullptr;
+        
+        if (mipLevel == 0)
+        {
+            // First level: copy original data
+            mipData = static_cast<unsigned char*>(FMemory::Malloc(mipSize));
+            FMemory::Memcpy(mipData, sourceData, mipSize);
+        }
+        else
+        {
+            // Generate downsampled mip level using box filter
+            mipData = static_cast<unsigned char*>(FMemory::Malloc(mipSize));
+            
+            uint32 prevWidth = currentWidth * 2;
+            uint32 prevHeight = currentHeight * 2;
+            const unsigned char* prevData = outMipData[mipLevel - 1];
+            
+            DownsampleBoxFilter(prevData, prevWidth, prevHeight, 
+                               mipData, currentWidth, currentHeight);
+        }
+        
+        outMipData.Add(mipData);
+        outMipSizes.Add(mipSize);
+        
+        MR_LOG(LogCubeSceneApp, VeryVerbose, "Generated mip level %u: %ux%u (%u bytes)",
+               mipLevel, currentWidth, currentHeight, mipSize);
+        
+        // Calculate next mip dimensions
+        currentWidth = FMath::Max(1u, currentWidth >> 1);
+        currentHeight = FMath::Max(1u, currentHeight >> 1);
+    }
+    
+    return true;
+}
 
 // ============================================================================
 // Construction / Destruction
@@ -105,6 +252,7 @@ CubeSceneApplication::CubeSceneApplication()
     , m_pendingViewportWidth(800)
     , m_pendingViewportHeight(600)
     , m_bViewportTextureReady(false)
+    , m_bTextureStreamingInitialized(false)
 {
     m_lightColor[0] = 1.0f;
     m_lightColor[1] = 0.95f;
@@ -247,6 +395,12 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
 {
     m_totalTime += deltaTime;
     m_deltaTime = deltaTime;
+    
+    // Update texture streaming manager
+    if (m_bTextureStreamingInitialized)
+    {
+        MonsterRender::FTextureStreamingManager::Get().UpdateResourceStreaming(deltaTime);
+    }
     
     // Update cube rotation speed from UI for all cubes
     for (auto& cubeActor : m_cubeActors)
@@ -780,6 +934,15 @@ void CubeSceneApplication::onShutdown()
     
     // CRITICAL: Clean up in reverse order of initialization to avoid dangling pointers
     
+    // Step 0: Shutdown texture streaming manager first (before releasing textures)
+    if (m_bTextureStreamingInitialized)
+    {
+        MR_LOG(LogCubeSceneApp, Log, "Shutting down texture streaming manager...");
+        MonsterRender::FTextureStreamingManager::Get().Shutdown();
+        m_bTextureStreamingInitialized = false;
+        MR_LOG(LogCubeSceneApp, Log, "Texture streaming manager shutdown complete");
+    }
+    
     // Step 1: Shutdown ImGui first (it may reference textures)
     MR_LOG(LogCubeSceneApp, Log, "Step 1: Shutting down ImGui...");
     shutdownImGui();
@@ -867,6 +1030,22 @@ bool CubeSceneApplication::initializeScene()
 {
     MR_LOG(LogCubeSceneApp, Log, "Initializing scene...");
     
+    // Initialize texture streaming manager (512MB pool size)
+    if (!m_bTextureStreamingInitialized)
+    {
+        const SIZE_T TexturePoolSize = 512 * 1024 * 1024; // 512MB
+        if (MonsterRender::FTextureStreamingManager::Get().Initialize(TexturePoolSize))
+        {
+            m_bTextureStreamingInitialized = true;
+            MR_LOG(LogCubeSceneApp, Log, "Texture streaming manager initialized with %llu MB pool",
+                   static_cast<uint64>(TexturePoolSize / 1024 / 1024));
+        }
+        else
+        {
+            MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize texture streaming manager");
+        }
+    }
+    
     // Create scene
     m_scene = MakeUnique<FScene>(nullptr, false);
     if (!m_scene)
@@ -947,9 +1126,9 @@ bool CubeSceneApplication::initializeScene()
             floorProxy->InitializeResources(m_device);
             
             // Set floor texture and sampler (will be set after loading)
-            if (m_woodTexture)
+            if (m_woodTexture && m_woodTexture->getRHITexture())
             {
-                floorProxy->SetTexture(m_woodTexture);
+                floorProxy->SetTexture(m_woodTexture->getRHITexture());
             }
             if (m_woodSampler)
             {
@@ -1899,7 +2078,7 @@ bool CubeSceneApplication::initializeShadowMap()
 
 bool CubeSceneApplication::loadWoodTexture()
 {
-    MR_LOG(LogCubeSceneApp, Log, "Loading wood texture...");
+    MR_LOG(LogCubeSceneApp, Log, "Loading wood texture using FTexture2D...");
     
     if (!m_device)
     {
@@ -1925,57 +2104,108 @@ bool CubeSceneApplication::loadWoodTexture()
     
     MR_LOG(LogCubeSceneApp, Log, "Wood texture loaded: %dx%d, %d channels", width, height, channels);
     
-    // Create texture descriptor
-    RHI::TextureDesc textureDesc;
-    textureDesc.width = static_cast<uint32>(width);
-    textureDesc.height = static_cast<uint32>(height);
-    textureDesc.depth = 1;
-    textureDesc.mipLevels = 1;
-    textureDesc.arraySize = 1;
-    textureDesc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
-    textureDesc.usage = RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferDst;
-    textureDesc.debugName = "WoodTexture";
+    // Calculate number of mip levels
+    uint32 mipLevels = CalculateMipLevels(static_cast<uint32>(width), static_cast<uint32>(height));
+    MR_LOG(LogCubeSceneApp, Log, "Generating %u mip levels for wood texture", mipLevels);
     
-    m_woodTexture = m_device->createTexture(textureDesc);
-    if (!m_woodTexture)
+    // Generate mipmap chain using CPU
+    TArray<unsigned char*> mipData;
+    TArray<uint32> mipSizes;
+    if (!GenerateMipmapsCPU(imageData, static_cast<uint32>(width), static_cast<uint32>(height), 
+                            mipLevels, mipData, mipSizes))
     {
-        MR_LOG(LogCubeSceneApp, Error, "Failed to create wood texture");
+        MR_LOG(LogCubeSceneApp, Error, "Failed to generate mipmaps for wood texture");
         stbi_image_free(imageData);
         return false;
     }
     
-    // Upload texture data using staging buffer
-    uint32 imageSize = width * height * 4; // RGBA format
+    MR_LOG(LogCubeSceneApp, Log, "Successfully generated %u mip levels", mipLevels);
     
-    // Create staging buffer
+    // Create FTexture2D description with full mip chain
+    FTexture2DDesc textureDesc;
+    textureDesc.Width = static_cast<uint32>(width);
+    textureDesc.Height = static_cast<uint32>(height);
+    textureDesc.MipLevels = mipLevels;
+    textureDesc.Format = RHI::EPixelFormat::R8G8B8A8_UNORM;
+    textureDesc.bSRGB = true;
+    textureDesc.bGenerateMips = false; // Already generated on CPU
+    textureDesc.DebugName = FName("WoodTexture");
+    
+    // Create FTexture2D object
+    m_woodTexture = MakeShared<FTexture2D>(FName("WoodTexture"));
+    if (!m_woodTexture->initialize(m_device, textureDesc))
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to initialize FTexture2D for wood texture");
+        stbi_image_free(imageData);
+        m_woodTexture.Reset();
+        return false;
+    }
+    
+    // Get the underlying RHI texture for data upload
+    TSharedPtr<RHI::IRHITexture> rhiTexture = m_woodTexture->getRHITexture();
+    if (!rhiTexture)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to get RHI texture from FTexture2D");
+        stbi_image_free(imageData);
+        m_woodTexture.Reset();
+        return false;
+    }
+    
+    // Free original stb_image data (we have mipData now)
+    stbi_image_free(imageData);
+    
+    // Calculate total size needed for all mip levels
+    uint32 totalMipSize = 0;
+    for (uint32 i = 0; i < mipLevels; ++i)
+    {
+        totalMipSize += mipSizes[i];
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Total mipmap chain size: %u bytes", totalMipSize);
+    
+    // Create staging buffer large enough for all mip levels
     RHI::BufferDesc stagingDesc;
-    stagingDesc.size = imageSize;
+    stagingDesc.size = totalMipSize;
     stagingDesc.usage = RHI::EResourceUsage::TransferSrc;
     stagingDesc.cpuAccessible = true;
-    stagingDesc.debugName = "WoodTextureStagingBuffer";
+    stagingDesc.debugName = "WoodTextureMipmapStagingBuffer";
     
     TSharedPtr<RHI::IRHIBuffer> stagingBuffer = m_device->createBuffer(stagingDesc);
     if (!stagingBuffer)
     {
-        MR_LOG(LogCubeSceneApp, Error, "Failed to create staging buffer for wood texture");
-        stbi_image_free(imageData);
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create staging buffer for wood texture mipmaps");
+        
+        // Clean up mip data
+        for (uint32 i = 0; i < mipData.Num(); ++i)
+        {
+            FMemory::Free(mipData[i]);
+        }
         return false;
     }
     
-    // Copy image data to staging buffer
+    // Copy all mip levels to staging buffer
     void* mappedData = stagingBuffer->map();
     if (!mappedData)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to map staging buffer");
-        stbi_image_free(imageData);
+        
+        // Clean up mip data
+        for (uint32 i = 0; i < mipData.Num(); ++i)
+        {
+            FMemory::Free(mipData[i]);
+        }
         return false;
     }
     
-    FMemory::Memcpy(mappedData, imageData, imageSize);
-    stagingBuffer->unmap();
+    uint32 bufferOffset = 0;
+    for (uint32 i = 0; i < mipLevels; ++i)
+    {
+        FMemory::Memcpy(static_cast<unsigned char*>(mappedData) + bufferOffset, 
+                        mipData[i], mipSizes[i]);
+        bufferOffset += mipSizes[i];
+    }
     
-    // Free stb_image data
-    stbi_image_free(imageData);
+    stagingBuffer->unmap();
     
     // Get immediate command list for texture upload
     RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
@@ -2002,26 +2232,44 @@ bool CubeSceneApplication::loadWoodTexture()
     
     // Transition texture from UNDEFINED to TRANSFER_DST_OPTIMAL
     vulkanCmdList->transitionTextureLayoutSimple(
-        m_woodTexture,
+        rhiTexture,
         VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
     );
     
-    // Copy from staging buffer to texture
-    vulkanCmdList->copyBufferToTexture(
-        stagingBuffer,
-        0,              // buffer offset
-        m_woodTexture,
-        0,              // mip level
-        0,              // array layer
-        width,
-        height,
-        1               // depth
-    );
+    // Upload all mip levels to GPU
+    bufferOffset = 0;
+    uint32 currentWidth = static_cast<uint32>(width);
+    uint32 currentHeight = static_cast<uint32>(height);
+    
+    for (uint32 mipLevel = 0; mipLevel < mipLevels; ++mipLevel)
+    {
+        // Copy mip level from staging buffer to texture
+        vulkanCmdList->copyBufferToTexture(
+            stagingBuffer,
+            bufferOffset,       // buffer offset for this mip level
+            rhiTexture,
+            mipLevel,           // mip level
+            0,                  // array layer
+            currentWidth,
+            currentHeight,
+            1                   // depth
+        );
+        
+        MR_LOG(LogCubeSceneApp, VeryVerbose, "Uploaded mip level %u (%ux%u) to GPU",
+               mipLevel, currentWidth, currentHeight);
+        
+        // Move to next mip level
+        bufferOffset += mipSizes[mipLevel];
+        currentWidth = FMath::Max(1u, currentWidth >> 1);
+        currentHeight = FMath::Max(1u, currentHeight >> 1);
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Uploaded %u mip levels to GPU", mipLevels);
     
     // Transition texture from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
     vulkanCmdList->transitionTextureLayoutSimple(
-        m_woodTexture,
+        rhiTexture,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
@@ -2048,12 +2296,26 @@ bool CubeSceneApplication::loadWoodTexture()
         vulkanDevice->getCommandListContext()->refreshCommandBuffer();
     }
     
-    // Register texture for layout transition tracking
-    auto* vulkanTexture = dynamic_cast<MonsterRender::RHI::Vulkan::VulkanTexture*>(m_woodTexture.Get());
-    if (vulkanDevice && vulkanTexture)
+    // Clean up CPU mip data (no longer needed after GPU upload)
+    for (uint32 i = 0; i < mipData.Num(); ++i)
     {
-        VkImage image = vulkanTexture->getImage();
-        vulkanDevice->registerTextureForLayoutTransition(image, 1, 1);
+        FMemory::Free(mipData[i]);
+    }
+    mipData.Empty();
+    mipSizes.Empty();
+    
+    MR_LOG(LogCubeSceneApp, Log, "Cleaned up CPU mipmap data");
+    
+    // Register texture for layout transition tracking with correct mip levels
+    if (m_woodTexture && m_woodTexture->getRHITexture())
+    {
+        auto* vulkanTexture = dynamic_cast<MonsterRender::RHI::Vulkan::VulkanTexture*>(m_woodTexture->getRHITexture().Get());
+        if (vulkanDevice && vulkanTexture)
+        {
+            VkImage image = vulkanTexture->getImage();
+            vulkanDevice->registerTextureForLayoutTransition(image, mipLevels, 1);
+            MR_LOG(LogCubeSceneApp, Log, "Registered texture with %u mip levels for layout transition", mipLevels);
+        }
     }
     
     // Create sampler with repeat mode and linear filtering
@@ -2081,9 +2343,9 @@ bool CubeSceneApplication::loadWoodTexture()
         if (floorMeshComp)
         {
             FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
-            if (floorProxy)
+            if (floorProxy && m_woodTexture && m_woodTexture->getRHITexture())
             {
-                floorProxy->SetTexture(m_woodTexture);
+                floorProxy->SetTexture(m_woodTexture->getRHITexture());
                 floorProxy->SetSampler(m_woodSampler);
                 MR_LOG(LogCubeSceneApp, Log, "Wood texture set to floor proxy");
             }

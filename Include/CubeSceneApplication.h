@@ -36,6 +36,7 @@ class FSceneViewFamily;
 class FSceneView;
 class FMaterial;
 class FMaterialInstance;
+class FTexture2D;
 
 // glTF types forward declarations
 struct FGLTFModel;
@@ -569,11 +570,14 @@ protected:
     // Floor Rendering
     // ========================================================================
 
-    /** Wood floor texture */
-    MonsterEngine::TSharedPtr<RHI::IRHITexture> m_woodTexture;
+    /** Wood floor texture (using FTexture2D for streaming support) */
+    MonsterEngine::TSharedPtr<MonsterEngine::FTexture2D> m_woodTexture;
 
     /** Wood texture sampler */
     MonsterEngine::TSharedPtr<RHI::IRHISampler> m_woodSampler;
+    
+    /** Whether texture streaming manager is initialized */
+    bool m_bTextureStreamingInitialized;
 
     // ========================================================================
     // PBR Helmet Rendering
