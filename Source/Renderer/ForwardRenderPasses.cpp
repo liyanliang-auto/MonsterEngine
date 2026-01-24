@@ -14,12 +14,17 @@
  */
 
 #include "Renderer/ForwardRenderPasses.h"
+#include "Renderer/RenderPass.h"
 #include "Engine/PrimitiveSceneInfo.h"
 #include "Engine/PrimitiveSceneProxy.h"
+#include "Engine/Proxies/CubeSceneProxy.h"
+#include "Engine/Proxies/FloorSceneProxy.h"
 #include "Engine/LightSceneInfo.h"
 #include "Engine/LightSceneProxy.h"
-#include "Engine/SceneView.h"
-#include "Engine/SceneRenderer.h"
+#include "Renderer/SceneView.h"
+#include "Core/Logging/LogMacros.h"
+#include "RHI/IRHICommandList.h"
+#include "RHI/IRHITexture.h"
 #include "Containers/Map.h"
 #include "Core/Logging/LogMacros.h"
 #include "Math/MathFunctions.h"
@@ -214,7 +219,21 @@ void FOpaquePass::RenderOpaquePrimitive(
     FPrimitiveSceneInfo* Primitive,
     const TArray<FLightSceneInfo*>& AffectingLights)
 {
-    if (!Primitive)
+    if (!Primitive || !Context.RHICmdList || !Context.View)
+    {
+        return;
+    }
+    
+    // Get primitive's scene proxy
+    FPrimitiveSceneProxy* Proxy = Primitive->GetProxy();
+    if (!Proxy)
+    {
+        MR_LOG(LogForwardRenderer, Warning, "Primitive has no scene proxy");
+        return;
+    }
+    
+    // Check if proxy is visible
+    if (!Proxy->IsVisible())
     {
         return;
     }
@@ -225,56 +244,94 @@ void FOpaquePass::RenderOpaquePrimitive(
         SetupLightBuffer(Context, AffectingLights);
     }
     
-    // TODO: Implement actual rendering through RHI
-    // Implementation steps:
-    // 1. Get primitive's mesh and material data
-    // 2. Bind forward lighting shader (BasicLit or PBR)
-    // 3. Set material uniforms (albedo, roughness, metallic, etc.)
-    // 4. Set light uniform buffer
-    // 5. Set shadow maps if available
-    // 6. Set vertex/index buffers
-    // 7. Draw indexed primitives
-    //
-    // Pseudocode:
-    // FPrimitiveSceneProxy* Proxy = Primitive->GetProxy();
-    // if (Proxy)
-    // {
-    //     // Bind forward lit shader
-    //     Context.RHICmdList->SetShader(ForwardLitShader);
-    //     
-    //     // Set view uniforms
-    //     Context.RHICmdList->SetUniform("ViewPosition", Context.View->GetViewOrigin());
-    //     Context.RHICmdList->SetUniform("ViewProjection", Context.View->GetViewProjectionMatrix());
-    //     
-    //     // Set object uniforms
-    //     Context.RHICmdList->SetUniform("WorldMatrix", Proxy->GetLocalToWorld());
-    //     Context.RHICmdList->SetUniform("NormalMatrix", Proxy->GetLocalToWorld().Inverse().Transpose());
-    //     
-    //     // Set material uniforms
-    //     const FMaterial& Material = Proxy->GetMaterial();
-    //     Context.RHICmdList->SetUniform("BaseColor", Material.BaseColor);
-    //     Context.RHICmdList->SetUniform("Roughness", Material.Roughness);
-    //     Context.RHICmdList->SetUniform("Metallic", Material.Metallic);
-    //     
-    //     // Set light buffer
-    //     Context.RHICmdList->SetUniformBuffer("LightBuffer", LightUniformBuffer);
-    //     
-    //     // Set shadow maps
-    //     for (const FShadowData& Shadow : ShadowData)
-    //     {
-    //         if (Shadow.bValid)
-    //         {
-    //             Context.RHICmdList->SetTexture("ShadowMap", Shadow.ShadowMapTexture);
-    //             Context.RHICmdList->SetUniform("LightViewProjection", Shadow.LightViewProjection);
-    //         }
-    //     }
-    //     
-    //     // Draw
-    //     const FMeshBatch& Mesh = Proxy->GetMeshBatch();
-    //     Context.RHICmdList->SetVertexBuffer(Mesh.VertexBuffer);
-    //     Context.RHICmdList->SetIndexBuffer(Mesh.IndexBuffer);
-    //     Context.RHICmdList->DrawIndexed(Mesh.NumIndices, 0, 0);
-    // }
+    // Get view matrices
+    const FMatrix& ViewMatrix = Context.View->ViewMatrices.GetViewMatrix();
+    const FMatrix& ProjectionMatrix = Context.View->ViewMatrices.GetProjectionMatrix();
+    const FVector& CameraPosition = Context.View->ViewMatrices.GetViewOrigin();
+    
+    // Cast to specific proxy types and call their Draw methods
+    // Note: In UE5, this would use FMeshElementCollector and FMeshBatch system
+    // For now, we directly call proxy-specific draw methods
+    
+    // Try FCubeSceneProxy (use MonsterEngine namespace)
+    MonsterEngine::FCubeSceneProxy* CubeProxy = dynamic_cast<MonsterEngine::FCubeSceneProxy*>(Proxy);
+    if (CubeProxy)
+    {
+        // Draw cube with lighting and shadows
+        if (ShadowData.Num() > 0 && ShadowData[0].bValid)
+        {
+            // Draw with shadows
+            const FShadowData& Shadow = ShadowData[0];
+            FVector4 ShadowParams(0.005f, 1.0f, 0.0f, 100.0f); // bias, slope bias, normal bias, distance
+            
+            CubeProxy->DrawWithShadows(
+                Context.RHICmdList,
+                ViewMatrix,
+                ProjectionMatrix,
+                CameraPosition,
+                AffectingLights,
+                Shadow.LightViewProjection,
+                Shadow.ShadowMapTexture,
+                ShadowParams
+            );
+        }
+        else
+        {
+            // Draw without shadows
+            CubeProxy->DrawWithLighting(
+                Context.RHICmdList,
+                ViewMatrix,
+                ProjectionMatrix,
+                CameraPosition,
+                AffectingLights
+            );
+        }
+        
+        MR_LOG(LogForwardRenderer, VeryVerbose, "Rendered cube primitive with %d lights", AffectingLights.Num());
+        return;
+    }
+    
+    // Try FFloorSceneProxy (use MonsterEngine namespace)
+    MonsterEngine::FFloorSceneProxy* FloorProxy = dynamic_cast<MonsterEngine::FFloorSceneProxy*>(Proxy);
+    if (FloorProxy)
+    {
+        // Draw floor with lighting and shadows
+        if (ShadowData.Num() > 0 && ShadowData[0].bValid)
+        {
+            // Draw with shadows
+            const FShadowData& Shadow = ShadowData[0];
+            FVector4 ShadowParams(0.005f, 1.0f, 0.0f, 100.0f);
+            
+            FloorProxy->DrawWithShadows(
+                Context.RHICmdList,
+                ViewMatrix,
+                ProjectionMatrix,
+                CameraPosition,
+                AffectingLights,
+                Shadow.LightViewProjection,
+                Shadow.ShadowMapTexture,
+                ShadowParams
+            );
+        }
+        else
+        {
+            // Draw without shadows
+            FloorProxy->DrawWithLighting(
+                Context.RHICmdList,
+                ViewMatrix,
+                ProjectionMatrix,
+                CameraPosition,
+                AffectingLights
+            );
+        }
+        
+        MR_LOG(LogForwardRenderer, VeryVerbose, "Rendered floor primitive with %d lights", AffectingLights.Num());
+        return;
+    }
+    
+    // Generic fallback for other proxy types
+    // In the future, this should use FMeshElementCollector pattern
+    MR_LOG(LogForwardRenderer, Warning, "Unsupported primitive proxy type for rendering");
 }
 
 void FOpaquePass::GatherAffectingLights(
