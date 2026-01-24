@@ -10,6 +10,8 @@
 #include "Engine/Proxies/CubeSceneProxy.h"
 #include "Engine/LightSceneInfo.h"
 #include "Engine/LightSceneProxy.h"
+#include "Engine/Material/Material.h"
+#include "Engine/Material/MaterialRenderProxy.h"
 #include "Renderer/MeshBatch.h"
 #include "Renderer/MeshElementCollector.h"
 #include "Renderer/SceneView.h"
@@ -91,6 +93,7 @@ FCubeSceneProxy::FCubeSceneProxy(const UCubeMeshComponent* InComponent)
     , RHIBackend(MonsterRender::RHI::ERHIBackend::Unknown)
     , TextureBlendFactor(0.5f)
     , CubeSize(0.5f)
+    , Material(nullptr)
     , bResourcesInitialized(false)
     , bVisible(true)
 {
@@ -170,7 +173,10 @@ void FCubeSceneProxy::GetDynamicMeshElements(
         MeshBatch.bCastShadow = CastsShadow();
         MeshBatch.bUseForMaterial = true;
         MeshBatch.bUseForDepthPass = true;
-        MeshBatch.MaterialRenderProxy = nullptr;  // TODO: Set material proxy
+        
+        // Set material render proxy if material is available
+        MeshBatch.MaterialRenderProxy = GetMaterialRenderProxy();
+        
         MeshBatch.LODIndex = 0;
         MeshBatch.MeshIdInPrimitive = 0;
         
@@ -1344,6 +1350,36 @@ void FCubeSceneProxy::DrawDepthOnly(
     CmdList->draw(36, 0);
     
     MR_LOG(LogCubeSceneProxy, Verbose, "Cube depth-only draw complete");
+}
+
+// ============================================================================
+// Material Support
+// ============================================================================
+
+void FCubeSceneProxy::SetMaterial(FMaterial* InMaterial)
+{
+    Material = InMaterial;
+    
+    if (Material)
+    {
+        FString DebugName = Material->GetDebugName();
+        MR_LOG(LogCubeSceneProxy, Log, "Material set for CubeSceneProxy: %ls", 
+               *DebugName);
+    }
+    else
+    {
+        MR_LOG(LogCubeSceneProxy, Log, "Material cleared for CubeSceneProxy");
+    }
+}
+
+FMaterialRenderProxy* FCubeSceneProxy::GetMaterialRenderProxy() const
+{
+    if (Material)
+    {
+        return Material->GetRenderProxy();
+    }
+    
+    return nullptr;
 }
 
 } // namespace MonsterEngine

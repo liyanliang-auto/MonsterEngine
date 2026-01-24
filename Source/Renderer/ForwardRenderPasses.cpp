@@ -24,7 +24,8 @@
 #include "Engine/PrimitiveSceneProxy.h"
 #include "Engine/Proxies/CubeSceneProxy.h"
 #include "Engine/Proxies/FloorSceneProxy.h"
-#include "RHI/IRHITexture.h"
+#include "Engine/Material/MaterialRenderProxy.h"
+#include "Engine/Material/MaterialTypes.h"
 #include "Core/Logging/LogMacros.h"
 #include "Math/MonsterMath.h"
 
@@ -187,6 +188,34 @@ void FOpaquePass::Execute(FRenderPassContext& Context)
     MR_LOG(LogForwardRenderer, Verbose, "Executing OpaquePass with %d primitives, %d lights",
            NumPrimitives, NumLights);
     
+    // Store RHI device for material uniform buffer creation
+    if (!RHIDevice && Context.RHICmdList)
+    {
+        RHIDevice = Context.RHICmdList->getDevice();
+    }
+    
+    // Create material uniform buffer if not already created
+    if (!MaterialUniformBuffer && RHIDevice)
+    {
+        MonsterRender::RHI::BufferDesc BufferDesc;
+        BufferDesc.size = sizeof(FMaterialUniformBuffer);
+        BufferDesc.usage = MonsterRender::RHI::EResourceUsage::UniformBuffer;
+        BufferDesc.memoryUsage = MonsterRender::RHI::EMemoryUsage::CPU_TO_GPU;
+        BufferDesc.debugName = "MaterialUniformBuffer";
+        
+        MaterialUniformBuffer = RHIDevice->createBuffer(BufferDesc);
+        
+        if (MaterialUniformBuffer)
+        {
+            MR_LOG(LogForwardRenderer, Log, "Created material uniform buffer (size: %llu bytes)", 
+                   static_cast<uint64>(sizeof(FMaterialUniformBuffer)));
+        }
+        else
+        {
+            MR_LOG(LogForwardRenderer, Error, "Failed to create material uniform buffer");
+        }
+    }
+    
     // Clear color buffer
     ClearTargets(Context);
     
@@ -279,6 +308,83 @@ void FOpaquePass::RenderMeshBatch(
     const FMatrix& ProjectionMatrix = Context.View->ViewMatrices.GetProjectionMatrix();
     const FVector& CameraPosition = Context.View->ViewMatrices.GetViewOrigin();
     
+    // Check if material render proxy is available and extract material parameters
+    FLinearColor BaseColor(1.0f, 1.0f, 1.0f, 1.0f);  // Default white
+    float Metallic = 0.0f;
+    float Roughness = 0.5f;
+    float Specular = 0.5f;
+    
+    if (MeshBatch->MaterialRenderProxy)
+    {
+        // Extract material parameters from the render proxy
+        FMaterialParameterInfo BaseColorInfo(FName("BaseColor"));
+        FMaterialParameterInfo MetallicInfo(FName("Metallic"));
+        FMaterialParameterInfo RoughnessInfo(FName("Roughness"));
+        FMaterialParameterInfo SpecularInfo(FName("Specular"));
+        
+        // Try to get base color (vector parameter)
+        if (!MeshBatch->MaterialRenderProxy->GetVectorValue(BaseColorInfo, BaseColor))
+        {
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Using default base color");
+        }
+        
+        // Try to get metallic (scalar parameter)
+        if (!MeshBatch->MaterialRenderProxy->GetScalarValue(MetallicInfo, Metallic))
+        {
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Using default metallic value");
+        }
+        
+        // Try to get roughness (scalar parameter)
+        if (!MeshBatch->MaterialRenderProxy->GetScalarValue(RoughnessInfo, Roughness))
+        {
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Using default roughness value");
+        }
+        
+        // Try to get specular (scalar parameter)
+        if (!MeshBatch->MaterialRenderProxy->GetScalarValue(SpecularInfo, Specular))
+        {
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Using default specular value");
+        }
+        
+        MR_LOG(LogForwardRenderer, Verbose, 
+               "Material parameters: BaseColor=(%.2f,%.2f,%.2f,%.2f), Metallic=%.2f, Roughness=%.2f, Specular=%.2f",
+               BaseColor.R, BaseColor.G, BaseColor.B, BaseColor.A,
+               Metallic, Roughness, Specular);
+    }
+    else
+    {
+        MR_LOG(LogForwardRenderer, Verbose, "No material render proxy, using default material parameters");
+    }
+    
+    // Update material uniform buffer with extracted parameters
+    if (MaterialUniformBuffer)
+    {
+        // Fill material uniform buffer structure
+        FMaterialUniformBuffer MaterialData;
+        MaterialData.BaseColor[0] = BaseColor.R;
+        MaterialData.BaseColor[1] = BaseColor.G;
+        MaterialData.BaseColor[2] = BaseColor.B;
+        MaterialData.BaseColor[3] = BaseColor.A;
+        MaterialData.Metallic = Metallic;
+        MaterialData.Roughness = Roughness;
+        MaterialData.Specular = Specular;
+        MaterialData.Padding = 0.0f;
+        
+        // Map buffer and update data
+        void* MappedData = MaterialUniformBuffer->map();
+        if (MappedData)
+        {
+            std::memcpy(MappedData, &MaterialData, sizeof(FMaterialUniformBuffer));
+            MaterialUniformBuffer->unmap();
+            
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Updated material uniform buffer to GPU");
+        }
+        else
+        {
+            MR_LOG(LogForwardRenderer, Warning, "Failed to map material uniform buffer");
+        }
+    }
+    
     // Iterate through all elements in the mesh batch
     for (const FMeshBatchElement& Element : MeshBatch->Elements)
     {
@@ -303,6 +409,16 @@ void FOpaquePass::RenderMeshBatch(
         VertexBuffers.Add(Element.VertexBuffer);
         Context.RHICmdList->setVertexBuffers(0, VertexBuffers);
         
+        // Bind material uniform buffer to shader
+        // Material data is bound to Set 1, Binding 0 (following UE5 convention)
+        // Set 0 is typically used for per-frame/per-view data
+        // Set 1 is typically used for per-material data
+        if (MaterialUniformBuffer)
+        {
+            Context.RHICmdList->setConstantBuffer(1, MaterialUniformBuffer);
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Bound material uniform buffer to Set 1");
+        }
+        
         // TODO: Update uniform buffers with view/projection matrices and lighting data
         // This requires the proxy to expose methods for updating its uniform buffers
         // For now, we rely on the proxy having already set up its uniform buffers
@@ -310,7 +426,7 @@ void FOpaquePass::RenderMeshBatch(
         // 1. Get or create per-frame uniform buffer
         // 2. Update with current view/projection matrices
         // 3. Update with lighting data from TempAffectingLights
-        // 4. Bind uniform buffer to shader
+        // 4. Bind uniform buffer to shader (Set 0 for per-frame data)
         
         // Draw the mesh element
         if (Element.IndexBuffer)

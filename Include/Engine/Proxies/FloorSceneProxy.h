@@ -239,6 +239,28 @@ public:
     /** Get texture tile factor */
     float GetTextureTile() const { return TextureTile; }
 
+    // ========================================================================
+    // Material Support
+    // ========================================================================
+
+    /**
+     * Set material for this proxy
+     * @param InMaterial - Material to use
+     */
+    void SetMaterial(class FMaterial* InMaterial);
+
+    /**
+     * Get material for this proxy
+     * @return Material pointer (can be nullptr)
+     */
+    class FMaterial* GetMaterial() const { return Material; }
+
+    /**
+     * Get material render proxy
+     * @return Material render proxy (can be nullptr)
+     */
+    class FMaterialRenderProxy* GetMaterialRenderProxy() const;
+
 protected:
     /**
      * Create vertex buffer with floor geometry
@@ -366,6 +388,9 @@ protected:
 
     /** Texture tile factor */
     float TextureTile;
+
+    /** Material for this proxy (can be nullptr) */
+    class FMaterial* Material;
 
     /** Whether resources are initialized */
     uint8 bResourcesInitialized : 1;
