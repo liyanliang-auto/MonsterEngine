@@ -763,58 +763,168 @@ void FShadowDepthPass::Execute(FRenderPassContext& Context)
 
 void FShadowDepthPass::SetupShadowMapTarget(FRenderPassContext& Context)
 {
-    // TODO: Create or acquire shadow map render target
-    // This will be implemented when RHI texture creation is complete
-    //
-    // Pseudocode:
-    // if (!GeneratedShadowData.ShadowMapTexture)
-    // {
-    //     FTextureDesc Desc;
-    //     Desc.Width = ShadowConfig.Resolution;
-    //     Desc.Height = ShadowConfig.Resolution;
-    //     Desc.Format = EPixelFormat::D32_Float; // or D24_S8 for stencil
-    //     Desc.Flags = ETextureFlags::DepthStencil | ETextureFlags::ShaderResource;
-    //     
-    //     if (ShadowConfig.Type == EShadowMapType::CubeMap)
-    //     {
-    //         Desc.bIsCubemap = true;
-    //     }
-    //     
-    //     GeneratedShadowData.ShadowMapTexture = Context.RHIDevice->CreateTexture(Desc);
-    // }
-    // 
-    // Context.RHICmdList->SetRenderTarget(nullptr, GeneratedShadowData.ShadowMapTexture);
-    // Context.RHICmdList->SetViewport(0, 0, ShadowConfig.Resolution, ShadowConfig.Resolution);
+    if (!Context.RHICmdList)
+    {
+        MR_LOG(LogForwardRenderer, Error, "Invalid RHI command list in SetupShadowMapTarget");
+        return;
+    }
+    
+    // Create shadow map texture if not already created
+    if (!GeneratedShadowData.ShadowMapTexture)
+    {
+        MonsterRender::RHI::IRHIDevice* Device = Context.RHICmdList->getDevice();
+        if (!Device)
+        {
+            MR_LOG(LogForwardRenderer, Error, "Failed to get RHI device for shadow map creation");
+            return;
+        }
+        
+        // Create shadow map depth texture descriptor
+        MonsterRender::RHI::TextureDesc ShadowMapDesc;
+        ShadowMapDesc.width = ShadowConfig.Resolution;
+        ShadowMapDesc.height = ShadowConfig.Resolution;
+        ShadowMapDesc.depth = 1;
+        ShadowMapDesc.mipLevels = 1;
+        ShadowMapDesc.arraySize = (ShadowConfig.Type == EShadowMapType::CubeMap) ? 6 : 1;
+        ShadowMapDesc.format = MonsterRender::RHI::EPixelFormat::D32_FLOAT;
+        ShadowMapDesc.usage = MonsterRender::RHI::EResourceUsage::DepthStencil | 
+                              MonsterRender::RHI::EResourceUsage::ShaderResource;
+        ShadowMapDesc.debugName = "ShadowMap";
+        
+        // Create the texture (compatible with both Vulkan and OpenGL)
+        GeneratedShadowData.ShadowMapTexture = Device->createTexture(ShadowMapDesc);
+        
+        if (!GeneratedShadowData.ShadowMapTexture)
+        {
+            MR_LOG(LogForwardRenderer, Error, "Failed to create shadow map texture (resolution: %d)", 
+                   ShadowConfig.Resolution);
+            return;
+        }
+        
+        MR_LOG(LogForwardRenderer, Log, "Created shadow map texture (resolution: %d, type: %d)", 
+               ShadowConfig.Resolution, static_cast<int32>(ShadowConfig.Type));
+    }
+    
+    // Set shadow map as render target (depth only, no color targets)
+    TArray<TSharedPtr<MonsterRender::RHI::IRHITexture>> EmptyColorTargets;
+    Context.RHICmdList->setRenderTargets(
+        TSpan<TSharedPtr<MonsterRender::RHI::IRHITexture>>(EmptyColorTargets),
+        GeneratedShadowData.ShadowMapTexture
+    );
+    
+    // Set viewport for shadow map rendering
+    MonsterRender::RHI::Viewport ShadowViewport;
+    ShadowViewport.x = 0.0f;
+    ShadowViewport.y = 0.0f;
+    ShadowViewport.width = static_cast<float>(ShadowConfig.Resolution);
+    ShadowViewport.height = static_cast<float>(ShadowConfig.Resolution);
+    ShadowViewport.minDepth = 0.0f;
+    ShadowViewport.maxDepth = 1.0f;
+    Context.RHICmdList->setViewport(ShadowViewport);
+    
+    // Set scissor rect
+    MonsterRender::RHI::ScissorRect ShadowScissor;
+    ShadowScissor.left = 0;
+    ShadowScissor.top = 0;
+    ShadowScissor.right = ShadowConfig.Resolution;
+    ShadowScissor.bottom = ShadowConfig.Resolution;
+    Context.RHICmdList->setScissorRect(ShadowScissor);
 }
 
 FMatrix FShadowDepthPass::CalculateLightViewProjection(FRenderPassContext& Context)
 {
     if (!CurrentLight)
     {
+        MR_LOG(LogForwardRenderer, Warning, "No current light set for shadow depth pass");
         return FMatrix::Identity;
     }
     
     FLightSceneProxy* Proxy = CurrentLight->GetProxy();
     if (!Proxy)
     {
+        MR_LOG(LogForwardRenderer, Warning, "Light has no proxy");
         return FMatrix::Identity;
     }
     
-    // TODO: Calculate proper light view-projection matrix based on light type
-    // For now, return identity
-    //
-    // Directional light:
-    // - View: Look at scene center from light direction
-    // - Projection: Orthographic to cover scene bounds
-    //
-    // Spot light:
-    // - View: Look from light position in light direction
-    // - Projection: Perspective with cone angle
-    //
-    // Point light:
-    // - Six view matrices for cubemap faces
-    // - Projection: 90 degree FOV perspective
+    // Get light type and direction
+    FLightSceneProxy::ELightType LightType = Proxy->GetLightType();
     
+    if (LightType == FLightSceneProxy::ELightType::Directional)
+    {
+        // Directional light shadow mapping
+        // Reference: UE5 FDirectionalLightSceneProxy::GetWholeSceneShadowProjection
+        
+        // Get light direction (normalized)
+        FVector LightDirection = Proxy->GetDirection();
+        if (LightDirection.IsNearlyZero())
+        {
+            LightDirection = FVector(0.0f, -1.0f, 0.0f); // Default to down
+        }
+        LightDirection = LightDirection.GetSafeNormal();
+        
+        // Calculate scene bounds radius from shadow config
+        // For now, use a fixed scene bounds. In UE5, this would come from scene bounds or view frustum
+        float SceneBoundsRadius = ShadowConfig.SceneBoundsRadius > 0.0f ? 
+                                  ShadowConfig.SceneBoundsRadius : 30.0f;
+        
+        // Calculate light position (far enough to encompass entire scene)
+        float LightDistance = SceneBoundsRadius * 2.0f;
+        FVector LightPosition = -LightDirection * LightDistance;
+        
+        // Calculate up vector (avoid parallel to light direction)
+        FVector UpVector = FVector(0.0f, 1.0f, 0.0f);
+        if (FMath::Abs(FVector::DotProduct(LightDirection, UpVector)) > 0.99f)
+        {
+            UpVector = FVector(1.0f, 0.0f, 0.0f);
+        }
+        
+        // Create light view matrix (look at scene center from light position)
+        FVector TargetPosition = FVector::ZeroVector; // Scene center
+        FMatrix LightViewMatrix = FMatrix::MakeLookAt(LightPosition, TargetPosition, UpVector);
+        
+        // Create orthographic projection for directional light
+        // Expand bounds slightly to avoid edge clipping
+        float OrthoSize = SceneBoundsRadius * 1.5f;
+        float NearPlane = 0.1f;
+        float FarPlane = LightDistance * 2.0f;
+        
+        FMatrix LightProjectionMatrix = FMatrix::MakeOrtho(
+            OrthoSize * 2.0f, 
+            OrthoSize * 2.0f, 
+            NearPlane, 
+            FarPlane
+        );
+        
+        // Combine view and projection
+        FMatrix LightViewProjection = LightViewMatrix * LightProjectionMatrix;
+        
+        MR_LOG(LogForwardRenderer, Verbose, 
+               "Calculated directional light VP: dir=(%.2f,%.2f,%.2f), bounds=%.1f",
+               LightDirection.X, LightDirection.Y, LightDirection.Z, SceneBoundsRadius);
+        
+        return LightViewProjection;
+    }
+    else if (LightType == FLightSceneProxy::ELightType::Spot)
+    {
+        // Spot light shadow mapping
+        // TODO: Implement spot light perspective projection
+        // Reference: UE5 FSpotLightSceneProxy::GetShadowProjection
+        
+        MR_LOG(LogForwardRenderer, Warning, "Spot light shadows not yet implemented");
+        return FMatrix::Identity;
+    }
+    else if (LightType == FLightSceneProxy::ELightType::Point)
+    {
+        // Point light shadow mapping (cubemap)
+        // TODO: Implement point light cubemap projection
+        // Reference: UE5 FPointLightSceneProxy::GetShadowProjection
+        
+        MR_LOG(LogForwardRenderer, Warning, "Point light shadows not yet implemented");
+        return FMatrix::Identity;
+    }
+    
+    MR_LOG(LogForwardRenderer, Warning, "Unsupported light type for shadows: %d", 
+           static_cast<int32>(LightType));
     return FMatrix::Identity;
 }
 
@@ -831,35 +941,106 @@ FMatrix FShadowDepthPass::CalculateCascadeViewProjection(FRenderPassContext& Con
 
 void FShadowDepthPass::RenderShadowCasters(FRenderPassContext& Context, const FMatrix& LightViewProjection)
 {
-    if (!Context.VisibleOpaquePrimitives)
+    if (!Context.VisibleOpaquePrimitives || !Context.RHICmdList)
     {
         return;
     }
     
-    // TODO: Render all shadow-casting primitives from light's perspective
-    // Pseudocode:
-    // Context.RHICmdList->SetShader(ShadowDepthShader);
-    // 
-    // for (FPrimitiveSceneInfo* Primitive : *Context.VisibleOpaquePrimitives)
-    // {
-    //     if (Primitive && Primitive->CastsShadow())
-    //     {
-    //         FPrimitiveSceneProxy* Proxy = Primitive->GetProxy();
-    //         FMatrix WorldMatrix = Proxy->GetLocalToWorld();
-    //         FMatrix MVP = WorldMatrix * LightViewProjection;
-    //         
-    //         Context.RHICmdList->SetUniform("LightMVP", MVP);
-    //         
-    //         // Apply depth bias
-    //         Context.RHICmdList->SetDepthBias(ShadowConfig.DepthBias, ShadowConfig.SlopeScaledDepthBias);
-    //         
-    //         // Draw primitive
-    //         const FMeshBatch& Mesh = Proxy->GetMeshBatch();
-    //         Context.RHICmdList->SetVertexBuffer(Mesh.VertexBuffer);
-    //         Context.RHICmdList->SetIndexBuffer(Mesh.IndexBuffer);
-    //         Context.RHICmdList->DrawIndexed(Mesh.NumIndices, 0, 0);
-    //     }
-    // }
+    int32 NumShadowCasters = 0;
+    
+    // Render all shadow-casting primitives from light's perspective
+    // Reference: UE5 FShadowDepthPassMeshProcessor
+    for (FPrimitiveSceneInfo* Primitive : *Context.VisibleOpaquePrimitives)
+    {
+        if (!Primitive)
+        {
+            continue;
+        }
+        
+        FPrimitiveSceneProxy* Proxy = Primitive->GetProxy();
+        if (!Proxy)
+        {
+            continue;
+        }
+        
+        // Check if primitive casts shadows
+        if (!Proxy->CastsShadow())
+        {
+            continue;
+        }
+        
+        // Check if proxy is visible
+        if (!Proxy->IsVisible())
+        {
+            continue;
+        }
+        
+        // Calculate light position for depth-only rendering
+        FVector LightDirection = CurrentLight ? CurrentLight->GetProxy()->GetDirection() : FVector(0.0f, -1.0f, 0.0f);
+        FVector LightPosition = -LightDirection.GetSafeNormal() * 10.0f;
+        
+        // Cast to specific proxy types and call their depth-only draw methods
+        // In UE5, this would use FMeshDrawCommand with depth-only shaders
+        
+        // Try FCubeSceneProxy
+        MonsterEngine::FCubeSceneProxy* CubeProxy = dynamic_cast<MonsterEngine::FCubeSceneProxy*>(Proxy);
+        if (CubeProxy)
+        {
+            // Update model matrix if needed
+            CubeProxy->UpdateModelMatrix(Primitive->GetLocalToWorld());
+            
+            // Draw cube for shadow map using light's view-projection
+            // The Draw method will use depth-only pipeline internally
+            CubeProxy->DrawDepthOnly(
+                Context.RHICmdList,
+                LightViewProjection,
+                FMatrix::Identity,  // No separate projection needed
+                LightPosition
+            );
+            
+            NumShadowCasters++;
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Rendered cube shadow caster");
+            continue;
+        }
+        
+        // Try FFloorSceneProxy
+        MonsterEngine::FFloorSceneProxy* FloorProxy = dynamic_cast<MonsterEngine::FFloorSceneProxy*>(Proxy);
+        if (FloorProxy)
+        {
+            // Update model matrix if needed
+            FloorProxy->UpdateModelMatrix(Primitive->GetLocalToWorld());
+            
+            // Draw floor for shadow map
+            FloorProxy->DrawDepthOnly(
+                Context.RHICmdList,
+                LightViewProjection,
+                FMatrix::Identity,
+                LightPosition
+            );
+            
+            NumShadowCasters++;
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Rendered floor shadow caster");
+            continue;
+        }
+        
+        // Generic fallback for other proxy types
+        MR_LOG(LogForwardRenderer, VeryVerbose, "Unsupported primitive proxy type for shadow casting");
+    }
+    
+    MR_LOG(LogForwardRenderer, Verbose, "Rendered %d shadow casters", NumShadowCasters);
+    
+    // Transition shadow map from depth attachment to shader resource
+    // This is critical for Vulkan - the image layout must be correct for shader reads
+    if (GeneratedShadowData.ShadowMapTexture)
+    {
+        Context.RHICmdList->transitionResource(
+            GeneratedShadowData.ShadowMapTexture,
+            MonsterRender::RHI::EResourceUsage::DepthStencil,
+            MonsterRender::RHI::EResourceUsage::ShaderResource
+        );
+        
+        MR_LOG(LogForwardRenderer, Verbose, "Transitioned shadow map to shader resource");
+    }
 }
 
 } // namespace MonsterEngine
