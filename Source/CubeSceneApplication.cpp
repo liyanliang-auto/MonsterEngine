@@ -915,6 +915,9 @@ bool CubeSceneApplication::initializeScene()
             if (cubeProxy && m_device)
             {
                 cubeProxy->InitializeResources(m_device);
+                
+                // Set material to proxy if available (will be set after material creation below)
+                // This will be updated after m_cubeMaterial is created
             }
         }
         
@@ -991,6 +994,41 @@ bool CubeSceneApplication::initializeScene()
         m_cubeMaterial->SetDefaultScalarParameter(FName("Specular"), 0.5f);
         
         MR_LOG(LogCubeSceneApp, Log, "Cube material created with default parameters");
+        
+        // Set material to all cube proxies
+        for (auto& cubeActor : m_cubeActors)
+        {
+            if (cubeActor)
+            {
+                UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
+                if (meshComp)
+                {
+                    FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+                    FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+                    if (cubeProxy)
+                    {
+                        cubeProxy->SetMaterial(m_cubeMaterial.Get());
+                        MR_LOG(LogCubeSceneApp, Verbose, "Material set to cube proxy");
+                    }
+                }
+            }
+        }
+        
+        // Set material to floor proxy if available
+        if (m_floorActor)
+        {
+            UFloorMeshComponent* floorComp = m_floorActor->GetFloorMeshComponent();
+            if (floorComp)
+            {
+                FPrimitiveSceneProxy* baseProxy = floorComp->GetSceneProxy();
+                FFloorSceneProxy* floorProxy = static_cast<FFloorSceneProxy*>(baseProxy);
+                if (floorProxy)
+                {
+                    floorProxy->SetMaterial(m_cubeMaterial.Get());
+                    MR_LOG(LogCubeSceneApp, Verbose, "Material set to floor proxy");
+                }
+            }
+        }
     }
     
     MR_LOG(LogCubeSceneApp, Log, "Scene initialized with cube, lights, and material");

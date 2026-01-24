@@ -11,6 +11,8 @@
 #include "Engine/Components/FloorMeshComponent.h"
 #include "Engine/LightSceneInfo.h"
 #include "Engine/LightSceneProxy.h"
+#include "Engine/Material/Material.h"
+#include "Engine/Material/MaterialRenderProxy.h"
 #include "Renderer/MeshBatch.h"
 #include "Renderer/MeshElementCollector.h"
 #include "Renderer/SceneView.h"
@@ -95,6 +97,7 @@ FFloorSceneProxy::FFloorSceneProxy(const UFloorMeshComponent* InComponent)
     , VertexCount(6)
     , FloorSize(25.0f)
     , TextureTile(25.0f)
+    , Material(nullptr)
     , bResourcesInitialized(false)
     , bVisible(true)
 {
@@ -178,7 +181,10 @@ void FFloorSceneProxy::GetDynamicMeshElements(
         MeshBatch.bCastShadow = CastsShadow();
         MeshBatch.bUseForMaterial = true;
         MeshBatch.bUseForDepthPass = true;
-        MeshBatch.MaterialRenderProxy = nullptr;  // TODO: Set material proxy
+        
+        // Set material render proxy if material is available
+        MeshBatch.MaterialRenderProxy = GetMaterialRenderProxy();
+        
         MeshBatch.LODIndex = 0;
         MeshBatch.MeshIdInPrimitive = 0;
         
@@ -939,6 +945,36 @@ void FFloorSceneProxy::MatrixToFloatArray(const FMatrix& Matrix, float* OutArray
             OutArray[Col * 4 + Row] = static_cast<float>(Matrix.M[Row][Col]);
         }
     }
+}
+
+// ============================================================================
+// Material Support
+// ============================================================================
+
+void FFloorSceneProxy::SetMaterial(FMaterial* InMaterial)
+{
+    Material = InMaterial;
+    
+    if (Material)
+    {
+        FString DebugName = Material->GetDebugName();
+        MR_LOG(LogFloorSceneProxy, Log, "Material set for FloorSceneProxy: %ls", 
+               *DebugName);
+    }
+    else
+    {
+        MR_LOG(LogFloorSceneProxy, Log, "Material cleared for FloorSceneProxy");
+    }
+}
+
+FMaterialRenderProxy* FFloorSceneProxy::GetMaterialRenderProxy() const
+{
+    if (Material)
+    {
+        return Material->GetRenderProxy();
+    }
+    
+    return nullptr;
 }
 
 } // namespace MonsterEngine

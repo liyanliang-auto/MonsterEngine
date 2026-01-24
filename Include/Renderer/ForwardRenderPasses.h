@@ -40,6 +40,24 @@ class FLightSceneInfo;
 class FLightSceneProxy;
 
 // ============================================================================
+// Material Uniform Buffer
+// ============================================================================
+
+/**
+ * Material uniform buffer structure for GPU
+ * Aligned to 16 bytes for GPU compatibility
+ * Contains PBR material parameters
+ */
+struct alignas(16) FMaterialUniformBuffer
+{
+    float BaseColor[4];    // Base color (RGBA)
+    float Metallic;        // Metallic value [0,1]
+    float Roughness;       // Roughness value [0,1]
+    float Specular;        // Specular intensity [0,1]
+    float Padding;         // Padding for 16-byte alignment
+};
+
+// ============================================================================
 // Shadow Map Configuration
 // ============================================================================
 
@@ -270,6 +288,12 @@ private:
     
     /** Temporary array for light gathering */
     TArray<FLightSceneInfo*> TempAffectingLights;
+    
+    /** Material uniform buffer for GPU (shared across all mesh batches in a frame) */
+    TSharedPtr<MonsterRender::RHI::IRHIBuffer> MaterialUniformBuffer;
+    
+    /** RHI device for creating resources */
+    MonsterRender::RHI::IRHIDevice* RHIDevice = nullptr;
 };
 
 // ============================================================================
