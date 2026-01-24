@@ -474,9 +474,28 @@ void CubeSceneApplication::onRender()
         cmdList->begin();
         
         // ================================================================
-        // Choose rendering path: RDG or traditional
+        // Choose rendering path: FSceneRenderer (UE5 style) or RDG
         // ================================================================
-        if (m_bUseRDG/* && m_bShadowsEnabled*/)
+        if (m_bUseSceneRenderer && m_sceneRenderer)
+        {
+            MR_LOG(LogCubeSceneApp, Log, "Using FForwardShadingSceneRenderer (UE5 style)");
+            
+            // Use new UE5-style rendering pipeline
+            // This handles all rendering passes internally:
+            // - Shadow depth maps
+            // - Depth prepass
+            // - Opaque geometry (with FMeshElementCollector)
+            // - Skybox
+            // - Transparent geometry
+            renderWithSceneRenderer(cmdList, viewMatrix, projectionMatrix, cameraPosition);
+            
+            // Render PBR helmet (not yet integrated into FSceneRenderer)
+            if (m_bHelmetPBREnabled && m_bHelmetInitialized)
+            {
+                renderHelmetWithPBR(cmdList, viewMatrix, projectionMatrix, cameraPosition);
+            }
+        }
+        else if (m_bUseRDG)
         {
             MR_LOG(LogCubeSceneApp, Log, "Using RDG rendering path");
             renderWithRDG(cmdList, viewMatrix, projectionMatrix, cameraPosition);
@@ -484,11 +503,12 @@ void CubeSceneApplication::onRender()
         }
         else
         {
-            MR_LOG(LogCubeSceneApp, Log, "Using traditional rendering path");
+            MR_LOG(LogCubeSceneApp, Log, "Using legacy rendering path (deprecated)");
             
             // ================================================================
-            // Shadow Depth Pass (if shadows enabled)
+            // Legacy rendering path - will be removed in future
             // ================================================================
+            // Shadow Depth Pass (if shadows enabled)
             FMatrix lightViewProjection = FMatrix::Identity;
             
             if (m_bShadowsEnabled && m_shadowMapTexture && lights.Num() > 0)
@@ -513,10 +533,7 @@ void CubeSceneApplication::onRender()
                 renderShadowDepthPass(cmdList, lightDirection, lightViewProjection);
             }
             
-            // ================================================================
             // Main Render Pass - Render scene to swapchain
-            // ================================================================
-            // Set render targets to swapchain (empty array = use swapchain)
             TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
             cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
             
@@ -647,33 +664,20 @@ void CubeSceneApplication::renderWithSceneRenderer(
     if (!m_sceneRenderer || !m_scene || !cmdList)
     {
         MR_LOG(LogCubeSceneApp, Warning, "renderWithSceneRenderer: Missing renderer, scene, or command list");
-        // Fall back to legacy path
-        TArray<FLightSceneInfo*> lights;
-        if (m_scene)
-        {
-            const TSparseArray<FLightSceneInfoCompact>& sceneLights = m_scene->GetLights();
-            for (auto It = sceneLights.CreateConstIterator(); It; ++It)
-            {
-                if (It->LightSceneInfo)
-                {
-                    lights.Add(It->LightSceneInfo);
-                }
-            }
-        }
-        renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
         return;
     }
     
-    MR_LOG(LogCubeSceneApp, Verbose, "Rendering with FSceneRenderer...");
+    MR_LOG(LogCubeSceneApp, Verbose, "Rendering with FForwardShadingSceneRenderer (UE5 style)...");
     
     // Update renderer view family frame number
     if (m_rendererViewFamily)
     {
         m_rendererViewFamily->FrameNumber++;
-        m_rendererViewFamily->DeltaWorldTimeSeconds = 0.016f;  // ~60fps
+        m_rendererViewFamily->DeltaWorldTimeSeconds = m_deltaTime;
     }
     
-    // Ensure cube resources are initialized and update transform for all cubes
+    // Ensure all proxy resources are initialized and update transforms
+    // This must be done before rendering
     for (auto& cubeActor : m_cubeActors)
     {
         if (!cubeActor) continue;
@@ -697,44 +701,40 @@ void CubeSceneApplication::renderWithSceneRenderer(
         }
     }
     
-    // Render using FSceneRenderer (UE5-style pipeline)
-    // The renderer handles visibility, culling, and draw command generation
+    // Update floor proxy transform if exists
+    if (m_floorActor)
+    {
+        UFloorMeshComponent* floorComp = m_floorActor->GetFloorMeshComponent();
+        if (floorComp)
+        {
+            floorComp->UpdateComponentToWorld();
+            
+            FPrimitiveSceneProxy* baseProxy = floorComp->GetSceneProxy();
+            FFloorSceneProxy* floorProxy = static_cast<FFloorSceneProxy*>(baseProxy);
+            if (floorProxy)
+            {
+                if (!floorProxy->AreResourcesInitialized())
+                {
+                    floorProxy->InitializeResources(m_device);
+                }
+                floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
+            }
+        }
+    }
+    
+    // Render using FForwardShadingSceneRenderer (UE5-style pipeline)
+    // The renderer handles:
+    // - Visibility computation
+    // - Shadow map generation (FShadowDepthPass)
+    // - Depth prepass (FDepthPrepass)
+    // - Opaque geometry rendering (FOpaquePass with FMeshElementCollector)
+    // - Skybox rendering (FSkyboxPass)
+    // - Transparent geometry rendering (FTransparentPass)
     m_sceneRenderer->RenderThreadBegin(*cmdList);
     m_sceneRenderer->Render(*cmdList);
     m_sceneRenderer->RenderThreadEnd(*cmdList);
     
-    // Also render the cube directly for now (until FSceneRenderer fully handles mesh drawing)
-    // This ensures we see the rotating cube while FSceneRenderer infrastructure is being built
-    TArray<FLightSceneInfo*> lights;
-    if (m_scene)
-    {
-        const TSparseArray<FLightSceneInfoCompact>& sceneLights = m_scene->GetLights();
-        for (auto It = sceneLights.CreateConstIterator(); It; ++It)
-        {
-            if (It->LightSceneInfo)
-            {
-                lights.Add(It->LightSceneInfo);
-            }
-        }
-    }
-    
-    // Render all cube actors
-    for (auto& cubeActor : m_cubeActors)
-    {
-        if (!cubeActor) continue;
-        
-        UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
-        if (meshComp)
-        {
-            FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(meshComp->GetSceneProxy());
-            if (cubeProxy)
-            {
-                cubeProxy->DrawWithLighting(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
-            }
-        }
-    }
-    
-    MR_LOG(LogCubeSceneApp, Verbose, "FSceneRenderer render complete");
+    MR_LOG(LogCubeSceneApp, Verbose, "FForwardShadingSceneRenderer render complete");
 }
 
 bool CubeSceneApplication::initializeSceneRenderer()
