@@ -244,6 +244,9 @@ void FTextureStreamingManager::UpdatePriorities() {
 void FTextureStreamingManager::ProcessStreamingRequests() {
     // Reference: UE5's FStreamingManagerTexture::ProcessStreamingRequests()
     
+    // Update pending async uploads first
+    UpdatePendingAsyncUploads();
+    
     // Sort by priority (highest first)
     TArray<FStreamingTexture*> sortedTextures;
     for (auto& st : StreamingTextures) {
@@ -254,6 +257,14 @@ void FTextureStreamingManager::ProcessStreamingRequests() {
         [](const FStreamingTexture* a, const FStreamingTexture* b) {
             return a->Priority > b->Priority;
         });
+
+    // Count current async uploads
+    uint32 currentAsyncUploads = 0;
+    for (const auto& st : StreamingTextures) {
+        if (st.bHasPendingAsyncUpload) {
+            currentAsyncUploads++;
+        }
+    }
 
     // Process requests in priority order
     for (auto* st : sortedTextures) {
@@ -268,10 +279,20 @@ void FTextureStreamingManager::ProcessStreamingRequests() {
             MR_LOG(LogTextureStreaming, Error, "ProcessStreamingRequests: Invalid texture detected");
             continue;
         }
+        
+        // Skip if already has pending async upload
+        if (st->bHasPendingAsyncUpload) {
+            continue;
+        }
 
         if (st->RequestedMips > st->ResidentMips) {
-            // Stream in more mips
-            StreamInMips(st);
+            // Stream in more mips (use async if enabled and under limit)
+            if (bUseAsyncUpload && currentAsyncUploads < MaxConcurrentAsyncUploads) {
+                StreamInMipsAsync(st);
+                currentAsyncUploads++;
+            } else {
+                StreamInMips(st);
+            }
         } else if (st->RequestedMips < st->ResidentMips) {
             // Stream out mips
             StreamOutMips(st);
@@ -417,12 +438,56 @@ void FTextureStreamingManager::OnMipLoadComplete(MonsterEngine::FTexture2D* Text
     
     for (auto& st : StreamingTextures) {
         if (st.Texture == Texture) {
-            // Update resident mips
-            st.ResidentMips = st.RequestedMips;
-            Texture->updateResidentMips(st.RequestedMips, nullptr);
+            uint32 startMip = st.ResidentMips;
+            uint32 endMip = st.RequestedMips;
             
-            MR_LOG(LogTextureStreaming, Log, "Async mip load completed successfully (ResidentMips: %u)", 
-                   st.ResidentMips);
+            // Prepare mip data array
+            uint32 numMips = endMip - startMip;
+            void** mipDataArray = static_cast<void**>(MonsterRender::FMemory::Malloc(sizeof(void*) * numMips));
+            
+            // Calculate mip data pointers from loaded data
+            uint8* dataPtr = static_cast<uint8*>(LoadedData);
+            for (uint32 i = 0; i < numMips; ++i) {
+                mipDataArray[i] = dataPtr;
+                SIZE_T mipSize = Texture->getMipSize(startMip + i);
+                dataPtr += mipSize;
+            }
+            
+            // Upload to GPU asynchronously if enabled
+            if (bUseAsyncUpload) {
+                TArray<uint64> fenceValues;
+                bool uploadSuccess = Texture->uploadMipDataAsync(startMip, endMip, mipDataArray, &fenceValues);
+                
+                if (uploadSuccess) {
+                    // Track async upload
+                    st.bHasPendingAsyncUpload = true;
+                    st.PendingFenceValues = fenceValues;
+                    st.PendingUploadStartMip = startMip;
+                    st.PendingUploadEndMip = endMip;
+                    
+                    MR_LOG(LogTextureStreaming, Verbose, "Started async GPU upload for %s (Mips %u -> %u, %u fences)", 
+                           Texture->getFilePath().c_str(), startMip, endMip, static_cast<uint32>(fenceValues.size()));
+                } else {
+                    MR_LOG(LogTextureStreaming, Error, "Failed to start async GPU upload for %s", 
+                           Texture->getFilePath().c_str());
+                }
+            } else {
+                // Synchronous upload
+                bool uploadSuccess = Texture->uploadMipData(startMip, endMip, mipDataArray);
+                
+                if (uploadSuccess) {
+                    st.ResidentMips = endMip;
+                    Texture->updateResidentMips(endMip, mipDataArray);
+                    
+                    MR_LOG(LogTextureStreaming, Log, "Sync GPU upload completed for %s (ResidentMips: %u)", 
+                           Texture->getFilePath().c_str(), st.ResidentMips);
+                } else {
+                    MR_LOG(LogTextureStreaming, Error, "Failed to upload mips for %s", 
+                           Texture->getFilePath().c_str());
+                }
+            }
+            
+            MonsterRender::FMemory::Free(mipDataArray);
             return;
         }
     }

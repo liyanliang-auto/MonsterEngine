@@ -189,13 +189,13 @@
     <ClCompile Include="Source\Platform\GLFW\GLFWWindow.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\FVulkanMemoryManager.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\FVulkanResourceManager.cpp" />
-    <ClCompile Include="Source\Renderer\AsyncTextureLoader.cpp" />
+    <ClCompile Include="Source\Renderer\FTextureStreamingManager.cpp" />
+    <ClCompile Include="Source\Renderer\FTextureStreamingManager_AsyncUpload.cpp" />
     <ClCompile Include="Source\Renderer\FAsyncTextureLoadRequest.cpp" />
     <ClCompile Include="Source\Renderer\FDDSTextureReader.cpp" />
     <ClCompile Include="Source\Renderer\FPNGTextureReader.cpp" />
     <ClCompile Include="Source\Renderer\FTextureFileReader.cpp" />
     <ClCompile Include="Source\Renderer\FTexturePool.cpp" />
-    <ClCompile Include="Source\Renderer\FTextureStreamingManager.cpp" />
     <ClCompile Include="Source\Renderer\FTextureLoader.cpp" />
     <ClCompile Include="Source\Renderer\FVirtualTexturePhysicalSpace.cpp" />
     <ClCompile Include="Source\Renderer\FVirtualTextureSystem.cpp" />

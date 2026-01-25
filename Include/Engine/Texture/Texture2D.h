@@ -297,13 +297,42 @@ public:
     bool updateResidentMips(uint32 newResidentMips, void** mipData);
     
     /**
-     * Upload mip data to GPU (called by streaming manager)
+     * Upload mip data to GPU synchronously (called by streaming manager)
      * @param startMip Starting mip level
      * @param endMip Ending mip level (exclusive)
      * @param mipData Array of mip data pointers
      * @return true if upload succeeded
      */
     bool uploadMipData(uint32 startMip, uint32 endMip, void** mipData);
+    
+    /**
+     * Upload mip data to GPU asynchronously (non-blocking)
+     * @param startMip Starting mip level
+     * @param endMip Ending mip level (exclusive)
+     * @param mipData Array of mip data pointers
+     * @param outFenceValues Array to receive fence values for each mip (optional)
+     * @return true if all uploads submitted successfully
+     * 
+     * Reference: UE5 async texture streaming
+     */
+    bool uploadMipDataAsync(
+        uint32 startMip, 
+        uint32 endMip, 
+        void** mipData,
+        TArray<uint64>* outFenceValues = nullptr);
+    
+    /**
+     * Check if async upload is complete
+     * @param fenceValue Fence value from uploadMipDataAsync
+     * @return true if upload is complete
+     */
+    bool isAsyncUploadComplete(uint64 fenceValue) const;
+    
+    /**
+     * Wait for async upload to complete
+     * @param fenceValue Fence value from uploadMipDataAsync
+     */
+    void waitForAsyncUpload(uint64 fenceValue);
     
 private:
     // Texture identification

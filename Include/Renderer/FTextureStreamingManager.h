@@ -80,6 +80,12 @@ private:
         uint32 RequestedMips;      // Desired mip count
         float Priority;            // Streaming priority
         float Distance;            // Distance from camera
+        
+        // Async upload tracking (UE5-style)
+        bool bHasPendingAsyncUpload = false;
+        TArray<uint64> PendingFenceValues;
+        uint32 PendingUploadStartMip = 0;
+        uint32 PendingUploadEndMip = 0;
     };
 
     // Update streaming priorities
@@ -91,6 +97,12 @@ private:
     // Stream in/out methods
     void StreamInMips(FStreamingTexture* StreamingTexture);
     void StreamOutMips(FStreamingTexture* StreamingTexture);
+    
+    // Async upload methods (UE5-style)
+    void StreamInMipsAsync(FStreamingTexture* StreamingTexture);
+    void UpdatePendingAsyncUploads();
+    bool IsAsyncUploadComplete(FStreamingTexture* StreamingTexture);
+    void WaitForAsyncUpload(FStreamingTexture* StreamingTexture);
     
     // Helper methods
     bool EvictLowPriorityTextures(SIZE_T RequiredSize);
@@ -106,6 +118,10 @@ private:
     SIZE_T PoolSize;
     SIZE_T AllocatedMemory;
     bool bInitialized = false;
+    
+    // Async upload configuration (UE5-style)
+    bool bUseAsyncUpload = true;              // Enable async uploads
+    uint32 MaxConcurrentAsyncUploads = 4;     // Max parallel uploads per frame
 };
 
 /**
