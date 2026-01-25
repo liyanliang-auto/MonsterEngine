@@ -488,11 +488,12 @@ bool FTexture2D::uploadMipData(uint32 startMip, uint32 endMip, void** mipData)
         return false;
     }
     
-    // Upload each mip level to GPU
-    // This will be implemented in RHI layer (Vulkan/OpenGL specific)
+    // Upload each mip level to GPU via RHI
+    bool allSucceeded = true;
     for (uint32 mipLevel = startMip; mipLevel < endMip; ++mipLevel) {
         if (!mipData[mipLevel - startMip]) {
             MR_LOG(LogTexture2D, Warning, "Null mip data at level %u", mipLevel);
+            allSucceeded = false;
             continue;
         }
         
@@ -501,19 +502,37 @@ bool FTexture2D::uploadMipData(uint32 startMip, uint32 endMip, void** mipData)
         uint32 mipHeight = std::max(1u, m_height >> mipLevel);
         SIZE_T mipSize = m_mipSizes[mipLevel];
         
-        // Update texture subresource
-        // Note: This requires RHI support for texture updates
-        // For now, we log the operation
+        if (mipSize == 0) {
+            MR_LOG(LogTexture2D, Warning, "Mip level %u has zero size", mipLevel);
+            allSucceeded = false;
+            continue;
+        }
+        
         MR_LOG(LogTexture2D, VeryVerbose, "Uploading mip %u: %ux%u (%llu bytes)", 
                mipLevel, mipWidth, mipHeight, static_cast<uint64>(mipSize));
         
-        // TODO: Call RHI updateTextureSubresource when available
-        // m_device->updateTextureSubresource(m_rhiTexture, mipLevel, mipData[mipLevel - startMip], mipSize);
+        // Call RHI updateTextureSubresource
+        bool success = m_device->updateTextureSubresource(
+            m_rhiTexture, 
+            mipLevel, 
+            mipData[mipLevel - startMip], 
+            mipSize);
+        
+        if (!success) {
+            MR_LOG(LogTexture2D, Error, "Failed to upload mip level %u", mipLevel);
+            allSucceeded = false;
+        }
     }
     
-    MR_LOG(LogTexture2D, Verbose, "Uploaded mips %u-%u for texture: %s", 
-           startMip, endMip - 1, m_filePath.c_str());
-    return true;
+    if (allSucceeded) {
+        MR_LOG(LogTexture2D, Verbose, "Successfully uploaded mips %u-%u for texture: %s", 
+               startMip, endMip - 1, m_filePath.c_str());
+    } else {
+        MR_LOG(LogTexture2D, Warning, "Some mip levels failed to upload for texture: %s", 
+               m_filePath.c_str());
+    }
+    
+    return allSucceeded;
 }
 
 MonsterRender::RHI::EPixelFormat FTexture2D::_convertPixelFormat(MonsterRender::ETexturePixelFormat format)
