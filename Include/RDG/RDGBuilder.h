@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/CoreMinimal.h"
+#include "Containers/String.h"
 #include "RDG/RDGDefinitions.h"
 #include "RDG/RDGResource.h"
 #include "RDG/RDGPass.h"

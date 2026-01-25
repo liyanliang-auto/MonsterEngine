@@ -7,7 +7,7 @@ using MonsterRender::LogRDG;
 namespace MonsterRender {
 namespace RDG {
 
-FRDGBuilder::FRDGBuilder(RHI::IRHIDevice* rhiDevice, const FString& debugName)
+FRDGBuilder::FRDGBuilder(RHI::IRHIDevice* rhiDevice, const MonsterEngine::FString& debugName)
     : m_rhiDevice(rhiDevice)
     , m_debugName(debugName)
 {
@@ -16,7 +16,7 @@ FRDGBuilder::FRDGBuilder(RHI::IRHIDevice* rhiDevice, const FString& debugName)
         MR_LOG(LogRDG, Error, "FRDGBuilder created with null RHI device");
     }
     
-    MR_LOG(LogRDG, Verbose, "FRDGBuilder created: %s", *m_debugName);
+    MR_LOG(LogRDG, Verbose, "FRDGBuilder created: %ls", *m_debugName);
 }
 
 FRDGBuilder::~FRDGBuilder()
@@ -40,14 +40,14 @@ FRDGBuilder::~FRDGBuilder()
     }
     m_passes.Empty();
     
-    MR_LOG(LogRDG, Verbose, "FRDGBuilder destroyed: %s", *m_debugName);
+    MR_LOG(LogRDG, Verbose, "FRDGBuilder destroyed: %ls", *m_debugName);
 }
 
-FRDGTextureRef FRDGBuilder::createTexture(const FString& inName, const FRDGTextureDesc& desc)
+FRDGTextureRef FRDGBuilder::createTexture(const MonsterEngine::FString& inName, const FRDGTextureDesc& desc)
 {
     if (!m_rhiDevice)
     {
-        MR_LOG(LogRDG, Error, "Cannot create texture '%s': RHI device is null", *inName);
+        MR_LOG(LogRDG, Error, "Cannot create texture '%ls': RHI device is null", *inName);
         return nullptr;
     }
     
@@ -55,17 +55,17 @@ FRDGTextureRef FRDGBuilder::createTexture(const FString& inName, const FRDGTextu
     FRDGTexture* texture = new FRDGTexture(inName, desc);
     m_textures.Add(texture);
     
-    MR_LOG(LogRDG, Verbose, "Created RDG texture: %s (%ux%u, format=%d)", 
+    MR_LOG(LogRDG, Verbose, "Created RDG texture: %ls (%ux%u, format=%d)", 
            *inName, desc.width, desc.height, static_cast<int32>(desc.format));
     
     return texture;
 }
 
-FRDGBufferRef FRDGBuilder::createBuffer(const FString& inName, const FRDGBufferDesc& desc)
+FRDGBufferRef FRDGBuilder::createBuffer(const MonsterEngine::FString& inName, const FRDGBufferDesc& desc)
 {
     if (!m_rhiDevice)
     {
-        MR_LOG(LogRDG, Error, "Cannot create buffer '%s': RHI device is null", *inName);
+        MR_LOG(LogRDG, Error, "Cannot create buffer '%ls': RHI device is null", *inName);
         return nullptr;
     }
     
@@ -73,20 +73,20 @@ FRDGBufferRef FRDGBuilder::createBuffer(const FString& inName, const FRDGBufferD
     FRDGBuffer* buffer = new FRDGBuffer(inName, desc);
     m_buffers.Add(buffer);
     
-    MR_LOG(LogRDG, Verbose, "Created RDG buffer: %s (size=%u bytes)", 
+    MR_LOG(LogRDG, Verbose, "Created RDG buffer: %ls (size=%u bytes)", 
            *inName, desc.size);
     
     return buffer;
 }
 
 FRDGTextureRef FRDGBuilder::registerExternalTexture(
-    const FString& inName,
+    const MonsterEngine::FString& inName,
     RHI::IRHITexture* inTexture,
     ERHIAccess initialState)
 {
     if (!inTexture)
     {
-        MR_LOG(LogRDG, Error, "Cannot register null external texture: %s", *inName);
+        MR_LOG(LogRDG, Error, "Cannot register null external texture: %ls", *inName);
         return nullptr;
     }
     
@@ -114,20 +114,20 @@ FRDGTextureRef FRDGBuilder::registerExternalTexture(
     
     m_textures.Add(rdgTexture);
     
-    MR_LOG(LogRDG, Verbose, "Registered external texture: %s (%ux%u)", 
+    MR_LOG(LogRDG, Verbose, "Registered external texture: %ls (%ux%u)", 
            *inName, desc.width, desc.height);
     
     return rdgTexture;
 }
 
 FRDGBufferRef FRDGBuilder::registerExternalBuffer(
-    const FString& inName,
+    const MonsterEngine::FString& inName,
     RHI::IRHIBuffer* inBuffer,
     ERHIAccess initialState)
 {
     if (!inBuffer)
     {
-        MR_LOG(LogRDG, Error, "Cannot register null external buffer: %s", *inName);
+        MR_LOG(LogRDG, Error, "Cannot register null external buffer: %ls", *inName);
         return nullptr;
     }
     
@@ -146,7 +146,7 @@ FRDGBufferRef FRDGBuilder::registerExternalBuffer(
     
     m_buffers.Add(rdgBuffer);
     
-    MR_LOG(LogRDG, Verbose, "Registered external buffer: %s (size=%u bytes)", 
+    MR_LOG(LogRDG, Verbose, "Registered external buffer: %ls (size=%u bytes)", 
            *inName, desc.size);
     
     return rdgBuffer;
@@ -156,7 +156,7 @@ void FRDGBuilder::execute(RHI::IRHICommandList& rhiCmdList)
 {
     if (m_bExecuted)
     {
-        MR_LOG(LogRDG, Error, "FRDGBuilder::Execute called multiple times on graph: %s", 
+        MR_LOG(LogRDG, Error, "FRDGBuilder::Execute called multiple times on graph: %ls", 
                *m_debugName);
         return;
     }
@@ -206,7 +206,7 @@ void FRDGBuilder::execute(RHI::IRHICommandList& rhiCmdList)
     
     m_bExecuted = true;
     
-    MR_LOG(LogRDG, Log, "Render graph execution complete: %s", *m_debugName);
+    MR_LOG(LogRDG, Log, "Render graph execution complete: %ls", *m_debugName);
 }
 
 void FRDGBuilder::_buildDependencyGraph()
@@ -1025,7 +1025,7 @@ void FRDGBuilder::_releaseResources()
 void FRDGBuilder::_validateGraph()
 {
 #if RDG_ENABLE_DEBUG
-    MR_LOG(LogRDG, Verbose, "Validating render graph: %s", *m_debugName);
+    MR_LOG(LogRDG, Verbose, "Validating render graph: %ls", *m_debugName);
     
     // Validate passes
     for (FRDGPass* pass : m_passes)
