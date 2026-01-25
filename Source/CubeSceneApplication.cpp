@@ -2732,7 +2732,7 @@ void CubeSceneApplication::renderWithRDG(
             // Declare that we will read from the shadow map
             builder.readTexture(shadowMapRDG, ERHIAccess::SRVGraphics);
         },
-        [this, viewMatrix, projectionMatrix, cameraPosition, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
+        [this, &viewMatrix, &projectionMatrix, &cameraPosition, &lightViewProjection](RHI::IRHICommandList& rhiCmdList)
         {
             MR_LOG(LogCubeSceneApp, Log, "Executing Main Render Pass with shadows");
             
@@ -2786,7 +2786,13 @@ void CubeSceneApplication::renderWithRDG(
             {
                 renderHelmetWithPBR(&rhiCmdList, viewMatrix, projectionMatrix, cameraPosition);
             }
-        }
+        };
+    
+    graphBuilder.addPass(
+        ::MonsterEngine::FString("MainRenderPass"),
+        ERDGPassFlags::Raster,
+        std::move(setupLambda),
+        std::move(executeLambda)
     );
     
     // Execute the render graph
