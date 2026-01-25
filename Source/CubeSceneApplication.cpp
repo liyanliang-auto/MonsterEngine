@@ -532,7 +532,7 @@ void CubeSceneApplication::onRender()
     if (backend == RHI::ERHIBackend::OpenGL)
     {
         // OpenGL rendering path
-        using namespace MonsterEngine::OpenGL;
+        using namespace ::MonsterEngine::OpenGL;
         
         // Context should already be current from GLFW initialization
         // No need to explicitly make it current here
@@ -914,7 +914,7 @@ bool CubeSceneApplication::initializeSceneRenderer()
     // Create Renderer::FSceneViewFamily for FSceneRenderer
     if (!m_rendererViewFamily)
     {
-        m_rendererViewFamily = MakeUnique<MonsterEngine::Renderer::FSceneViewFamily>();
+        m_rendererViewFamily = MakeUnique<::MonsterEngine::Renderer::FSceneViewFamily>();
         m_rendererViewFamily->Scene = nullptr;  // Renderer::FScene is different from Engine::FScene
         m_rendererViewFamily->RenderTarget = nullptr;
         m_rendererViewFamily->FrameNumber = 0;
@@ -925,7 +925,7 @@ bool CubeSceneApplication::initializeSceneRenderer()
     }
     
     // Create FForwardShadingSceneRenderer
-    m_sceneRenderer = MakeUnique<MonsterEngine::Renderer::FForwardShadingSceneRenderer>(m_rendererViewFamily.Get());
+    m_sceneRenderer = MakeUnique<::MonsterEngine::Renderer::FForwardShadingSceneRenderer>(m_rendererViewFamily.Get());
     if (!m_sceneRenderer)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to create FSceneRenderer");
@@ -2133,7 +2133,7 @@ bool CubeSceneApplication::loadWoodTexture()
     m_asyncTextureLoader->loadTextureAsync(
         texturePath,
         true, // Generate mipmaps
-        [this](const FTextureLoadResult& Result) {
+        [this](const ::MonsterEngine::FTextureLoadResult& Result) {
             // This callback is called on main thread by processCompletedLoads()
             _onWoodTextureLoadComplete(Result);
         }
@@ -2143,7 +2143,7 @@ bool CubeSceneApplication::loadWoodTexture()
     return true;
 }
 
-void CubeSceneApplication::_onWoodTextureLoadComplete(const MonsterEngine::FTextureLoadResult& Result)
+void CubeSceneApplication::_onWoodTextureLoadComplete(const ::MonsterEngine::FTextureLoadResult& Result)
 {
     m_bWoodTextureLoading = false;
     
@@ -2634,18 +2634,18 @@ void CubeSceneApplication::renderWithRDG(
     Math::FMatrix lightViewProjection = calculateLightViewProjection(lightDirection, 30.0f);
     
     // Create RDG builder
-    FRDGBuilder graphBuilder(m_device, "CubeSceneRenderGraph");
+    FRDGBuilder graphBuilder(m_device, ::MonsterEngine::FString("CubeSceneRenderGraph"));
     
     // Register external shadow map texture
     FRDGTextureRef shadowMapRDG = graphBuilder.registerExternalTexture(
-        "ShadowMap",
+        ::MonsterEngine::FString("ShadowMap"),
         m_shadowMapTexture.Get(),
         ERHIAccess::Unknown
     );
     
     // Add Shadow Depth Pass
     graphBuilder.addPass(
-        "ShadowDepthPass",
+        ::MonsterEngine::FString("ShadowDepthPass"),
         ERDGPassFlags::Raster,
         [&](FRDGPassBuilder& builder)
         {
@@ -2725,7 +2725,7 @@ void CubeSceneApplication::renderWithRDG(
     
     // Add Main Render Pass
     graphBuilder.addPass(
-        "MainRenderPass",
+        ::MonsterEngine::FString("MainRenderPass"),
         ERDGPassFlags::Raster,
         [&](FRDGPassBuilder& builder)
         {
