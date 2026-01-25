@@ -37,6 +37,8 @@ class FSceneView;
 class FMaterial;
 class FMaterialInstance;
 class FTexture2D;
+class FAsyncTextureLoader;
+struct FTextureLoadResult;
 
 // glTF types forward declarations
 struct FGLTFModel;
@@ -392,6 +394,12 @@ protected:
         const MonsterEngine::Math::FVector& cameraPosition);
 
 protected:
+    /**
+     * Callback for async wood texture load completion
+     * Called on main thread when async texture loading finishes
+     * @param Result Texture load result containing mip data
+     */
+    void _onWoodTextureLoadComplete(const MonsterEngine::FTextureLoadResult& Result);
     /** RHI device */
     RHI::IRHIDevice* m_device;
 
@@ -578,6 +586,15 @@ protected:
     
     /** Whether texture streaming manager is initialized */
     bool m_bTextureStreamingInitialized;
+    
+    /** Async texture loader for background texture loading */
+    MonsterEngine::TUniquePtr<MonsterEngine::FAsyncTextureLoader> m_asyncTextureLoader;
+    
+    /** Whether wood texture is currently loading asynchronously */
+    bool m_bWoodTextureLoading;
+    
+    /** Whether wood texture has been loaded successfully */
+    bool m_bWoodTextureLoaded;
 
     // ========================================================================
     // PBR Helmet Rendering
