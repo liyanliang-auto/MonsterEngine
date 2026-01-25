@@ -118,6 +118,48 @@ namespace MonsterRender::RHI {
         virtual TSharedPtr<IRHITexture> createTexture(const TextureDesc& desc) = 0;
         
         /**
+         * Update texture subresource data (for streaming texture mip upload)
+         * 
+         * Updates a specific mip level of a texture with new data. This is used
+         * by the texture streaming system to dynamically load mip levels.
+         * 
+         * @param texture Target texture to update
+         * @param mipLevel Mip level to update (0 = highest resolution)
+         * @param data Source data pointer
+         * @param dataSize Size of source data in bytes
+         * @return true if update succeeded
+         * 
+         * Reference: UE5 FVulkanDynamicRHI::RHIUpdateTexture2D
+         */
+        virtual bool updateTextureSubresource(
+            TSharedPtr<IRHITexture> texture,
+            uint32 mipLevel,
+            const void* data,
+            SIZE_T dataSize) = 0;
+        
+        /**
+         * Update texture subresource asynchronously (non-blocking)
+         * 
+         * Submits an async texture upload that doesn't block the calling thread.
+         * The upload is queued and processed by the RHI backend.
+         * 
+         * @param texture Target texture to update
+         * @param mipLevel Mip level to update
+         * @param data Source data pointer (must remain valid until upload completes)
+         * @param dataSize Size of source data in bytes
+         * @param outFenceValue Output fence value for synchronization (optional)
+         * @return true if submitted successfully
+         * 
+         * Reference: UE5 FRHIAsyncComputeCommandListImmediate
+         */
+        virtual bool updateTextureSubresourceAsync(
+            TSharedPtr<IRHITexture> texture,
+            uint32 mipLevel,
+            const void* data,
+            SIZE_T dataSize,
+            uint64* outFenceValue = nullptr) = 0;
+        
+        /**
          * Create a vertex shader from bytecode
          */
         virtual TSharedPtr<IRHIVertexShader> createVertexShader(TSpan<const uint8> bytecode) = 0;

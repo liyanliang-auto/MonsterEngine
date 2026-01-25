@@ -58,6 +58,19 @@ public:
     virtual TSharedPtr<MonsterRender::RHI::IRHITexture> createTexture(
         const MonsterRender::RHI::TextureDesc& desc) override;
     
+    virtual bool updateTextureSubresource(
+        TSharedPtr<MonsterRender::RHI::IRHITexture> texture,
+        uint32 mipLevel,
+        const void* data,
+        SIZE_T dataSize) override;
+    
+    virtual bool updateTextureSubresourceAsync(
+        TSharedPtr<MonsterRender::RHI::IRHITexture> texture,
+        uint32 mipLevel,
+        const void* data,
+        SIZE_T dataSize,
+        uint64* outFenceValue = nullptr) override;
+    
     virtual TSharedPtr<MonsterRender::RHI::IRHIVertexShader> createVertexShader(
         MonsterRender::TSpan<const uint8> bytecode) override;
     
@@ -163,6 +176,23 @@ public:
         return m_descriptorPoolManager.get(); 
     }
     
+    /**
+     * Async texture upload support using PBO
+     */
+    struct FAsyncPBOUpload {
+        GLuint pbo = 0;
+        TSharedPtr<MonsterRender::RHI::IRHITexture> texture;
+        uint32 mipLevel = 0;
+        SIZE_T dataSize = 0;
+        bool isComplete = false;
+    };
+    
+    GLuint beginAsyncUploadPBO(SIZE_T dataSize);
+    bool submitAsyncUploadPBO(GLuint pbo, TSharedPtr<MonsterRender::RHI::IRHITexture> texture, uint32 mipLevel);
+    bool isAsyncUploadComplete(GLuint pbo);
+    void waitForAsyncUpload(GLuint pbo);
+    void destroyAsyncUploadPBO(GLuint pbo);
+    
 private:
     /**
      * Query device capabilities
@@ -196,6 +226,10 @@ private:
     
     // Descriptor pool manager (UBO binding management)
     TUniquePtr<class FOpenGLDescriptorPoolManager> m_descriptorPoolManager;
+    
+    // Async upload PBO tracking
+    TArray<FAsyncPBOUpload> m_asyncPBOUploads;
+    std::mutex m_asyncPBOMutex;
     
     // Backbuffer info
     uint32 m_backbufferWidth = 0;

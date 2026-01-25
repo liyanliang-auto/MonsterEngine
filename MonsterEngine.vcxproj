@@ -212,6 +212,7 @@
     <ClCompile Include="Source\RHI\IRHIResource.cpp" />
     <ClCompile Include="Source\RHI\RHI.cpp" />
     <ClCompile Include="Source\RHI\RHIBarriers.cpp" />
+    <ClCompile Include="Source\RHI\FAsyncTextureUploadManager.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanAPI.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanBuffer.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanRHICommandList.cpp" />
@@ -220,6 +221,9 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanPendingState.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDevice.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDevice_Swapchain.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanDevice_TextureUpdate.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanDevice_AsyncUpload.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanDevice_AsyncTextureUpdate.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanShader.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanTexture.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanSampler.cpp" />
@@ -251,6 +255,9 @@
     <ClCompile Include="Source\Platform\OpenGL\OpenGLShaders.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLPipeline.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLDevice.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLDevice_TextureUpdate.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLDevice_AsyncUpload.cpp" />
+    <ClCompile Include="Source\Platform\OpenGL\OpenGLDevice_AsyncTextureUpdate.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLDescriptorPoolManager.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLCommandList.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLSwapChain.cpp" />

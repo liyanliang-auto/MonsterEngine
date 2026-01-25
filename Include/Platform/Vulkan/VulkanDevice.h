@@ -61,6 +61,17 @@ namespace MonsterRender::RHI::Vulkan {
         
         TSharedPtr<IRHIBuffer> createBuffer(const BufferDesc& desc) override;
         TSharedPtr<IRHITexture> createTexture(const TextureDesc& desc) override;
+        bool updateTextureSubresource(
+            TSharedPtr<IRHITexture> texture,
+            uint32 mipLevel,
+            const void* data,
+            SIZE_T dataSize) override;
+        bool updateTextureSubresourceAsync(
+            TSharedPtr<IRHITexture> texture,
+            uint32 mipLevel,
+            const void* data,
+            SIZE_T dataSize,
+            uint64* outFenceValue = nullptr) override;
         TSharedPtr<IRHIVertexShader> createVertexShader(TSpan<const uint8> bytecode) override;
         TSharedPtr<IRHIPixelShader> createPixelShader(TSpan<const uint8> bytecode) override;
         TSharedPtr<IRHIPipelineState> createPipelineState(const PipelineStateDesc& desc) override;
@@ -225,6 +236,25 @@ namespace MonsterRender::RHI::Vulkan {
         bool checkDeviceExtensionSupport(VkPhysicalDevice device);
         void queryCapabilities();
         
+        // Texture update helpers (UE5-style)
+        bool transitionImageLayout(
+            VkImage image,
+            VkFormat format,
+            VkImageLayout oldLayout,
+            VkImageLayout newLayout,
+            uint32 mipLevel,
+            uint32 mipLevelCount);
+        
+        VkCommandBuffer beginSingleTimeCommands();
+        void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+        
+        // Async texture upload support (UE5-style async compute)
+        VkCommandBuffer beginAsyncUploadCommands();
+        VkFence submitAsyncUploadCommands(VkCommandBuffer commandBuffer);
+        bool isAsyncUploadComplete(VkFence fence);
+        void waitForAsyncUpload(VkFence fence);
+        void destroyAsyncUploadFence(VkFence fence);
+        
         // Vulkan objects
         VkInstance m_instance = VK_NULL_HANDLE;
         VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
@@ -258,6 +288,12 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Command handling (Legacy, kept for backward compatibility if needed)
         VkCommandPool m_commandPool = VK_NULL_HANDLE;
+        
+        // Async upload command pool (separate from graphics)
+        VkCommandPool m_asyncUploadCommandPool = VK_NULL_HANDLE;
+        TArray<VkCommandBuffer> m_asyncUploadCommandBuffers;
+        TArray<VkFence> m_asyncUploadFences;
+        std::mutex m_asyncUploadMutex;
         
         // UE5-style Immediate Command List (replaces legacy VulkanCommandList)
         TUniquePtr<FVulkanRHICommandListImmediate> m_immediateCommandList;
