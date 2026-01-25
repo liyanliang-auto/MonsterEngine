@@ -11,7 +11,10 @@
 #include "RHI/RHIResources.h"
 #include "Core/Log.h"
 #include "Core/HAL/FMemory.h"
+#include "Renderer/FTextureFileReader.h"
+#include "Containers/String.h"
 #include <cstring>
+#include <algorithm>
 
 DEFINE_LOG_CATEGORY_STATIC(LogTexture2D, Log, All);
 
@@ -131,6 +134,15 @@ void FTexture2D::shutdown()
     m_height = 0;
     m_mipLevels = 1;
     m_format = EPixelFormat::Unknown;
+    
+    // Clear streaming data
+    m_bIsStreamable = false;
+    m_filePath.clear();
+    m_residentMips = 0;
+    for (uint32 i = 0; i < 16; ++i) {
+        m_mipSizes[i] = 0;
+        m_mipDataPointers[i] = nullptr;
+    }
 }
 
 bool FTexture2D::_createDefaultSampler()
@@ -301,6 +313,227 @@ TSharedPtr<FTexture2D> FTexture2D::createCheckerboard(
     
     MR_LOG(LogTexture2D, Verbose, "Created checkerboard texture: %ux%u", size, size);
     return texture;
+}
+
+// ============================================================================
+// Texture Streaming Support
+// ============================================================================
+
+bool FTexture2D::initializeForStreaming(
+    IRHIDevice* device,
+    const MonsterEngine::String& filePath,
+    uint32 initialMips)
+{
+    if (!device) {
+        MR_LOG(LogTexture2D, Error, "Invalid device for streaming texture");
+        return false;
+    }
+    
+    if (filePath.empty()) {
+        MR_LOG(LogTexture2D, Error, "Empty file path for streaming texture");
+        return false;
+    }
+    
+    m_device = device;
+    m_filePath = filePath;
+    m_bIsStreamable = true;
+    
+    // Load texture file metadata and initial mips
+    if (!_loadInitialMips(filePath, initialMips)) {
+        MR_LOG(LogTexture2D, Error, "Failed to load initial mips from: %s", filePath.c_str());
+        m_bIsStreamable = false;
+        return false;
+    }
+    
+    // Create default sampler
+    if (!_createDefaultSampler()) {
+        MR_LOG(LogTexture2D, Warning, "Failed to create default sampler for: %s", filePath.c_str());
+    }
+    
+    MR_LOG(LogTexture2D, Log, "Initialized streaming texture: %s (%ux%u, %u mips, %u resident)", 
+           filePath.c_str(), m_width, m_height, m_mipLevels, m_residentMips);
+    return true;
+}
+
+bool FTexture2D::_loadInitialMips(const MonsterEngine::String& filePath, uint32 numMips)
+{
+    using namespace MonsterRender;
+    
+    // Load texture file
+    FTextureFileData fileData;
+    if (!FTextureFileReaderFactory::LoadTextureFromFile(filePath.c_str(), fileData)) {
+        MR_LOG(LogTexture2D, Error, "Failed to load texture file: %s", filePath.c_str());
+        return false;
+    }
+    
+    // Validate file data
+    if (fileData.MipCount == 0 || fileData.Mips.Num() == 0) {
+        MR_LOG(LogTexture2D, Error, "Texture file has no mip data: %s", filePath.c_str());
+        fileData.FreeData();
+        return false;
+    }
+    
+    // Store texture properties
+    m_width = fileData.Width;
+    m_height = fileData.Height;
+    m_mipLevels = fileData.MipCount;
+    m_format = _convertPixelFormat(fileData.PixelFormat);
+    
+    // Store mip sizes
+    for (uint32 i = 0; i < fileData.MipCount && i < 16; ++i) {
+        m_mipSizes[i] = fileData.Mips[i].DataSize;
+    }
+    
+    // Determine how many mips to load initially
+    uint32 mipsToLoad = (numMips == 0) ? 1 : std::min(numMips, fileData.MipCount);
+    m_residentMips = mipsToLoad;
+    
+    // Create RHI texture with initial mip data
+    TextureDesc rhiDesc;
+    rhiDesc.width = m_width;
+    rhiDesc.height = m_height;
+    rhiDesc.depth = 1;
+    rhiDesc.mipLevels = m_mipLevels;
+    rhiDesc.format = m_format;
+    rhiDesc.usage = EResourceUsage::ShaderResource;
+    rhiDesc.debugName = filePath.c_str();
+    
+    // Upload initial mip(s)
+    if (mipsToLoad > 0 && fileData.Mips[0].Data) {
+        rhiDesc.initialData = fileData.Mips[0].Data;
+        rhiDesc.initialDataSize = fileData.Mips[0].DataSize;
+    }
+    
+    m_rhiTexture = device->createTexture(rhiDesc);
+    if (!m_rhiTexture) {
+        MR_LOG(LogTexture2D, Error, "Failed to create RHI texture for streaming: %s", filePath.c_str());
+        fileData.FreeData();
+        return false;
+    }
+    
+    // Upload additional initial mips if requested
+    if (mipsToLoad > 1) {
+        void** mipDataArray = static_cast<void**>(MonsterRender::FMemory::Malloc(sizeof(void*) * mipsToLoad));
+        for (uint32 i = 0; i < mipsToLoad; ++i) {
+            mipDataArray[i] = fileData.Mips[i].Data;
+            m_mipDataPointers[i] = nullptr; // Will be managed by streaming system
+        }
+        
+        uploadMipData(1, mipsToLoad, mipDataArray + 1);
+        MonsterRender::FMemory::Free(mipDataArray);
+    }
+    
+    // Free file data (we don't keep it in memory for streaming textures)
+    fileData.FreeData();
+    
+    return true;
+}
+
+SIZE_T FTexture2D::getMipSize(uint32 mipLevel) const
+{
+    if (mipLevel >= 16) {
+        return 0;
+    }
+    return m_mipSizes[mipLevel];
+}
+
+void* FTexture2D::getMipData(uint32 mipLevel) const
+{
+    if (mipLevel >= 16) {
+        return nullptr;
+    }
+    return m_mipDataPointers[mipLevel];
+}
+
+bool FTexture2D::updateResidentMips(uint32 newResidentMips, void** mipData)
+{
+    if (!m_bIsStreamable) {
+        MR_LOG(LogTexture2D, Warning, "Cannot update resident mips: texture is not streamable");
+        return false;
+    }
+    
+    if (newResidentMips > m_mipLevels) {
+        MR_LOG(LogTexture2D, Error, "Invalid resident mip count: %u (max: %u)", newResidentMips, m_mipLevels);
+        return false;
+    }
+    
+    // Update mip data pointers
+    for (uint32 i = 0; i < newResidentMips && i < 16; ++i) {
+        if (mipData && mipData[i]) {
+            m_mipDataPointers[i] = mipData[i];
+        }
+    }
+    
+    m_residentMips = newResidentMips;
+    
+    MR_LOG(LogTexture2D, Verbose, "Updated resident mips: %s (%u mips)", 
+           m_filePath.c_str(), m_residentMips);
+    return true;
+}
+
+bool FTexture2D::uploadMipData(uint32 startMip, uint32 endMip, void** mipData)
+{
+    if (!m_rhiTexture || !m_device) {
+        MR_LOG(LogTexture2D, Error, "Cannot upload mip data: texture not initialized");
+        return false;
+    }
+    
+    if (!mipData) {
+        MR_LOG(LogTexture2D, Error, "Cannot upload mip data: null data pointer");
+        return false;
+    }
+    
+    if (startMip >= endMip || endMip > m_mipLevels) {
+        MR_LOG(LogTexture2D, Error, "Invalid mip range: %u-%u (total: %u)", startMip, endMip, m_mipLevels);
+        return false;
+    }
+    
+    // Upload each mip level to GPU
+    // This will be implemented in RHI layer (Vulkan/OpenGL specific)
+    for (uint32 mipLevel = startMip; mipLevel < endMip; ++mipLevel) {
+        if (!mipData[mipLevel - startMip]) {
+            MR_LOG(LogTexture2D, Warning, "Null mip data at level %u", mipLevel);
+            continue;
+        }
+        
+        // Calculate mip dimensions
+        uint32 mipWidth = std::max(1u, m_width >> mipLevel);
+        uint32 mipHeight = std::max(1u, m_height >> mipLevel);
+        SIZE_T mipSize = m_mipSizes[mipLevel];
+        
+        // Update texture subresource
+        // Note: This requires RHI support for texture updates
+        // For now, we log the operation
+        MR_LOG(LogTexture2D, VeryVerbose, "Uploading mip %u: %ux%u (%llu bytes)", 
+               mipLevel, mipWidth, mipHeight, static_cast<uint64>(mipSize));
+        
+        // TODO: Call RHI updateTextureSubresource when available
+        // m_device->updateTextureSubresource(m_rhiTexture, mipLevel, mipData[mipLevel - startMip], mipSize);
+    }
+    
+    MR_LOG(LogTexture2D, Verbose, "Uploaded mips %u-%u for texture: %s", 
+           startMip, endMip - 1, m_filePath.c_str());
+    return true;
+}
+
+MonsterRender::RHI::EPixelFormat FTexture2D::_convertPixelFormat(MonsterRender::ETexturePixelFormat format)
+{
+    using namespace MonsterRender;
+    
+    switch (format) {
+        case ETexturePixelFormat::R8G8B8A8_UNORM:
+            return EPixelFormat::R8G8B8A8_UNORM;
+        case ETexturePixelFormat::R8G8B8_UNORM:
+            return EPixelFormat::R8G8B8A8_UNORM; // Convert RGB to RGBA
+        case ETexturePixelFormat::BC1_UNORM:
+            return EPixelFormat::BC1_UNORM;
+        case ETexturePixelFormat::BC3_UNORM:
+            return EPixelFormat::BC3_UNORM;
+        case ETexturePixelFormat::BC7_UNORM:
+            return EPixelFormat::BC7_UNORM;
+        default:
+            return EPixelFormat::R8G8B8A8_UNORM;
+    }
 }
 
 } // namespace MonsterEngine

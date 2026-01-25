@@ -20,11 +20,15 @@
 #include "RHI/RHIDefinitions.h"
 
 // Forward declarations
-namespace MonsterRender { namespace RHI {
-    class IRHIDevice;
-    class IRHITexture;
-    class IRHISampler;
-}}
+namespace MonsterRender { 
+    enum class ETexturePixelFormat : uint8;
+    
+    namespace RHI {
+        class IRHIDevice;
+        class IRHITexture;
+        class IRHISampler;
+    }
+}
 
 namespace MonsterEngine
 {
@@ -230,6 +234,77 @@ public:
         uint32 size = 256,
         uint32 checkSize = 32);
     
+    // ========================================================================
+    // Texture Streaming Support (UE5-style)
+    // ========================================================================
+    
+    /**
+     * Initialize texture for streaming from file
+     * @param device RHI device
+     * @param filePath Path to texture file (DDS, PNG, etc.)
+     * @param initialMips Number of mips to load initially (0 = only top mip)
+     * @return true if initialization succeeded
+     */
+    bool initializeForStreaming(
+        MonsterRender::RHI::IRHIDevice* device,
+        const MonsterEngine::String& filePath,
+        uint32 initialMips = 1);
+    
+    /**
+     * Check if texture supports streaming
+     * @return true if streaming is enabled for this texture
+     */
+    bool isStreamable() const { return m_bIsStreamable; }
+    
+    /**
+     * Get source file path for streaming
+     * @return File path, empty if not streamable
+     */
+    const MonsterEngine::String& getFilePath() const { return m_filePath; }
+    
+    /**
+     * Get number of currently resident (loaded) mip levels
+     * @return Resident mip count
+     */
+    uint32 getResidentMips() const { return m_residentMips; }
+    
+    /**
+     * Get total number of mip levels in source file
+     * @return Total mip count
+     */
+    uint32 getTotalMips() const { return m_mipLevels; }
+    
+    /**
+     * Get size of a specific mip level
+     * @param mipLevel Mip level index
+     * @return Size in bytes, 0 if invalid
+     */
+    SIZE_T getMipSize(uint32 mipLevel) const;
+    
+    /**
+     * Get pointer to mip data (for streaming system)
+     * @param mipLevel Mip level index
+     * @return Pointer to mip data, nullptr if not loaded
+     */
+    void* getMipData(uint32 mipLevel) const;
+    
+    /**
+     * Update resident mip levels (called by streaming manager)
+     * @param newResidentMips New resident mip count
+     * @param mipData Array of mip data pointers
+     * @return true if update succeeded
+     */
+    bool updateResidentMips(uint32 newResidentMips, void** mipData);
+    
+    /**
+     * Upload mip data to GPU (called by streaming manager)
+     * @param startMip Starting mip level
+     * @param endMip Ending mip level (exclusive)
+     * @param mipData Array of mip data pointers
+     * @return true if upload succeeded
+     */
+    bool uploadMipData(uint32 startMip, uint32 endMip, void** mipData);
+    
 private:
     // Texture identification
     FName m_name;
@@ -246,10 +321,32 @@ private:
     TSharedPtr<MonsterRender::RHI::IRHITexture> m_rhiTexture;
     TSharedPtr<MonsterRender::RHI::IRHISampler> m_defaultSampler;
     
+    // Streaming support (UE5-style)
+    bool m_bIsStreamable = false;                    // Whether texture supports streaming
+    MonsterEngine::String m_filePath;                // Source file path for streaming
+    uint32 m_residentMips = 0;                       // Number of currently loaded mips
+    SIZE_T m_mipSizes[16] = {};                      // Size of each mip level in bytes
+    void* m_mipDataPointers[16] = {};                // Pointers to mip data (managed by streaming system)
+    
     /**
      * Create default sampler for this texture
      */
     bool _createDefaultSampler();
+    
+    /**
+     * Load initial mip levels from file
+     * @param filePath Source file path
+     * @param numMips Number of mips to load
+     * @return true if load succeeded
+     */
+    bool _loadInitialMips(const MonsterEngine::String& filePath, uint32 numMips);
+    
+    /**
+     * Convert texture file pixel format to RHI pixel format
+     * @param format Texture file pixel format
+     * @return RHI pixel format
+     */
+    static MonsterRender::RHI::EPixelFormat _convertPixelFormat(MonsterRender::ETexturePixelFormat format);
 };
 
 } // namespace MonsterEngine

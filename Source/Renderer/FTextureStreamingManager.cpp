@@ -3,31 +3,12 @@
 
 #include "Renderer/FTextureStreamingManager.h"
 #include "Renderer/FAsyncTextureLoadRequest.h"
+#include "Engine/Texture/Texture2D.h"
 #include "Core/HAL/FMemory.h"
 #include "Core/Log.h"
 #include <algorithm>
 
 namespace MonsterRender {
-
-// Placeholder FTexture class (will be implemented with RHI system)
-class FTexture {
-public:
-    uint32 Width = 0;
-    uint32 Height = 0;
-    uint32 TotalMipLevels = 0;
-    uint32 ResidentMips = 0;
-    SIZE_T SizePerMip[16] = {};  // Size of each mip level
-    void* MipData[16] = {};      // Mip data pointers
-    String FilePath;
-    
-    SIZE_T GetTotalSize() const {
-        SIZE_T total = 0;
-        for (uint32 i = 0; i < ResidentMips; ++i) {
-            total += SizePerMip[i];
-        }
-        return total;
-    }
-};
 
 // ===== FTextureStreamingManager Implementation =====
 
@@ -88,7 +69,7 @@ void FTextureStreamingManager::Shutdown() {
     MR_LOG(LogTextureStreaming, Log, "FTextureStreamingManager shut down");
 }
 
-void FTextureStreamingManager::RegisterTexture(FTexture* Texture) {
+void FTextureStreamingManager::RegisterTexture(MonsterEngine::FTexture2D* Texture) {
     if (!Texture || !bInitialized) return;
 
     std::scoped_lock lock(StreamingMutex);
@@ -96,7 +77,7 @@ void FTextureStreamingManager::RegisterTexture(FTexture* Texture) {
     // Check if already registered
     for (const auto& st : StreamingTextures) {
         if (st.Texture == Texture) {
-            MR_LOG_WARNING("Texture already registered");
+            MR_LOG(LogTextureStreaming, Warning, "Texture already registered");
             return;
         }
     }
@@ -104,18 +85,18 @@ void FTextureStreamingManager::RegisterTexture(FTexture* Texture) {
     // Create streaming texture entry
     FStreamingTexture st;
     st.Texture = Texture;
-    st.ResidentMips = Texture->ResidentMips;
-    st.RequestedMips = Texture->TotalMipLevels;  // Request all mips initially
+    st.ResidentMips = Texture->getResidentMips();
+    st.RequestedMips = Texture->getTotalMips();  // Request all mips initially
     st.Priority = 1.0f;
     st.Distance = 1000.0f;  // Default distance
 
     StreamingTextures.Add(st);
 
-    MR_LOG_INFO("Texture registered: " + Texture->FilePath + 
-                " (Mips: " + std::to_string(Texture->TotalMipLevels) + ")");
+    MR_LOG(LogTextureStreaming, Log, "Texture registered: %s (Mips: %u)", 
+           Texture->getFilePath().c_str(), Texture->getTotalMips());
 }
 
-void FTextureStreamingManager::UnregisterTexture(FTexture* Texture) {
+void FTextureStreamingManager::UnregisterTexture(MonsterEngine::FTexture2D* Texture) {
     if (!Texture || !bInitialized) return;
 
     std::scoped_lock lock(StreamingMutex);
@@ -128,7 +109,7 @@ void FTextureStreamingManager::UnregisterTexture(FTexture* Texture) {
 
     if (it != StreamingTextures.end()) {
         StreamingTextures.SetNum(it - StreamingTextures.begin());
-        MR_LOG_INFO("Texture unregistered: " + Texture->FilePath);
+        MR_LOG(LogTextureStreaming, Log, "Texture unregistered: %s", Texture->getFilePath().c_str());
     }
 }
 
@@ -159,9 +140,8 @@ SIZE_T FTextureStreamingManager::GetPoolSize() const {
 void FTextureStreamingManager::SetPoolSize(SIZE_T NewSize) {
     if (NewSize == PoolSize) return;
 
-    MR_LOG_INFO("Changing texture pool size: " + 
-                std::to_string(PoolSize / 1024 / 1024) + "MB -> " + 
-                std::to_string(NewSize / 1024 / 1024) + "MB");
+    MR_LOG(LogTextureStreaming, Log, "Changing texture pool size: %llu MB -> %llu MB", 
+           PoolSize / 1024 / 1024, NewSize / 1024 / 1024);
 
     // TODO: Implement pool resize (requires careful migration of existing allocations)
     // For now, just update the size
@@ -179,13 +159,14 @@ void FTextureStreamingManager::GetStreamingStats(FStreamingStats& OutStats) {
     for (const auto& st : StreamingTextures) {
         // Add safety check
         if (!st.Texture) {
-            MR_LOG_WARNING("GetStreamingStats: Found null texture pointer");
+            MR_LOG(LogTextureStreaming, Warning, "GetStreamingStats: Found null texture pointer");
             continue;
         }
         
         // Validate texture object
-        if (st.Texture->TotalMipLevels == 0 || st.Texture->TotalMipLevels > 16) {
-            MR_LOG_ERROR("GetStreamingStats: Invalid texture detected");
+        uint32 totalMips = st.Texture->getTotalMips();
+        if (totalMips == 0 || totalMips > 16) {
+            MR_LOG(LogTextureStreaming, Error, "GetStreamingStats: Invalid texture detected");
             continue;
         }
         if (st.RequestedMips != st.ResidentMips) {
@@ -223,13 +204,14 @@ void FTextureStreamingManager::UpdatePriorities() {
     for (auto& st : StreamingTextures) {
         // Add stricter safety check
         if (!st.Texture) {
-            MR_LOG_WARNING("UpdatePriorities: Found null texture pointer");
+            MR_LOG(LogTextureStreaming, Warning, "UpdatePriorities: Found null texture pointer");
             continue;
         }
         
         // Validate texture object
-        if (st.Texture->TotalMipLevels == 0 || st.Texture->TotalMipLevels > 16) {
-            MR_LOG_ERROR("UpdatePriorities: Invalid texture detected, skipping");
+        uint32 totalMips = st.Texture->getTotalMips();
+        if (totalMips == 0 || totalMips > 16) {
+            MR_LOG(LogTextureStreaming, Error, "UpdatePriorities: Invalid texture detected, skipping");
             continue;
         }
 
@@ -248,11 +230,11 @@ void FTextureStreamingManager::UpdatePriorities() {
 
         // Determine requested mips based on priority
         if (st.Priority > 0.8f) {
-            st.RequestedMips = st.Texture->TotalMipLevels;  // All mips
+            st.RequestedMips = totalMips;  // All mips
         } else if (st.Priority > 0.5f) {
-            st.RequestedMips = std::max(1u, st.Texture->TotalMipLevels - 2);  // All but 2 lowest
+            st.RequestedMips = std::max(1u, totalMips - 2);  // All but 2 lowest
         } else if (st.Priority > 0.2f) {
-            st.RequestedMips = std::max(1u, st.Texture->TotalMipLevels / 2);  // Half mips
+            st.RequestedMips = std::max(1u, totalMips / 2);  // Half mips
         } else {
             st.RequestedMips = 1;  // Only top mip
         }
@@ -277,13 +259,13 @@ void FTextureStreamingManager::ProcessStreamingRequests() {
     for (auto* st : sortedTextures) {
         // Add safety check
         if (!st || !st->Texture) {
-            MR_LOG_WARNING("ProcessStreamingRequests: Found null pointer");
+            MR_LOG(LogTextureStreaming, Warning, "ProcessStreamingRequests: Found null pointer");
             continue;
         }
         
         // Validate texture object
-        if (st->Texture->TotalMipLevels == 0 || st->Texture->TotalMipLevels > 16) {
-            MR_LOG_ERROR("ProcessStreamingRequests: Invalid texture detected");
+        if (st->Texture->getTotalMips() == 0 || st->Texture->getTotalMips() > 16) {
+            MR_LOG(LogTextureStreaming, Error, "ProcessStreamingRequests: Invalid texture detected");
             continue;
         }
 
@@ -335,7 +317,7 @@ void FTextureStreamingManager::StreamInMips(FStreamingTexture* StreamingTexture)
 void FTextureStreamingManager::StreamOutMips(FStreamingTexture* StreamingTexture) {
     if (!StreamingTexture || !StreamingTexture->Texture) return;
 
-    FTexture* texture = StreamingTexture->Texture;
+    MonsterEngine::FTexture2D* texture = StreamingTexture->Texture;
     uint32 currentMips = StreamingTexture->ResidentMips;
     uint32 targetMips = StreamingTexture->RequestedMips;
 
@@ -343,17 +325,18 @@ void FTextureStreamingManager::StreamOutMips(FStreamingTexture* StreamingTexture
 
     // Free memory for removed mips
     for (uint32 mip = targetMips; mip < currentMips; ++mip) {
-        if (texture->MipData[mip]) {
-            TexturePool->Free(texture->MipData[mip]);
-            texture->MipData[mip] = nullptr;
+        void* mipData = texture->getMipData(mip);
+        if (mipData) {
+            TexturePool->Free(mipData);
         }
     }
 
     StreamingTexture->ResidentMips = targetMips;
-    texture->ResidentMips = targetMips;
+    // Update texture's resident mips
+    texture->updateResidentMips(targetMips, nullptr);
 
-    MR_LOG_INFO("Streamed out mips: " + texture->FilePath + 
-                " (Mips " + std::to_string(currentMips) + " -> " + std::to_string(targetMips) + ")");
+    MR_LOG(LogTextureStreaming, Log, "Streamed out mips: %s (Mips %u -> %u)", 
+           texture->getFilePath().c_str(), currentMips, targetMips);
 }
 
 bool FTextureStreamingManager::EvictLowPriorityTextures(SIZE_T RequiredSize) {
@@ -389,7 +372,7 @@ bool FTextureStreamingManager::EvictLowPriorityTextures(SIZE_T RequiredSize) {
     return freedSpace >= RequiredSize;
 }
 
-void FTextureStreamingManager::StartAsyncMipLoad(FTexture* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory) {
+void FTextureStreamingManager::StartAsyncMipLoad(MonsterEngine::FTexture2D* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory) {
     // Reference: UE5's FTextureStreamIn::DoGetMipData()
     
     if (!Texture || !DestMemory) {
@@ -415,7 +398,7 @@ void FTextureStreamingManager::StartAsyncMipLoad(FTexture* Texture, uint32 Start
     MR_LOG(LogTextureStreaming, VeryVerbose, "Queued async mip load (Mips %u -> %u)", StartMip, EndMip);
 }
 
-void FTextureStreamingManager::OnMipLoadComplete(FTexture* Texture, bool bSuccess, void* LoadedData, SIZE_T DataSize) {
+void FTextureStreamingManager::OnMipLoadComplete(MonsterEngine::FTexture2D* Texture, bool bSuccess, void* LoadedData, SIZE_T DataSize) {
     // Reference: UE5's FTextureStreamIn::FinalizeNewMips()
     
     if (!Texture) {
@@ -436,7 +419,7 @@ void FTextureStreamingManager::OnMipLoadComplete(FTexture* Texture, bool bSucces
         if (st.Texture == Texture) {
             // Update resident mips
             st.ResidentMips = st.RequestedMips;
-            Texture->ResidentMips = st.RequestedMips;
+            Texture->updateResidentMips(st.RequestedMips, nullptr);
             
             MR_LOG(LogTextureStreaming, Log, "Async mip load completed successfully (ResidentMips: %u)", 
                    st.ResidentMips);
@@ -447,31 +430,32 @@ void FTextureStreamingManager::OnMipLoadComplete(FTexture* Texture, bool bSucces
     MR_LOG(LogTextureStreaming, Warning, "Texture not found in streaming list during load completion");
 }
 
-float FTextureStreamingManager::CalculateScreenSize(FTexture* Texture) {
+float FTextureStreamingManager::CalculateScreenSize(MonsterEngine::FTexture2D* Texture) {
     if (!Texture) return 0.0f;
 
     // Simplified screen size calculation
     // TODO: Implement proper screen space projection
-    return std::min(1.0f, (float)Texture->Width / 1920.0f);
+    return std::min(1.0f, (float)Texture->getWidth() / 1920.0f);
 }
 
-SIZE_T FTextureStreamingManager::CalculateMipSize(FTexture* Texture, uint32 StartMip, uint32 EndMip) {
+SIZE_T FTextureStreamingManager::CalculateMipSize(MonsterEngine::FTexture2D* Texture, uint32 StartMip, uint32 EndMip) {
     // Add safety check
     if (!Texture) {
-        MR_LOG_WARNING("CalculateMipSize: Texture pointer is null");
+        MR_LOG(LogTextureStreaming, Warning, "CalculateMipSize: Texture pointer is null");
         return 0;
     }
 
+    uint32 totalMips = Texture->getTotalMips();
     // Validate pointer is still valid (basic check)
-    if (Texture->TotalMipLevels == 0 || Texture->TotalMipLevels > 16) {
-        MR_LOG_ERROR("CalculateMipSize: Invalid texture (TotalMipLevels = " + 
-                     std::to_string(Texture->TotalMipLevels) + ")");
+    if (totalMips == 0 || totalMips > 16) {
+        MR_LOG(LogTextureStreaming, Error, "CalculateMipSize: Invalid texture (TotalMipLevels = %u)", 
+               totalMips);
         return 0;
     }
 
     SIZE_T totalSize = 0;
-    for (uint32 mip = StartMip; mip < EndMip && mip < Texture->TotalMipLevels; ++mip) {
-        totalSize += Texture->SizePerMip[mip];
+    for (uint32 mip = StartMip; mip < EndMip && mip < totalMips; ++mip) {
+        totalSize += Texture->getMipSize(mip);
     }
     return totalSize;
 }
