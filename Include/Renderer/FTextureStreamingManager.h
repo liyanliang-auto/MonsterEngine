@@ -20,6 +20,7 @@ using MonsterEngine::MakeUnique;
 // Forward declarations
 class FTexture;
 class FTexturePool;
+class FAsyncTextureLoadManager;
 
 /**
  * FTextureStreamingManager - Manages streaming of texture mip levels
@@ -91,7 +92,8 @@ private:
     
     // Helper methods
     bool EvictLowPriorityTextures(SIZE_T RequiredSize);
-    void LoadMipsFromDisk(FTexture* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory);
+    void StartAsyncMipLoad(FTexture* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory);
+    void OnMipLoadComplete(FTexture* Texture, bool bSuccess, void* LoadedData, SIZE_T DataSize);
     float CalculateScreenSize(FTexture* Texture);
     SIZE_T CalculateMipSize(FTexture* Texture, uint32 StartMip, uint32 EndMip);
 

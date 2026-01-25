@@ -19,6 +19,8 @@
 #include "Renderer/SceneView.h"
 #include "Renderer/MeshBatch.h"
 #include "Renderer/MeshElementCollector.h"
+#include "Engine/SceneTypes.h"
+#include "Engine/PrimitiveSceneInfo.h"
 #include "Engine/LightSceneInfo.h"
 #include "Engine/LightSceneProxy.h"
 #include "Engine/PrimitiveSceneProxy.h"
@@ -189,9 +191,9 @@ void FOpaquePass::Execute(FRenderPassContext& Context)
            NumPrimitives, NumLights);
     
     // Store RHI device for material uniform buffer creation
-    if (!RHIDevice && Context.RHICmdList)
+    if (!RHIDevice && Context.RHIDevice)
     {
-        RHIDevice = Context.RHICmdList->getDevice();
+        RHIDevice = Context.RHIDevice;
     }
     
     // Create material uniform buffer if not already created
@@ -200,7 +202,7 @@ void FOpaquePass::Execute(FRenderPassContext& Context)
         MonsterRender::RHI::BufferDesc BufferDesc;
         BufferDesc.size = sizeof(FMaterialUniformBuffer);
         BufferDesc.usage = MonsterRender::RHI::EResourceUsage::UniformBuffer;
-        BufferDesc.memoryUsage = MonsterRender::RHI::EMemoryUsage::CPU_TO_GPU;
+        BufferDesc.memoryUsage = MonsterRender::RHI::EMemoryUsage::Upload;
         BufferDesc.debugName = "MaterialUniformBuffer";
         
         MaterialUniformBuffer = RHIDevice->createBuffer(BufferDesc);
@@ -899,7 +901,7 @@ void FShadowDepthPass::SetupShadowMapTarget(FRenderPassContext& Context)
     // Create shadow map texture if not already created
     if (!GeneratedShadowData.ShadowMapTexture)
     {
-        MonsterRender::RHI::IRHIDevice* Device = Context.RHICmdList->getDevice();
+        MonsterRender::RHI::IRHIDevice* Device = Context.RHIDevice;
         if (!Device)
         {
             MR_LOG(LogForwardRenderer, Error, "Failed to get RHI device for shadow map creation");
@@ -974,9 +976,9 @@ FMatrix FShadowDepthPass::CalculateLightViewProjection(FRenderPassContext& Conte
     }
     
     // Get light type and direction
-    FLightSceneProxy::ELightType LightType = Proxy->GetLightType();
+    ELightType LightType = Proxy->GetLightType();
     
-    if (LightType == FLightSceneProxy::ELightType::Directional)
+    if (LightType == ELightType::Directional)
     {
         // Directional light shadow mapping
         // Reference: UE5 FDirectionalLightSceneProxy::GetWholeSceneShadowProjection
@@ -1031,7 +1033,7 @@ FMatrix FShadowDepthPass::CalculateLightViewProjection(FRenderPassContext& Conte
         
         return LightViewProjection;
     }
-    else if (LightType == FLightSceneProxy::ELightType::Spot)
+    else if (LightType == ELightType::Spot)
     {
         // Spot light shadow mapping
         // TODO: Implement spot light perspective projection
@@ -1040,7 +1042,7 @@ FMatrix FShadowDepthPass::CalculateLightViewProjection(FRenderPassContext& Conte
         MR_LOG(LogForwardRenderer, Warning, "Spot light shadows not yet implemented");
         return FMatrix::Identity;
     }
-    else if (LightType == FLightSceneProxy::ELightType::Point)
+    else if (LightType == ELightType::Point)
     {
         // Point light shadow mapping (cubemap)
         // TODO: Implement point light cubemap projection
@@ -1114,15 +1116,13 @@ void FShadowDepthPass::RenderShadowCasters(FRenderPassContext& Context, const FM
         if (CubeProxy)
         {
             // Update model matrix if needed
-            CubeProxy->UpdateModelMatrix(Primitive->GetLocalToWorld());
+            CubeProxy->UpdateModelMatrix(Proxy->GetLocalToWorld());
             
             // Draw cube for shadow map using light's view-projection
             // The Draw method will use depth-only pipeline internally
             CubeProxy->DrawDepthOnly(
                 Context.RHICmdList,
-                LightViewProjection,
-                FMatrix::Identity,  // No separate projection needed
-                LightPosition
+                LightViewProjection
             );
             
             NumShadowCasters++;
@@ -1134,19 +1134,9 @@ void FShadowDepthPass::RenderShadowCasters(FRenderPassContext& Context, const FM
         MonsterEngine::FFloorSceneProxy* FloorProxy = dynamic_cast<MonsterEngine::FFloorSceneProxy*>(Proxy);
         if (FloorProxy)
         {
-            // Update model matrix if needed
-            FloorProxy->UpdateModelMatrix(Primitive->GetLocalToWorld());
-            
-            // Draw floor for shadow map
-            FloorProxy->DrawDepthOnly(
-                Context.RHICmdList,
-                LightViewProjection,
-                FMatrix::Identity,
-                LightPosition
-            );
-            
-            NumShadowCasters++;
-            MR_LOG(LogForwardRenderer, VeryVerbose, "Rendered floor shadow caster");
+            // TODO: Implement DrawDepthOnly for FFloorSceneProxy
+            // For now, skip floor shadow casting
+            MR_LOG(LogForwardRenderer, VeryVerbose, "Floor shadow casting not yet implemented");
             continue;
         }
         

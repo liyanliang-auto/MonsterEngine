@@ -2,11 +2,10 @@
 // MonsterEngine - Texture Streaming Manager Implementation
 
 #include "Renderer/FTextureStreamingManager.h"
+#include "Renderer/FAsyncTextureLoadRequest.h"
 #include "Core/HAL/FMemory.h"
 #include "Core/Log.h"
 #include <algorithm>
-#include <thread>
-#include <future>
 
 namespace MonsterRender {
 
@@ -50,37 +49,43 @@ FTextureStreamingManager::~FTextureStreamingManager() {
 
 bool FTextureStreamingManager::Initialize(SIZE_T TexturePoolSizeBytes) {
     if (bInitialized) {
-        MR_LOG_WARNING("FTextureStreamingManager already initialized");
+        MR_LOG(LogTextureStreaming, Warning, "FTextureStreamingManager already initialized");
         return true;
     }
 
-    MR_LOG_INFO("Initializing FTextureStreamingManager with pool size: " + 
-                std::to_string(TexturePoolSizeBytes / 1024 / 1024) + "MB");
+    MR_LOG(LogTextureStreaming, Log, "Initializing FTextureStreamingManager with pool size: %llu MB", 
+           TexturePoolSizeBytes / 1024 / 1024);
 
     // Create texture pool
     TexturePool = MakeUnique<FTexturePool>(TexturePoolSizeBytes);
     PoolSize = TexturePoolSizeBytes;
 
+    // Initialize async load manager
+    FAsyncTextureLoadManager::Get().Initialize(4); // Max 4 concurrent loads
+
     bInitialized = true;
-    MR_LOG_INFO("FTextureStreamingManager initialized successfully");
+    MR_LOG(LogTextureStreaming, Log, "FTextureStreamingManager initialized successfully");
     return true;
 }
 
 void FTextureStreamingManager::Shutdown() {
     if (!bInitialized) return;
 
-    MR_LOG_INFO("Shutting down FTextureStreamingManager...");
+    MR_LOG(LogTextureStreaming, Log, "Shutting down FTextureStreamingManager...");
 
     std::scoped_lock lock(StreamingMutex);
 
+    // Shutdown async load manager first
+    FAsyncTextureLoadManager::Get().Shutdown();
+
     // Clear all streaming textures
-    StreamingTextures.clear();
+    StreamingTextures.Clear();
 
     // Release texture pool
-    TexturePool.reset();
+    TexturePool.Reset();
 
     bInitialized = false;
-    MR_LOG_INFO("FTextureStreamingManager shut down");
+    MR_LOG(LogTextureStreaming, Log, "FTextureStreamingManager shut down");
 }
 
 void FTextureStreamingManager::RegisterTexture(FTexture* Texture) {
@@ -130,12 +135,15 @@ void FTextureStreamingManager::UnregisterTexture(FTexture* Texture) {
 void FTextureStreamingManager::UpdateResourceStreaming(float DeltaTime) {
     if (!bInitialized) return;
 
+    // Step 1: Process completed async load requests (outside lock)
+    FAsyncTextureLoadManager::Get().ProcessCompletedRequests(10);
+
     std::scoped_lock lock(StreamingMutex);
 
-    // Step 1: Update priorities based on distance, importance, etc.
+    // Step 2: Update priorities based on distance, importance, etc.
     UpdatePriorities();
 
-    // Step 2: Process streaming requests (load/unload mips)
+    // Step 3: Process streaming requests (load/unload mips)
     ProcessStreamingRequests();
 }
 
@@ -305,7 +313,7 @@ void FTextureStreamingManager::StreamInMips(FStreamingTexture* StreamingTexture)
     if (TexturePool->GetFreeSize() < sizeNeeded) {
         // Try to evict low-priority textures
         if (!EvictLowPriorityTextures(sizeNeeded)) {
-            MR_LOG_WARNING("Cannot stream in mips: insufficient memory");
+            MR_LOG(LogTextureStreaming, Warning, "Cannot stream in mips: insufficient memory");
             return;
         }
     }
@@ -313,20 +321,15 @@ void FTextureStreamingManager::StreamInMips(FStreamingTexture* StreamingTexture)
     // Allocate memory from pool
     void* mipMemory = TexturePool->Allocate(sizeNeeded, 256);
     if (!mipMemory) {
-        MR_LOG_WARNING("Failed to allocate memory for mip streaming");
+        MR_LOG(LogTextureStreaming, Warning, "Failed to allocate memory for mip streaming");
         return;
     }
 
-    // FIXED: Use synchronous loading to avoid dangling pointer access
-    // Reason: detached thread may still run after texture object is destroyed
-    // TODO: Use FAsyncFileIO for true async loading (with lifecycle management)
-    LoadMipsFromDisk(texture, currentMips, targetMips, mipMemory);
-    
-    // Update resident mips
-    StreamingTexture->ResidentMips = targetMips;
+    // Start async load (non-blocking)
+    StartAsyncMipLoad(texture, currentMips, targetMips, mipMemory);
 
-    MR_LOG_INFO("Streaming in mips: " + texture->FilePath + 
-                " (Mips " + std::to_string(currentMips) + " -> " + std::to_string(targetMips) + ")");
+    MR_LOG(LogTextureStreaming, Log, "Started async streaming in mips (Mips %u -> %u)", 
+           currentMips, targetMips);
 }
 
 void FTextureStreamingManager::StreamOutMips(FStreamingTexture* StreamingTexture) {
@@ -386,18 +389,62 @@ bool FTextureStreamingManager::EvictLowPriorityTextures(SIZE_T RequiredSize) {
     return freedSpace >= RequiredSize;
 }
 
-void FTextureStreamingManager::LoadMipsFromDisk(FTexture* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory) {
-    // Reference: UE5's FTextureStreamIn::DoLoadNewMipsFromDisk()
+void FTextureStreamingManager::StartAsyncMipLoad(FTexture* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory) {
+    // Reference: UE5's FTextureStreamIn::DoGetMipData()
     
-    // TODO: Implement actual file IO
-    // For now, just simulate loading with delay
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (!Texture || !DestMemory) {
+        MR_LOG(LogTextureStreaming, Error, "Invalid texture or destination memory for async load");
+        return;
+    }
 
-    // Update texture's resident mips
-    Texture->ResidentMips = EndMip;
+    // Create async load request with completion callback
+    auto request = MakeUnique<FAsyncTextureLoadRequest>(
+        Texture,
+        StartMip,
+        EndMip,
+        DestMemory,
+        [this, Texture](bool bSuccess, void* LoadedData, SIZE_T DataSize) {
+            // Completion callback (invoked on main thread)
+            OnMipLoadComplete(Texture, bSuccess, LoadedData, DataSize);
+        }
+    );
 
-    MR_LOG_INFO("Loaded mips from disk: " + Texture->FilePath + 
-                " (Mips " + std::to_string(StartMip) + " -> " + std::to_string(EndMip) + ")");
+    // Queue request to async load manager
+    FAsyncTextureLoadManager::Get().QueueLoadRequest(std::move(request));
+
+    MR_LOG(LogTextureStreaming, VeryVerbose, "Queued async mip load (Mips %u -> %u)", StartMip, EndMip);
+}
+
+void FTextureStreamingManager::OnMipLoadComplete(FTexture* Texture, bool bSuccess, void* LoadedData, SIZE_T DataSize) {
+    // Reference: UE5's FTextureStreamIn::FinalizeNewMips()
+    
+    if (!Texture) {
+        MR_LOG(LogTextureStreaming, Error, "Null texture in load completion callback");
+        return;
+    }
+
+    if (!bSuccess) {
+        MR_LOG(LogTextureStreaming, Error, "Async mip load failed for texture");
+        // TODO: Free allocated memory from pool
+        return;
+    }
+
+    // Find streaming texture entry
+    std::scoped_lock lock(StreamingMutex);
+    
+    for (auto& st : StreamingTextures) {
+        if (st.Texture == Texture) {
+            // Update resident mips
+            st.ResidentMips = st.RequestedMips;
+            Texture->ResidentMips = st.RequestedMips;
+            
+            MR_LOG(LogTextureStreaming, Log, "Async mip load completed successfully (ResidentMips: %u)", 
+                   st.ResidentMips);
+            return;
+        }
+    }
+
+    MR_LOG(LogTextureStreaming, Warning, "Texture not found in streaming list during load completion");
 }
 
 float FTextureStreamingManager::CalculateScreenSize(FTexture* Texture) {
