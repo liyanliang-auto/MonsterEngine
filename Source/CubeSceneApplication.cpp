@@ -30,6 +30,7 @@
 #include "Renderer/SceneView.h"
 #include "Renderer/Scene.h"
 #include "Renderer/FTextureStreamingManager.h"
+#include "Renderer/AsyncTextureLoader.h"
 #include "Editor/ImGui/ImGuiContext.h"
 #include "Editor/ImGui/ImGuiRenderer.h"
 #include "Editor/ImGui/ImGuiInputHandler.h"
@@ -253,6 +254,8 @@ CubeSceneApplication::CubeSceneApplication()
     , m_pendingViewportHeight(600)
     , m_bViewportTextureReady(false)
     , m_bTextureStreamingInitialized(false)
+    , m_bWoodTextureLoading(false)
+    , m_bWoodTextureLoaded(false)
 {
     m_lightColor[0] = 1.0f;
     m_lightColor[1] = 0.95f;
@@ -400,6 +403,12 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
     if (m_bTextureStreamingInitialized)
     {
         MonsterRender::FTextureStreamingManager::Get().UpdateResourceStreaming(deltaTime);
+    }
+    
+    // Process completed async texture loads
+    if (m_asyncTextureLoader)
+    {
+        m_asyncTextureLoader->processCompletedLoads();
     }
     
     // Update cube rotation speed from UI for all cubes
@@ -934,7 +943,15 @@ void CubeSceneApplication::onShutdown()
     
     // CRITICAL: Clean up in reverse order of initialization to avoid dangling pointers
     
-    // Step 0: Shutdown texture streaming manager first (before releasing textures)
+    // Step 0: Shutdown async texture loader and texture streaming manager first (before releasing textures)
+    if (m_asyncTextureLoader)
+    {
+        MR_LOG(LogCubeSceneApp, Log, "Shutting down async texture loader...");
+        m_asyncTextureLoader->shutdown();
+        m_asyncTextureLoader.Reset();
+        MR_LOG(LogCubeSceneApp, Log, "Async texture loader shutdown complete");
+    }
+    
     if (m_bTextureStreamingInitialized)
     {
         MR_LOG(LogCubeSceneApp, Log, "Shutting down texture streaming manager...");
@@ -1044,6 +1061,13 @@ bool CubeSceneApplication::initializeScene()
         {
             MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize texture streaming manager");
         }
+    }
+    
+    // Initialize async texture loader (2 worker threads)
+    if (!m_asyncTextureLoader)
+    {
+        m_asyncTextureLoader = MakeUnique<FAsyncTextureLoader>(2);
+        MR_LOG(LogCubeSceneApp, Log, "Async texture loader initialized");
     }
     
     // Create scene
@@ -2078,7 +2102,7 @@ bool CubeSceneApplication::initializeShadowMap()
 
 bool CubeSceneApplication::loadWoodTexture()
 {
-    MR_LOG(LogCubeSceneApp, Log, "Loading wood texture using FTexture2D...");
+    MR_LOG(LogCubeSceneApp, Log, "Starting async wood texture loading...");
     
     if (!m_device)
     {
@@ -2086,49 +2110,59 @@ bool CubeSceneApplication::loadWoodTexture()
         return false;
     }
     
-    // Load texture using stb_image
-    int32 width = 0;
-    int32 height = 0;
-    int32 channels = 0;
-    const char* texturePath = "E:\\MonsterEngine\\resources\\textures\\wood.png";
-    
-    // Flip texture vertically for OpenGL/Vulkan compatibility
-    stbi_set_flip_vertically_on_load(true);
-    
-    unsigned char* imageData = stbi_load(texturePath, &width, &height, &channels, STBI_rgb_alpha);
-    if (!imageData)
+    if (!m_asyncTextureLoader)
     {
-        MR_LOG(LogCubeSceneApp, Error, "Failed to load wood texture from: %s", texturePath);
+        MR_LOG(LogCubeSceneApp, Error, "Cannot load wood texture: async loader not initialized");
         return false;
     }
     
-    MR_LOG(LogCubeSceneApp, Log, "Wood texture loaded: %dx%d, %d channels", width, height, channels);
-    
-    // Calculate number of mip levels
-    uint32 mipLevels = CalculateMipLevels(static_cast<uint32>(width), static_cast<uint32>(height));
-    MR_LOG(LogCubeSceneApp, Log, "Generating %u mip levels for wood texture", mipLevels);
-    
-    // Generate mipmap chain using CPU
-    TArray<unsigned char*> mipData;
-    TArray<uint32> mipSizes;
-    if (!GenerateMipmapsCPU(imageData, static_cast<uint32>(width), static_cast<uint32>(height), 
-                            mipLevels, mipData, mipSizes))
+    if (m_bWoodTextureLoading)
     {
-        MR_LOG(LogCubeSceneApp, Error, "Failed to generate mipmaps for wood texture");
-        stbi_image_free(imageData);
-        return false;
+        MR_LOG(LogCubeSceneApp, Warning, "Wood texture is already loading");
+        return true;
     }
     
-    MR_LOG(LogCubeSceneApp, Log, "Successfully generated %u mip levels", mipLevels);
+    // Mark as loading
+    m_bWoodTextureLoading = true;
+    m_bWoodTextureLoaded = false;
+    
+    // Start async texture load with callback
+    FString texturePath = FString("resources/textures/wood.png");
+    
+    m_asyncTextureLoader->loadTextureAsync(
+        texturePath,
+        true, // Generate mipmaps
+        [this](const FTextureLoadResult& Result) {
+            // This callback is called on main thread by processCompletedLoads()
+            _onWoodTextureLoadComplete(Result);
+        }
+    );
+    
+    MR_LOG(LogCubeSceneApp, Log, "Wood texture async load queued: %ls", *texturePath);
+    return true;
+}
+
+void CubeSceneApplication::_onWoodTextureLoadComplete(const MonsterEngine::FTextureLoadResult& Result)
+{
+    m_bWoodTextureLoading = false;
+    
+    if (!Result.bSuccess)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Async wood texture load failed: %ls", *Result.ErrorMessage);
+        return;
+    }
+    
+    MR_LOG(LogCubeSceneApp, Log, "Async wood texture load completed: %ux%u, %u mip levels",
+           Result.Width, Result.Height, Result.MipLevels);
     
     // Create FTexture2D description with full mip chain
     FTexture2DDesc textureDesc;
-    textureDesc.Width = static_cast<uint32>(width);
-    textureDesc.Height = static_cast<uint32>(height);
-    textureDesc.MipLevels = mipLevels;
+    textureDesc.Width = Result.Width;
+    textureDesc.Height = Result.Height;
+    textureDesc.MipLevels = Result.MipLevels;
     textureDesc.Format = RHI::EPixelFormat::R8G8B8A8_UNORM;
     textureDesc.bSRGB = true;
-    textureDesc.bGenerateMips = false; // Already generated on CPU
+    textureDesc.bGenerateMips = false; // Already generated by async loader
     textureDesc.DebugName = FName("WoodTexture");
     
     // Create FTexture2D object
@@ -2136,9 +2170,8 @@ bool CubeSceneApplication::loadWoodTexture()
     if (!m_woodTexture->initialize(m_device, textureDesc))
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to initialize FTexture2D for wood texture");
-        stbi_image_free(imageData);
         m_woodTexture.Reset();
-        return false;
+        return;
     }
     
     // Get the underlying RHI texture for data upload
@@ -2146,19 +2179,15 @@ bool CubeSceneApplication::loadWoodTexture()
     if (!rhiTexture)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to get RHI texture from FTexture2D");
-        stbi_image_free(imageData);
         m_woodTexture.Reset();
-        return false;
+        return;
     }
-    
-    // Free original stb_image data (we have mipData now)
-    stbi_image_free(imageData);
     
     // Calculate total size needed for all mip levels
     uint32 totalMipSize = 0;
-    for (uint32 i = 0; i < mipLevels; ++i)
+    for (uint32 i = 0; i < Result.MipLevels; ++i)
     {
-        totalMipSize += mipSizes[i];
+        totalMipSize += Result.MipSizes[i];
     }
     
     MR_LOG(LogCubeSceneApp, Log, "Total mipmap chain size: %u bytes", totalMipSize);
@@ -2174,13 +2203,8 @@ bool CubeSceneApplication::loadWoodTexture()
     if (!stagingBuffer)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to create staging buffer for wood texture mipmaps");
-        
-        // Clean up mip data
-        for (uint32 i = 0; i < mipData.Num(); ++i)
-        {
-            FMemory::Free(mipData[i]);
-        }
-        return false;
+        m_woodTexture.Reset();
+        return;
     }
     
     // Copy all mip levels to staging buffer
@@ -2188,21 +2212,16 @@ bool CubeSceneApplication::loadWoodTexture()
     if (!mappedData)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to map staging buffer");
-        
-        // Clean up mip data
-        for (uint32 i = 0; i < mipData.Num(); ++i)
-        {
-            FMemory::Free(mipData[i]);
-        }
-        return false;
+        m_woodTexture.Reset();
+        return;
     }
     
     uint32 bufferOffset = 0;
-    for (uint32 i = 0; i < mipLevels; ++i)
+    for (uint32 i = 0; i < Result.MipLevels; ++i)
     {
         FMemory::Memcpy(static_cast<unsigned char*>(mappedData) + bufferOffset, 
-                        mipData[i], mipSizes[i]);
-        bufferOffset += mipSizes[i];
+                        Result.MipData[i], Result.MipSizes[i]);
+        bufferOffset += Result.MipSizes[i];
     }
     
     stagingBuffer->unmap();
@@ -2212,7 +2231,8 @@ bool CubeSceneApplication::loadWoodTexture()
     if (!cmdList)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to get immediate command list");
-        return false;
+        m_woodTexture.Reset();
+        return;
     }
     
     // Cast to Vulkan command list for texture upload
@@ -2220,7 +2240,8 @@ bool CubeSceneApplication::loadWoodTexture()
     if (!vulkanCmdList)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to cast to Vulkan command list");
-        return false;
+        m_woodTexture.Reset();
+        return;
     }
     
     // Begin command recording if not already recording
@@ -2239,10 +2260,10 @@ bool CubeSceneApplication::loadWoodTexture()
     
     // Upload all mip levels to GPU
     bufferOffset = 0;
-    uint32 currentWidth = static_cast<uint32>(width);
-    uint32 currentHeight = static_cast<uint32>(height);
+    uint32 currentWidth = Result.Width;
+    uint32 currentHeight = Result.Height;
     
-    for (uint32 mipLevel = 0; mipLevel < mipLevels; ++mipLevel)
+    for (uint32 mipLevel = 0; mipLevel < Result.MipLevels; ++mipLevel)
     {
         // Copy mip level from staging buffer to texture
         vulkanCmdList->copyBufferToTexture(
@@ -2260,12 +2281,12 @@ bool CubeSceneApplication::loadWoodTexture()
                mipLevel, currentWidth, currentHeight);
         
         // Move to next mip level
-        bufferOffset += mipSizes[mipLevel];
+        bufferOffset += Result.MipSizes[mipLevel];
         currentWidth = FMath::Max(1u, currentWidth >> 1);
         currentHeight = FMath::Max(1u, currentHeight >> 1);
     }
     
-    MR_LOG(LogCubeSceneApp, Log, "Uploaded %u mip levels to GPU", mipLevels);
+    MR_LOG(LogCubeSceneApp, Log, "Uploaded %u mip levels to GPU", Result.MipLevels);
     
     // Transition texture from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
     vulkanCmdList->transitionTextureLayoutSimple(
@@ -2296,15 +2317,7 @@ bool CubeSceneApplication::loadWoodTexture()
         vulkanDevice->getCommandListContext()->refreshCommandBuffer();
     }
     
-    // Clean up CPU mip data (no longer needed after GPU upload)
-    for (uint32 i = 0; i < mipData.Num(); ++i)
-    {
-        FMemory::Free(mipData[i]);
-    }
-    mipData.Empty();
-    mipSizes.Empty();
-    
-    MR_LOG(LogCubeSceneApp, Log, "Cleaned up CPU mipmap data");
+    MR_LOG(LogCubeSceneApp, Log, "GPU upload completed");
     
     // Register texture for layout transition tracking with correct mip levels
     if (m_woodTexture && m_woodTexture->getRHITexture())
@@ -2313,8 +2326,8 @@ bool CubeSceneApplication::loadWoodTexture()
         if (vulkanDevice && vulkanTexture)
         {
             VkImage image = vulkanTexture->getImage();
-            vulkanDevice->registerTextureForLayoutTransition(image, mipLevels, 1);
-            MR_LOG(LogCubeSceneApp, Log, "Registered texture with %u mip levels for layout transition", mipLevels);
+            vulkanDevice->registerTextureForLayoutTransition(image, Result.MipLevels, 1);
+            MR_LOG(LogCubeSceneApp, Log, "Registered texture with %u mip levels for layout transition", Result.MipLevels);
         }
     }
     
@@ -2331,10 +2344,9 @@ bool CubeSceneApplication::loadWoodTexture()
     if (!m_woodSampler)
     {
         MR_LOG(LogCubeSceneApp, Error, "Failed to create wood sampler");
-        return false;
+        m_woodTexture.Reset();
+        return;
     }
-    
-    MR_LOG(LogCubeSceneApp, Log, "Wood texture loaded successfully");
     
     // Set texture to floor proxy if it exists
     if (m_floorActor)
@@ -2352,7 +2364,10 @@ bool CubeSceneApplication::loadWoodTexture()
         }
     }
     
-    return true;
+    // Mark as loaded
+    m_bWoodTextureLoaded = true;
+    
+    MR_LOG(LogCubeSceneApp, Log, "Async wood texture loading completed successfully");
 }
 
 FMatrix CubeSceneApplication::calculateLightViewProjection(
