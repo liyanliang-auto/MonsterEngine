@@ -16,11 +16,8 @@
 namespace MonsterRender {
 namespace RDG {
 
-// Import commonly used types into RDG namespace
-using MonsterEngine::FString;
-using MonsterEngine::TArray;
-using MonsterEngine::TMap;
-using MonsterEngine::TFunction;
+// Note: Do not use 'using' declarations here to avoid namespace conflicts
+// Always use fully qualified names like MonsterEngine::FString
 
 /**
  * Resource transition record for barrier insertion
@@ -75,7 +72,7 @@ public:
      * @param rhiDevice RHI device for resource allocation
      * @param debugName Debug name for this graph
      */
-    explicit FRDGBuilder(RHI::IRHIDevice* rhiDevice, const MonsterEngine::FString& debugName = "RDG");
+    explicit FRDGBuilder(RHI::IRHIDevice* rhiDevice, const MonsterEngine::FString& debugName);
     
     ~FRDGBuilder();
     
@@ -210,15 +207,15 @@ private:
     MonsterEngine::FString m_debugName;
     
     // Resources
-    TArray<FRDGTexture*> m_textures;
-    TArray<FRDGBuffer*> m_buffers;
+    MonsterEngine::TArray<FRDGTexture*> m_textures;
+    MonsterEngine::TArray<FRDGBuffer*> m_buffers;
     
     // Passes
-    TArray<FRDGPass*> m_passes;
-    TArray<FRDGPass*> m_sortedPasses;  // After topological sort
+    MonsterEngine::TArray<FRDGPass*> m_passes;
+    MonsterEngine::TArray<FRDGPass*> m_sortedPasses;  // After topological sort
     
     // Transitions (computed during compilation)
-    TMap<FRDGPassHandle, TArray<FRDGTransition>> m_passTransitions;
+    MonsterEngine::TMap<FRDGPassHandle, MonsterEngine::TArray<FRDGTransition>> m_passTransitions;
     
     // Execution state
     bool m_bCompiled = false;
