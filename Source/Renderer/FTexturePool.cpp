@@ -19,7 +19,8 @@ FTexturePool::FTexturePool(SIZE_T PoolSizeBytes)
     // Allocate pool memory
     PoolMemory = FMemory::Malloc(PoolSizeBytes, 256);  // 256-byte alignment for GPU
     if (!PoolMemory) {
-        MR_LOG_ERROR("Failed to allocate texture pool: " + std::to_string(PoolSizeBytes / 1024 / 1024) + "MB");
+        MR_LOG(LogTextureStreaming, Error, "Failed to allocate texture pool: %llu MB", 
+               PoolSizeBytes / 1024 / 1024);
         return;
     }
 
@@ -29,7 +30,7 @@ FTexturePool::FTexturePool(SIZE_T PoolSizeBytes)
     FreeList->Size = PoolSizeBytes;
     FreeList->Next = nullptr;
 
-    MR_LOG_INFO("FTexturePool created: " + std::to_string(PoolSizeBytes / 1024 / 1024) + "MB");
+    MR_LOG(LogTextureStreaming, Log, "FTexturePool created: %llu MB", PoolSizeBytes / 1024 / 1024);
 }
 
 FTexturePool::~FTexturePool() {
@@ -47,7 +48,7 @@ FTexturePool::~FTexturePool() {
         PoolMemory = nullptr;
     }
 
-    MR_LOG_INFO("FTexturePool destroyed");
+    MR_LOG(LogTextureStreaming, Log, "FTexturePool destroyed");
 }
 
 void* FTexturePool::Allocate(SIZE_T Size, SIZE_T Alignment) {
@@ -65,9 +66,8 @@ void* FTexturePool::Allocate(SIZE_T Size, SIZE_T Alignment) {
         return ptr;
     }
 
-    MR_LOG_WARNING("FTexturePool::Allocate failed: out of memory (requested " + 
-                   std::to_string(Size / 1024) + "KB, available " + 
-                   std::to_string((TotalSize - UsedSize) / 1024) + "KB)");
+    MR_LOG(LogTextureStreaming, Warning, "FTexturePool::Allocate failed: out of memory (requested %llu KB, available %llu KB)", 
+           Size / 1024, (TotalSize - UsedSize) / 1024);
     return nullptr;
 }
 
@@ -79,7 +79,7 @@ void FTexturePool::Free(void* Ptr) {
     // Find allocation in map
     FAllocation* FoundAlloc = Allocations.Find(Ptr);
     if (!FoundAlloc) {
-        MR_LOG_WARNING("FTexturePool::Free: pointer not found in allocations");
+        MR_LOG(LogTextureStreaming, Warning, "FTexturePool::Free: pointer not found in allocations");
         return;
     }
 
@@ -90,7 +90,7 @@ void FTexturePool::Free(void* Ptr) {
     AddToFreeList(alloc.Offset, alloc.Size);
     UsedSize -= alloc.Size;
 
-    MR_LOG_DEBUG("FTexturePool::Free: " + std::to_string(alloc.Size / 1024) + "KB freed");
+    MR_LOG(LogTextureStreaming, Verbose, "FTexturePool::Free: %llu KB freed", alloc.Size / 1024);
 }
 
 SIZE_T FTexturePool::GetAllocationSize(void* Ptr) {
@@ -111,7 +111,7 @@ void FTexturePool::Compact() {
     
     MergeFreeRegions();
     
-    MR_LOG_INFO("FTexturePool::Compact completed");
+    MR_LOG(LogTextureStreaming, Log, "FTexturePool::Compact completed");
 }
 
 // Private methods

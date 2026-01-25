@@ -20,7 +20,9 @@ using MonsterEngine::TArray;
 using MonsterEngine::TUniquePtr;
 
 // Forward declarations
-class FTexture;
+namespace MonsterEngine {
+    class FTexture2D;
+}
 
 /**
  * FAsyncTextureLoadRequest - Async texture mip loading request
@@ -52,7 +54,7 @@ public:
      * @param InCallback Completion callback (called on main thread)
      */
     FAsyncTextureLoadRequest(
-        FTexture* InTexture,
+        MonsterEngine::FTexture2D* InTexture,
         uint32 InStartMip,
         uint32 InEndMip,
         void* InDestMemory,
@@ -111,7 +113,7 @@ private:
     // Load mip data from disk (blocking IO)
     bool _loadMipDataFromDisk();
 
-    FTexture* Texture;              // Weak reference to texture
+    MonsterEngine::FTexture2D* Texture;  // Weak reference to texture
     uint32 StartMip;                // Starting mip level
     uint32 EndMip;                  // Ending mip level
     void* DestMemory;               // Destination memory

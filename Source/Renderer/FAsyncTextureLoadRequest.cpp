@@ -4,6 +4,7 @@
 #include "Renderer/FAsyncTextureLoadRequest.h"
 #include "Renderer/FTextureStreamingManager.h"
 #include "Renderer/FTextureFileReader.h"
+#include "Engine/Texture/Texture2D.h"
 #include "Core/HAL/FMemory.h"
 #include "Core/Log.h"
 #include "Math/MathUtility.h"
@@ -12,13 +13,10 @@
 
 namespace MonsterRender {
 
-// Placeholder FTexture class forward declaration
-class FTexture;
-
 // ===== FAsyncTextureLoadRequest Implementation =====
 
 FAsyncTextureLoadRequest::FAsyncTextureLoadRequest(
-    FTexture* InTexture,
+    MonsterEngine::FTexture2D* InTexture,
     uint32 InStartMip,
     uint32 InEndMip,
     void* InDestMemory,
@@ -130,10 +128,10 @@ bool FAsyncTextureLoadRequest::_loadMipDataFromDisk() {
     // Load texture file
     // Reference: UE5 FTexture2DMipDataProvider_IO::GetMips()
     FTextureFileData fileData;
-    bool loadSuccess = FTextureFileReaderFactory::LoadTextureFromFile(Texture->FilePath, fileData);
+    bool loadSuccess = FTextureFileReaderFactory::LoadTextureFromFile(Texture->getFilePath().c_str(), fileData);
     
     if (!loadSuccess) {
-        MR_LOG(LogTextureStreaming, Error, "Failed to load texture file: %s", Texture->FilePath.c_str());
+        MR_LOG(LogTextureStreaming, Error, "Failed to load texture file: %s", Texture->getFilePath().c_str());
         return false;
     }
 
@@ -171,11 +169,8 @@ bool FAsyncTextureLoadRequest::_loadMipDataFromDisk() {
         destPtr += mip.DataSize;
         totalSize += mip.DataSize;
         
-        // Update texture mip info
-        if (mipLevel < 16) {
-            Texture->SizePerMip[mipLevel] = mip.DataSize;
-            Texture->MipData[mipLevel] = static_cast<uint8*>(DestMemory) + (totalSize - mip.DataSize);
-        }
+        // Note: Mip data pointers will be updated by streaming manager
+        // via updateResidentMips() call
     }
 
     // Store loaded data info
@@ -189,7 +184,7 @@ bool FAsyncTextureLoadRequest::_loadMipDataFromDisk() {
     fileData.FreeData();
 
     MR_LOG(LogTextureStreaming, Log, "Loaded mips from disk: %s (Mips %u -> %u, %llu bytes)", 
-           Texture->FilePath.c_str(), StartMip, EndMip, static_cast<uint64>(totalSize));
+           Texture->getFilePath().c_str(), StartMip, EndMip, static_cast<uint64>(totalSize));
     return true;
 }
 
