@@ -142,7 +142,7 @@ private:
 class FRDGPass
 {
 public:
-    FRDGPass(const FString& inName, ERDGPassFlags inFlags)
+    FRDGPass(const MonsterEngine::FString& inName, ERDGPassFlags inFlags)
         : m_name(inName)
         , m_flags(inFlags)
     {}
@@ -150,7 +150,7 @@ public:
     virtual ~FRDGPass() = default;
     
     // Get pass name
-    const FString& getName() const { return m_name; }
+    const MonsterEngine::FString& getName() const { return m_name; }
     
     // Get pass flags
     ERDGPassFlags getFlags() const { return m_flags; }
@@ -169,7 +169,7 @@ public:
     virtual void execute(RHI::IRHICommandList& rhiCmdList) = 0;
     
 protected:
-    FString m_name;
+    MonsterEngine::FString m_name;
     ERDGPassFlags m_flags;
     FRDGPassHandle m_handle;
     bool m_bCulled = false;
@@ -193,7 +193,7 @@ template<typename ExecuteLambdaType>
 class TRDGLambdaPass : public FRDGPass
 {
 public:
-    TRDGLambdaPass(const FString& inName, 
+    TRDGLambdaPass(const MonsterEngine::FString& inName, 
                    ERDGPassFlags inFlags,
                    ExecuteLambdaType&& inExecuteLambda)
         : FRDGPass(inName, inFlags)

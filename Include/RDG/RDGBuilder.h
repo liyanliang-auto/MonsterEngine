@@ -74,7 +74,7 @@ public:
      * @param rhiDevice RHI device for resource allocation
      * @param debugName Debug name for this graph
      */
-    explicit FRDGBuilder(RHI::IRHIDevice* rhiDevice, const FString& debugName = "RDG");
+    explicit FRDGBuilder(RHI::IRHIDevice* rhiDevice, const MonsterEngine::FString& debugName = "RDG");
     
     ~FRDGBuilder();
     
@@ -88,7 +88,7 @@ public:
      * @param desc Texture descriptor
      * @return Handle to the created texture
      */
-    FRDGTextureRef createTexture(const FString& name, const FRDGTextureDesc& desc);
+    FRDGTextureRef createTexture(const MonsterEngine::FString& name, const FRDGTextureDesc& desc);
     
     /**
      * Create a new buffer resource
@@ -96,7 +96,7 @@ public:
      * @param desc Buffer descriptor
      * @return Handle to the created buffer
      */
-    FRDGBufferRef createBuffer(const FString& name, const FRDGBufferDesc& desc);
+    FRDGBufferRef createBuffer(const MonsterEngine::FString& name, const FRDGBufferDesc& desc);
     
     /**
      * Register an external texture (not owned by RDG)
@@ -106,7 +106,7 @@ public:
      * @return Handle to the registered texture
      */
     FRDGTextureRef registerExternalTexture(
-        const FString& name,
+        const MonsterEngine::FString& name,
         RHI::IRHITexture* texture,
         ERHIAccess initialState = ERHIAccess::Unknown);
     
@@ -118,7 +118,7 @@ public:
      * @return Handle to the registered buffer
      */
     FRDGBufferRef registerExternalBuffer(
-        const FString& name,
+        const MonsterEngine::FString& name,
         RHI::IRHIBuffer* buffer,
         ERHIAccess initialState = ERHIAccess::Unknown);
     
@@ -141,7 +141,7 @@ public:
      */
     template<typename SetupLambdaType, typename ExecuteLambdaType>
     FRDGPassRef addPass(
-        const FString& name,
+        const MonsterEngine::FString& name,
         ERDGPassFlags flags,
         SetupLambdaType&& setupFunc,
         ExecuteLambdaType&& executeFunc)
@@ -206,7 +206,7 @@ private:
     
 private:
     RHI::IRHIDevice* m_rhiDevice;
-    FString m_debugName;
+    MonsterEngine::FString m_debugName;
     
     // Resources
     TArray<FRDGTexture*> m_textures;

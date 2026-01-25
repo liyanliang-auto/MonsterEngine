@@ -57,7 +57,8 @@
 namespace MonsterRender
 {
 
-using namespace MonsterEngine;
+using namespace ::MonsterEngine;
+using namespace ::MonsterEngine::Math;
 
 // Use global log category (defined in LogCategories.cpp)
 using MonsterRender::LogCubeSceneApp;
