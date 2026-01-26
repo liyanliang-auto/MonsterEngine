@@ -162,7 +162,7 @@ private:
     SIZE_T UsedSize;
     
     FFreeRegion* FreeList;
-    TMap<void*, FAllocation> Allocations;
+    ::MonsterEngine::TMap<void*, FAllocation> Allocations;
     std::mutex PoolMutex;
 
     // Internal helpers

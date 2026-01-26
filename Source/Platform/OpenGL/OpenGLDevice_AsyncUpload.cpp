@@ -5,7 +5,7 @@
 #include "Platform/OpenGL/OpenGLResources.h"
 #include "Core/Log.h"
 #include "Core/HAL/FMemory.h"
-#include <glad/glad.h>
+#include "glad/glad.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOpenGLAsyncUpload, Log, All);
 

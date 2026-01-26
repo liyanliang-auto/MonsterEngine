@@ -515,7 +515,7 @@ void CubeSceneApplication::onRender()
     FVector cameraPosition = cameraView.Location;
     
     // Gather lights from scene
-    TArray<FLightSceneInfo*> lights;
+    TArray<MonsterEngine::Renderer::FLightSceneInfo*> lights;
     if (m_scene)
     {
         const TSparseArray<FLightSceneInfoCompact>& sceneLights = m_scene->GetLights();
@@ -2786,14 +2786,7 @@ void CubeSceneApplication::renderWithRDG(
             {
                 renderHelmetWithPBR(&rhiCmdList, viewMatrix, projectionMatrix, cameraPosition);
             }
-        };
-    
-    graphBuilder.addPass(
-        ::MonsterEngine::FString("MainRenderPass"),
-        ERDGPassFlags::Raster,
-        std::move(setupLambda),
-        std::move(executeLambda)
-    );
+        });
     
     // Execute the render graph
     MR_LOG(LogCubeSceneApp, Log, "Executing RDG with %d passes", 2);

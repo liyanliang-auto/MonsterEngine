@@ -53,6 +53,7 @@ namespace MonsterEngine { namespace Renderer {
     class FSceneRenderer;
     class FForwardShadingSceneRenderer;
     class FScene;
+    class FLightSceneInfo;
     struct FSceneViewFamily;
     struct FViewInfo;
 }}
@@ -366,7 +367,7 @@ protected:
         const MonsterEngine::Math::FMatrix& viewMatrix,
         const MonsterEngine::Math::FMatrix& projectionMatrix,
         const MonsterEngine::Math::FVector& cameraPosition,
-        const MonsterEngine::TArray<MonsterEngine::FLightSceneInfo*>& lights,
+        const MonsterEngine::TArray<MonsterEngine::Renderer::FLightSceneInfo*>& lights,
         const MonsterEngine::Math::FMatrix& lightViewProjection);
 
     /**

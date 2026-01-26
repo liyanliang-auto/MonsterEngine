@@ -17,9 +17,10 @@ namespace MonsterRender {
 
 // ============================================================================
 // Mock FTexture class for testing (in MonsterRender namespace)
+// Note: This is a simplified mock that mimics MonsterEngine::FTexture2D interface
 // ============================================================================
 
-class FTexture {
+class FTexture : public ::MonsterEngine::FTexture2D {
 public:
     FTexture(const String& name, uint32 width, uint32 height, uint32 mipLevels)
         : Name(name), Width(width), Height(height), TotalMipLevels(mipLevels), ResidentMips(1) {

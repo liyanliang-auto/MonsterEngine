@@ -335,7 +335,7 @@ void FRDGBuilder::_buildDependencyGraph()
             // Read-after-write (RAW) dependency
             if (bIsRead)
             {
-                auto* lastWriter = lastBufferWriter.Find(buffer);
+                FRDGPassHandle* lastWriter = lastBufferWriter.Find(buffer);
                 if (lastWriter && lastWriter->isValid())
                 {
                     FRDGPass* writerPass = m_passes[lastWriter->index];
@@ -344,7 +344,7 @@ void FRDGBuilder::_buildDependencyGraph()
                 }
                 
                 // Track this reader
-                TArray<FRDGPassHandle>& readers = lastBufferReaders.FindOrAdd(buffer);
+                ::MonsterEngine::TArray<FRDGPassHandle>& readers = lastBufferReaders.FindOrAdd(buffer);
                 readers.AddUnique(passHandle);
             }
         }
@@ -369,7 +369,7 @@ void FRDGBuilder::_topologicalSort()
     
     // Kahn's algorithm for topological sorting
     // 1. Calculate in-degree for each pass
-    TMap<FRDGPassHandle, int32> inDegree;
+    ::MonsterEngine::TMap<FRDGPassHandle, int32> inDegree;
     for (const FRDGPass* pass : m_passes)
     {
         inDegree.Add(pass->getHandle(), pass->m_dependencies.Num());
@@ -379,7 +379,7 @@ void FRDGBuilder::_topologicalSort()
     TArray<FRDGPassHandle> queue;
     for (const FRDGPass* pass : m_passes)
     {
-        if (inDegree[pass->getHandle()] == 0)
+        if (*inDegree.Find(pass->getHandle()) == 0)
         {
             queue.Add(pass->getHandle());
         }
@@ -398,7 +398,9 @@ void FRDGBuilder::_topologicalSort()
         // Reduce in-degree of dependent passes
         for (const FRDGPassHandle& dependentHandle : currentPass->m_dependents)
         {
-            int32& degree = inDegree[dependentHandle];
+            int32* degreePtr = inDegree.Find(dependentHandle);
+            if (!degreePtr) continue;
+            int32& degree = *degreePtr;
             degree--;
             
             if (degree == 0)
@@ -566,8 +568,8 @@ void FRDGBuilder::_insertTransitions()
     m_passTransitions.Empty();
     
     // Track current state of each resource
-    TMap<FRDGTexture*, ERHIAccess> currentTextureStates;
-    TMap<FRDGBuffer*, ERHIAccess> currentBufferStates;
+    ::MonsterEngine::TMap<FRDGTexture*, ERHIAccess> currentTextureStates;
+    ::MonsterEngine::TMap<FRDGBuffer*, ERHIAccess> currentBufferStates;
     
     // Initialize external resources with their initial states
     for (FRDGTexture* texture : m_textures)
