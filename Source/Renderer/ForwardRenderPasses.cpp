@@ -14,9 +14,10 @@
  */
 
 #include "Renderer/ForwardRenderPasses.h"
-#include "Renderer/SceneRenderer.h"
-#include "Renderer/Scene.h"
-#include "Renderer/SceneView.h"
+#include "Renderer/SceneRendering.h"
+#include "Renderer/MeshPassProcessor.h"
+#include "Renderer/RenderPass.h"
+#include "Core/Log/LogMacros.h"
 #include "Renderer/MeshBatch.h"
 #include "Renderer/MeshElementCollector.h"
 #include "Engine/SceneTypes.h"
@@ -259,7 +260,23 @@ void FOpaquePass::Execute(FRenderPassContext& Context)
         // Call GetDynamicMeshElements to collect mesh batches (UE5 pattern)
         // VisibilityMap: bit 0 = view 0 is visible
         uint32 VisibilityMap = 1; // Single view, always visible
-        FSceneViewFamily ViewFamily; // Empty view family for now
+        FSceneViewFamily ViewFamily{
+            nullptr,  // Scene
+            nullptr,  // RenderTarget
+            0,        // FrameNumber
+            0.0f,     // RealTimeSeconds
+            0.0f,     // WorldTimeSeconds
+            0.0f,     // DeltaWorldTimeSeconds
+            2.2f,     // GammaCorrection
+            false,    // bWireframe
+            true,     // bDeferredShading
+            true,     // bRenderShadows
+            true,     // bRenderFog
+            true,     // bRenderPostProcessing
+            true,     // bRenderMotionBlur
+            true,     // bRenderBloom
+            true      // bRenderAmbientOcclusion
+        };
         
         Proxy->GetDynamicMeshElements(Views, ViewFamily, VisibilityMap, MeshCollector);
     }

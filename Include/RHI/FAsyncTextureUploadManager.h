@@ -183,7 +183,7 @@ private:
     
     // Request queue (thread-safe)
     TArray<FAsyncTextureUploadRequest> m_pendingRequests;
-    TMap<uint64, TSharedPtr<FAsyncTextureUploadFence>> m_fenceMap;
+    ::MonsterEngine::TMap<uint64, TSharedPtr<FAsyncTextureUploadFence>> m_fenceMap;
     std::mutex m_queueMutex;
     
     // Worker thread

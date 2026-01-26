@@ -2,17 +2,21 @@
 // MonsterEngine - PNG Texture Reader Implementation
 
 #include "Renderer/FPNGTextureReader.h"
-#include "Core/HAL/FMemory.h"
-#include "Core/Log.h"
 #include "Containers/String.h"
 #include <fstream>
 
-// stb_image implementation
+// IMPORTANT: Include FMemory BEFORE stb_image to ensure macros work correctly
+#include "Core/HAL/FMemory.h"
+#include "Core/Logging/LogMacros.h"
+
+// Define custom memory allocators for stb_image
+// Use fully qualified names to avoid namespace issues
+#define STBI_MALLOC(sz)           MonsterEngine::FMemory::Malloc(sz)
+#define STBI_REALLOC(p,newsz)     MonsterEngine::FMemory::Realloc(p,newsz)
+#define STBI_FREE(p)              MonsterEngine::FMemory::Free(p)
+
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO  // We handle file IO ourselves
-#define STBI_MALLOC(sz)           MonsterEngine::FMemory::Malloc(sz)
-#define STBI_REALLOC(p,newsz)     MonsterEngine::FMemory::Realloc(p, newsz)
-#define STBI_FREE(p)              MonsterEngine::FMemory::Free(p)
 #include "stb/stb_image.h"
 
 namespace MonsterRender {

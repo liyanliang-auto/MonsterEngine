@@ -643,7 +643,7 @@ void FCubeSceneRendererTest::GenerateMeshDrawCommands()
         
         // Also add to depth pass
         RenderQueue->AddMeshBatch(
-            EMeshPass::DepthPass,
+            MonsterEngine::Renderer::EMeshPass::DepthPass,
             MeshBatch,
             ERenderQueuePriority::Opaque,
             Distance,

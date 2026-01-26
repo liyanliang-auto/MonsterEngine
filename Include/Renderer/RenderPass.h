@@ -28,8 +28,12 @@ namespace MonsterRender { namespace RHI {
     class IRHITexture;
 }}
 
-namespace MonsterEngine
-{
+namespace MonsterEngine {
+namespace Renderer {
+    class FScene;
+    class FViewInfo;
+}
+}
 
 // Forward declarations
 class FScene;
@@ -400,20 +404,20 @@ struct FRenderPassConfig
  */
 struct FRenderPassContext
 {
-    /** The scene being rendered */
-    FScene* Scene = nullptr;
+    /** Scene being rendered */
+    MonsterEngine::Renderer::FScene* Scene = nullptr;
     
-    /** The view being rendered */
-    FViewInfo* View = nullptr;
-    
-    /** View index in the view family */
-    int32 ViewIndex = 0;
+    /** View information */
+    MonsterEngine::Renderer::FViewInfo* View = nullptr;
     
     /** RHI command list for GPU commands */
     MonsterRender::RHI::IRHICommandList* RHICmdList = nullptr;
     
     /** RHI device */
     MonsterRender::RHI::IRHIDevice* RHIDevice = nullptr;
+    
+    /** View index in the view family */
+    int32 ViewIndex = 0;
     
     /** Frame number */
     uint32 FrameNumber = 0;
@@ -538,7 +542,7 @@ public:
     
     // IRenderPass interface
     virtual ERenderPassType GetPassType() const override { return Config.PassType; }
-    virtual const TCHAR* GetPassName() const override { return *Config.PassName; }
+    virtual const TCHAR* GetPassName() const override { return Config.PassName.GetData(); }
     virtual const FRenderPassConfig& GetConfig() const override { return Config; }
     virtual FRenderPassConfig& GetMutableConfig() override { return Config; }
     
@@ -644,15 +648,14 @@ public:
      * Get all registered passes
      * @return Array of registered passes
      */
-    const TArray<IRenderPass*>& GetPasses() const { return Passes; }
+    const ::MonsterEngine::TArray<IRenderPass*>& GetRegisteredPasses() const { return m_registeredPasses; }
     
 private:
     /** Registered render passes */
-    TArray<IRenderPass*> Passes;
+    ::MonsterEngine::TArray<IRenderPass*> m_registeredPasses;
     
     /** Whether passes need sorting */
     bool bNeedsSorting = false;
 };
 
 } // namespace MonsterEngine
-

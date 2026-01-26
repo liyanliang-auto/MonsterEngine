@@ -250,26 +250,6 @@ struct FSceneViewFamily
     
     /** Whether to render ambient occlusion */
     uint32 bRenderAmbientOcclusion : 1;
-    
-    /** Default constructor */
-    FSceneViewFamily()
-        : Scene(nullptr)
-        , RenderTarget(nullptr)
-        , FrameNumber(0)
-        , RealTimeSeconds(0.0f)
-        , WorldTimeSeconds(0.0f)
-        , DeltaWorldTimeSeconds(0.0f)
-        , GammaCorrection(2.2f)
-        , bWireframe(false)
-        , bDeferredShading(true)
-        , bRenderShadows(true)
-        , bRenderFog(true)
-        , bRenderPostProcessing(true)
-        , bRenderMotionBlur(true)
-        , bRenderBloom(true)
-        , bRenderAmbientOcclusion(true)
-    {
-    }
 };
 
 // ============================================================================

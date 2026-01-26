@@ -60,7 +60,7 @@ void FTextureStreamingManager::Shutdown() {
     FAsyncTextureLoadManager::Get().Shutdown();
 
     // Clear all streaming textures
-    StreamingTextures.Clear();
+    StreamingTextures.Empty();
 
     // Release texture pool
     TexturePool.Reset();
@@ -303,7 +303,7 @@ void FTextureStreamingManager::ProcessStreamingRequests() {
 void FTextureStreamingManager::StreamInMips(FStreamingTexture* StreamingTexture) {
     if (!StreamingTexture || !StreamingTexture->Texture) return;
 
-    FTexture* texture = StreamingTexture->Texture;
+    ::MonsterEngine::FTexture2D* texture = StreamingTexture->Texture;
     uint32 currentMips = StreamingTexture->ResidentMips;
     uint32 targetMips = StreamingTexture->RequestedMips;
 

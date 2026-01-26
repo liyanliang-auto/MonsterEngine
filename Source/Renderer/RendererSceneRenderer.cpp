@@ -1280,8 +1280,6 @@ void FForwardShadingSceneRenderer::RenderShadowDepthMaps(IRHICommandList& RHICmd
             Context.ViewIndex = ViewIndex;
             Context.RHICmdList = &RHICmdList;
             Context.FrameNumber = ViewFamily.FrameNumber;
-            Context.VisibleOpaquePrimitives = &ViewInfo.VisibleDynamicPrimitives;
-            Context.VisibleLights = &VisibleLightInfos;
             
             // Execute shadow depth pass
             if (ShadowDepthPass->ShouldExecute(Context))
@@ -1323,7 +1321,6 @@ void FForwardShadingSceneRenderer::RenderPrePass(IRHICommandList& RHICmdList)
         Context.ViewIndex = ViewIndex;
         Context.RHICmdList = &RHICmdList;
         Context.FrameNumber = ViewFamily.FrameNumber;
-        Context.VisibleOpaquePrimitives = &ViewInfo.VisibleDynamicPrimitives;
         
         if (DepthPrepass->ShouldExecute(Context))
         {
@@ -1368,8 +1365,6 @@ void FForwardShadingSceneRenderer::RenderOpaqueGeometry(IRHICommandList& RHICmdL
         Context.ViewIndex = ViewIndex;
         Context.RHICmdList = &RHICmdList;
         Context.FrameNumber = ViewFamily.FrameNumber;
-        Context.VisibleOpaquePrimitives = &ViewInfo.VisibleDynamicPrimitives;
-        Context.VisibleLights = &VisibleLightInfos;
         
         if (OpaquePass->ShouldExecute(Context))
         {
@@ -1430,8 +1425,6 @@ void FForwardShadingSceneRenderer::RenderTranslucency(IRHICommandList& RHICmdLis
         Context.ViewIndex = ViewIndex;
         Context.RHICmdList = &RHICmdList;
         Context.FrameNumber = ViewFamily.FrameNumber;
-        Context.VisibleTransparentPrimitives = &ViewInfo.VisibleTranslucentPrimitives;
-        Context.VisibleLights = &VisibleLightInfos;
         
         if (TransparentPass->ShouldExecute(Context))
         {

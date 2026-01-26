@@ -83,9 +83,10 @@ bool FTexture2D::initialize(IRHIDevice* device, const FTexture2DDesc& desc)
     rhiDesc.usage = EResourceUsage::ShaderResource;
     rhiDesc.debugName = desc.DebugName.ToString().ToAnsiString();
     
-    m_rhiTexture = device->createTexture(rhiDesc);
+    m_rhiTexture = RHIDevice->createTexture(rhiDesc);
     if (!m_rhiTexture) {
         MR_LOG(LogTexture2D, Error, "Failed to create RHI texture: %s", *m_name.ToString());
+        RHIDevice->waitForIdle();
         return false;
     }
     
@@ -404,7 +405,7 @@ bool FTexture2D::_loadInitialMips(const MonsterEngine::String& filePath, uint32 
         rhiDesc.initialDataSize = fileData.Mips[0].DataSize;
     }
     
-    m_rhiTexture = device->createTexture(rhiDesc);
+    m_rhiTexture = m_device->createTexture(rhiDesc);
     if (!m_rhiTexture) {
         MR_LOG(LogTexture2D, Error, "Failed to create RHI texture for streaming: %s", filePath.c_str());
         fileData.FreeData();
