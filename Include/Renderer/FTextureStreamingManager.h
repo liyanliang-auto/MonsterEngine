@@ -7,20 +7,12 @@
 #include "Core/Templates/UniquePtr.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
+#include "Engine/Texture/Texture2D.h"
 #include <mutex>
 
 namespace MonsterRender {
 
-// Use MonsterEngine containers and smart pointers
-using MonsterEngine::TArray;
-using MonsterEngine::TMap;
-using MonsterEngine::TUniquePtr;
-using MonsterEngine::MakeUnique;
-
 // Forward declarations
-namespace MonsterEngine {
-    class FTexture2D;
-}
 class FTexturePool;
 class FAsyncTextureLoadManager;
 
@@ -43,8 +35,8 @@ public:
     void Shutdown();
 
     // Texture registration
-    void RegisterTexture(MonsterEngine::FTexture2D* Texture);
-    void UnregisterTexture(MonsterEngine::FTexture2D* Texture);
+    void RegisterTexture(::MonsterEngine::FTexture2D* Texture);
+    void UnregisterTexture(::MonsterEngine::FTexture2D* Texture);
 
     // Per-frame update
     void UpdateResourceStreaming(float DeltaTime);
@@ -75,7 +67,7 @@ private:
     FTextureStreamingManager& operator=(const FTextureStreamingManager&) = delete;
 
     struct FStreamingTexture {
-        MonsterEngine::FTexture2D* Texture;
+        ::MonsterEngine::FTexture2D* Texture;
         uint32 ResidentMips;       // Currently loaded mip count
         uint32 RequestedMips;      // Desired mip count
         float Priority;            // Streaming priority
@@ -106,10 +98,10 @@ private:
     
     // Helper methods
     bool EvictLowPriorityTextures(SIZE_T RequiredSize);
-    void StartAsyncMipLoad(MonsterEngine::FTexture2D* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory);
-    void OnMipLoadComplete(MonsterEngine::FTexture2D* Texture, bool bSuccess, void* LoadedData, SIZE_T DataSize);
-    float CalculateScreenSize(MonsterEngine::FTexture2D* Texture);
-    SIZE_T CalculateMipSize(MonsterEngine::FTexture2D* Texture, uint32 StartMip, uint32 EndMip);
+    void StartAsyncMipLoad(::MonsterEngine::FTexture2D* Texture, uint32 StartMip, uint32 EndMip, void* DestMemory);
+    void OnMipLoadComplete(::MonsterEngine::FTexture2D* Texture, bool bSuccess, void* LoadedData, SIZE_T DataSize);
+    float CalculateScreenSize(::MonsterEngine::FTexture2D* Texture);
+    SIZE_T CalculateMipSize(::MonsterEngine::FTexture2D* Texture, uint32 StartMip, uint32 EndMip);
 
     TUniquePtr<FTexturePool> TexturePool;
     TArray<FStreamingTexture> StreamingTextures;

@@ -48,10 +48,10 @@ FDDSTextureReader::~FDDSTextureReader() {
 }
 
 bool FDDSTextureReader::LoadFromFile(const FString& FilePath, FTextureFileData& OutData) {
-    // Open file in binary mode
-    std::ifstream file(FilePath.c_str(), std::ios::binary | std::ios::ate);
+    // Open file in binary mode (use wide character path)
+    std::ifstream file(*FilePath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        MR_LOG(LogTextureStreaming, Error, "Failed to open DDS file: %s", FilePath.c_str());
+        MR_LOG(LogTextureStreaming, Error, "Failed to open DDS file: %ls", *FilePath);
         return false;
     }
 
@@ -60,7 +60,7 @@ bool FDDSTextureReader::LoadFromFile(const FString& FilePath, FTextureFileData& 
     file.seekg(0, std::ios::beg);
 
     if (fileSize <= 0) {
-        MR_LOG(LogTextureStreaming, Error, "Invalid DDS file size: %s", FilePath.c_str());
+        MR_LOG(LogTextureStreaming, Error, "Invalid DDS file size: %ls", *FilePath);
         return false;
     }
 

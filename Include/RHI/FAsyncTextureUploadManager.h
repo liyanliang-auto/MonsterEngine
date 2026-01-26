@@ -12,7 +12,7 @@
 #include "Core/CoreMinimal.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
-#include "Templates/SharedPointer.h"
+#include "Core/Templates/SharedPointer.h"
 #include "RHI/RHIDefinitions.h"
 #include <atomic>
 #include <mutex>
