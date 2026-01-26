@@ -119,7 +119,7 @@ bool FTextureFileReaderFactory::LoadTextureFromFile(const FString& FilePath, FTe
     ETextureFileFormat format = DetectFormat(FilePath);
     
     if (format == ETextureFileFormat::Unknown) {
-        MR_LOG(LogTextureStreaming, Error, "Unknown texture file format: %s", FilePath.c_str());
+        MR_LOG(LogTextureStreaming, Error, "Unknown texture file format: %ls", *FilePath);
         return false;
     }
     

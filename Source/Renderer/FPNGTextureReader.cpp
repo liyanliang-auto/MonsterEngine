@@ -13,7 +13,7 @@
 #define STBI_MALLOC(sz)           MonsterEngine::FMemory::Malloc(sz)
 #define STBI_REALLOC(p,newsz)     MonsterEngine::FMemory::Realloc(p, newsz)
 #define STBI_FREE(p)              MonsterEngine::FMemory::Free(p)
-#include "3rd-party/stb/stb_image.h"
+#include "stb/stb_image.h"
 
 namespace MonsterRender {
 
@@ -24,10 +24,10 @@ FPNGTextureReader::~FPNGTextureReader() {
 }
 
 bool FPNGTextureReader::LoadFromFile(const FString& FilePath, FTextureFileData& OutData) {
-    // Open file in binary mode
-    std::ifstream file(FilePath.c_str(), std::ios::binary | std::ios::ate);
+    // Open file in binary mode (use wide character path)
+    std::ifstream file(*FilePath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        MR_LOG(LogTextureStreaming, Error, "Failed to open PNG file: %s", FilePath.c_str());
+        MR_LOG(LogTextureStreaming, Error, "Failed to open PNG file: %ls", *FilePath);
         return false;
     }
 
@@ -36,7 +36,7 @@ bool FPNGTextureReader::LoadFromFile(const FString& FilePath, FTextureFileData& 
     file.seekg(0, std::ios::beg);
 
     if (fileSize <= 0) {
-        MR_LOG(LogTextureStreaming, Error, "Invalid PNG file size: %s", FilePath.c_str());
+        MR_LOG(LogTextureStreaming, Error, "Invalid PNG file size: %ls", *FilePath);
         return false;
     }
 

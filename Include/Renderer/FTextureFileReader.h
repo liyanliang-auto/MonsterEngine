@@ -8,15 +8,14 @@
 #include "Core/CoreTypes.h"
 #include "Core/Templates/UniquePtr.h"
 #include "Containers/Array.h"
+#include "Containers/String.h"
 
 namespace MonsterRender {
 
 // Use MonsterEngine containers
 using MonsterEngine::TArray;
 using MonsterEngine::TUniquePtr;
-
-// Forward declarations
-class FString;
+using MonsterEngine::FString;
 
 /**
  * Texture file format enumeration

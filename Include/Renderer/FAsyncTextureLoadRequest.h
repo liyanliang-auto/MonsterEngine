@@ -13,16 +13,12 @@
 #include <thread>
 #include <functional>
 
-namespace MonsterRender {
-
-// Use MonsterEngine containers
-using MonsterEngine::TArray;
-using MonsterEngine::TUniquePtr;
-
-// Forward declarations
+// Forward declarations outside MonsterRender namespace
 namespace MonsterEngine {
     class FTexture2D;
 }
+
+namespace MonsterRender {
 
 /**
  * FAsyncTextureLoadRequest - Async texture mip loading request
@@ -126,7 +122,7 @@ private:
     void* LoadedData;               // Loaded data (if success)
     SIZE_T LoadedSize;              // Size of loaded data
 
-    TUniquePtr<std::thread> WorkerThread; // Worker thread
+    ::MonsterEngine::TUniquePtr<std::thread> WorkerThread; // Worker thread
     std::mutex RequestMutex;        // Protects request state
 };
 
@@ -160,7 +156,7 @@ public:
      * Queue async load request
      * @param Request Load request (manager takes ownership)
      */
-    void QueueLoadRequest(TUniquePtr<FAsyncTextureLoadRequest> Request);
+    void QueueLoadRequest(::MonsterEngine::TUniquePtr<FAsyncTextureLoadRequest> Request);
 
     /**
      * Process completed requests (call on main thread)
@@ -189,9 +185,9 @@ private:
     // Move completed requests to completed queue
     void _updateRequestQueues();
 
-    TArray<TUniquePtr<FAsyncTextureLoadRequest>> PendingRequests;   // Pending requests
-    TArray<TUniquePtr<FAsyncTextureLoadRequest>> ActiveRequests;    // Active (loading) requests
-    TArray<TUniquePtr<FAsyncTextureLoadRequest>> CompletedRequests; // Completed requests
+    ::MonsterEngine::TArray<::MonsterEngine::TUniquePtr<FAsyncTextureLoadRequest>> PendingRequests;   // Pending requests
+    ::MonsterEngine::TArray<::MonsterEngine::TUniquePtr<FAsyncTextureLoadRequest>> ActiveRequests;    // Active (loading) requests
+    ::MonsterEngine::TArray<::MonsterEngine::TUniquePtr<FAsyncTextureLoadRequest>> CompletedRequests; // Completed requests
 
     std::mutex QueueMutex;          // Protects request queues
     uint32 MaxConcurrentLoads;      // Max concurrent loads
