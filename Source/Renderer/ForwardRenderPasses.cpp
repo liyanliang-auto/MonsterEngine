@@ -15,17 +15,20 @@
 
 #include "Renderer/ForwardRenderPasses.h"
 #include "Renderer/Scene.h"
+#include "Renderer/MeshElementCollector.h"
+#include "Renderer/MeshBatch.h"
+#include "Engine/SceneView.h"
+#include "Engine/PrimitiveSceneProxy.h"
+#include "Engine/PrimitiveSceneInfo.h"
+#include "Engine/LightSceneInfo.h"
 #include "RHI/IRHICommandList.h"
 #include "Core/Logging/LogMacros.h"
 
+// Define log category for forward renderer (must be at global scope)
 DEFINE_LOG_CATEGORY_STATIC(LogForwardPasses, Log, All);
 
-namespace MonsterEngine
-{
-namespace Renderer
-{
-
-// Define log category for forward renderer
+namespace MonsterEngine {
+namespace Renderer {
 
 // ============================================================================
 // FDepthPrepass Implementation
