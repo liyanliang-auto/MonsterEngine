@@ -79,26 +79,26 @@ namespace MonsterRender::RHI {
         
         // Check each backend availability
         if (isBackendAvailable(ERHIBackend::Vulkan)) {
-            availableBackends.push_back(ERHIBackend::Vulkan);
+            availableBackends.Add(ERHIBackend::Vulkan);
         }
         
         #if PLATFORM_WINDOWS
         if (isBackendAvailable(ERHIBackend::D3D12)) {
-            availableBackends.push_back(ERHIBackend::D3D12);
+            availableBackends.Add(ERHIBackend::D3D12);
         }
         
         if (isBackendAvailable(ERHIBackend::D3D11)) {
-            availableBackends.push_back(ERHIBackend::D3D11);
+            availableBackends.Add(ERHIBackend::D3D11);
         }
         #endif
         
         if (isBackendAvailable(ERHIBackend::OpenGL)) {
-            availableBackends.push_back(ERHIBackend::OpenGL);
+            availableBackends.Add(ERHIBackend::OpenGL);
         }
         
         #if defined(__APPLE__)
         if (isBackendAvailable(ERHIBackend::Metal)) {
-            availableBackends.push_back(ERHIBackend::Metal);
+            availableBackends.Add(ERHIBackend::Metal);
         }
         #endif
         

@@ -228,6 +228,7 @@
     <ClCompile Include="Source\TriangleRenderer.cpp" />
     <ClCompile Include="Source\CubeRenderer.cpp" />
     <ClCompile Include="Source\RHI\IRHIResource.cpp" />
+    <ClCompile Include="Source\RHI\RHI.cpp" />
     <ClCompile Include="Source\RDG\RDGPass.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
