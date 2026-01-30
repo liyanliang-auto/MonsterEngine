@@ -44,11 +44,13 @@ using MonsterRender::RHI::IRHICommandList;
 // Forward declarations within Renderer namespace
 class FPrimitiveSceneInfo;
 class FPrimitiveSceneProxy;
-class FLightSceneInfo;
 class FLightSceneProxy;
 class FSceneRenderer;
 class FViewInfo;
 class FMeshElementCollector;
+
+// Use FLightSceneInfo from Engine namespace
+using MonsterEngine::FLightSceneInfo;
 
 // ============================================================================
 // FPrimitiveSceneProxy - Primitive Rendering Proxy

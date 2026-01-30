@@ -19,6 +19,8 @@ using namespace MonsterRender::RHI;
 
 namespace MonsterEngine
 {
+namespace Renderer
+{
 
 // Define log category for render pass system
 DECLARE_LOG_CATEGORY_EXTERN(LogRenderPass, Log, All);
@@ -157,7 +159,7 @@ void FRenderPassBase::ClearTargets(FRenderPassContext& Context)
 FRenderPassManager::FRenderPassManager()
 {
     // Reserve space for common passes
-    Passes.Reserve(static_cast<int32>(ERenderPassType::Num));
+    m_registeredPasses.Reserve(static_cast<int32>(ERenderPassType::Num));
 }
 
 FRenderPassManager::~FRenderPassManager()
@@ -174,21 +176,21 @@ void FRenderPassManager::RegisterPass(IRenderPass* Pass)
     }
     
     // Check for duplicate pass type and replace if found
-    for (int32 i = 0; i < Passes.Num(); ++i)
+    for (int32 i = 0; i < m_registeredPasses.Num(); ++i)
     {
-        if (Passes[i]->GetPassType() == Pass->GetPassType())
+        if (m_registeredPasses[i]->GetPassType() == Pass->GetPassType())
         {
             MR_LOG(LogRenderPass, Warning, "Replacing existing render pass: %s", 
-                   GetRenderPassName(Pass->GetPassType()));
-            delete Passes[i];
-            Passes[i] = Pass;
+                   Pass->GetPassName());
+            delete m_registeredPasses[i];
+            m_registeredPasses[i] = Pass;
             bNeedsSorting = true;
             return;
         }
     }
     
     // Add new pass
-    Passes.Add(Pass);
+    m_registeredPasses.Add(Pass);
     bNeedsSorting = true;
     
     MR_LOG(LogRenderPass, Log, "Registered render pass: %s (Priority: %d)", 
@@ -197,25 +199,24 @@ void FRenderPassManager::RegisterPass(IRenderPass* Pass)
 
 void FRenderPassManager::UnregisterPass(ERenderPassType PassType)
 {
-    for (int32 i = Passes.Num() - 1; i >= 0; --i)
+    for (int32 i = m_registeredPasses.Num() - 1; i >= 0; --i)
     {
-        if (Passes[i]->GetPassType() == PassType)
+        if (m_registeredPasses[i]->GetPassType() == PassType)
         {
             MR_LOG(LogRenderPass, Log, "Unregistered render pass: %s", 
-                   Passes[i]->GetPassName());
-            delete Passes[i];
-            Passes.RemoveAt(i);
+                   m_registeredPasses[i]->GetPassName());
+            delete m_registeredPasses[i];
+            m_registeredPasses.RemoveAt(i);
             return;
         }
     }
     
-    MR_LOG(LogRenderPass, Warning, "Failed to unregister pass: %s (not found)",
-           GetRenderPassName(PassType));
+    MR_LOG(LogRenderPass, Warning, "Failed to unregister pass (not found)");
 }
 
 IRenderPass* FRenderPassManager::GetPass(ERenderPassType PassType) const
 {
-    for (IRenderPass* Pass : Passes)
+    for (IRenderPass* Pass : m_registeredPasses)
     {
         if (Pass && Pass->GetPassType() == PassType)
         {
@@ -234,7 +235,7 @@ void FRenderPassManager::ExecuteAllPasses(FRenderPassContext& Context)
     }
     
     // Execute each pass in order
-    for (IRenderPass* Pass : Passes)
+    for (IRenderPass* Pass : m_registeredPasses)
     {
         if (Pass && Pass->ShouldExecute(Context))
         {
@@ -261,15 +262,14 @@ void FRenderPassManager::ExecutePass(ERenderPassType PassType, FRenderPassContex
     }
     else if (!Pass)
     {
-        MR_LOG(LogRenderPass, Warning, "Cannot execute pass %s: not registered",
-               GetRenderPassName(PassType));
+        MR_LOG(LogRenderPass, Warning, "Cannot execute pass: not registered");
     }
 }
 
 void FRenderPassManager::SortPasses()
 {
     // Sort by priority (lower priority = earlier execution)
-    Passes.Sort([](const IRenderPass* A, const IRenderPass* B)
+    m_registeredPasses.Sort([](const IRenderPass* A, const IRenderPass* B)
     {
         if (!A || !B) return false;
         return A->GetConfig().Priority < B->GetConfig().Priority;
@@ -277,22 +277,23 @@ void FRenderPassManager::SortPasses()
     
     bNeedsSorting = false;
     
-    MR_LOG(LogRenderPass, Verbose, "Sorted %d render passes by priority", Passes.Num());
+    MR_LOG(LogRenderPass, Verbose, "Sorted %d render passes by priority", m_registeredPasses.Num());
 }
 
 void FRenderPassManager::ClearPasses()
 {
-    for (IRenderPass* Pass : Passes)
+    for (IRenderPass* Pass : m_registeredPasses)
     {
         if (Pass)
         {
             delete Pass;
         }
     }
-    Passes.Empty();
+    m_registeredPasses.Empty();
     bNeedsSorting = false;
     
     MR_LOG(LogRenderPass, Log, "Cleared all render passes");
 }
 
+} // namespace Renderer
 } // namespace MonsterEngine
