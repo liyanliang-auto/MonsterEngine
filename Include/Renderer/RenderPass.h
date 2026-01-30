@@ -19,13 +19,13 @@
 #include "Containers/Array.h"
 #include "Containers/String.h"
 #include "Math/Vector4.h"
-#include "RHI/RHIResources.h"
 
 // Forward declare RHI types
 namespace MonsterRender { namespace RHI {
     class IRHICommandList;
     class IRHIDevice;
     class IRHITexture;
+    class IRHIBuffer;
 }}
 
 namespace MonsterEngine {
