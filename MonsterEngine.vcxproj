@@ -331,12 +331,8 @@
     <ClCompile Include="Source\Engine\Camera\CameraSceneViewHelper.cpp" />
     <ClCompile Include="Source\Engine\Camera\FPSCameraController.cpp" />
     <ClCompile Include="Source\Engine\Actor.cpp" />
-    <ClCompile Include="Source\Engine\Actors\CubeActor.cpp">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="Source\Engine\Actors\FloorActor.cpp">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="Source\Engine\Actors\CubeActor.cpp" />
+    <ClCompile Include="Source\Engine\Actors\FloorActor.cpp" />
     <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp" />
     <ClCompile Include="Source\Engine\Components\FloorMeshComponent.cpp" />
     <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp" />

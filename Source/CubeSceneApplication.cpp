@@ -7,16 +7,16 @@
 
 #include "CubeSceneApplication.h"
 #include "Engine/Scene.h"
-#include "Engine/Actor.h"
 #include "Engine/Actors/CubeActor.h"
 #include "Engine/Actors/FloorActor.h"
 #include "Engine/Components/CubeMeshComponent.h"
 #include "Engine/Components/FloorMeshComponent.h"
-#include "Engine/Components/LightComponent.h"
 #include "Engine/Proxies/CubeSceneProxy.h"
 #include "Engine/Proxies/FloorSceneProxy.h"
-#include "Engine/Camera/CameraManager.h"
-#include "Engine/Camera/CameraTypes.h"
+#include "Core/Logging/LogMacros.h"
+#include "Math/MonsterMath.h"
+#include "Containers/Array.h"
+#include "Containers/Set.h"
 #include "Engine/Camera/CameraSceneViewHelper.h"
 #include "Engine/Camera/FPSCameraController.h"
 #include "Engine/SceneView.h"
@@ -48,7 +48,7 @@
 #include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/OpenGL/OpenGLFunctions.h"
 #include "Platform/OpenGL/OpenGLDefinitions.h"
-#include "RDG/RDG.h"
+// #include "RDG/RDG.h"  // Temporarily disabled - causes std namespace conflicts
 
 // stb_image for texture loading
 #define STB_IMAGE_IMPLEMENTATION
