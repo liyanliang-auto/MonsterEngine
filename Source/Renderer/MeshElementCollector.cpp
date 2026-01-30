@@ -32,8 +32,9 @@ FMeshElementCollector::~FMeshElementCollector()
 
 FMeshBatch& FMeshElementCollector::AllocateMesh()
 {
-    // Add a new mesh batch to storage
-    const int32 Index = MeshBatchStorage.Add(FMeshBatch());
+    // Allocate a new mesh batch from storage
+    // This ensures the mesh batch memory is stable and won't be reallocated
+    int32 Index = MeshBatchStorage.Add(FMeshBatch());
     return MeshBatchStorage[Index];
 }
 

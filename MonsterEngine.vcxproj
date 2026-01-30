@@ -317,7 +317,10 @@
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="Source\Renderer\RenderPass.cpp" />
-    <ClCompile Include="Source\Renderer\ForwardRenderPasses.cpp" />
+    <ClCompile Include="Source\Renderer\MeshElementCollector.cpp" />
+    <ClCompile Include="Source\Renderer\ForwardRenderPasses.cpp">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="Source\Renderer\ForwardShaderCompiler.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
@@ -334,15 +337,11 @@
     <ClCompile Include="Source\Engine\Actors\FloorActor.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp" />
     <ClCompile Include="Source\Engine\Components\FloorMeshComponent.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Proxies\FloorSceneProxy.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
