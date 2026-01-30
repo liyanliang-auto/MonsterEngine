@@ -31,13 +31,18 @@ namespace MonsterRender { namespace RHI {
     class IRHITexture;
 }}
 
-namespace MonsterEngine
-{
+namespace MonsterEngine {
 
-// Forward declarations
+// Forward declarations from Engine namespace
 class FPrimitiveSceneInfo;
 class FLightSceneInfo;
 class FLightSceneProxy;
+
+namespace Renderer {
+
+// Use FRenderPassContext from RenderPass.h
+using MonsterEngine::Renderer::FRenderPassContext;
+using MonsterEngine::Renderer::FRenderPassBase;
 
 // ============================================================================
 // Material Uniform Buffer
@@ -124,7 +129,7 @@ struct FShadowData
     FLightSceneInfo* Light = nullptr;
     
     /** Shadow map texture handle */
-    TSharedPtr<MonsterRender::RHI::IRHITexture> ShadowMapTexture;
+    TSharedPtr<MonsterRender::RHI::IRHITexture> m_shadowMapTexture;
     
     /** Light view-projection matrix */
     FMatrix LightViewProjection;

@@ -14,30 +14,18 @@
  */
 
 #include "Renderer/ForwardRenderPasses.h"
-#include "Renderer/SceneRendering.h"
-#include "Renderer/MeshPassProcessor.h"
-#include "Renderer/RenderPass.h"
-#include "Core/Log/LogMacros.h"
-#include "Renderer/MeshBatch.h"
-#include "Renderer/MeshElementCollector.h"
-#include "Engine/SceneTypes.h"
-#include "Engine/PrimitiveSceneInfo.h"
-#include "Engine/LightSceneInfo.h"
-#include "Engine/LightSceneProxy.h"
-#include "Engine/PrimitiveSceneProxy.h"
-#include "Engine/Proxies/CubeSceneProxy.h"
-#include "Engine/Proxies/FloorSceneProxy.h"
-#include "Engine/Material/MaterialRenderProxy.h"
-#include "Engine/Material/MaterialTypes.h"
+#include "Renderer/Scene.h"
+#include "RHI/IRHICommandList.h"
 #include "Core/Logging/LogMacros.h"
-#include "Math/MonsterMath.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogForwardPasses, Log, All);
 
 namespace MonsterEngine
 {
+namespace Renderer
+{
 
 // Define log category for forward renderer
-DECLARE_LOG_CATEGORY_EXTERN(LogForwardRenderer, Log, All);
-DEFINE_LOG_CATEGORY(LogForwardRenderer);
 
 // ============================================================================
 // FDepthPrepass Implementation
@@ -1177,4 +1165,5 @@ void FShadowDepthPass::RenderShadowCasters(FRenderPassContext& Context, const FM
     }
 }
 
+} // namespace Renderer
 } // namespace MonsterEngine
