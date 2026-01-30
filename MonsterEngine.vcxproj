@@ -316,9 +316,7 @@
     <ClCompile Include="Source\Renderer\LightUniformBuffer.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\RenderPass.cpp">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="Source\Renderer\RenderPass.cpp" />
     <ClCompile Include="Source\Renderer\ForwardRenderPasses.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>

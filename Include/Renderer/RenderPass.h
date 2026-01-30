@@ -29,18 +29,19 @@ namespace MonsterRender { namespace RHI {
 }}
 
 namespace MonsterEngine {
-namespace Renderer {
-    class FScene;
-    class FViewInfo;
-}
+    // Forward declarations from Engine namespace
+    class FLightSceneInfo;
+    class FPrimitiveSceneInfo;
+    class FSceneView;
+    
+    namespace Renderer {
+        class FScene;
+        struct FViewInfo;
+    }
 }
 
-// Forward declarations
-class FScene;
-class FSceneView;
-struct FViewInfo;  // FViewInfo is a struct that inherits from FSceneView
-class FPrimitiveSceneInfo;
-class FLightSceneInfo;
+namespace MonsterEngine {
+namespace Renderer {
 
 // ============================================================================
 // Render Pass Types
@@ -542,7 +543,12 @@ public:
     
     // IRenderPass interface
     virtual ERenderPassType GetPassType() const override { return Config.PassType; }
-    virtual const TCHAR* GetPassName() const override { return Config.PassName.GetData(); }
+    
+    /**
+     * Get the pass name
+     */
+    virtual const TCHAR* GetPassName() const override { return *Config.PassName; }
+    
     virtual const FRenderPassConfig& GetConfig() const override { return Config; }
     virtual FRenderPassConfig& GetMutableConfig() override { return Config; }
     
@@ -658,4 +664,5 @@ private:
     bool bNeedsSorting = false;
 };
 
+} // namespace Renderer
 } // namespace MonsterEngine
