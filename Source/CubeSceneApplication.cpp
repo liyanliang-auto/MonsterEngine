@@ -57,8 +57,32 @@
 namespace MonsterRender
 {
 
-using namespace ::MonsterEngine;
-using namespace ::MonsterEngine::Math;
+// Use type aliases to avoid std namespace conflicts
+// Do NOT use "using namespace" - it causes std::unordered_set lookup issues
+using MonsterEngine::uint32;
+using MonsterEngine::uint64;
+using MonsterEngine::int32;
+using MonsterEngine::int64;
+using MonsterEngine::float32;
+using MonsterEngine::TArray;
+using MonsterEngine::TSharedPtr;
+using MonsterEngine::TUniquePtr;
+using MonsterEngine::FString;
+using MonsterEngine::Math::FVector;
+using MonsterEngine::Math::FMatrix;
+using MonsterEngine::Math::FRotator;
+using MonsterEngine::Math::FMath;
+using MonsterEngine::FMinimalViewInfo;
+using MonsterEngine::ACubeActor;
+using MonsterEngine::AFloorActor;
+using MonsterEngine::FScene;
+using MonsterEngine::FCameraManager;
+using MonsterEngine::FFPSCameraController;
+using MonsterEngine::Renderer::FLightSceneInfo;
+using MonsterEngine::Renderer::FSceneRenderer;
+using MonsterEngine::Renderer::FForwardShadingSceneRenderer;
+using MonsterEngine::MakeUnique;
+using MonsterEngine::MakeShared;
 
 // Use global log category (defined in LogCategories.cpp)
 using MonsterRender::LogCubeSceneApp;
