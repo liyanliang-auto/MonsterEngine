@@ -70,7 +70,7 @@ void FDepthPrepass::Execute(FRenderPassContext& Context)
     }
     
     const int32 NumPrimitives = Context.VisibleOpaquePrimitives->Num();
-    MR_LOG(LogForwardRenderer, Verbose, "Executing DepthPrepass with %d primitives", NumPrimitives);
+    MR_LOG(LogForwardPasses, Verbose, "Executing DepthPrepass with %d primitives", NumPrimitives);
     
     // Clear depth buffer
     ClearTargets(Context);
