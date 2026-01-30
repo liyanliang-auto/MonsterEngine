@@ -50,7 +50,7 @@ class FViewInfo;
 class FMeshElementCollector;
 
 // Use FLightSceneInfo from Engine namespace
-using MonsterEngine::FLightSceneInfo;
+using ::MonsterEngine::FLightSceneInfo;
 
 // ============================================================================
 // FPrimitiveSceneProxy - Primitive Rendering Proxy
