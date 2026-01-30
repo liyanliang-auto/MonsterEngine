@@ -617,4 +617,31 @@ TSharedPtr<FOpenGLDevice> CreateOpenGLDevice(void* windowHandle, const FOpenGLCo
     return device;
 }
 
+// ============================================================================
+// Texture Update Methods (Stub implementations)
+// ============================================================================
+
+bool FOpenGLDevice::updateTextureSubresource(
+    TSharedPtr<MonsterRender::RHI::IRHITexture> texture,
+    uint32 mipLevel,
+    const void* data,
+    SIZE_T dataSize)
+{
+    // TODO: Implement texture update when glad library is available
+    MR_LOG(LogOpenGLDevice, Warning, "updateTextureSubresource not yet implemented (requires glad)");
+    return false;
+}
+
+bool FOpenGLDevice::updateTextureSubresourceAsync(
+    TSharedPtr<MonsterRender::RHI::IRHITexture> texture,
+    uint32 mipLevel,
+    const void* data,
+    SIZE_T dataSize,
+    uint64* outFenceValue)
+{
+    // TODO: Implement async texture update when glad library is available
+    MR_LOG(LogOpenGLDevice, Warning, "updateTextureSubresourceAsync not yet implemented (requires glad)");
+    return false;
+}
+
 } // namespace MonsterEngine::OpenGL
