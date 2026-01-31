@@ -215,8 +215,9 @@ using MonsterEngine::TSharedPtr;
         
         /**
          * Build layout from this info
+         * @param Device - Vulkan device (needed for swapchain format lookup)
          */
-        FVulkanRenderTargetLayout BuildLayout() const;
+        FVulkanRenderTargetLayout BuildLayout(VulkanDevice* Device) const;
         
         /**
          * Build framebuffer key from this info

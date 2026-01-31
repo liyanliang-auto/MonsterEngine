@@ -325,7 +325,7 @@ namespace MonsterRender::RHI::Vulkan {
             }
             
             // Get or create render pass from cache
-            FVulkanRenderTargetLayout layout = rtInfo.BuildLayout();
+            FVulkanRenderTargetLayout layout = rtInfo.BuildLayout(m_device);
             
             // Add depth format if using device depth buffer without custom depth target
             if (!rtInfo.DepthStencilTarget && m_device->hasDepthBuffer()) {
