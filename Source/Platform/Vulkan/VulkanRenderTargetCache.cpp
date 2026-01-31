@@ -201,19 +201,32 @@ namespace MonsterRender::RHI::Vulkan {
         // ============================================================================
         // Subpass Dependencies
         // Reference: UE5 FVulkanRenderPass handles synchronization
+        // UE5 Pattern: Adjust dependency based on attachment types
         // ============================================================================
         
         VkSubpassDependency dependency{};
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.srcAccessMask = 0;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        
+        // UE5 Pattern: Different dependencies for color vs depth-only passes
+        if (Layout.NumColorAttachments > 0) {
+            // Has color attachments - standard color+depth pass
+            dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.srcAccessMask = 0;
+            dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        } else {
+            // Depth-only pass (e.g., shadow mapping) - no color attachment stages
+            dependency.srcStageMask = 0;
+            dependency.dstStageMask = 0;
+            dependency.srcAccessMask = 0;
+            dependency.dstAccessMask = 0;
+        }
         
         if (Layout.bHasDepthStencil) {
-            dependency.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-            dependency.dstStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            // UE5 uses both EARLY and LATE fragment tests for depth
+            dependency.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            dependency.dstStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
             dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         }
         
@@ -391,7 +404,13 @@ namespace MonsterRender::RHI::Vulkan {
         layout.ColorLoadOp = bClearColor[0] ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
         layout.ColorStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
         layout.DepthLoadOp = bClearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-        layout.DepthStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        
+        // UE5 Pattern: Shadow mapping (depth-only RTT) needs to store depth for later sampling
+        // Regular depth buffers can use DONT_CARE since they're not read after rendering
+        layout.DepthStoreOp = (NumColorTargets == 0 && DepthStencilTarget) ? 
+            VK_ATTACHMENT_STORE_OP_STORE :      // Shadow map - need to read depth later
+            VK_ATTACHMENT_STORE_OP_DONT_CARE;   // Regular depth - don't need after rendering
+        
         layout.StencilLoadOp = bClearStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         layout.StencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         
