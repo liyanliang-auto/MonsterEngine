@@ -156,7 +156,12 @@ namespace MonsterRender::RHI::Vulkan {
             colorAttachment.storeOp = Layout.ColorStoreOp;
             colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-            colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            
+            // UE5 Pattern: initialLayout must match loadOp
+            // LOAD requires valid layout (preserve existing content)
+            // CLEAR can use UNDEFINED (discard existing content)
+            colorAttachment.initialLayout = (Layout.ColorLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD) ?
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
             colorAttachment.finalLayout = Layout.ColorFinalLayout;
             
             attachments.push_back(colorAttachment);
@@ -179,7 +184,12 @@ namespace MonsterRender::RHI::Vulkan {
             depthAttachment.storeOp = Layout.DepthStoreOp;
             depthAttachment.stencilLoadOp = Layout.StencilLoadOp;
             depthAttachment.stencilStoreOp = Layout.StencilStoreOp;
-            depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            
+            // UE5 Pattern: initialLayout must match loadOp
+            // LOAD requires valid layout (preserve existing content)
+            // CLEAR can use UNDEFINED (discard existing content)
+            depthAttachment.initialLayout = (Layout.DepthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD) ?
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
             depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             
             attachments.push_back(depthAttachment);
