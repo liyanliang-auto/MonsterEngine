@@ -13,8 +13,9 @@
  * - Forward Renderer
  */
 
-#include "Core/CoreMinimal.h"
+#include "Core/CoreTypes.h"
 #include "Core/Logging/LogMacros.h"
+#include "Containers/Array.h"
 
 // Define log category for forward renderer (must be at global scope, before any namespace)
 DEFINE_LOG_CATEGORY_STATIC(LogForwardRenderer, Log, All);
@@ -31,6 +32,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogForwardRenderer, Log, All);
 
 namespace MonsterEngine {
 namespace Renderer {
+
+// Type alias to avoid template parsing issues in function signatures
+using FLightSceneInfoArray = TArray<FLightSceneInfo*>;
 
 // ============================================================================
 // FDepthPrepass Implementation
@@ -476,7 +480,7 @@ void FOpaquePass::RenderMeshBatch(
 void FOpaquePass::GatherAffectingLights(
     FRenderPassContext& Context,
     FPrimitiveSceneInfo* Primitive,
-    TArray<FLightSceneInfo*>& OutLights)
+    FLightSceneInfoArray& OutLights)
 {
     if (!Context.VisibleLights || !Primitive)
     {
@@ -517,7 +521,7 @@ void FOpaquePass::GatherAffectingLights(
 
 void FOpaquePass::SetupLightBuffer(
     FRenderPassContext& Context,
-    const TArray<FLightSceneInfo*>& Lights)
+    const FLightSceneInfoArray& Lights)
 {
     // TODO: Create and bind light uniform buffer using FLightUniformBufferManager
     // This will pack light data into a GPU-friendly format
