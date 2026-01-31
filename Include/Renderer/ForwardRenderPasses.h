@@ -40,9 +40,11 @@ class FLightSceneProxy;
 
 namespace Renderer {
 
-// Use FRenderPassContext from RenderPass.h
-using MonsterEngine::Renderer::FRenderPassContext;
-using MonsterEngine::Renderer::FRenderPassBase;
+// FRenderPassContext and FRenderPassBase are already in this namespace (from RenderPass.h)
+// No need for using declarations
+
+// Type alias to avoid template parsing issues in function signatures
+using FLightSceneInfoArray = TArray<FLightSceneInfo*>;
 
 // ============================================================================
 // Material Uniform Buffer
@@ -270,7 +272,7 @@ protected:
     virtual void GatherAffectingLights(
         FRenderPassContext& Context,
         FPrimitiveSceneInfo* Primitive,
-        TArray<FLightSceneInfo*>& OutLights);
+        FLightSceneInfoArray& OutLights);
     
     /**
      * Setup light uniform buffer for a primitive
@@ -279,7 +281,7 @@ protected:
      */
     virtual void SetupLightBuffer(
         FRenderPassContext& Context,
-        const TArray<FLightSceneInfo*>& Lights);
+        const FLightSceneInfoArray& Lights);
     
 private:
     /** Maximum number of lights per object */
@@ -292,7 +294,7 @@ private:
     TArray<FShadowData> ShadowData;
     
     /** Temporary array for light gathering */
-    TArray<FLightSceneInfo*> TempAffectingLights;
+    FLightSceneInfoArray TempAffectingLights;
     
     /** Material uniform buffer for GPU (shared across all mesh batches in a frame) */
     TSharedPtr<MonsterRender::RHI::IRHIBuffer> MaterialUniformBuffer;
