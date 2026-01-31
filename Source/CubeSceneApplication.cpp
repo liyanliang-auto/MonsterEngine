@@ -2340,12 +2340,9 @@ void CubeSceneApplication::renderWithRDG(
         {
             MR_LOG(LogCubeSceneApp, Log, "Executing Shadow Depth Pass");
             
-            // CRITICAL: Set shadow map as depth-only render target
-            TArray<TSharedPtr<RHI::IRHITexture>> emptyColorTargets;
-            rhiCmdList.setRenderTargets(
-                TSpan<TSharedPtr<RHI::IRHITexture>>(emptyColorTargets),
-                m_shadowMapTexture
-            );
+            // NOTE: Do NOT call setRenderTargets here!
+            // RDG automatically calls _setupRenderTargets() before executing this lambda.
+            // The shadow map depth target is already set via builder.writeDepth() declaration.
             
             // Set viewport for shadow map
             RHI::Viewport viewport;
@@ -2420,12 +2417,9 @@ void CubeSceneApplication::renderWithRDG(
         {
             MR_LOG(LogCubeSceneApp, Log, "Executing Main Render Pass with shadows");
             
-            // Set render targets to swapchain with device default depth buffer
-            // NOTE: Using nullptr for depth to use device's default depth buffer and swapchain render pass
-            // This avoids the RTT render pass which has finalLayout=SHADER_READ_ONLY_OPTIMAL
-            // that is incompatible with swapchain images (they don't have VK_IMAGE_USAGE_SAMPLED_BIT)
-            TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
-            rhiCmdList.setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
+            // NOTE: Do NOT call setRenderTargets here!
+            // RDG automatically calls _setupRenderTargets() before executing this lambda.
+            // Since no explicit render targets are declared, RDG uses swapchain rendering.
             
             // Set viewport to swapchain size (not window size)
             auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
