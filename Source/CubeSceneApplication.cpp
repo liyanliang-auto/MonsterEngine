@@ -2420,9 +2420,12 @@ void CubeSceneApplication::renderWithRDG(
         {
             MR_LOG(LogCubeSceneApp, Log, "Executing Main Render Pass with shadows");
             
-            // Set render targets to swapchain with viewport depth buffer
+            // Set render targets to swapchain with device default depth buffer
+            // NOTE: Using nullptr for depth to use device's default depth buffer and swapchain render pass
+            // This avoids the RTT render pass which has finalLayout=SHADER_READ_ONLY_OPTIMAL
+            // that is incompatible with swapchain images (they don't have VK_IMAGE_USAGE_SAMPLED_BIT)
             TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
-            rhiCmdList.setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), m_viewportDepthTarget);
+            rhiCmdList.setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
             
             // Set viewport to swapchain size (not window size)
             auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
