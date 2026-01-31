@@ -333,12 +333,19 @@ namespace MonsterRender::RHI::Vulkan {
                 layout.DepthStencilFormat = m_device->getVulkanDepthFormat();
             }
             
-            // Use RTT-specific render pass with SHADER_READ_ONLY_OPTIMAL initial layout
-            // This matches the layout after ImGui sampling in the previous frame
-            // finalLayout is also SHADER_READ_ONLY_OPTIMAL, ready for ImGui sampling
-            renderPass = m_device->getRTTRenderPass();
-            MR_LOG_INFO("RTT: Using device render pass=" + std::to_string(reinterpret_cast<uint64>(renderPass)) +
-                       ", extent=" + std::to_string(renderExtent.width) + "x" + std::to_string(renderExtent.height));
+            // UE5 Pattern: Use render pass cache to dynamically create render pass
+            // This supports depth-only, color-only, and color+depth render passes
+            auto* rpCache = m_device->GetRenderPassCache();
+            if (rpCache) {
+                renderPass = rpCache->GetOrCreateRenderPass(layout);
+                MR_LOG_INFO("RTT: Using cached render pass=0x" + 
+                           std::to_string(reinterpret_cast<uint64>(renderPass)) +
+                           ", NumColorTargets=" + std::to_string(rtInfo.NumColorTargets) +
+                           ", HasDepth=" + std::string(layout.bHasDepthStencil ? "true" : "false") +
+                           ", extent=" + std::to_string(renderExtent.width) + "x" + std::to_string(renderExtent.height));
+            } else {
+                MR_LOG_ERROR("RTT: Render pass cache is null!");
+            }
             
             // Get or create framebuffer from cache
             if (renderPass != VK_NULL_HANDLE) {
