@@ -337,7 +337,9 @@
     <ClCompile Include="Source\Engine\Components\FloorMeshComponent.cpp" />
     <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Proxies\FloorSceneProxy.cpp" />
-    <ClCompile Include="Source\CubeSceneApplication.cpp" />
+    <ClCompile Include="Source\CubeSceneApplication.cpp">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="Source\Engine\Material\Material.cpp" />
     <ClCompile Include="Source\Engine\Material\MaterialInstance.cpp" />
     <ClCompile Include="Source\Engine\Material\MaterialInstanceDynamic.cpp" />
