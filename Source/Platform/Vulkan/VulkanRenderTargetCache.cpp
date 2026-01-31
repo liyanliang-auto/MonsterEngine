@@ -381,7 +381,7 @@ namespace MonsterRender::RHI::Vulkan {
     // FVulkanRenderTargetInfo Implementation
     // ============================================================================
 
-    FVulkanRenderTargetLayout FVulkanRenderTargetInfo::BuildLayout() const {
+    FVulkanRenderTargetLayout FVulkanRenderTargetInfo::BuildLayout(VulkanDevice* Device) const {
         FVulkanRenderTargetLayout layout;
         
         // Color attachments
@@ -390,6 +390,10 @@ namespace MonsterRender::RHI::Vulkan {
             if (ColorTargets[i]) {
                 // Use VulkanTexture's native Vulkan format
                 layout.ColorFormats[i] = ColorTargets[i]->getVulkanFormat();
+            } else if (bIsSwapchain && Device) {
+                // Swapchain mode - get format from device
+                // This handles the case where we render to swapchain with custom depth
+                layout.ColorFormats[i] = Device->getSwapchainFormat();
             }
         }
         
