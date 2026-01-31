@@ -140,7 +140,7 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
-        MR_LOG_INFO("CreateRenderPass: NumColorAttachments=%u, bHasDepthStencil=%d, "
+        MR_LOG(LogTemp, Log, "CreateRenderPass: NumColorAttachments=%u, bHasDepthStencil=%d, "
                    "DepthFormat=%u, DepthLoadOp=%u, DepthStoreOp=%u",
                    Layout.NumColorAttachments, Layout.bHasDepthStencil ? 1 : 0,
                    static_cast<uint32>(Layout.DepthStencilFormat),
@@ -204,7 +204,7 @@ namespace MonsterRender::RHI::Vulkan {
             depthRef.attachment = static_cast<uint32>(attachments.size() - 1);
             depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             
-            MR_LOG_INFO("CreateRenderPass: Added depth attachment at index %u, format=%u, "
+            MR_LOG(LogTemp, Log, "CreateRenderPass: Added depth attachment at index %u, format=%u, "
                        "loadOp=%u, storeOp=%u, initialLayout=%u, finalLayout=%u",
                        depthRef.attachment, static_cast<uint32>(depthAttachment.format),
                        static_cast<uint32>(depthAttachment.loadOp),
@@ -277,7 +277,7 @@ namespace MonsterRender::RHI::Vulkan {
             return VK_NULL_HANDLE;
         }
         
-        MR_LOG_INFO("CreateRenderPass: SUCCESS - renderPass=0x%llx, totalAttachments=%u, "
+        MR_LOG(LogTemp, Log, "CreateRenderPass: SUCCESS - renderPass=0x%llx, totalAttachments=%u, "
                    "colorAttachments=%u, hasDepth=%d",
                    reinterpret_cast<uint64>(renderPass),
                    static_cast<uint32>(attachments.size()),
@@ -481,7 +481,7 @@ namespace MonsterRender::RHI::Vulkan {
             key.Height = desc.height;
         }
         
-        MR_LOG_INFO("BuildFramebufferKey: NumColorTargets=%u, bIsSwapchain=%d, HasDepthTarget=%d, "
+        MR_LOG(LogTemp, Log, "BuildFramebufferKey: NumColorTargets=%u, bIsSwapchain=%d, HasDepthTarget=%d, "
                    "RenderArea=%ux%u, FinalSize=%ux%u",
                    NumColorTargets, bIsSwapchain ? 1 : 0, DepthStencilTarget ? 1 : 0,
                    RenderAreaWidth, RenderAreaHeight, key.Width, key.Height);
@@ -490,13 +490,13 @@ namespace MonsterRender::RHI::Vulkan {
         if (bIsSwapchain && SwapchainImageView != VK_NULL_HANDLE) {
             // Use swapchain image view as color attachment
             key.Attachments[key.NumAttachments++] = SwapchainImageView;
-            MR_LOG_INFO("BuildFramebufferKey: Added swapchain color attachment, view=0x%llx",
+            MR_LOG(LogTemp, Log, "BuildFramebufferKey: Added swapchain color attachment, view=0x%llx",
                        reinterpret_cast<uint64>(SwapchainImageView));
         } else {
             for (uint32 i = 0; i < NumColorTargets; ++i) {
                 if (ColorTargets[i]) {
                     key.Attachments[key.NumAttachments++] = ColorTargets[i]->getImageView();
-                    MR_LOG_INFO("BuildFramebufferKey: Added color attachment %u, view=0x%llx",
+                    MR_LOG(LogTemp, Log, "BuildFramebufferKey: Added color attachment %u, view=0x%llx",
                                i, reinterpret_cast<uint64>(ColorTargets[i]->getImageView()));
                 }
             }
@@ -506,16 +506,16 @@ namespace MonsterRender::RHI::Vulkan {
         if (DepthStencilTarget) {
             VkImageView depthImageView = DepthStencilTarget->getImageView();
             key.Attachments[key.NumAttachments++] = depthImageView;
-            MR_LOG_INFO("BuildFramebufferKey: Added DepthStencilTarget depth attachment, view=0x%llx",
+            MR_LOG(LogTemp, Log, "BuildFramebufferKey: Added DepthStencilTarget depth attachment, view=0x%llx",
                        reinterpret_cast<uint64>(depthImageView));
         } else if (DepthView != VK_NULL_HANDLE) {
             // Use provided depth view (e.g., device's default depth buffer)
             key.Attachments[key.NumAttachments++] = DepthView;
-            MR_LOG_INFO("BuildFramebufferKey: Added provided DepthView, view=0x%llx",
+            MR_LOG(LogTemp, Log, "BuildFramebufferKey: Added provided DepthView, view=0x%llx",
                        reinterpret_cast<uint64>(DepthView));
         }
         
-        MR_LOG_INFO("BuildFramebufferKey: Final NumAttachments=%u", key.NumAttachments);
+        MR_LOG(LogTemp, Log, "BuildFramebufferKey: Final NumAttachments=%u", key.NumAttachments);
         
         key.Layers = 1;
         
