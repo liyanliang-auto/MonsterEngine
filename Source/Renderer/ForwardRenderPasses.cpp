@@ -13,6 +13,12 @@
  * - Forward Renderer
  */
 
+#include "Core/CoreMinimal.h"
+#include "Core/Logging/LogMacros.h"
+
+// Define log category for forward renderer (must be at global scope, before any namespace)
+DEFINE_LOG_CATEGORY_STATIC(LogForwardRenderer, Log, All);
+
 #include "Renderer/ForwardRenderPasses.h"
 #include "Renderer/Scene.h"
 #include "Renderer/MeshElementCollector.h"
@@ -22,10 +28,6 @@
 #include "Engine/PrimitiveSceneInfo.h"
 #include "Engine/LightSceneInfo.h"
 #include "RHI/IRHICommandList.h"
-#include "Core/Logging/LogMacros.h"
-
-// Define log category for forward renderer (must be at global scope)
-DEFINE_LOG_CATEGORY_STATIC(LogForwardPasses, Log, All);
 
 namespace MonsterEngine {
 namespace Renderer {
@@ -384,7 +386,7 @@ void FOpaquePass::RenderMeshBatch(
         void* MappedData = MaterialUniformBuffer->map();
         if (MappedData)
         {
-            std::memcpy(MappedData, &MaterialData, sizeof(FMaterialUniformBuffer));
+            FMemory::Memcpy(MappedData, &MaterialData, sizeof(FMaterialUniformBuffer));
             MaterialUniformBuffer->unmap();
             
             MR_LOG(LogForwardRenderer, VeryVerbose, "Updated material uniform buffer to GPU");
