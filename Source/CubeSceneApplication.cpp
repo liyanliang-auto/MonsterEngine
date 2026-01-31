@@ -2390,15 +2390,12 @@ void CubeSceneApplication::renderWithRDG(
             // NOTE: Floor does NOT cast shadows, only receives them
             // So we don't render floor to shadow map
             
-            // End shadow render pass
-            rhiCmdList.endRenderPass();
+            // NOTE: Do NOT call endRenderPass() here!
+            // RDG automatically ends the render pass after this lambda returns.
+            // Calling endRenderPass() manually would cause render pass state corruption.
             
-            // Transition shadow map from depth attachment to shader resource
-            rhiCmdList.transitionResource(
-                m_shadowMapTexture,
-                RHI::EResourceUsage::DepthStencil,
-                RHI::EResourceUsage::ShaderResource
-            );
+            // NOTE: Resource transitions are handled by RDG based on pass declarations.
+            // The shadow map will be transitioned to shader resource before MainRenderPass.
             
             MR_LOG(LogCubeSceneApp, Log, "Shadow Depth Pass complete");
         }
