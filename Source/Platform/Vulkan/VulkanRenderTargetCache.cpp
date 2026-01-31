@@ -140,6 +140,13 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
+        MR_LOG_INFO("CreateRenderPass: NumColorAttachments=%u, bHasDepthStencil=%d, "
+                   "DepthFormat=%u, DepthLoadOp=%u, DepthStoreOp=%u",
+                   Layout.NumColorAttachments, Layout.bHasDepthStencil ? 1 : 0,
+                   static_cast<uint32>(Layout.DepthStencilFormat),
+                   static_cast<uint32>(Layout.DepthLoadOp),
+                   static_cast<uint32>(Layout.DepthStoreOp));
+        
         TArray<VkAttachmentDescription> attachments;
         TArray<VkAttachmentReference> colorRefs;
         VkAttachmentReference depthRef{};
@@ -196,6 +203,14 @@ namespace MonsterRender::RHI::Vulkan {
             
             depthRef.attachment = static_cast<uint32>(attachments.size() - 1);
             depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            
+            MR_LOG_INFO("CreateRenderPass: Added depth attachment at index %u, format=%u, "
+                       "loadOp=%u, storeOp=%u, initialLayout=%u, finalLayout=%u",
+                       depthRef.attachment, static_cast<uint32>(depthAttachment.format),
+                       static_cast<uint32>(depthAttachment.loadOp),
+                       static_cast<uint32>(depthAttachment.storeOp),
+                       static_cast<uint32>(depthAttachment.initialLayout),
+                       static_cast<uint32>(depthAttachment.finalLayout));
         }
         
         // ============================================================================
@@ -262,9 +277,12 @@ namespace MonsterRender::RHI::Vulkan {
             return VK_NULL_HANDLE;
         }
         
-        MR_LOG_DEBUG("FVulkanRenderPassCache: Created render pass with " + 
-                    std::to_string(Layout.NumColorAttachments) + " color attachment(s)" +
-                    (Layout.bHasDepthStencil ? " + depth" : ""));
+        MR_LOG_INFO("CreateRenderPass: SUCCESS - renderPass=0x%llx, totalAttachments=%u, "
+                   "colorAttachments=%u, hasDepth=%d",
+                   reinterpret_cast<uint64>(renderPass),
+                   static_cast<uint32>(attachments.size()),
+                   Layout.NumColorAttachments,
+                   Layout.bHasDepthStencil ? 1 : 0);
         
         return renderPass;
     }
@@ -443,37 +461,61 @@ namespace MonsterRender::RHI::Vulkan {
         FVulkanFramebufferKey key;
         key.RenderPass = RenderPass;
         key.NumAttachments = 0;
+        key.Width = 0;
+        key.Height = 0;
         
-        // Determine dimensions from first color target or depth target
-        if (NumColorTargets > 0 && ColorTargets[0]) {
-            auto& desc = ColorTargets[0]->getDesc();
-            key.Width = RenderAreaWidth > 0 ? RenderAreaWidth : desc.width;
-            key.Height = RenderAreaHeight > 0 ? RenderAreaHeight : desc.height;
-        } else if (RenderAreaWidth > 0 && RenderAreaHeight > 0) {
-            // Use explicitly set render area (for swapchain + custom depth case)
+        // Determine dimensions - priority: explicit RenderArea > ColorTarget > DepthTarget
+        if (RenderAreaWidth > 0 && RenderAreaHeight > 0) {
+            // Use explicitly set render area
             key.Width = RenderAreaWidth;
             key.Height = RenderAreaHeight;
+        } else if (NumColorTargets > 0 && ColorTargets[0]) {
+            // Use first color target dimensions
+            auto& desc = ColorTargets[0]->getDesc();
+            key.Width = desc.width;
+            key.Height = desc.height;
+        } else if (DepthStencilTarget) {
+            // Depth-only case: use depth target dimensions
+            auto& desc = DepthStencilTarget->getDesc();
+            key.Width = desc.width;
+            key.Height = desc.height;
         }
+        
+        MR_LOG_INFO("BuildFramebufferKey: NumColorTargets=%u, bIsSwapchain=%d, HasDepthTarget=%d, "
+                   "RenderArea=%ux%u, FinalSize=%ux%u",
+                   NumColorTargets, bIsSwapchain ? 1 : 0, DepthStencilTarget ? 1 : 0,
+                   RenderAreaWidth, RenderAreaHeight, key.Width, key.Height);
         
         // Color attachments - check for swapchain image view first
         if (bIsSwapchain && SwapchainImageView != VK_NULL_HANDLE) {
             // Use swapchain image view as color attachment
             key.Attachments[key.NumAttachments++] = SwapchainImageView;
+            MR_LOG_INFO("BuildFramebufferKey: Added swapchain color attachment, view=0x%llx",
+                       reinterpret_cast<uint64>(SwapchainImageView));
         } else {
             for (uint32 i = 0; i < NumColorTargets; ++i) {
                 if (ColorTargets[i]) {
                     key.Attachments[key.NumAttachments++] = ColorTargets[i]->getImageView();
+                    MR_LOG_INFO("BuildFramebufferKey: Added color attachment %u, view=0x%llx",
+                               i, reinterpret_cast<uint64>(ColorTargets[i]->getImageView()));
                 }
             }
         }
         
         // Depth attachment
         if (DepthStencilTarget) {
-            key.Attachments[key.NumAttachments++] = DepthStencilTarget->getImageView();
+            VkImageView depthImageView = DepthStencilTarget->getImageView();
+            key.Attachments[key.NumAttachments++] = depthImageView;
+            MR_LOG_INFO("BuildFramebufferKey: Added DepthStencilTarget depth attachment, view=0x%llx",
+                       reinterpret_cast<uint64>(depthImageView));
         } else if (DepthView != VK_NULL_HANDLE) {
             // Use provided depth view (e.g., device's default depth buffer)
             key.Attachments[key.NumAttachments++] = DepthView;
+            MR_LOG_INFO("BuildFramebufferKey: Added provided DepthView, view=0x%llx",
+                       reinterpret_cast<uint64>(DepthView));
         }
+        
+        MR_LOG_INFO("BuildFramebufferKey: Final NumAttachments=%u", key.NumAttachments);
         
         key.Layers = 1;
         
