@@ -978,16 +978,16 @@ void FRDGBuilder::_setupRenderTargets(RHI::IRHICommandList& rhiCmdList, FRDGPass
         // Check if this is a render target write
         if (access.access == ERHIAccess::RTV)
         {
-            // Color render target
-            TSharedPtr<RHI::IRHITexture> target(rhiTexture, [](RHI::IRHITexture*){});
+            // Color render target - use MakeShareable for proper StaticCastSharedPtr support
+            TSharedPtr<RHI::IRHITexture> target = MakeShareable(rhiTexture, [](RHI::IRHITexture*){});
             colorTargets.Add(target);
             
             MR_LOG(LogRDG, Log, "  Added Color RT: %ls", *access.texture->getName());
         }
         else if (access.access == ERHIAccess::DSVWrite || access.access == ERHIAccess::DSVRead)
         {
-            // Depth/stencil target
-            depthTarget = TSharedPtr<RHI::IRHITexture>(rhiTexture, [](RHI::IRHITexture*){});
+            // Depth/stencil target - use MakeShareable for proper StaticCastSharedPtr support
+            depthTarget = MakeShareable(rhiTexture, [](RHI::IRHITexture*){});
             
             MR_LOG(LogRDG, Log, "  Added Depth RT: %ls", *access.texture->getName());
         }
