@@ -67,10 +67,10 @@ using MonsterRender::LogCubeSceneApp;
 static ApplicationConfig CreateCubeSceneConfig()
 {
     ApplicationConfig config;
-    config.name = "Monster Engine";
+    config.name = "Monster Engine - PBR";
     config.preferredBackend = RHI::ERHIBackend::Vulkan;  // Use Vulkan backend
-    config.windowProperties.width = 1280;
-    config.windowProperties.height = 1024;
+    config.windowProperties.width = 1024;
+    config.windowProperties.height = 768;
     config.enableValidation = true;
     return config;
 }
@@ -79,8 +79,8 @@ CubeSceneApplication::CubeSceneApplication()
     : Application(CreateCubeSceneConfig())
     , m_device(nullptr)
     , m_bUseSceneRenderer(true)  // Enable FSceneRenderer for UE5-style rendering
-    , m_windowWidth(1280)
-    , m_windowHeight(720)
+    , m_windowWidth(1024)
+    , m_windowHeight(768)
     , m_totalTime(0.0f)
     , m_cameraOrbitAngle(0.0f)
     , m_bOrbitCamera(false)
@@ -145,7 +145,7 @@ void CubeSceneApplication::onInitialize()
     {
         RHI::ERHIBackend backend = m_device->getRHIBackend();
         const char* backendName = (backend == RHI::ERHIBackend::Vulkan) ? "Vulkan" : "OpenGL";
-        String windowTitle = String("MonsterEngine - CubeScene [") + backendName + "]";
+        String windowTitle = String("MonsterEngine - PBR CubeScene [") + backendName + "]";
         getWindow()->setTitle(windowTitle);
         MR_LOG(LogCubeSceneApp, Log, "Window title set to: %s", windowTitle.c_str());
     }
