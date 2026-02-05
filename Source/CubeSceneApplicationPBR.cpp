@@ -364,17 +364,25 @@ bool CubeSceneApplication::createHelmetTextures()
     {
         if (!img.bIsLoaded || img.Data.Num() == 0) return nullptr;
         
+        // Calculate mip levels: floor(log2(max(width, height))) + 1
+        uint32 maxDim = std::max(img.Width, img.Height);
+        uint32 mipLevels = static_cast<uint32>(std::floor(std::log2(maxDim))) + 1;
+        
         RHI::TextureDesc desc;
         desc.width = img.Width;
         desc.height = img.Height;
         desc.depth = 1;
-        desc.mipLevels = 1;
+        desc.mipLevels = mipLevels;
         desc.arraySize = 1;
         desc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
-        desc.usage = RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferDst;
+        desc.usage = RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferDst | RHI::EResourceUsage::TransferSrc;
         desc.initialData = img.Data.GetData();
         desc.initialDataSize = img.Data.Num();
         desc.debugName = name;
+        
+        MR_LOG(LogCubeSceneApp, Log, "Creating texture '%s' (%ux%u) with %u mip levels", 
+               name, img.Width, img.Height, mipLevels);
+        
         return m_device->createTexture(desc);
     };
     
@@ -711,14 +719,14 @@ void CubeSceneApplication::updatePBRUniforms(
     constexpr double PI = 3.14159265358979323846;
     
     // X-axis rotation (45 degrees tilt)
-    double xAngleRad = -45.0 * (PI / 180.0);
+    double xAngleRad = -90.0 * (PI / 180.0);
     double cosX = std::cos(xAngleRad), sinX = std::sin(xAngleRad);
     FMatrix rotX = FMatrix::Identity;
     rotX.M[1][1] = cosX; rotX.M[1][2] = -sinX;
     rotX.M[2][1] = sinX; rotX.M[2][2] = cosX;
     
     // Y-axis rotation (90 degrees to face camera + animation)
-    double yAngleRad = (90.0 + m_helmetRotationAngle) * (PI / 180.0);
+    double yAngleRad = (0.0 + m_helmetRotationAngle) * (PI / 180.0);
     double cosY = std::cos(yAngleRad), sinY = std::sin(yAngleRad);
     FMatrix rotY = FMatrix::Identity;
     rotY.M[0][0] = cosY; rotY.M[0][2] = sinY;
