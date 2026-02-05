@@ -351,6 +351,18 @@ void ULightComponent::OnLightPropertyChanged()
     }
 }
 
+void ULightComponent::OnTransformUpdated()
+{
+    // Call base class implementation
+    USceneComponent::OnTransformUpdated();
+    
+    // Update the proxy's transform when the component's transform changes
+    if (LightSceneProxy)
+    {
+        LightSceneProxy->SetTransform(GetComponentToWorld());
+    }
+}
+
 // ============================================================================
 // UDirectionalLightComponent Implementation
 // ============================================================================

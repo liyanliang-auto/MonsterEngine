@@ -338,6 +338,9 @@ void FScene::AddLight(ULightComponent* Light)
 
     MR_LOG(LogScene, Verbose, "Adding light to scene");
 
+    // Ensure transform is up-to-date before creating proxy
+    Light->UpdateComponentToWorld();
+
     // Create scene proxy
     FLightSceneProxy* SceneProxy = Light->CreateSceneProxy();
     if (!SceneProxy)

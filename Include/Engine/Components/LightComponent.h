@@ -222,6 +222,9 @@ protected:
     /** Called when the light properties change */
     virtual void OnLightPropertyChanged();
 
+    /** Called when transform is updated - updates proxy direction */
+    virtual void OnTransformUpdated() override;
+
 protected:
     // ========================================================================
     // Scene Data
