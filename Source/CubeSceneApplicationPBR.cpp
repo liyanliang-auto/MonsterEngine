@@ -726,7 +726,7 @@ void CubeSceneApplication::updatePBRUniforms(
     rotX.M[2][1] = sinX; rotX.M[2][2] = cosX;
     
     // Y-axis rotation (90 degrees to face camera + animation)
-    double yAngleRad = (0.0 + m_helmetRotationAngle) * (PI / 180.0);
+    double yAngleRad = (-20.0 + m_helmetRotationAngle) * (PI / 180.0);
     double cosY = std::cos(yAngleRad), sinY = std::sin(yAngleRad);
     FMatrix rotY = FMatrix::Identity;
     rotY.M[0][0] = cosY; rotY.M[0][2] = sinY;
