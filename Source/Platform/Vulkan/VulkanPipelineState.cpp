@@ -368,12 +368,15 @@ namespace MonsterRender::RHI::Vulkan
         VkAttachmentReference depthReference{};
         bool hasDepth = false;
 
+        // Get device's MSAA sample count
+        VkSampleCountFlagBits sampleCount = m_device->getMSAASampleCount();
+        
         // Color attachments
         for (uint32 i = 0; i < m_desc.renderTargetFormats.size(); ++i)
         {
             VkAttachmentDescription colorAttachment{};
             colorAttachment.format = VulkanUtils::getRHIFormatToVulkan(m_desc.renderTargetFormats[i]);
-            colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            colorAttachment.samples = sampleCount;
             colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -394,7 +397,7 @@ namespace MonsterRender::RHI::Vulkan
         {
             VkAttachmentDescription depthAttachment{};
             depthAttachment.format = VulkanUtils::getRHIFormatToVulkan(m_desc.depthStencilFormat);
-            depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            depthAttachment.samples = sampleCount;
             depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
             depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -918,7 +921,8 @@ namespace MonsterRender::RHI::Vulkan
         VkPipelineMultisampleStateCreateInfo multisampling{};
         multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisampling.sampleShadingEnable = VK_FALSE;
-        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        // Use device's MSAA sample count for anti-aliasing
+        multisampling.rasterizationSamples = m_device->getMSAASampleCount();
         multisampling.minSampleShading = 1.0f;
         multisampling.pSampleMask = nullptr;
         multisampling.alphaToCoverageEnable = VK_FALSE;

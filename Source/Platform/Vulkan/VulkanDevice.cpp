@@ -115,7 +115,13 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
         }
         
-        // Step 7: Create render pass (now includes depth attachment)
+        // Step 6c: Create MSAA resources (must be before render pass)
+        if (!createMSAAResources()) {
+            MR_LOG_ERROR("Failed to create MSAA resources");
+            return false;
+        }
+        
+        // Step 7: Create render pass (now includes depth attachment and MSAA)
         if (!createRenderPass()) {
             MR_LOG_ERROR("Failed to create render pass");
             return false;
@@ -263,6 +269,9 @@ namespace MonsterRender::RHI::Vulkan {
             
             // Destroy depth resources (must be after framebuffers)
             destroyDepthResources();
+            
+            // Destroy MSAA resources (must be after framebuffers)
+            destroyMSAAResources();
             
             // Destroy render pass
             if (m_renderPass != VK_NULL_HANDLE) {
@@ -1231,36 +1240,83 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         
         // ============================================================================
-        // Attachment Descriptions (UE5-style)
+        // Attachment Descriptions (UE5-style with MSAA support)
         // Reference: UE5 FVulkanRenderPass::Create
         // ============================================================================
         
         // Use std::vector for Vulkan API compatibility
         std::vector<VkAttachmentDescription> attachments;
         
-        // Attachment 0: Color attachment (swapchain image)
-        VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = m_swapchainImageFormat;
-        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        attachments.push_back(colorAttachment);
+        // Check if MSAA is enabled
+        bool msaaEnabled = (m_msaaSampleCount != VK_SAMPLE_COUNT_1_BIT);
         
-        // Attachment 1: Depth attachment
-        VkAttachmentDescription depthAttachment{};
-        depthAttachment.format = m_depthFormat;
-        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't need to store depth after rendering
-        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        attachments.push_back(depthAttachment);
+        if (msaaEnabled) {
+            // MSAA path: 3 attachments (MSAA color, MSAA depth, resolve)
+            
+            // Attachment 0: MSAA color attachment
+            VkAttachmentDescription msaaColorAttachment{};
+            msaaColorAttachment.format = m_swapchainImageFormat;
+            msaaColorAttachment.samples = m_msaaSampleCount;
+            msaaColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            msaaColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // MSAA samples don't need to be stored
+            msaaColorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            msaaColorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            msaaColorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            msaaColorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            attachments.push_back(msaaColorAttachment);
+            
+            // Attachment 1: MSAA depth attachment
+            VkAttachmentDescription msaaDepthAttachment{};
+            msaaDepthAttachment.format = m_depthFormat;
+            msaaDepthAttachment.samples = m_msaaSampleCount;
+            msaaDepthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            msaaDepthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            msaaDepthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            msaaDepthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            msaaDepthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            msaaDepthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            attachments.push_back(msaaDepthAttachment);
+            
+            // Attachment 2: Resolve attachment (swapchain image)
+            VkAttachmentDescription resolveAttachment{};
+            resolveAttachment.format = m_swapchainImageFormat;
+            resolveAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            resolveAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            resolveAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            resolveAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            resolveAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            resolveAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            resolveAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            attachments.push_back(resolveAttachment);
+            
+            MR_LOG_INFO("Creating MSAA render pass with " + std::to_string(m_msaaSampleCount) + "x samples");
+        } else {
+            // Non-MSAA path: 2 attachments (color, depth)
+            
+            // Attachment 0: Color attachment (swapchain image)
+            VkAttachmentDescription colorAttachment{};
+            colorAttachment.format = m_swapchainImageFormat;
+            colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            attachments.push_back(colorAttachment);
+            
+            // Attachment 1: Depth attachment
+            VkAttachmentDescription depthAttachment{};
+            depthAttachment.format = m_depthFormat;
+            depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            attachments.push_back(depthAttachment);
+        }
         
         // ============================================================================
         // Attachment References
@@ -1276,6 +1332,11 @@ namespace MonsterRender::RHI::Vulkan {
         depthAttachmentRef.attachment = 1;
         depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         
+        // Resolve attachment reference (only for MSAA)
+        VkAttachmentReference resolveAttachmentRef{};
+        resolveAttachmentRef.attachment = 2;
+        resolveAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        
         // ============================================================================
         // Subpass Description
         // ============================================================================
@@ -1285,6 +1346,7 @@ namespace MonsterRender::RHI::Vulkan {
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
         subpass.pDepthStencilAttachment = &depthAttachmentRef;
+        subpass.pResolveAttachments = msaaEnabled ? &resolveAttachmentRef : nullptr;
         
         // ============================================================================
         // Subpass Dependencies (UE5-style synchronization)
@@ -1413,19 +1475,30 @@ namespace MonsterRender::RHI::Vulkan {
         
         const auto& functions = VulkanAPI::getFunctions();
         
+        // Check if MSAA is enabled
+        bool msaaEnabled = (m_msaaSampleCount != VK_SAMPLE_COUNT_1_BIT);
+        
         // Create one framebuffer for each swapchain image view
-        // Each framebuffer has: [0] color attachment, [1] depth attachment
         // Reference: UE5 FVulkanFramebuffer::Create
         m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
         
         for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
-            // Attachment array: color view (per-swapchain) + depth view (shared)
-            // The depth view is shared because we only render to one framebuffer at a time
-            // Use std::vector for Vulkan API compatibility
-            std::vector<VkImageView> attachments = {
-                m_swapchainImageViews[i],  // Attachment 0: Color
-                m_depthImageView           // Attachment 1: Depth
-            };
+            std::vector<VkImageView> attachments;
+            
+            if (msaaEnabled) {
+                // MSAA path: [0] MSAA color, [1] MSAA depth, [2] resolve (swapchain)
+                attachments = {
+                    m_msaaColorImageView,      // Attachment 0: MSAA Color
+                    m_msaaDepthImageView,      // Attachment 1: MSAA Depth
+                    m_swapchainImageViews[i]   // Attachment 2: Resolve (swapchain)
+                };
+            } else {
+                // Non-MSAA path: [0] color (swapchain), [1] depth
+                attachments = {
+                    m_swapchainImageViews[i],  // Attachment 0: Color
+                    m_depthImageView           // Attachment 1: Depth
+                };
+            }
             
             VkFramebufferCreateInfo framebufferInfo{};
             framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -1444,7 +1517,7 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         MR_LOG_INFO("Created " + std::to_string(m_swapchainFramebuffers.size()) + 
-                   " framebuffers successfully (with depth attachment)");
+                   " framebuffers successfully" + (msaaEnabled ? " (with MSAA)" : " (with depth attachment)"));
         return true;
     }
     
@@ -1983,6 +2056,202 @@ namespace MonsterRender::RHI::Vulkan {
     bool VulkanDevice::hasStencilComponent(VkFormat format) {
         return format == VK_FORMAT_D32_SFLOAT_S8_UINT || 
                format == VK_FORMAT_D24_UNORM_S8_UINT;
+    }
+    
+    VkSampleCountFlagBits VulkanDevice::getMaxUsableSampleCount() {
+        VkSampleCountFlags counts = m_deviceProperties.limits.framebufferColorSampleCounts & 
+                                    m_deviceProperties.limits.framebufferDepthSampleCounts;
+        
+        // Prefer 8x MSAA, fall back to lower if not supported
+        if (counts & VK_SAMPLE_COUNT_8_BIT) { return VK_SAMPLE_COUNT_8_BIT; }
+        if (counts & VK_SAMPLE_COUNT_4_BIT) { return VK_SAMPLE_COUNT_4_BIT; }
+        if (counts & VK_SAMPLE_COUNT_2_BIT) { return VK_SAMPLE_COUNT_2_BIT; }
+        
+        return VK_SAMPLE_COUNT_1_BIT;
+    }
+    
+    bool VulkanDevice::createMSAAResources() {
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        // Get max supported sample count
+        m_msaaSampleCount = getMaxUsableSampleCount();
+        
+        if (m_msaaSampleCount == VK_SAMPLE_COUNT_1_BIT) {
+            MR_LOG_INFO("MSAA not supported or disabled");
+            return true;
+        }
+        
+        MR_LOG_INFO("Creating MSAA resources with " + std::to_string(m_msaaSampleCount) + "x samples");
+        
+        // Create MSAA color image
+        VkImageCreateInfo colorImageInfo{};
+        colorImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        colorImageInfo.imageType = VK_IMAGE_TYPE_2D;
+        colorImageInfo.format = m_swapchainImageFormat;
+        colorImageInfo.extent.width = m_swapchainExtent.width;
+        colorImageInfo.extent.height = m_swapchainExtent.height;
+        colorImageInfo.extent.depth = 1;
+        colorImageInfo.mipLevels = 1;
+        colorImageInfo.arrayLayers = 1;
+        colorImageInfo.samples = m_msaaSampleCount;
+        colorImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        colorImageInfo.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        colorImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        colorImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        
+        VkResult result = functions.vkCreateImage(m_device, &colorImageInfo, nullptr, &m_msaaColorImage);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create MSAA color image: " + std::to_string(result));
+            return false;
+        }
+        
+        // Allocate memory for MSAA color image
+        VkMemoryRequirements memRequirements;
+        functions.vkGetImageMemoryRequirements(m_device, m_msaaColorImage, &memRequirements);
+        
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        
+        // Find suitable memory type
+        uint32 memoryTypeIndex = UINT32_MAX;
+        for (uint32 i = 0; i < m_memoryProperties.memoryTypeCount; i++) {
+            if ((memRequirements.memoryTypeBits & (1 << i)) &&
+                (m_memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+                memoryTypeIndex = i;
+                break;
+            }
+        }
+        
+        if (memoryTypeIndex == UINT32_MAX) {
+            MR_LOG_ERROR("Failed to find suitable memory type for MSAA color image");
+            return false;
+        }
+        allocInfo.memoryTypeIndex = memoryTypeIndex;
+        
+        result = functions.vkAllocateMemory(m_device, &allocInfo, nullptr, &m_msaaColorImageMemory);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to allocate MSAA color image memory");
+            return false;
+        }
+        
+        functions.vkBindImageMemory(m_device, m_msaaColorImage, m_msaaColorImageMemory, 0);
+        
+        // Create MSAA color image view
+        VkImageViewCreateInfo colorViewInfo{};
+        colorViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        colorViewInfo.image = m_msaaColorImage;
+        colorViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        colorViewInfo.format = m_swapchainImageFormat;
+        colorViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        colorViewInfo.subresourceRange.baseMipLevel = 0;
+        colorViewInfo.subresourceRange.levelCount = 1;
+        colorViewInfo.subresourceRange.baseArrayLayer = 0;
+        colorViewInfo.subresourceRange.layerCount = 1;
+        
+        result = functions.vkCreateImageView(m_device, &colorViewInfo, nullptr, &m_msaaColorImageView);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create MSAA color image view");
+            return false;
+        }
+        
+        // Create MSAA depth image
+        VkImageCreateInfo depthImageInfo{};
+        depthImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        depthImageInfo.imageType = VK_IMAGE_TYPE_2D;
+        depthImageInfo.format = m_depthFormat;
+        depthImageInfo.extent.width = m_swapchainExtent.width;
+        depthImageInfo.extent.height = m_swapchainExtent.height;
+        depthImageInfo.extent.depth = 1;
+        depthImageInfo.mipLevels = 1;
+        depthImageInfo.arrayLayers = 1;
+        depthImageInfo.samples = m_msaaSampleCount;
+        depthImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        depthImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        depthImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        
+        result = functions.vkCreateImage(m_device, &depthImageInfo, nullptr, &m_msaaDepthImage);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create MSAA depth image");
+            return false;
+        }
+        
+        // Allocate memory for MSAA depth image
+        functions.vkGetImageMemoryRequirements(m_device, m_msaaDepthImage, &memRequirements);
+        allocInfo.allocationSize = memRequirements.size;
+        
+        memoryTypeIndex = UINT32_MAX;
+        for (uint32 i = 0; i < m_memoryProperties.memoryTypeCount; i++) {
+            if ((memRequirements.memoryTypeBits & (1 << i)) &&
+                (m_memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+                memoryTypeIndex = i;
+                break;
+            }
+        }
+        allocInfo.memoryTypeIndex = memoryTypeIndex;
+        
+        result = functions.vkAllocateMemory(m_device, &allocInfo, nullptr, &m_msaaDepthImageMemory);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to allocate MSAA depth image memory");
+            return false;
+        }
+        
+        functions.vkBindImageMemory(m_device, m_msaaDepthImage, m_msaaDepthImageMemory, 0);
+        
+        // Create MSAA depth image view
+        VkImageViewCreateInfo depthViewInfo{};
+        depthViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        depthViewInfo.image = m_msaaDepthImage;
+        depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        depthViewInfo.format = m_depthFormat;
+        depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        depthViewInfo.subresourceRange.baseMipLevel = 0;
+        depthViewInfo.subresourceRange.levelCount = 1;
+        depthViewInfo.subresourceRange.baseArrayLayer = 0;
+        depthViewInfo.subresourceRange.layerCount = 1;
+        
+        result = functions.vkCreateImageView(m_device, &depthViewInfo, nullptr, &m_msaaDepthImageView);
+        if (result != VK_SUCCESS) {
+            MR_LOG_ERROR("Failed to create MSAA depth image view");
+            return false;
+        }
+        
+        MR_LOG_INFO("MSAA resources created successfully (" + std::to_string(m_msaaSampleCount) + "x)");
+        return true;
+    }
+    
+    void VulkanDevice::destroyMSAAResources() {
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        if (m_msaaColorImageView != VK_NULL_HANDLE) {
+            functions.vkDestroyImageView(m_device, m_msaaColorImageView, nullptr);
+            m_msaaColorImageView = VK_NULL_HANDLE;
+        }
+        if (m_msaaColorImage != VK_NULL_HANDLE) {
+            functions.vkDestroyImage(m_device, m_msaaColorImage, nullptr);
+            m_msaaColorImage = VK_NULL_HANDLE;
+        }
+        if (m_msaaColorImageMemory != VK_NULL_HANDLE) {
+            functions.vkFreeMemory(m_device, m_msaaColorImageMemory, nullptr);
+            m_msaaColorImageMemory = VK_NULL_HANDLE;
+        }
+        
+        if (m_msaaDepthImageView != VK_NULL_HANDLE) {
+            functions.vkDestroyImageView(m_device, m_msaaDepthImageView, nullptr);
+            m_msaaDepthImageView = VK_NULL_HANDLE;
+        }
+        if (m_msaaDepthImage != VK_NULL_HANDLE) {
+            functions.vkDestroyImage(m_device, m_msaaDepthImage, nullptr);
+            m_msaaDepthImage = VK_NULL_HANDLE;
+        }
+        if (m_msaaDepthImageMemory != VK_NULL_HANDLE) {
+            functions.vkFreeMemory(m_device, m_msaaDepthImageMemory, nullptr);
+            m_msaaDepthImageMemory = VK_NULL_HANDLE;
+        }
+        
+        m_msaaSampleCount = VK_SAMPLE_COUNT_1_BIT;
+        MR_LOG_DEBUG("MSAA resources destroyed");
     }
     
     void VulkanDevice::deferBufferDestruction(VkBuffer buffer, VkDeviceMemory memory) {

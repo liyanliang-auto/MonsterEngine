@@ -155,6 +155,10 @@ namespace MonsterRender::RHI::Vulkan {
         VkImageView getDepthImageView() const { return m_depthImageView; }
         bool hasDepthBuffer() const { return m_depthImage != VK_NULL_HANDLE; }
         
+        // MSAA accessors
+        VkSampleCountFlagBits getMSAASampleCount() const { return m_msaaSampleCount; }
+        bool isMSAAEnabled() const { return m_msaaSampleCount != VK_SAMPLE_COUNT_1_BIT; }
+        
         // Render target caches (UE5-style RTT support)
         FVulkanRenderPassCache* GetRenderPassCache() const { return m_renderPassCache.get(); }
         FVulkanFramebufferCache* GetFramebufferCache() const { return m_framebufferCache.get(); }
@@ -217,6 +221,11 @@ namespace MonsterRender::RHI::Vulkan {
                                      VkFormatFeatureFlags features);
         bool hasStencilComponent(VkFormat format);
         
+        // MSAA support
+        VkSampleCountFlagBits getMaxUsableSampleCount();
+        bool createMSAAResources();
+        void destroyMSAAResources();
+        
         // Helper functions
         bool checkValidationLayerSupport();
         std::vector<const char*> getRequiredExtensions(bool enableValidation);
@@ -255,6 +264,15 @@ namespace MonsterRender::RHI::Vulkan {
         VkDeviceMemory m_depthImageMemory = VK_NULL_HANDLE;
         VkImageView m_depthImageView = VK_NULL_HANDLE;
         VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
+        
+        // MSAA resources
+        VkSampleCountFlagBits m_msaaSampleCount = VK_SAMPLE_COUNT_1_BIT;
+        VkImage m_msaaColorImage = VK_NULL_HANDLE;
+        VkDeviceMemory m_msaaColorImageMemory = VK_NULL_HANDLE;
+        VkImageView m_msaaColorImageView = VK_NULL_HANDLE;
+        VkImage m_msaaDepthImage = VK_NULL_HANDLE;
+        VkDeviceMemory m_msaaDepthImageMemory = VK_NULL_HANDLE;
+        VkImageView m_msaaDepthImageView = VK_NULL_HANDLE;
         
         // Command handling (Legacy, kept for backward compatibility if needed)
         VkCommandPool m_commandPool = VK_NULL_HANDLE;
