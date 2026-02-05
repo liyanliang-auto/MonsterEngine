@@ -961,8 +961,8 @@ bool CubeSceneApplication::initializeScene()
     // Light direction: pitch=-45 (from above), yaw=200 (from front-left of helmet)
     // The helmet faces roughly -Z direction after rotation, so light should come from +Z side
     m_directionalLight = MakeUnique<UDirectionalLightComponent>();
-    m_directionalLight->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f));  // Pure white
-    m_directionalLight->SetIntensity(3.0f);  // Increased intensity for brighter scene
+    m_directionalLight->SetLightColor(FLinearColor(1.0f, 0.98f, 0.95f));  // Slight warm tint
+    m_directionalLight->SetIntensity(4.0f);  // Higher intensity for stronger specular highlights
     m_directionalLight->SetWorldRotation(FRotator(-225.0f, 30.0f, 0.0f));  // Light from front of helmet
     m_scene->AddLight(m_directionalLight.Get());
     
