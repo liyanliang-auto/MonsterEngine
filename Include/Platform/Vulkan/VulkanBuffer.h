@@ -45,6 +45,14 @@ namespace MonsterRender::RHI::Vulkan {
         void destroy();
         uint32 findMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties);
         
+        /**
+         * Upload initial data to GPU-only buffer using staging buffer
+         * @param data Pointer to source data
+         * @param size Size of data in bytes
+         * @return true if successful
+         */
+        bool uploadInitialData(const void* data, uint32 size);
+        
     private:
         VulkanDevice* m_device;
         VkBuffer m_buffer = VK_NULL_HANDLE;
