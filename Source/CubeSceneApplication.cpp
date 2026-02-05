@@ -2289,22 +2289,6 @@ void CubeSceneApplication::renderWithRDG(
 {
     using namespace RDG;
     
-    if (!m_bShadowsEnabled || !m_directionalLight)
-    {
-        // Fallback to non-RDG rendering if shadows are disabled
-        TArray<FLightSceneInfo*> lights;
-        if (m_directionalLight)
-        {
-            lights.Add(m_directionalLight->GetLightSceneInfo());
-        }
-        if (m_pointLight)
-        {
-            lights.Add(m_pointLight->GetLightSceneInfo());
-        }
-        renderCube(cmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
-        return;
-    }
-    
     // Get light direction from light scene info
     FVector lightDirection = FVector(0.5f, -1.0f, 0.3f);
     if (m_directionalLight->GetLightSceneInfo() && m_directionalLight->GetLightSceneInfo()->Proxy)
