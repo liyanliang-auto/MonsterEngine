@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
     // Set log verbosity to Error only (suppress Log, Verbose, VeryVerbose)
     // Note: This only affects globally declared categories, not static local ones
     // ========================================================================
-    SetGlobalLogVerbosity(ELogVerbosity::VeryVerbose);
+    SetGlobalLogVerbosity(ELogVerbosity::Error);
 
     MR_LOG(LogInit, Log, "Starting MonsterRender Engine");
     MR_LOG(LogInit, Log, "Command line arguments: %d", argc);

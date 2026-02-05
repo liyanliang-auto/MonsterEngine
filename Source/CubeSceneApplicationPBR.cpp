@@ -707,13 +707,19 @@ void CubeSceneApplication::updatePBRUniforms(
     if (m_helmetRotationAngle > 360.0f) m_helmetRotationAngle -= 360.0f;
     
     // Build model matrix
-    double angleRad = m_helmetRotationAngle * (3.14159265358979323846 / 180.0);
-    double cosA = std::cos(angleRad), sinA = std::sin(angleRad);
-    FMatrix rotMat = FMatrix::Identity;
-    rotMat.M[0][0] = cosA; rotMat.M[0][2] = sinA;
-    rotMat.M[2][0] = -sinA; rotMat.M[2][2] = cosA;
-    m_helmetModelMatrix = FMatrix::MakeScale(FVector(1, 1, 1)) * rotMat * 
-                          FMatrix::MakeTranslation(FVector(0, 1.5, 0));
+    // DamagedHelmet model faces +Z by default, rotate to face camera (-Z direction)
+    constexpr double PI = 3.14159265358979323846;
+    
+    // Y-axis rotation (180 degrees to face camera + animation)
+    double yAngleRad = (180.0 + m_helmetRotationAngle) * (PI / 180.0);
+    double cosY = std::cos(yAngleRad), sinY = std::sin(yAngleRad);
+    FMatrix rotY = FMatrix::Identity;
+    rotY.M[0][0] = cosY; rotY.M[0][2] = sinY;
+    rotY.M[2][0] = -sinY; rotY.M[2][2] = cosY;
+    
+    // Position helmet at center of view (lower Y to center it vertically)
+    m_helmetModelMatrix = FMatrix::MakeScale(FVector(1, 1, 1)) * rotY * 
+                          FMatrix::MakeTranslation(FVector(0, 0, 0));
     
     // Update view UBO
     // Note: Transpose matrices before upload because GLSL uses column-major layout
