@@ -1,4 +1,4 @@
-﻿#include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include "Platform/Vulkan/VulkanPendingState.h"
@@ -328,7 +328,16 @@ namespace MonsterRender::RHI::Vulkan {
             
             // Add depth target if provided, or use device's depth buffer
             if (depthStencil) {
+                MR_LOG(LogTemp, Log, "setRenderTargets: depthStencil provided, ptr=0x%llx",
+                       reinterpret_cast<uint64>(depthStencil.Get()));
                 rtInfo.DepthStencilTarget = StaticCastSharedPtr<VulkanTexture>(depthStencil);
+                if (rtInfo.DepthStencilTarget) {
+                    MR_LOG(LogTemp, Log, "setRenderTargets: StaticCast SUCCESS, DepthStencilTarget=0x%llx, imageView=0x%llx",
+                           reinterpret_cast<uint64>(rtInfo.DepthStencilTarget.Get()),
+                           reinterpret_cast<uint64>(rtInfo.DepthStencilTarget->getImageView()));
+                } else {
+                    MR_LOG(LogTemp, Error, "setRenderTargets: StaticCast FAILED! DepthStencilTarget is null after cast");
+                }
             }
             
             // Set render area from first color target, or from depth target if no color targets
@@ -424,11 +433,21 @@ namespace MonsterRender::RHI::Vulkan {
             renderPassBeginInfo.renderArea.offset = {0, 0};
             renderPassBeginInfo.renderArea.extent = renderExtent;
             
-            // Clear values: color + depth
+            // Clear values: must match attachment order in render pass
+            // For depth-only pass: clearValues[0] = depth
+            // For color+depth pass: clearValues[0] = color, clearValues[1] = depth
             TArray<VkClearValue> clearValues(numClearValues);
-            clearValues[0].color = {{0.1f, 0.1f, 0.15f, 1.0f}}; // Dark gray background
-            if (numClearValues > 1) {
-                clearValues[1].depthStencil = {1.0f, 0}; // Clear depth to 1.0 (far)
+            
+            if (rtInfo.NumColorTargets == 0 && layout.bHasDepthStencil) {
+                // Depth-only pass: first (and only) attachment is depth
+                clearValues[0].depthStencil = {1.0f, 0}; // Clear depth to 1.0 (far)
+                MR_LOG(LogTemp, Log, "beginRenderPass: Depth-only clear values configured");
+            } else {
+                // Color pass or color+depth pass
+                clearValues[0].color = {{0.1f, 0.1f, 0.15f, 1.0f}}; // Dark gray background
+                if (numClearValues > 1) {
+                    clearValues[1].depthStencil = {1.0f, 0}; // Clear depth to 1.0 (far)
+                }
             }
             renderPassBeginInfo.clearValueCount = static_cast<uint32>(clearValues.size());
             renderPassBeginInfo.pClearValues = clearValues.data();
