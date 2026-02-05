@@ -710,15 +710,22 @@ void CubeSceneApplication::updatePBRUniforms(
     // DamagedHelmet model faces +Z by default, rotate to face camera (-Z direction)
     constexpr double PI = 3.14159265358979323846;
     
-    // Y-axis rotation (180 degrees to face camera + animation)
-    double yAngleRad = (180.0 + m_helmetRotationAngle) * (PI / 180.0);
+    // X-axis rotation (45 degrees tilt)
+    double xAngleRad = -45.0 * (PI / 180.0);
+    double cosX = std::cos(xAngleRad), sinX = std::sin(xAngleRad);
+    FMatrix rotX = FMatrix::Identity;
+    rotX.M[1][1] = cosX; rotX.M[1][2] = -sinX;
+    rotX.M[2][1] = sinX; rotX.M[2][2] = cosX;
+    
+    // Y-axis rotation (90 degrees to face camera + animation)
+    double yAngleRad = (90.0 + m_helmetRotationAngle) * (PI / 180.0);
     double cosY = std::cos(yAngleRad), sinY = std::sin(yAngleRad);
     FMatrix rotY = FMatrix::Identity;
     rotY.M[0][0] = cosY; rotY.M[0][2] = sinY;
     rotY.M[2][0] = -sinY; rotY.M[2][2] = cosY;
     
-    // Position helmet at center of view (lower Y to center it vertically)
-    m_helmetModelMatrix = FMatrix::MakeScale(FVector(1, 1, 1)) * rotY * 
+    // Position helmet at center of view
+    m_helmetModelMatrix = FMatrix::MakeScale(FVector(1, 1, 1)) * rotX * rotY * 
                           FMatrix::MakeTranslation(FVector(0, 0, 0));
     
     // Update view UBO
