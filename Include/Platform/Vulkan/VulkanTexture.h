@@ -54,6 +54,7 @@ using MonsterRender::RHI::FVulkanAllocation;
         // Layout transition and data upload helpers
         bool transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout);
         bool uploadInitialData();
+        bool generateMipmaps();
         
     private:
         VulkanDevice* m_device;
