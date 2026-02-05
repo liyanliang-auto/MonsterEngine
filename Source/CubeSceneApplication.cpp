@@ -958,10 +958,12 @@ bool CubeSceneApplication::initializeScene()
     MR_LOG(LogCubeSceneApp, Log, "Floor actor created at position (0, 0, 0)");
     
     // Create directional light (sun) - main light source
+    // Light direction: pitch=-45 (from above), yaw=200 (from front-left of helmet)
+    // The helmet faces roughly -Z direction after rotation, so light should come from +Z side
     m_directionalLight = MakeUnique<UDirectionalLightComponent>();
     m_directionalLight->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f));  // Pure white
     m_directionalLight->SetIntensity(3.0f);  // Increased intensity for brighter scene
-    m_directionalLight->SetWorldRotation(FRotator(-45.0f, 30.0f, 0.0f));
+    m_directionalLight->SetWorldRotation(FRotator(-225.0f, 30.0f, 0.0f));  // Light from front of helmet
     m_scene->AddLight(m_directionalLight.Get());
     
     // Point light disabled for now
