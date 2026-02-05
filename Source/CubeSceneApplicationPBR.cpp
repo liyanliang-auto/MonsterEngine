@@ -761,7 +761,7 @@ void CubeSceneApplication::updatePBRUniforms(
     {
         FPBRLightUniforms lights;
         std::memset(&lights, 0, sizeof(lights));
-        lights.AmbientIntensity = 0.03f;
+        lights.AmbientIntensity = 0.03f;  // Increased for better shadow fill
         
         // Get directional lights from scene
         const TArray<FLightSceneInfo*>& dirLights = m_scene ? m_scene->GetDirectionalLights() : TArray<FLightSceneInfo*>();
