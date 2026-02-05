@@ -128,6 +128,22 @@ namespace MonsterRender::RHI::Vulkan {
                 }
                 
                 MR_LOG_DEBUG("Successfully created Vulkan buffer with managed memory: " + m_desc.debugName);
+                
+                // Upload initial data if provided
+                if (m_desc.initialData && m_desc.initialDataSize > 0) {
+                    if (m_desc.cpuAccessible && m_mappedData) {
+                        // Direct copy for CPU-accessible buffers
+                        memcpy(m_mappedData, m_desc.initialData, m_desc.initialDataSize);
+                        MR_LOG_DEBUG("Copied initial data directly to mapped buffer: " + m_desc.debugName);
+                    } else {
+                        // Use staging buffer for GPU-only buffers
+                        if (!uploadInitialData(m_desc.initialData, m_desc.initialDataSize)) {
+                            MR_LOG_ERROR("Failed to upload initial data to buffer: " + m_desc.debugName);
+                            return false;
+                        }
+                    }
+                }
+                
                 return true;
             }
         }
@@ -162,6 +178,22 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         MR_LOG_DEBUG("Successfully created Vulkan buffer: " + m_desc.debugName);
+        
+        // Upload initial data if provided (fallback path)
+        if (m_desc.initialData && m_desc.initialDataSize > 0) {
+            if (m_desc.cpuAccessible && m_mappedData) {
+                // Direct copy for CPU-accessible buffers
+                memcpy(m_mappedData, m_desc.initialData, m_desc.initialDataSize);
+                MR_LOG_DEBUG("Copied initial data directly to mapped buffer: " + m_desc.debugName);
+            } else {
+                // Use staging buffer for GPU-only buffers
+                if (!uploadInitialData(m_desc.initialData, m_desc.initialDataSize)) {
+                    MR_LOG_ERROR("Failed to upload initial data to buffer: " + m_desc.debugName);
+                    return false;
+                }
+            }
+        }
+        
         return true;
     }
     
@@ -248,6 +280,45 @@ namespace MonsterRender::RHI::Vulkan {
     
     uint32 VulkanBuffer::findMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties) {
         return VulkanUtils::findMemoryType(m_device->getMemoryProperties(), typeFilter, properties);
+    }
+    
+    bool VulkanBuffer::uploadInitialData(const void* data, uint32 size) {
+        if (!data || size == 0) {
+            return true;  // Nothing to upload
+        }
+        
+        if (!isValid()) {
+            MR_LOG_ERROR("Cannot upload data to invalid buffer: " + m_desc.debugName);
+            return false;
+        }
+        
+        MR_LOG_DEBUG("Uploading " + std::to_string(size) + " bytes to buffer: " + m_desc.debugName);
+        
+        // Create staging buffer
+        FVulkanStagingBuffer stagingBuffer(m_device, size);
+        if (!stagingBuffer.IsValid()) {
+            MR_LOG_ERROR("Failed to create staging buffer for: " + m_desc.debugName);
+            return false;
+        }
+        
+        // Map staging buffer and copy data
+        void* mappedData = stagingBuffer.Map();
+        if (!mappedData) {
+            MR_LOG_ERROR("Failed to map staging buffer for: " + m_desc.debugName);
+            return false;
+        }
+        
+        memcpy(mappedData, data, size);
+        stagingBuffer.Unmap();
+        
+        // Copy from staging buffer to GPU buffer
+        if (!stagingBuffer.CopyToBuffer(m_buffer, 0, 0, size)) {
+            MR_LOG_ERROR("Failed to copy staging buffer to GPU buffer: " + m_desc.debugName);
+            return false;
+        }
+        
+        MR_LOG_DEBUG("Successfully uploaded initial data to buffer: " + m_desc.debugName);
+        return true;
     }
     
     // ============================================================================
