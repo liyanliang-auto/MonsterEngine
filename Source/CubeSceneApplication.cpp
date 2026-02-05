@@ -2327,79 +2327,82 @@ void CubeSceneApplication::renderWithRDG(
         ERHIAccess::Unknown
     );
     
-    // Add Shadow Depth Pass
-    graphBuilder.addPass(
-        "ShadowDepthPass",
-        ERDGPassFlags::Raster,
-        [&](FRDGPassBuilder& builder)
-        {
-            // Declare that we will write to the shadow map depth
-            builder.writeDepth(shadowMapRDG, ERHIAccess::DSVWrite);
-        },
-        [this, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
-        {
-            MR_LOG(LogCubeSceneApp, Log, "Executing Shadow Depth Pass");
-            
-            // NOTE: Do NOT call setRenderTargets here!
-            // RDG automatically calls _setupRenderTargets() before executing this lambda.
-            // The shadow map depth target is already set via builder.writeDepth() declaration.
-            
-            // Set viewport for shadow map
-            RHI::Viewport viewport;
-            viewport.x = 0;
-            viewport.y = 0;
-            viewport.width = static_cast<float32>(m_shadowMapResolution);
-            viewport.height = static_cast<float32>(m_shadowMapResolution);
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            rhiCmdList.setViewport(viewport);
-            
-            // Set scissor rect
-            RHI::ScissorRect scissor;
-            scissor.left = 0;
-            scissor.top = 0;
-            scissor.right = static_cast<int32>(m_shadowMapResolution);
-            scissor.bottom = static_cast<int32>(m_shadowMapResolution);
-            rhiCmdList.setScissorRect(scissor);
-            
-            // Clear depth buffer
-            rhiCmdList.clearDepthStencil(m_shadowMapTexture, 1.0f, 0);
-            
-            // Render all cube actors to shadow map
-            for (auto& cubeActor : m_cubeActors)
+    // Add Shadow Depth Pass (conditionally based on m_bShadowsEnabled)
+    if (m_bShadowsEnabled)
+    {
+        graphBuilder.addPass(
+            "ShadowDepthPass",
+            ERDGPassFlags::Raster,
+            [&](FRDGPassBuilder& builder)
             {
-                if (!cubeActor) continue;
+                // Declare that we will write to the shadow map depth
+                builder.writeDepth(shadowMapRDG, ERHIAccess::DSVWrite);
+            },
+            [this, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
+            {
+                MR_LOG(LogCubeSceneApp, Log, "Executing Shadow Depth Pass");
                 
-                UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
-                if (meshComp)
+                // NOTE: Do NOT call setRenderTargets here!
+                // RDG automatically calls _setupRenderTargets() before executing this lambda.
+                // The shadow map depth target is already set via builder.writeDepth() declaration.
+                
+                // Set viewport for shadow map
+                RHI::Viewport viewport;
+                viewport.x = 0;
+                viewport.y = 0;
+                viewport.width = static_cast<float32>(m_shadowMapResolution);
+                viewport.height = static_cast<float32>(m_shadowMapResolution);
+                viewport.minDepth = 0.0f;
+                viewport.maxDepth = 1.0f;
+                rhiCmdList.setViewport(viewport);
+                
+                // Set scissor rect
+                RHI::ScissorRect scissor;
+                scissor.left = 0;
+                scissor.top = 0;
+                scissor.right = static_cast<int32>(m_shadowMapResolution);
+                scissor.bottom = static_cast<int32>(m_shadowMapResolution);
+                rhiCmdList.setScissorRect(scissor);
+                
+                // Clear depth buffer
+                rhiCmdList.clearDepthStencil(m_shadowMapTexture, 1.0f, 0);
+                
+                // Render all cube actors to shadow map
+                for (auto& cubeActor : m_cubeActors)
                 {
-                    meshComp->UpdateComponentToWorld();
-                    FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
-                    FCubeSceneProxy* cubeProxy = dynamic_cast<FCubeSceneProxy*>(baseProxy);
+                    if (!cubeActor) continue;
                     
-                    if (cubeProxy && cubeProxy->AreResourcesInitialized())
+                    UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
+                    if (meshComp)
                     {
-                        cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
+                        meshComp->UpdateComponentToWorld();
+                        FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+                        FCubeSceneProxy* cubeProxy = dynamic_cast<FCubeSceneProxy*>(baseProxy);
                         
-                        // Draw depth only using depth-only pipeline (no color attachment)
-                        cubeProxy->DrawDepthOnly(&rhiCmdList, lightViewProjection);
+                        if (cubeProxy && cubeProxy->AreResourcesInitialized())
+                        {
+                            cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
+                            
+                            // Draw depth only using depth-only pipeline (no color attachment)
+                            cubeProxy->DrawDepthOnly(&rhiCmdList, lightViewProjection);
+                        }
                     }
                 }
+                
+                // NOTE: Floor does NOT cast shadows, only receives them
+                // So we don't render floor to shadow map
+                
+                // NOTE: Do NOT call endRenderPass() here!
+                // RDG automatically ends the render pass after this lambda returns.
+                // Calling endRenderPass() manually would cause render pass state corruption.
+                
+                // NOTE: Resource transitions are handled by RDG based on pass declarations.
+                // The shadow map will be transitioned to shader resource before MainRenderPass.
+                
+                MR_LOG(LogCubeSceneApp, Log, "Shadow Depth Pass complete");
             }
-            
-            // NOTE: Floor does NOT cast shadows, only receives them
-            // So we don't render floor to shadow map
-            
-            // NOTE: Do NOT call endRenderPass() here!
-            // RDG automatically ends the render pass after this lambda returns.
-            // Calling endRenderPass() manually would cause render pass state corruption.
-            
-            // NOTE: Resource transitions are handled by RDG based on pass declarations.
-            // The shadow map will be transitioned to shader resource before MainRenderPass.
-            
-            MR_LOG(LogCubeSceneApp, Log, "Shadow Depth Pass complete");
-        }
-    );
+        );
+    }
     
     // Add Main Render Pass
     graphBuilder.addPass(

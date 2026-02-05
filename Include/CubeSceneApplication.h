@@ -523,8 +523,8 @@ protected:
     /** Shadow distance */
     float m_shadowDistance = 50.0f;
 
-    /** Whether shadows are enabled */
-    bool m_bShadowsEnabled = true;
+    /** Whether shadows are enabled (set to false for debugging PBR without shadows) */
+    bool m_bShadowsEnabled = false;
 
     /** Whether to use RDG for rendering */
     bool m_bUseRDG = true;  // Temporarily disabled for debugging
