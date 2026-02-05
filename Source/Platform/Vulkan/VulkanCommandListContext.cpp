@@ -438,7 +438,9 @@ namespace MonsterRender::RHI::Vulkan {
             // For color+depth pass: clearValues[0] = color, clearValues[1] = depth
             TArray<VkClearValue> clearValues(numClearValues);
             
-            if (rtInfo.NumColorTargets == 0 && layout.bHasDepthStencil) {
+            // Depth-only pass: numClearValues == 1 and not swapchain mode
+            bool bIsDepthOnlyPass = (numClearValues == 1) && !bIsSwapchain;
+            if (bIsDepthOnlyPass) {
                 // Depth-only pass: first (and only) attachment is depth
                 clearValues[0].depthStencil = {1.0f, 0}; // Clear depth to 1.0 (far)
                 MR_LOG(LogTemp, Log, "beginRenderPass: Depth-only clear values configured");
