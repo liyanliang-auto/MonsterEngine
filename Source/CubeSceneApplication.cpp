@@ -2304,15 +2304,19 @@ void CubeSceneApplication::renderWithRDG(
     // Create RDG builder
     FRDGBuilder graphBuilder(m_device, "CubeSceneRenderGraph");
     
-    // Register external shadow map texture
-    FRDGTextureRef shadowMapRDG = graphBuilder.registerExternalTexture(
-        "ShadowMap",
-        m_shadowMapTexture.Get(),
-        ERHIAccess::Unknown
-    );
+    // Register external shadow map texture (only if shadows are enabled and texture exists)
+    FRDGTextureRef shadowMapRDG = nullptr;
+    if (m_bShadowsEnabled && m_shadowMapTexture)
+    {
+        shadowMapRDG = graphBuilder.registerExternalTexture(
+            "ShadowMap",
+            m_shadowMapTexture.Get(),
+            ERHIAccess::Unknown
+        );
+    }
     
     // Add Shadow Depth Pass (conditionally based on m_bShadowsEnabled)
-    if (m_bShadowsEnabled)
+    if (m_bShadowsEnabled && shadowMapRDG)
     {
         graphBuilder.addPass(
             "ShadowDepthPass",
@@ -2392,10 +2396,13 @@ void CubeSceneApplication::renderWithRDG(
     graphBuilder.addPass(
         "MainRenderPass",
         ERDGPassFlags::Raster,
-        [&](FRDGPassBuilder& builder)
+        [&, shadowMapRDG](FRDGPassBuilder& builder)
         {
-            // Declare that we will read from the shadow map
-            builder.readTexture(shadowMapRDG, ERHIAccess::SRVGraphics);
+            // Declare that we will read from the shadow map (only if available)
+            if (shadowMapRDG)
+            {
+                builder.readTexture(shadowMapRDG, ERHIAccess::SRVGraphics);
+            }
         },
         [this, viewMatrix, projectionMatrix, cameraPosition, lightViewProjection](RHI::IRHICommandList& rhiCmdList)
         {
