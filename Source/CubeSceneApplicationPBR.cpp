@@ -716,12 +716,14 @@ void CubeSceneApplication::updatePBRUniforms(
                           FMatrix::MakeTranslation(FVector(0, 1.5, 0));
     
     // Update view UBO
+    // Note: Transpose matrices before upload because GLSL uses column-major layout
+    // but our TMatrix is row-major (UE5 convention)
     if (m_pbrViewUniformBuffer)
     {
         FPBRViewUniforms view;
-        view.ViewMatrix = ToMatrix44f(viewMatrix);
-        view.ProjectionMatrix = ToMatrix44f(projectionMatrix);
-        view.ViewProjectionMatrix = ToMatrix44f(viewMatrix * projectionMatrix);
+        view.ViewMatrix = ToMatrix44f(viewMatrix.GetTransposed());
+        view.ProjectionMatrix = ToMatrix44f(projectionMatrix.GetTransposed());
+        view.ViewProjectionMatrix = ToMatrix44f((viewMatrix * projectionMatrix).GetTransposed());
         view.CameraPosition = FVector4f((float)cameraPosition.X, (float)cameraPosition.Y, 
                                         (float)cameraPosition.Z, 1.0f);
         view.ViewportSize = FVector4f((float)m_windowWidth, (float)m_windowHeight,
@@ -796,13 +798,14 @@ void CubeSceneApplication::updatePBRUniforms(
     }
     
     // Update object UBO
+    // Note: Transpose matrices before upload for GLSL column-major layout
     if (m_pbrObjectUniformBuffer)
     {
         FPBRObjectUniforms obj;
-        obj.ModelMatrix = ToMatrix44f(m_helmetModelMatrix);
+        obj.ModelMatrix = ToMatrix44f(m_helmetModelMatrix.GetTransposed());
         FMatrix normalMat = m_helmetModelMatrix;
         normalMat.M[3][0] = normalMat.M[3][1] = normalMat.M[3][2] = 0;
-        obj.NormalMatrix = ToMatrix44f(normalMat);
+        obj.NormalMatrix = ToMatrix44f(normalMat.GetTransposed());
         obj.ObjectBoundsMin = FVector4f(-1, -1, -1, 0);
         obj.ObjectBoundsMax = FVector4f(1, 1, 1, 0);
         
