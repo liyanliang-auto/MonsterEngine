@@ -69,8 +69,8 @@ static ApplicationConfig CreateCubeSceneConfig()
     ApplicationConfig config;
     config.name = "Monster Engine - PBR";
     config.preferredBackend = RHI::ERHIBackend::Vulkan;  // Use Vulkan backend
-    config.windowProperties.width = 1024;
-    config.windowProperties.height = 768;
+    config.windowProperties.width = 1024/4;
+    config.windowProperties.height = 768/4;
     config.enableValidation = true;
     return config;
 }
@@ -1839,6 +1839,7 @@ bool CubeSceneApplication::initializeShadowMap()
     }
     
     // Create shadow map depth texture
+    // Shadow map uses 1x sampling - shadow pipelines are configured with sampleCount=1
     RHI::TextureDesc shadowMapDesc;
     shadowMapDesc.width = m_shadowMapResolution;
     shadowMapDesc.height = m_shadowMapResolution;
@@ -2159,8 +2160,8 @@ void CubeSceneApplication::renderShadowDepthPass(
                 // Update model matrix
                 cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
                 
-                // Draw cube for shadow map (using light's matrices)
-                cubeProxy->Draw(cmdList, outLightViewProjection, FMatrix::Identity, lightPos);
+                // Draw cube for shadow map using depth-only pipeline (1x sampling)
+                cubeProxy->DrawDepthOnly(cmdList, outLightViewProjection);
             }
         }
     }
