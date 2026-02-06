@@ -29,6 +29,14 @@ MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说�
 
 ## 示例效果
 
+### PBR 渲染 - DamagedHelmet
+
+![PBR Helmet](docs/images/samples/Vulkan_PBR_helmet.jpg)
+
+*使用 Cook-Torrance BRDF 的 PBR 金属头盔渲染，支持 metallic-roughness workflow、法线贴图和 AO 贴图*
+
+### 基础渲染
+
 ![Vulkan Triangle](docs/images/samples/vulkan_triangle.jpg)
 ![PBR Cube and Floor Scene](docs/images/samples/vulkan_smile_cube.jpg)
 
@@ -64,12 +72,15 @@ MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说�
 ### 渲染系统
 
 - **Physically-Based Rendering (PBR)**
-  - Cook-Torrance microfacet specular BRDF
+  - Cook-Torrance microfacet specular BRDF (GGX distribution)
   - Lambertian diffuse BRDF
-  - Metallic-roughness workflow
-  - Image-based lighting (IBL) support
-  - Clear coat materials
+  - Metallic-roughness workflow (glTF 2.0 compatible)
+  - Height-correlated Smith visibility function
+  - Schlick Fresnel approximation
   - Normal mapping & ambient occlusion
+  - Emissive materials support
+  - 8x MSAA anti-aliasing
+  - Automatic mipmap generation
 - **Forward Rendering Pipeline**
   - Clustered forward rendering
   - Multi-pass rendering support
@@ -89,8 +100,10 @@ MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说�
   - Material instancing and caching
   - 默认材质回退机制
 - **纹理系统**
-  - 2D texture support with mipmap generation
+  - 2D texture support with automatic mipmap generation
+  - Trilinear filtering with 16x anisotropic filtering
   - Texture streaming manager
+  - glTF 2.0 texture loading (base color, metallic-roughness, normal, AO, emissive)
   - Virtual texture system（计划中）
   - 默认纹理管理（white, black, normal 等）
 - **Descriptor Set Management**
@@ -473,6 +486,26 @@ class TriangleApp : public MonsterRender::Application {
 // Run PBR cube scene with lighting and shadows
 auto app = MakeUnique<CubeSceneApplication>();
 app->run();
+```
+
+### PBR glTF 模型渲染
+
+引擎支持加载和渲染 glTF 2.0 模型，完整支持 PBR 材质：
+
+```cpp
+// Load glTF model
+auto model = FGLTFLoader::Load("resources/models/DamagedHelmet/DamagedHelmet.gltf");
+
+// Create PBR textures from glTF images
+for (const auto& image : model->Images) {
+    auto texture = device->createTexture(textureDesc);
+    // Automatic mipmap generation for better quality
+}
+
+// Render with PBR shader
+cmdList->setPipelineState(pbrPipelineState);
+cmdList->bindDescriptorSets(pbrDescriptorSets);
+cmdList->drawIndexed(indexCount, 1, 0, 0, 0);
 ```
 
 ---
