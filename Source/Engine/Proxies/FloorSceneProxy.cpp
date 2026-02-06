@@ -596,20 +596,24 @@ bool FFloorSceneProxy::CreateShadowShaders()
     
     if (RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan)
     {
-        // Load shadow SPIR-V shaders - use CubeLitShadow shaders
-        std::string VsPath = ProjectRoot + "Shaders/CubeLitShadow.vert.spv";
-        std::vector<uint8> VsSpv = MonsterRender::ShaderCompiler::readFileBytes(VsPath.c_str());
-        if (VsSpv.empty())
-        {
-            MR_LOG(LogFloorSceneProxy, Warning, "Shadow vertex shader not found: %s", VsPath.c_str());
-            return false;
-        }
+        // Compile shadow shaders from GLSL source (same as CubeSceneProxy)
+        MonsterRender::ShaderCompileOptions VsOpts;
+        VsOpts.language = MonsterRender::EShaderLanguage::GLSL;
+        VsOpts.stage = MonsterRender::EShaderStageKind::Vertex;
         
-        std::string PsPath = ProjectRoot + "Shaders/CubeLitShadow.frag.spv";
-        std::vector<uint8> PsSpv = MonsterRender::ShaderCompiler::readFileBytes(PsPath.c_str());
-        if (PsSpv.empty())
+        MonsterRender::ShaderCompileOptions PsOpts;
+        PsOpts.language = MonsterRender::EShaderLanguage::GLSL;
+        PsOpts.stage = MonsterRender::EShaderStageKind::Fragment;
+        
+        std::string VsPath = ProjectRoot + "Shaders/CubeLitShadow.vert";
+        std::string PsPath = ProjectRoot + "Shaders/CubeLitShadow.frag";
+        
+        std::vector<uint8> VsSpv = MonsterRender::ShaderCompiler::compileFromFile(VsPath, VsOpts);
+        std::vector<uint8> PsSpv = MonsterRender::ShaderCompiler::compileFromFile(PsPath, PsOpts);
+        
+        if (VsSpv.empty() || PsSpv.empty())
         {
-            MR_LOG(LogFloorSceneProxy, Warning, "Shadow pixel shader not found: %s", PsPath.c_str());
+            MR_LOG(LogFloorSceneProxy, Warning, "Failed to compile shadow shaders");
             return false;
         }
         

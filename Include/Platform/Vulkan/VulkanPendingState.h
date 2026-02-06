@@ -86,6 +86,13 @@ namespace MonsterRender::RHI::Vulkan {
                        uint32 mipLevels = 1, uint32 arrayLayers = 1);
         
         /**
+         * Override the sampler for a previously bound texture slot
+         * @param slot Descriptor binding slot
+         * @param sampler Vulkan sampler to use instead of the texture's default
+         */
+        void setSampler(uint32 slot, VkSampler sampler);
+        
+        /**
          * Prepare for draw call - ensure all pending state is applied (UE5: PrepareForDraw())
          * @return true if ready to draw, false if critical state is missing
          */
