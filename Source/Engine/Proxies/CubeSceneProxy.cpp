@@ -1156,9 +1156,12 @@ bool FCubeSceneProxy::CreateShadowPipelineState()
     // Blend state
     PipelineDesc.blendState.blendEnable = false;
     
-    // Render target format
-    PipelineDesc.renderTargetFormats.push_back(RenderTargetFormat);
-    PipelineDesc.depthStencilFormat = DepthFormat;
+    // Shadow/depth-only pass: no color attachments, only depth
+    // renderTargetFormats is intentionally empty for depth-only rendering
+    PipelineDesc.depthStencilFormat = MonsterRender::RHI::EPixelFormat::D32_FLOAT;
+    
+    // Shadow pass uses 1x sampling (no MSAA)
+    PipelineDesc.sampleCount = 1;
     
     PipelineDesc.debugName = "CubeProxy Shadow Pipeline";
     
@@ -1229,6 +1232,9 @@ bool FCubeSceneProxy::CreateDepthOnlyPipelineState()
     // CRITICAL: No render target formats - depth only
     // renderTargetFormats is empty for depth-only pass
     PipelineDesc.depthStencilFormat = MonsterRender::RHI::EPixelFormat::D32_FLOAT;
+    
+    // Shadow/depth-only pass uses 1x sampling (no MSAA)
+    PipelineDesc.sampleCount = 1;
     
     PipelineDesc.debugName = "CubeProxy DepthOnly Pipeline";
     

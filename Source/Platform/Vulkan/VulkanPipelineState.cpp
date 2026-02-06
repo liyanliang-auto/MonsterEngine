@@ -60,13 +60,21 @@ namespace MonsterRender::RHI::Vulkan
         }
 
         // Determine which render pass to use
-        if (m_desc.renderTargetFormats.empty() && m_desc.depthStencilFormat != EPixelFormat::Unknown)
+        // Create custom render pass if:
+        // 1. Depth-only pipeline (no color attachments)
+        // 2. Custom sample count specified that differs from device default
+        bool needsCustomRenderPass = 
+            (m_desc.renderTargetFormats.empty() && m_desc.depthStencilFormat != EPixelFormat::Unknown) ||
+            (m_desc.sampleCount > 0 && m_desc.sampleCount != static_cast<uint32>(m_device->getMSAASampleCount()));
+        
+        if (needsCustomRenderPass)
         {
-            // Depth-only pipeline: create custom render pass
-            MR_LOG_INFO("Creating depth-only render pass for pipeline: " + m_desc.debugName);
+            // Create custom render pass with specified sample count
+            MR_LOG_INFO("Creating custom render pass for pipeline: " + m_desc.debugName + 
+                       " (sampleCount=" + std::to_string(m_desc.sampleCount > 0 ? m_desc.sampleCount : 1) + ")");
             if (!createRenderPass())
             {
-                MR_LOG_ERROR("Failed to create depth-only render pass");
+                MR_LOG_ERROR("Failed to create custom render pass");
                 return false;
             }
         }
@@ -80,9 +88,8 @@ namespace MonsterRender::RHI::Vulkan
                 MR_LOG_ERROR("Device render pass is null");
                 return false;
             }
+            MR_LOG_DEBUG("Using device render pass for pipeline");
         }
-
-        MR_LOG_DEBUG("Using device render pass for pipeline");
 
         // Create graphics pipeline
         if (!createGraphicsPipeline())
@@ -368,8 +375,10 @@ namespace MonsterRender::RHI::Vulkan
         VkAttachmentReference depthReference{};
         bool hasDepth = false;
 
-        // Get device's MSAA sample count
-        VkSampleCountFlagBits sampleCount = m_device->getMSAASampleCount();
+        // Get sample count: use desc sampleCount if specified, otherwise device default
+        VkSampleCountFlagBits sampleCount = (m_desc.sampleCount > 0) 
+            ? static_cast<VkSampleCountFlagBits>(m_desc.sampleCount)
+            : m_device->getMSAASampleCount();
         
         // Color attachments
         for (uint32 i = 0; i < m_desc.renderTargetFormats.size(); ++i)
@@ -921,8 +930,12 @@ namespace MonsterRender::RHI::Vulkan
         VkPipelineMultisampleStateCreateInfo multisampling{};
         multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisampling.sampleShadingEnable = VK_FALSE;
-        // Use device's MSAA sample count for anti-aliasing
-        multisampling.rasterizationSamples = m_device->getMSAASampleCount();
+        // Use desc sampleCount if specified (> 0), otherwise use device default
+        if (m_desc.sampleCount > 0) {
+            multisampling.rasterizationSamples = static_cast<VkSampleCountFlagBits>(m_desc.sampleCount);
+        } else {
+            multisampling.rasterizationSamples = m_device->getMSAASampleCount();
+        }
         multisampling.minSampleShading = 1.0f;
         multisampling.pSampleMask = nullptr;
         multisampling.alphaToCoverageEnable = VK_FALSE;

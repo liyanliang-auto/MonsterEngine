@@ -547,6 +547,7 @@ namespace MonsterRender::RHI {
         TArray<EPixelFormat> renderTargetFormats;
         EPixelFormat depthStencilFormat = EPixelFormat::Unknown;
         VertexInputLayout vertexLayout;  // Vertex input layout description
+        uint32 sampleCount = 0;  // MSAA sample count (0 = use device default)
         String debugName;
     };
     
