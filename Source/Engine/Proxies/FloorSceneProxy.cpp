@@ -688,12 +688,11 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
     // Blend state
     PipelineDesc.blendState.blendEnable = false;
     
-    // Shadow/depth-only pass: no color attachments, only depth
-    // renderTargetFormats is intentionally empty for depth-only rendering
-    PipelineDesc.depthStencilFormat = MonsterRender::RHI::EPixelFormat::D32_FLOAT;
-    
-    // Shadow pass uses 1x sampling (no MSAA)
-    PipelineDesc.sampleCount = 1;
+    // This pipeline is used in the main render pass (with color output + MSAA)
+    // NOT for shadow depth generation (that uses depth-only pipeline)
+    PipelineDesc.renderTargetFormats.push_back(RenderTargetFormat);
+    PipelineDesc.depthStencilFormat = DepthFormat;
+    // sampleCount = 0 means use device default (8x MSAA)
     
     PipelineDesc.debugName = "FloorProxy Shadow Pipeline State";
     
