@@ -169,6 +169,15 @@ namespace MonsterRender::RHI::Vulkan {
         }
     }
     
+    void FVulkanPendingState::setSampler(uint32 slot, VkSampler sampler) {
+        auto& binding = m_textures[slot];
+        if (binding.sampler != sampler) {
+            binding.sampler = sampler;
+            m_descriptorsDirty = true;
+            MR_LOG_DEBUG("FVulkanPendingState::setSampler: override sampler for slot=" + std::to_string(slot));
+        }
+    }
+    
     void FVulkanPendingState::transitionTexturesForShaderRead() {
         // Execute layout transitions for all bound textures BEFORE render pass begins
         // This is required because Vulkan validation layer tracks layout per-command-buffer

@@ -408,7 +408,10 @@ namespace MonsterRender::RHI::Vulkan
             depthAttachment.format = VulkanUtils::getRHIFormatToVulkan(m_desc.depthStencilFormat);
             depthAttachment.samples = sampleCount;
             depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            // Store depth for shadow mapping (depth-only passes need to preserve depth)
+            depthAttachment.storeOp = (m_desc.renderTargetFormats.empty()) ?
+                VK_ATTACHMENT_STORE_OP_STORE :       // Depth-only pass (e.g. shadow map)
+                VK_ATTACHMENT_STORE_OP_DONT_CARE;    // Regular depth buffer
             depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
             depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;

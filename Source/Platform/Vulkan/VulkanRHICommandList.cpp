@@ -12,6 +12,7 @@
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanSampler.h"
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
 #include "RHI/RHIBarriers.h"
@@ -323,6 +324,17 @@ namespace MonsterRender::RHI::Vulkan {
             resource.isDirty = true;
         }
         m_descriptorsDirty = true;
+        
+        // Update the pending state's sampler for the descriptor write
+        if (sampler && m_context) {
+            auto* vulkanSampler = dynamic_cast<Vulkan::VulkanSampler*>(sampler.Get());
+            if (vulkanSampler) {
+                VkSampler vkSampler = vulkanSampler->getSampler();
+                m_context->getPendingState()->setSampler(slot, vkSampler);
+                MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setSampler: Updated pending state sampler for slot " + 
+                            std::to_string(slot));
+            }
+        }
         
         MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setSampler: Bound to slot " + 
                     std::to_string(slot));
