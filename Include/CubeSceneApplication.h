@@ -580,7 +580,7 @@ protected:
     bool m_bHelmetInitialized = false;
 
     /** Whether to render the cube (disabled for PBR debugging) */
-    bool m_bRenderCube = false;
+    bool m_bRenderCube = true;
 
     /** Loaded glTF model data */
     MonsterEngine::TSharedPtr<MonsterEngine::FGLTFModel> m_helmetModel;
