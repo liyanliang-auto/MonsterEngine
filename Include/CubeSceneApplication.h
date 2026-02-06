@@ -524,7 +524,7 @@ protected:
     float m_shadowDistance = 50.0f;
 
     /** Whether shadows are enabled (set to false for debugging PBR without shadows) */
-    bool m_bShadowsEnabled = false;
+    bool m_bShadowsEnabled = true;
 
     /** Whether to use RDG for rendering */
     bool m_bUseRDG = true;  // Temporarily disabled for debugging
@@ -574,7 +574,7 @@ protected:
     // ========================================================================
 
     /** Whether PBR helmet rendering is enabled */
-    bool m_bHelmetPBREnabled = true;
+    bool m_bHelmetPBREnabled = false;
 
     /** Whether helmet resources are initialized */
     bool m_bHelmetInitialized = false;
