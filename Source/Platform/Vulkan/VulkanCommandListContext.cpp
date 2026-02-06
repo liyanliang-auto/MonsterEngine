@@ -370,10 +370,11 @@ namespace MonsterRender::RHI::Vulkan {
             auto* rpCache = m_device->GetRenderPassCache();
             if (rpCache) {
                 renderPass = rpCache->GetOrCreateRenderPass(layout);
-                MR_LOG_INFO("RTT: Using cached render pass=0x" + 
+                MR_LOG_ERROR("SHADOW_DIAG: RTT render pass=0x" + 
                            std::to_string(reinterpret_cast<uint64>(renderPass)) +
                            ", NumColorTargets=" + std::to_string(rtInfo.NumColorTargets) +
                            ", HasDepth=" + std::string(layout.bHasDepthStencil ? "true" : "false") +
+                           ", DepthStoreOp=" + std::to_string(static_cast<int>(layout.DepthStoreOp)) +
                            ", extent=" + std::to_string(renderExtent.width) + "x" + std::to_string(renderExtent.height));
             } else {
                 MR_LOG_ERROR("RTT: Render pass cache is null!");
@@ -403,6 +404,16 @@ namespace MonsterRender::RHI::Vulkan {
             }
             
             numClearValues = rtInfo.NumColorTargets + (layout.bHasDepthStencil ? 1 : 0);
+            
+            // DIAGNOSTIC: Log framebuffer depth attachment details
+            if (rtInfo.DepthStencilTarget && rtInfo.NumColorTargets == 0) {
+                MR_LOG_ERROR("SHADOW_DIAG: FB depth imageView=0x" + 
+                    std::to_string(reinterpret_cast<uint64>(rtInfo.DepthStencilTarget->getImageView())) +
+                    ", image=0x" + std::to_string(reinterpret_cast<uint64>(rtInfo.DepthStencilTarget->getImage())) +
+                    ", framebuffer=0x" + std::to_string(reinterpret_cast<uint64>(framebuffer)) +
+                    ", renderPass=0x" + std::to_string(reinterpret_cast<uint64>(renderPass)) +
+                    ", numClearValues=" + std::to_string(numClearValues));
+            }
             
             MR_LOG_DEBUG("setRenderTargets: RTT mode with " + std::to_string(rtInfo.NumColorTargets) + 
                         " color target(s), extent=" + std::to_string(renderExtent.width) + "x" + 
