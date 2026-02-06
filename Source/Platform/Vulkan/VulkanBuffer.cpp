@@ -249,22 +249,26 @@ namespace MonsterRender::RHI::Vulkan {
             return m_mappedData;
         }
         
+        // Already mapped (non-persistent) - return existing mapping
+        if (m_mappedData) {
+            return m_mappedData;
+        }
+        
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getDevice();
         
-        void* data = nullptr;
-        VkResult result = functions.vkMapMemory(device, m_deviceMemory, 0, m_desc.size, 0, &data);
+        VkResult result = functions.vkMapMemory(device, m_deviceMemory, 0, m_desc.size, 0, &m_mappedData);
         if (result != VK_SUCCESS) {
             MR_LOG_ERROR("Failed to map buffer memory: " + std::to_string(result));
+            m_mappedData = nullptr;
             return nullptr;
         }
         
-        return data;
+        return m_mappedData;
     }
     
     void VulkanBuffer::unmap() {
         if (!m_desc.cpuAccessible) {
-            MR_LOG_ERROR("Buffer is not CPU accessible: " + m_desc.debugName);
             return;
         }
         
@@ -273,9 +277,12 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
-        const auto& functions = VulkanAPI::getFunctions();
-        VkDevice device = m_device->getDevice();
-        functions.vkUnmapMemory(device, m_deviceMemory);
+        if (m_mappedData) {
+            const auto& functions = VulkanAPI::getFunctions();
+            VkDevice device = m_device->getDevice();
+            functions.vkUnmapMemory(device, m_deviceMemory);
+            m_mappedData = nullptr;
+        }
     }
     
     uint32 VulkanBuffer::findMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties) {
