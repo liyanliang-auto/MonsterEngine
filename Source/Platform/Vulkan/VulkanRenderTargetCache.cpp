@@ -437,11 +437,8 @@ namespace MonsterRender::RHI::Vulkan {
         layout.ColorStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
         layout.DepthLoadOp = bClearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
         
-        // UE5 Pattern: Shadow mapping (depth-only RTT) needs to store depth for later sampling
-        // Regular depth buffers can use DONT_CARE since they're not read after rendering
-        layout.DepthStoreOp = (NumColorTargets == 0 && DepthStencilTarget) ? 
-            VK_ATTACHMENT_STORE_OP_STORE :      // Shadow map - need to read depth later
-            VK_ATTACHMENT_STORE_OP_DONT_CARE;   // Regular depth - don't need after rendering
+        // FORCE: Always store depth for debugging shadow map issue
+        layout.DepthStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
         
         layout.StencilLoadOp = bClearStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         layout.StencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;

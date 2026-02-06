@@ -205,18 +205,19 @@ namespace MonsterRender::RHI::Vulkan {
             
             VkImageMemoryBarrier barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            // Use UNDEFINED as oldLayout - tells Vulkan we don't care about previous contents
-            // The actual data was already uploaded in a previous command buffer
-            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             
             // Determine aspect mask and correct layout based on format
             VkImageAspectFlags aspectMask = VulkanUtils::getImageAspectMask(binding.format);
             barrier.subresourceRange.aspectMask = aspectMask;
             
-            // Depth textures use DEPTH_STENCIL_READ_ONLY_OPTIMAL, color textures use SHADER_READ_ONLY_OPTIMAL
+            // Depth textures transition from DEPTH_STENCIL_ATTACHMENT_OPTIMAL (after depth pass)
+            // Color textures transition from UNDEFINED (uploaded data, layout doesn't matter)
+            // IMPORTANT: Using UNDEFINED for depth textures DISCARDS depth pass data!
             if (aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
+                barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                 barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             } else {
+                barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             }
             
