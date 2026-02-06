@@ -69,8 +69,10 @@ static ApplicationConfig CreateCubeSceneConfig()
     ApplicationConfig config;
     config.name = "Monster Engine - PBR";
     config.preferredBackend = RHI::ERHIBackend::Vulkan;  // Use Vulkan backend
-    config.windowProperties.width = 1024/4;
-    config.windowProperties.height = 768/4;
+    //config.windowProperties.width = 1024;
+    //config.windowProperties.height = 768;
+	config.windowProperties.width = 1024 / 4;
+	config.windowProperties.height = 768 / 4;
     config.enableValidation = true;
     return config;
 }
@@ -2085,7 +2087,8 @@ FMatrix CubeSceneApplication::calculateLightViewProjection(
     FMatrix lightViewMatrix = FMatrix::MakeLookAt(lightPos, targetPos, upVector);
     
     // Create orthographic projection for directional light
-    float orthoSize = sceneBoundsRadius * 1.5f;
+    // orthoSize controls shadow map coverage - keep tight to scene for better resolution
+    float orthoSize = sceneBoundsRadius;
     float nearPlane = 0.1f;
     float farPlane = lightDistance * 2.0f;
     
@@ -2108,8 +2111,8 @@ void CubeSceneApplication::renderShadowDepthPass(
     MR_LOG(LogCubeSceneApp, Verbose, "Rendering shadow depth pass");
     
     // Calculate light view-projection matrix
-    // Must be large enough to cover entire floor (size = 25.0f, so bounds = ��25)
-    float sceneBoundsRadius = 30.0f;  // Cover floor and cubes
+    // Tight bounds around scene for better shadow map utilization
+    float sceneBoundsRadius = 10.0f;  // Cover cubes and nearby floor
     outLightViewProjection = calculateLightViewProjection(lightDirection, sceneBoundsRadius);
     
     // Set shadow map as render target (depth only)
@@ -2302,7 +2305,7 @@ void CubeSceneApplication::renderWithRDG(
     
     // Calculate light view-projection matrix
     // Must be large enough to cover entire floor (size = 25.0f, so bounds = ±25)
-    Math::FMatrix lightViewProjection = calculateLightViewProjection(lightDirection, 30.0f);
+    Math::FMatrix lightViewProjection = calculateLightViewProjection(lightDirection, 10.0f);
     
     // Create RDG builder
     FRDGBuilder graphBuilder(m_device, "CubeSceneRenderGraph");
