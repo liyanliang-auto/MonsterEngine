@@ -170,6 +170,20 @@ namespace MonsterRender::RHI::Vulkan {
 
                        uint32 mipLevels = 1, uint32 arrayLayers = 1);
 
+        /**
+
+         * Update only the sampler for an existing texture binding at the given slot.
+
+         * If no texture is bound at the slot yet, stores the sampler for later use.
+
+         * @param slot Descriptor binding slot
+
+         * @param sampler Vulkan sampler handle
+
+         */
+
+        void setSampler(uint32 slot, VkSampler sampler);
+
         
 
         /**
