@@ -76,6 +76,26 @@ struct FPBRRenderContext
     float DeltaTime = 0.016f;
 };
 
+/**
+    MonsterEngine /
+    ├── Include / Renderer / PBR /
+    │   ├── PBRRenderer.h            ← FPBRRenderer 类声明（主渲染器）
+    │   ├── PBRMaterial.h            ← FPBRMaterial 类声明（材质封装）
+    │   ├── PBRMaterialTypes.h       ← GPU 对齐数据结构定义
+    │   ├── PBRUniformBuffers.h      ← UBO 结构体定义
+    │   └── PBRDescriptorSetLayouts.h← Descriptor Set 布局定义
+    │
+    ├── Source / Renderer / PBR /
+    │   ├── PBRRenderer.cpp          ← FPBRRenderer 实现
+    │   └── PBRMaterial.cpp          ← FPBRMaterial 实现
+    │
+    └── Source /
+    ├── CubeSceneApplication.cpp     ← 调用入口（render / renderWithRDG）
+    └── CubeSceneApplicationPBR.cpp  ← renderHelmetWithPBR 实现
+                                            updatePBRUniforms 实现
+ */
+
+
 // ============================================================================
 // FPBRRenderer
 // ============================================================================

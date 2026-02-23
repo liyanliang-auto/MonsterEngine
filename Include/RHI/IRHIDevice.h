@@ -36,6 +36,14 @@ namespace MonsterRender::RHI {
         uint32 maxVertexInputAttributes = 16;
     };
     
+	//IRHIDevice（设备接口）
+	//	├── 资源创建：createBuffer / createTexture / createPipelineState / createSampler
+	//	├── Shader：createVertexShader / createPixelShader
+	//	├── 描述符：createDescriptorSetLayout / createPipelineLayout / allocateDescriptorSet
+	//	├── 命令：getImmediateCommandList
+	//	├── 同步：waitForIdle / present / collectGarbage
+	//	└── 查询：getBackendType / getCapabilities / getSwapChainFormat
+
     /**
      * RHI Device interface
      * Factory for creating RHI resources and command lists

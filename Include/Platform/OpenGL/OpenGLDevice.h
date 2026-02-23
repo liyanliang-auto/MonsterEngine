@@ -20,6 +20,18 @@ namespace MonsterEngine::OpenGL {
 // Forward declarations
 class FOpenGLCommandList;
 
+
+/**
+    FOpenGLDevice（继承 IRHIDevice）
+    ├── FOpenGLContext            // GLFW + OpenGL 4.6 上下文（GLAD 加载扩展）
+    ├── FOpenGLPipelineCache      // VAO / Program 缓存
+    │     ├── TMap<uint64, GLuint> programCache
+    │     └── TMap<uint64, GLuint> vaoCache
+    ├── FOpenGLCommandList        // 即时模式命令列表（直接调用 glDraw*）
+    └── FOpenGLSwapChain          // glfwSwapBuffers 封装
+ */
+
+
 /**
  * OpenGL 4.6 RHI Device
  * Reference: UE5 FOpenGLDynamicRHI

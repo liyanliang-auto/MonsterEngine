@@ -1,5 +1,6 @@
 #include "Core/Application.h"
 #include "Core/Logging/Logging.h"
+#include "Core/HAL/FMemoryManager.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"
 #include "Containers/Set.h"
@@ -193,6 +194,9 @@ int main(int argc, char** argv) {
         printf("  MonsterEngine Test Suite");
         printf("==========================================");
         printf("\n");
+        
+        // Initialize FMemoryManager before any test that uses FMemory::Malloc
+        FMemoryManager::Get().Initialize();
         
         // Run memory system tests
         if (runMemoryTests || runAllTests) {

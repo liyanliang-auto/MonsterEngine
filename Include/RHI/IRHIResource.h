@@ -5,6 +5,16 @@
 
 namespace MonsterRender::RHI {
     
+	//IRHIResource£¨»ùÀà£©
+	//	+ getBackendType() : ERHIBackend
+	//	©¦
+	//	©À©¤©¤ IRHIBuffer
+	//	©À©¤©¤ IRHITexture
+	//	©À©¤©¤ IRHIPipelineState
+	//	©À©¤©¤ IRHISampler
+	//	©À©¤©¤ IRHIVertexShader / IRHIPixelShader
+	//	©¸©¤©¤ IRHIDescriptorSet / IRHIDescriptorSetLayout / IRHIPipelineLayout
+
     /**
      * Base class for all RHI resources
      * Provides common functionality for resource management and lifetime tracking
