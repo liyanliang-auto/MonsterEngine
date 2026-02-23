@@ -4892,23 +4892,37 @@ void CubeSceneApplication::renderWithRDG(
 
             
 
-            // renderCubeWithShadows already renders both cubes and floor with shadows
+            // Choose rendering path based on shadow state (mirrors traditional path logic)
 
-            renderCubeWithShadows(
+            if (m_bShadowsEnabled && m_shadowMapTexture)
 
-                &rhiCmdList,
+            {
 
-                viewMatrix,
+                renderCubeWithShadows(
 
-                projectionMatrix,
+                    &rhiCmdList,
 
-                cameraPosition,
+                    viewMatrix,
 
-                lights,
+                    projectionMatrix,
 
-                lightViewProjection
+                    cameraPosition,
 
-            );
+                    lights,
+
+                    lightViewProjection
+
+                );
+
+            }
+
+            else
+
+            {
+
+                renderCube(&rhiCmdList, viewMatrix, projectionMatrix, cameraPosition, lights);
+
+            }
 
             
 

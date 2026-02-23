@@ -1162,7 +1162,7 @@ protected:
 
     /** Whether to render the cube (disabled for PBR debugging) */
 
-    bool m_bRenderCube = false;
+    bool m_bRenderCube = true;
 
 
 
