@@ -38,6 +38,42 @@ namespace MonsterRender::RHI::Vulkan {
     };
     
     /**
+	VulkanDevice（继承 IRHIDevice）
+		├── VkInstance / VkPhysicalDevice / VkDevice
+		├── VkQueue（Graphics / Present）
+		├── VkSurface / VkSwapchain
+		│
+		├── VulkanPipelineCache          // 管线状态对象缓存（哈希查找）
+		│     └── TMap<uint64, TSharedPtr<VulkanPipelineState>>
+		│
+		├── FVulkanMemoryManager         // 显存池（大块分配 + 子分配）
+		│     ├── VkDeviceMemory 大块（256MB / 块）
+		│     └── 子分配器（按类型分池）
+		│
+		├── FVulkanCommandBufferManager  // 命令缓冲区管理（环形复用）
+		│
+		├── FVulkanCommandListContext    // 帧同步上下文
+		│     ├── imageAvailableSemaphore[MAX_FRAMES_IN_FLIGHT]
+		│     ├── renderFinishedSemaphore[MAX_FRAMES_IN_FLIGHT]
+			│     └── inFlightFence[MAX_FRAMES_IN_FLIGHT]
+				│
+					├── FVulkanPendingState          // 延迟绑定状态机
+					│     ├── 待提交 Pipeline / Viewport / Scissor
+					│     ├── 待提交 VertexBuffer / IndexBuffer
+					│     └── 待提交 DescriptorSet
+					│
+					├── VulkanRenderPassCache        // RenderPass 缓存（哈希查找）
+					├── VulkanFramebufferCache       // Framebuffer 缓存
+					├── FVulkanDescriptorSetLayoutCache
+					├── FVulkanDescriptorSetCache
+					└── 延迟销毁队列
+					├── m_deferredBufferDestructions[]
+					└── m_deferredImageDestructions[]
+
+     */
+
+
+    /**
      * Vulkan device implementation
      */
     class VulkanDevice : public IRHIDevice {

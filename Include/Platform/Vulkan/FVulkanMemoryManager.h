@@ -163,6 +163,44 @@ private:
 };
 
 /**
+    * 
+    * ┌─────────────────────────────────────────────────────┐
+    │          Application Layer (应用层)                  │
+    │   VulkanBuffer / VulkanTexture / VulkanImage       │
+    └─────────────────────┬───────────────────────────────┘
+					      │
+					      │ Allocate(Request) / Free(Allocation)
+					      ▼
+    ┌─────────────────────────────────────────────────────┐
+    │     FVulkanMemoryManager (内存管理器单例)             │
+    │                                                      │
+    │  - 管理所有内存池                                     │
+    │  - 决策：子分配 vs 独立分配                          │
+    │  - 线程安全 (Per-type 锁)                           │
+    │  - 统计和监控                                        │
+    └─────────────────────┬───────────────────────────────┘
+					      │
+					      │ FindOrCreatePool / Allocate
+					      ▼
+    ┌─────────────────────────────────────────────────────┐
+    │     FVulkanMemoryPool (内存池)                       │
+    │                                                      │
+    │  - 管理单个 VkDeviceMemory (64MB)                   │
+    │  - Free-List 子分配算法                              │
+    │  - 持久映射 (Host可见)                               │
+    │  - 碎片整理                                          │
+    └─────────────────────┬───────────────────────────────┘
+					      │
+					      │ Sub-allocation
+					      ▼
+    ┌─────────────────────────────────────────────────────┐
+    │     FVulkanAllocation (分配结果)                     │
+    │                                                      │
+    │  - DeviceMemory + Offset + Size                    │
+    │  - MappedPointer (如果可映射)                        │
+    │  - Pool 引用 (用于释放)                              │
+    └─────────────────────────────────────────────────────┘
+    * 
  * FVulkanMemoryManager - Vulkan Memory Manager (Singleton)
  * 
  * ?

@@ -9,6 +9,16 @@
 
 namespace MonsterRender::RHI {
     
+	//IRHICommandList（命令列表接口）
+	//	├── 生命周期：begin / end / reset
+	//	├── 状态绑定：setPipelineState / setViewport / setScissorRect
+	//	├── 资源绑定：setVertexBuffers / setIndexBuffer / setConstantBuffer
+	//	│            setShaderResource / setSampler / bindDescriptorSets / pushConstants
+	//	├── 绘制命令：draw / drawIndexed / drawInstanced / drawIndexedInstanced
+	//	├── 渲染目标：setRenderTargets / endRenderPass / clearRenderTarget / clearDepthStencil
+	//	├── 资源屏障：transitionResource / resourceBarrier
+	//	└── 调试支持：beginEvent / endEvent / setMarker
+
     // Forward declarations
     class IRHIDevice;
     

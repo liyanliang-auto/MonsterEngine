@@ -56,6 +56,15 @@ struct FRDGTransition
 };
 
 /**
+	-自动依赖图构建(RAW / WAR / WAW)
+	- Kahn 拓扑排序算法
+	- 资源生命周期分析
+	- Vulkan Barrier 完整实现
+	- 渲染目标自动设置
+	- Debug 模式资源访问控制
+ */
+
+/**
  * FRDGBuilder - Render Dependency Graph Builder
  * 
  * Main class for constructing and executing render graphs.
@@ -190,7 +199,20 @@ public:
     
 private:
     // Compilation phases (to be implemented in Phase 2-4)
+    /**
+	     Phase 2 : 依赖图构建和
+
+		* *目标 * *: 分析 Pass 之间的依赖关系，确定执行顺序
+
+		* *依赖类型 * *:
+
+		-**RAW(Read After Write) * *: 读取之前写入的数据
+		- **WAR(Write After Read) * *: 写入之前读取的数据
+		- **WAW(Write After Write) * *: 写入之前写入的数据
+      */
     void _buildDependencyGraph();
+
+     //(Kahn 算法) : 拓扑排序
     void _topologicalSort();
     void _analyzeResourceLifetimes();
     void _insertTransitions();
