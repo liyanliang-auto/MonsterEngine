@@ -1,4 +1,4 @@
-﻿#include "Platform/Vulkan/VulkanBuffer.h"
+#include "Platform/Vulkan/VulkanBuffer.h"
 
 #include "Platform/Vulkan/VulkanDevice.h"
 
@@ -8,25 +8,17 @@
 
 namespace MonsterRender::RHI::Vulkan {
 
-
-
     VulkanBuffer::VulkanBuffer(VulkanDevice* device, const BufferDesc& desc)
 
         : IRHIBuffer(desc), m_device(device) {
-
-
 
         MR_ASSERT(m_device != nullptr);
 
         MR_ASSERT(desc.size > 0);
 
-
-
         MR_LOG_DEBUG("Creating Vulkan buffer: " + desc.debugName +
 
                      " (size: " + std::to_string(desc.size) + " bytes)");
-
-
 
         if (!initialize()) {
 
@@ -36,23 +28,17 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     VulkanBuffer::~VulkanBuffer() {
 
         destroy();
 
     }
 
-
-
     bool VulkanBuffer::initialize() {
 
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
-
-
 
         // Setup buffer create info
 
@@ -66,8 +52,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         m_bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-
-
         // Create the buffer
 
         VkResult result = functions.vkCreateBuffer(device, &m_bufferCreateInfo, nullptr, &m_buffer);
@@ -80,15 +64,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Get memory requirements
 
         VkMemoryRequirements memRequirements;
 
         functions.vkGetBufferMemoryRequirements(device, m_buffer, &memRequirements);
-
-
 
         // Determine memory properties based on memory usage (UE5-style)
 
@@ -102,13 +82,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         //   - Readback: GPU-write, CPU-read (query results, screenshots)
 
-
-
         m_memoryProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
         bool needsCpuAccess = m_desc.cpuAccessible;
-
-
 
         // Infer CPU accessibility from memory usage
 
@@ -126,8 +102,6 @@ namespace MonsterRender::RHI::Vulkan {
 
                 break;
 
-
-
             case RHI::EMemoryUsage::Readback:
 
                 // Readback buffers need HOST_VISIBLE and cached for efficient CPU reads
@@ -143,8 +117,6 @@ namespace MonsterRender::RHI::Vulkan {
                 MR_LOG_DEBUG("Buffer using Readback memory: " + m_desc.debugName);
 
                 break;
-
-
 
             case RHI::EMemoryUsage::Default:
 
@@ -166,15 +138,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Update descriptor to reflect actual CPU accessibility
 
         // This ensures map() will work correctly
 
         m_desc.cpuAccessible = needsCpuAccess;
-
-
 
         // Use FVulkanMemoryManager for allocation (UE5-style sub-allocation)
 
@@ -196,15 +164,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             request.bDedicated = false;  // Allow sub-allocation
 
-
-
             if (memoryManager->Allocate(request, m_allocation)) {
 
                 m_deviceMemory = m_allocation.DeviceMemory;
 
                 m_usesMemoryManager = true;
-
-
 
                 // Bind buffer to allocated memory at the sub-allocation offset.
 
@@ -225,8 +189,6 @@ namespace MonsterRender::RHI::Vulkan {
                     return false;
 
                 }
-
-
 
                 // Map memory if CPU accessible
 
@@ -252,11 +214,7 @@ namespace MonsterRender::RHI::Vulkan {
 
                 }
 
-
-
                 MR_LOG_DEBUG("Successfully created Vulkan buffer with managed memory: " + m_desc.debugName);
-
-
 
                 // Upload initial data if provided
 
@@ -286,21 +244,15 @@ namespace MonsterRender::RHI::Vulkan {
 
                 }
 
-
-
                 return true;
 
             }
 
         }
 
-
-
         // Fallback to direct allocation (old path)
 
         MR_LOG_WARNING("FVulkanMemoryManager not available, using direct allocation for: " + m_desc.debugName);
-
-
 
         m_memoryAllocateInfo = {};
 
@@ -309,8 +261,6 @@ namespace MonsterRender::RHI::Vulkan {
         m_memoryAllocateInfo.allocationSize = memRequirements.size;
 
         m_memoryAllocateInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, m_memoryProperties);
-
-
 
         result = functions.vkAllocateMemory(device, &m_memoryAllocateInfo, nullptr, &m_deviceMemory);
 
@@ -322,8 +272,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, 0);
 
         if (result != VK_SUCCESS) {
@@ -333,8 +281,6 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
 
         }
-
-
 
         if (m_desc.cpuAccessible) {
 
@@ -352,11 +298,7 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("Successfully created Vulkan buffer: " + m_desc.debugName);
-
-
 
         // Upload initial data if provided (fallback path)
 
@@ -386,13 +328,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         return true;
 
     }
-
-
 
     void VulkanBuffer::destroy() {
 
@@ -401,8 +339,6 @@ namespace MonsterRender::RHI::Vulkan {
             const auto& functions = VulkanAPI::getFunctions();
 
             VkDevice device = m_device->getDevice();
-
-
 
             // Unmap memory first if mapped
 
@@ -427,8 +363,6 @@ namespace MonsterRender::RHI::Vulkan {
                 m_persistentMapped = false;
 
             }
-
-
 
             // Use deferred destruction to avoid destroying resources still in use by GPU
 
@@ -476,8 +410,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void* VulkanBuffer::map() {
 
         if (!m_desc.cpuAccessible) {
@@ -488,21 +420,15 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         if (m_persistentMapped) {
 
             return m_mappedData;
 
         }
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
-
-
 
         void* data = nullptr;
 
@@ -516,13 +442,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         return data;
 
     }
-
-
 
     void VulkanBuffer::unmap() {
 
@@ -534,8 +456,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Don't unmap persistent mappings
 
         if (m_persistentMapped) {
@@ -543,8 +463,6 @@ namespace MonsterRender::RHI::Vulkan {
             return;
 
         }
-
-
 
         const auto& functions = VulkanAPI::getFunctions();
 
@@ -554,15 +472,11 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     uint32 VulkanBuffer::findMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties) {
 
         return VulkanUtils::findMemoryType(m_device->getMemoryProperties(), typeFilter, properties);
 
     }
-
-
 
     bool VulkanBuffer::uploadInitialData(const void* data, uint32 size) {
 
@@ -572,8 +486,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         if (!isValid()) {
 
             MR_LOG_ERROR("Cannot upload data to invalid buffer: " + m_desc.debugName);
@@ -582,11 +494,7 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("Uploading " + std::to_string(size) + " bytes to buffer: " + m_desc.debugName);
-
-
 
         // Create staging buffer
 
@@ -600,8 +508,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Map staging buffer and copy data
 
         void* mappedData = stagingBuffer.Map();
@@ -614,13 +520,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         memcpy(mappedData, data, size);
 
         stagingBuffer.Unmap();
-
-
 
         // Copy from staging buffer to GPU buffer
 
@@ -632,23 +534,17 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("Successfully uploaded initial data to buffer: " + m_desc.debugName);
 
         return true;
 
     }
 
-
-
     // ============================================================================
 
     // FVulkanStagingBuffer Implementation
 
     // ============================================================================
-
-
 
     FVulkanStagingBuffer::FVulkanStagingBuffer(VulkanDevice* InDevice, uint32 InSize)
 
@@ -662,8 +558,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         MR_ASSERT(InSize > 0);
 
-
-
         if (!CreateBuffer()) {
 
             MR_LOG_ERROR("FVulkanStagingBuffer: Failed to create staging buffer");
@@ -671,8 +565,6 @@ namespace MonsterRender::RHI::Vulkan {
         }
 
     }
-
-
 
     FVulkanStagingBuffer::~FVulkanStagingBuffer()
 
@@ -682,8 +574,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     bool FVulkanStagingBuffer::CreateBuffer()
 
     {
@@ -691,8 +581,6 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
-
-
 
         // Create staging buffer with transfer source usage
 
@@ -706,8 +594,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-
-
         VkResult result = functions.vkCreateBuffer(device, &bufferCreateInfo, nullptr, &m_buffer);
 
         if (result != VK_SUCCESS) {
@@ -718,23 +604,17 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Get memory requirements
 
         VkMemoryRequirements memRequirements;
 
         functions.vkGetBufferMemoryRequirements(device, m_buffer, &memRequirements);
 
-
-
         // Staging buffer requires host-visible, host-coherent memory
 
         VkMemoryPropertyFlags memoryProperties =
 
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-
 
         // Try memory manager first
 
@@ -756,15 +636,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             request.bDedicated = false;
 
-
-
             if (memoryManager->Allocate(request, m_allocation)) {
 
                 m_deviceMemory = m_allocation.DeviceMemory;
 
                 m_usesMemoryManager = true;
-
-
 
                 result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, m_allocation.Offset);
 
@@ -780,8 +656,6 @@ namespace MonsterRender::RHI::Vulkan {
 
                 }
 
-
-
                 MR_LOG_DEBUG("FVulkanStagingBuffer: Created with managed memory, size: " + std::to_string(m_size));
 
                 return true;
@@ -789,8 +663,6 @@ namespace MonsterRender::RHI::Vulkan {
             }
 
         }
-
-
 
         // Fallback to direct allocation
 
@@ -808,8 +680,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             memoryProperties);
 
-
-
         result = functions.vkAllocateMemory(device, &allocInfo, nullptr, &m_deviceMemory);
 
         if (result != VK_SUCCESS) {
@@ -819,8 +689,6 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
 
         }
-
-
 
         result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, 0);
 
@@ -832,15 +700,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("FVulkanStagingBuffer: Created with direct allocation, size: " + std::to_string(m_size));
 
         return true;
 
     }
-
-
 
     void FVulkanStagingBuffer::DestroyBuffer()
 
@@ -852,15 +716,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             VkDevice device = m_device->getDevice();
 
-
-
             if (m_mappedData) {
 
                 Unmap();
 
             }
-
-
 
             if (m_buffer != VK_NULL_HANDLE) {
 
@@ -869,8 +729,6 @@ namespace MonsterRender::RHI::Vulkan {
                 m_buffer = VK_NULL_HANDLE;
 
             }
-
-
 
             if (m_usesMemoryManager) {
 
@@ -888,15 +746,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             m_deviceMemory = VK_NULL_HANDLE;
 
         }
 
     }
-
-
 
     void* FVulkanStagingBuffer::Map()
 
@@ -908,19 +762,13 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
 
-
-
         VkDeviceSize offset = m_usesMemoryManager ? m_allocation.Offset : 0;
 
         VkResult result = functions.vkMapMemory(device, m_deviceMemory, offset, m_size, 0, &m_mappedData);
-
-
 
         if (result != VK_SUCCESS) {
 
@@ -930,13 +778,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         return m_mappedData;
 
     }
-
-
 
     void FVulkanStagingBuffer::Unmap()
 
@@ -948,21 +792,15 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
-
-
 
         functions.vkUnmapMemory(device, m_deviceMemory);
 
         m_mappedData = nullptr;
 
     }
-
-
 
     bool FVulkanStagingBuffer::CopyToBuffer(VkBuffer DstBuffer, uint32 SrcOffset, uint32 DstOffset, uint32 Size)
 
@@ -974,19 +812,13 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
 
-
-
         // Get command pool and create one-time command buffer
 
         VkCommandPool commandPool = m_device->getCommandPool();
-
-
 
         VkCommandBufferAllocateInfo allocInfo{};
 
@@ -997,8 +829,6 @@ namespace MonsterRender::RHI::Vulkan {
         allocInfo.commandPool = commandPool;
 
         allocInfo.commandBufferCount = 1;
-
-
 
         VkCommandBuffer commandBuffer;
 
@@ -1012,8 +842,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Begin command buffer
 
         VkCommandBufferBeginInfo beginInfo{};
@@ -1022,11 +850,7 @@ namespace MonsterRender::RHI::Vulkan {
 
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-
-
         functions.vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-
 
         // Copy buffer
 
@@ -1038,17 +862,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         copyRegion.size = Size;
 
-
-
         functions.vkCmdCopyBuffer(commandBuffer, m_buffer, DstBuffer, 1, &copyRegion);
-
-
 
         // End command buffer
 
         functions.vkEndCommandBuffer(commandBuffer);
-
-
 
         // Submit and wait
 
@@ -1060,29 +878,21 @@ namespace MonsterRender::RHI::Vulkan {
 
         submitInfo.pCommandBuffers = &commandBuffer;
 
-
-
         VkQueue graphicsQueue = m_device->getGraphicsQueue();
 
         functions.vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
 
         functions.vkQueueWaitIdle(graphicsQueue);
 
-
-
         // Free command buffer
 
         functions.vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-
-
 
         MR_LOG_DEBUG("FVulkanStagingBuffer: Copied " + std::to_string(Size) + " bytes to buffer");
 
         return true;
 
     }
-
-
 
     bool FVulkanStagingBuffer::CopyToImage(VkImage DstImage, uint32 Width, uint32 Height, uint32 MipLevel)
 
@@ -1094,19 +904,13 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
 
-
-
         // Get command pool and create one-time command buffer
 
         VkCommandPool commandPool = m_device->getCommandPool();
-
-
 
         VkCommandBufferAllocateInfo allocInfo{};
 
@@ -1117,8 +921,6 @@ namespace MonsterRender::RHI::Vulkan {
         allocInfo.commandPool = commandPool;
 
         allocInfo.commandBufferCount = 1;
-
-
 
         VkCommandBuffer commandBuffer;
 
@@ -1132,8 +934,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Begin command buffer
 
         VkCommandBufferBeginInfo beginInfo{};
@@ -1142,11 +942,7 @@ namespace MonsterRender::RHI::Vulkan {
 
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-
-
         functions.vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-
 
         // Copy buffer to image
 
@@ -1170,21 +966,15 @@ namespace MonsterRender::RHI::Vulkan {
 
         region.imageExtent = {Width, Height, 1};
 
-
-
         functions.vkCmdCopyBufferToImage(
 
             commandBuffer, m_buffer, DstImage,
 
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-
-
         // End command buffer
 
         functions.vkEndCommandBuffer(commandBuffer);
-
-
 
         // Submit and wait
 
@@ -1196,21 +986,15 @@ namespace MonsterRender::RHI::Vulkan {
 
         submitInfo.pCommandBuffers = &commandBuffer;
 
-
-
         VkQueue graphicsQueue = m_device->getGraphicsQueue();
 
         functions.vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
 
         functions.vkQueueWaitIdle(graphicsQueue);
 
-
-
         // Free command buffer
 
         functions.vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-
-
 
         MR_LOG_DEBUG("FVulkanStagingBuffer: Copied to image " + std::to_string(Width) + "x" + std::to_string(Height));
 
@@ -1218,15 +1002,11 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     // ============================================================================
 
     // FVulkanVertexBuffer Implementation
 
     // ============================================================================
-
-
 
     FVulkanVertexBuffer::FVulkanVertexBuffer(VulkanDevice* InDevice, uint32 InSize, uint32 InStride, EBufferUsageFlags InUsage)
 
@@ -1244,8 +1024,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     FVulkanVertexBuffer::~FVulkanVertexBuffer()
 
     {
@@ -1253,8 +1031,6 @@ namespace MonsterRender::RHI::Vulkan {
         DestroyBuffer();
 
     }
-
-
 
     bool FVulkanVertexBuffer::Initialize(const void* InitialData, uint32 DataSize)
 
@@ -1267,8 +1043,6 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
 
         }
-
-
 
         // Upload initial data if provided
 
@@ -1294,13 +1068,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         return true;
 
     }
-
-
 
     bool FVulkanVertexBuffer::CreateBuffer()
 
@@ -1309,8 +1079,6 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
-
-
 
         // Setup buffer create info
 
@@ -1324,8 +1092,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-
-
         // Create the buffer
 
         VkResult result = functions.vkCreateBuffer(device, &bufferCreateInfo, nullptr, &m_buffer);
@@ -1338,23 +1104,17 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Get memory requirements
 
         VkMemoryRequirements memRequirements;
 
         functions.vkGetBufferMemoryRequirements(device, m_buffer, &memRequirements);
 
-
-
         // Determine memory properties based on usage flags
 
         VkMemoryPropertyFlags memoryProperties;
 
         bool isDynamic = EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic | EBufferUsageFlags::Volatile);
-
-
 
         if (isDynamic || EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::KeepCPUAccessible)) {
 
@@ -1371,8 +1131,6 @@ namespace MonsterRender::RHI::Vulkan {
             // TODO: For truly static buffers, use staging buffer and device local memory
 
         }
-
-
 
         // Use memory manager for allocation
 
@@ -1394,15 +1152,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             request.bDedicated = false;
 
-
-
             if (memoryManager->Allocate(request, m_allocation)) {
 
                 m_deviceMemory = m_allocation.DeviceMemory;
 
                 m_usesMemoryManager = true;
-
-
 
                 // Bind buffer to allocated memory
 
@@ -1420,8 +1174,6 @@ namespace MonsterRender::RHI::Vulkan {
 
                 }
 
-
-
                 MR_LOG_DEBUG("Created vertex buffer with managed memory, size: " + std::to_string(Size));
 
                 return true;
@@ -1430,13 +1182,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Fallback to direct allocation
 
         MR_LOG_WARNING("Memory manager not available, using direct allocation for vertex buffer");
-
-
 
         VkMemoryAllocateInfo allocInfo{};
 
@@ -1445,8 +1193,6 @@ namespace MonsterRender::RHI::Vulkan {
         allocInfo.allocationSize = memRequirements.size;
 
         allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, memoryProperties);
-
-
 
         result = functions.vkAllocateMemory(device, &allocInfo, nullptr, &m_deviceMemory);
 
@@ -1458,8 +1204,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, 0);
 
         if (result != VK_SUCCESS) {
@@ -1470,15 +1214,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("Created vertex buffer with direct allocation, size: " + std::to_string(Size));
 
         return true;
 
     }
-
-
 
     void FVulkanVertexBuffer::DestroyBuffer()
 
@@ -1490,8 +1230,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             VkDevice device = m_device->getDevice();
 
-
-
             if (m_buffer != VK_NULL_HANDLE) {
 
                 functions.vkDestroyBuffer(device, m_buffer, nullptr);
@@ -1499,8 +1237,6 @@ namespace MonsterRender::RHI::Vulkan {
                 m_buffer = VK_NULL_HANDLE;
 
             }
-
-
 
             if (m_usesMemoryManager) {
 
@@ -1526,8 +1262,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void* FVulkanVertexBuffer::Lock(uint32 Offset, uint32 InSize)
 
     {
@@ -1536,13 +1270,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         VkDevice device = m_device->getDevice();
 
-
-
         void* data = nullptr;
 
         VkDeviceSize mapOffset = m_usesMemoryManager ? (m_allocation.Offset + Offset) : Offset;
-
-
 
         VkResult result = functions.vkMapMemory(device, m_deviceMemory, mapOffset, InSize, 0, &data);
 
@@ -1554,15 +1284,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         m_mappedData = data;
 
         return data;
 
     }
-
-
 
     void FVulkanVertexBuffer::Unlock()
 
@@ -1582,8 +1308,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     uint32 FVulkanVertexBuffer::FindMemoryType(uint32 TypeFilter, VkMemoryPropertyFlags Properties)
 
     {
@@ -1592,15 +1316,11 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     // ============================================================================
 
     // FVulkanIndexBuffer Implementation
 
     // ============================================================================
-
-
 
     FVulkanIndexBuffer::FVulkanIndexBuffer(VulkanDevice* InDevice, uint32 InStride, uint32 InSize, EBufferUsageFlags InUsage)
 
@@ -1620,8 +1340,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     FVulkanIndexBuffer::~FVulkanIndexBuffer()
 
     {
@@ -1629,8 +1347,6 @@ namespace MonsterRender::RHI::Vulkan {
         DestroyBuffer();
 
     }
-
-
 
     bool FVulkanIndexBuffer::Initialize(const void* InitialData, uint32 DataSize)
 
@@ -1643,8 +1359,6 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
 
         }
-
-
 
         // Upload initial data if provided
 
@@ -1670,13 +1384,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         return true;
 
     }
-
-
 
     bool FVulkanIndexBuffer::CreateBuffer()
 
@@ -1685,8 +1395,6 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getDevice();
-
-
 
         // Setup buffer create info
 
@@ -1700,8 +1408,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-
-
         // Create the buffer
 
         VkResult result = functions.vkCreateBuffer(device, &bufferCreateInfo, nullptr, &m_buffer);
@@ -1714,23 +1420,17 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Get memory requirements
 
         VkMemoryRequirements memRequirements;
 
         functions.vkGetBufferMemoryRequirements(device, m_buffer, &memRequirements);
 
-
-
         // Determine memory properties based on usage flags
 
         VkMemoryPropertyFlags memoryProperties;
 
         bool isDynamic = EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::Dynamic | EBufferUsageFlags::Volatile);
-
-
 
         if (isDynamic || EnumHasAnyFlags(m_usageFlags, EBufferUsageFlags::KeepCPUAccessible)) {
 
@@ -1741,8 +1441,6 @@ namespace MonsterRender::RHI::Vulkan {
             memoryProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
         }
-
-
 
         // Use memory manager for allocation
 
@@ -1764,15 +1462,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             request.bDedicated = false;
 
-
-
             if (memoryManager->Allocate(request, m_allocation)) {
 
                 m_deviceMemory = m_allocation.DeviceMemory;
 
                 m_usesMemoryManager = true;
-
-
 
                 result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, m_allocation.Offset);
 
@@ -1788,8 +1482,6 @@ namespace MonsterRender::RHI::Vulkan {
 
                 }
 
-
-
                 MR_LOG_DEBUG("Created index buffer with managed memory, size: " + std::to_string(Size) +
 
                             ", " + (Is32Bit() ? "32-bit" : "16-bit") + " indices");
@@ -1800,13 +1492,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Fallback to direct allocation
 
         MR_LOG_WARNING("Memory manager not available, using direct allocation for index buffer");
-
-
 
         VkMemoryAllocateInfo allocInfo{};
 
@@ -1815,8 +1503,6 @@ namespace MonsterRender::RHI::Vulkan {
         allocInfo.allocationSize = memRequirements.size;
 
         allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, memoryProperties);
-
-
 
         result = functions.vkAllocateMemory(device, &allocInfo, nullptr, &m_deviceMemory);
 
@@ -1828,8 +1514,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         result = functions.vkBindBufferMemory(device, m_buffer, m_deviceMemory, 0);
 
         if (result != VK_SUCCESS) {
@@ -1840,8 +1524,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("Created index buffer with direct allocation, size: " + std::to_string(Size) +
 
                     ", " + (Is32Bit() ? "32-bit" : "16-bit") + " indices");
@@ -1849,8 +1531,6 @@ namespace MonsterRender::RHI::Vulkan {
         return true;
 
     }
-
-
 
     void FVulkanIndexBuffer::DestroyBuffer()
 
@@ -1862,8 +1542,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             VkDevice device = m_device->getDevice();
 
-
-
             if (m_buffer != VK_NULL_HANDLE) {
 
                 functions.vkDestroyBuffer(device, m_buffer, nullptr);
@@ -1871,8 +1549,6 @@ namespace MonsterRender::RHI::Vulkan {
                 m_buffer = VK_NULL_HANDLE;
 
             }
-
-
 
             if (m_usesMemoryManager) {
 
@@ -1898,8 +1574,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void* FVulkanIndexBuffer::Lock(uint32 Offset, uint32 InSize)
 
     {
@@ -1908,13 +1582,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         VkDevice device = m_device->getDevice();
 
-
-
         void* data = nullptr;
 
         VkDeviceSize mapOffset = m_usesMemoryManager ? (m_allocation.Offset + Offset) : Offset;
-
-
 
         VkResult result = functions.vkMapMemory(device, m_deviceMemory, mapOffset, InSize, 0, &data);
 
@@ -1926,15 +1596,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         m_mappedData = data;
 
         return data;
 
     }
-
-
 
     void FVulkanIndexBuffer::Unlock()
 
@@ -1953,8 +1619,6 @@ namespace MonsterRender::RHI::Vulkan {
         }
 
     }
-
-
 
     uint32 FVulkanIndexBuffer::FindMemoryType(uint32 TypeFilter, VkMemoryPropertyFlags Properties)
 

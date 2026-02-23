@@ -1,14 +1,8 @@
 #pragma once
 
-
-
 #include "Core/CoreMinimal.h"
 
-
-
 namespace MonsterRender::RHI {
-
-    
 
     /**
 
@@ -34,8 +28,6 @@ namespace MonsterRender::RHI {
 
         static constexpr uint32 MAX_BINDINGS_PER_SET = 16;
 
-        
-
         /**
 
          * Maximum number of descriptor sets
@@ -46,8 +38,6 @@ namespace MonsterRender::RHI {
 
         static constexpr uint32 MAX_DESCRIPTOR_SETS = 4;
 
-        
-
         /**
 
          * Maximum texture units per descriptor set
@@ -57,8 +47,6 @@ namespace MonsterRender::RHI {
          */
 
         static constexpr uint32 MAX_TEXTURE_UNITS_PER_SET = 16;
-
-        
 
         /**
 
@@ -71,8 +59,6 @@ namespace MonsterRender::RHI {
         static constexpr uint32 MAX_TOTAL_UBO_BINDING_POINTS = MAX_DESCRIPTOR_SETS * MAX_BINDINGS_PER_SET;
 
     };
-
-    
 
     /**
 
@@ -102,8 +88,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     /**
 
      * Get the name of an RHI backend
@@ -131,8 +115,6 @@ namespace MonsterRender::RHI {
         }
 
     }
-
-    
 
     // Resource usage flags
 
@@ -162,8 +144,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Enable bitwise operations for EResourceUsage
 
     inline constexpr EResourceUsage operator|(EResourceUsage lhs, EResourceUsage rhs) {
@@ -176,8 +156,6 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr EResourceUsage operator&(EResourceUsage lhs, EResourceUsage rhs) {
 
         return static_cast<EResourceUsage>(
@@ -187,8 +165,6 @@ namespace MonsterRender::RHI {
         );
 
     }
-
-    
 
     inline constexpr EResourceUsage operator^(EResourceUsage lhs, EResourceUsage rhs) {
 
@@ -200,15 +176,11 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr EResourceUsage operator~(EResourceUsage rhs) {
 
         return static_cast<EResourceUsage>(~static_cast<uint32>(rhs));
 
     }
-
-    
 
     inline constexpr EResourceUsage& operator|=(EResourceUsage& lhs, EResourceUsage rhs) {
 
@@ -218,8 +190,6 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr EResourceUsage& operator&=(EResourceUsage& lhs, EResourceUsage rhs) {
 
         lhs = lhs & rhs;
@@ -227,8 +197,6 @@ namespace MonsterRender::RHI {
         return lhs;
 
     }
-
-    
 
     inline constexpr EResourceUsage& operator^=(EResourceUsage& lhs, EResourceUsage rhs) {
 
@@ -238,8 +206,6 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     // Helper function to check if a specific usage flag is set
 
     inline constexpr bool hasResourceUsage(EResourceUsage usage, EResourceUsage flag) {
@@ -247,8 +213,6 @@ namespace MonsterRender::RHI {
         return (usage & flag) != EResourceUsage::None;
 
     }
-
-    
 
     // Memory usage hint (UE5-style)
 
@@ -264,15 +228,11 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Resource usage aliases for backward compatibility
 
     constexpr EResourceUsage CopySrc = EResourceUsage::TransferSrc;
 
     constexpr EResourceUsage CopyDst = EResourceUsage::TransferDst;
-
-    
 
     /**
 
@@ -280,7 +240,7 @@ namespace MonsterRender::RHI {
 
      * @brief Buffer usage flags (UE5-style)
 
-     * 
+     *
 
      * Reference UE5: EBufferUsageFlags
 
@@ -292,99 +252,67 @@ namespace MonsterRender::RHI {
 
         None            = 0,
 
-        
-
         /** The buffer will be written to once (immutable after creation) */
 
         Static          = 1 << 0,
-
-        
 
         /** The buffer will be written to occasionally, GPU read only, CPU write only */
 
         Dynamic         = 1 << 1,
 
-        
-
         /** The buffer's data will have a lifetime of one frame */
 
         Volatile        = 1 << 2,
-
-        
 
         /** Allows an unordered access view to be created for the buffer */
 
         UnorderedAccess = 1 << 3,
 
-        
-
         /** Create a byte address buffer */
 
         ByteAddressBuffer = 1 << 4,
-
-        
 
         /** Buffer that the GPU will use as a source for a copy */
 
         SourceCopy      = 1 << 5,
 
-        
-
         /** Create a buffer that can be bound as a stream output target */
 
         StreamOutput    = 1 << 6,
-
-        
 
         /** Create a buffer which contains the arguments used by DispatchIndirect or DrawIndirect */
 
         DrawIndirect    = 1 << 7,
 
-        
-
         /** Create a buffer that can be bound as a shader resource */
 
         ShaderResource  = 1 << 8,
-
-        
 
         /** Request that this buffer is directly CPU accessible */
 
         KeepCPUAccessible = 1 << 9,
 
-        
-
         /** Buffer should go in fast VRAM (hint only) */
 
         FastVRAM        = 1 << 10,
-
-        
 
         /** Vertex buffer type */
 
         VertexBuffer    = 1 << 14,
 
-        
-
         /** Index buffer type */
 
         IndexBuffer     = 1 << 15,
 
-        
-
         /** Structured buffer type */
 
         StructuredBuffer = 1 << 16,
-
-        
 
         // Helper bit-masks
 
         AnyDynamic = (Dynamic | Volatile),
 
     };
-
-    
 
     // Enable bitwise operations for EBufferUsageFlags
 
@@ -394,15 +322,11 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr EBufferUsageFlags operator&(EBufferUsageFlags lhs, EBufferUsageFlags rhs) {
 
         return static_cast<EBufferUsageFlags>(static_cast<uint32>(lhs) & static_cast<uint32>(rhs));
 
     }
-
-    
 
     inline constexpr EBufferUsageFlags& operator|=(EBufferUsageFlags& lhs, EBufferUsageFlags rhs) {
 
@@ -412,15 +336,11 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr bool EnumHasAnyFlags(EBufferUsageFlags flags, EBufferUsageFlags contains) {
 
         return (flags & contains) != EBufferUsageFlags::None;
 
     }
-
-    
 
     /**
 
@@ -428,7 +348,7 @@ namespace MonsterRender::RHI {
 
      * @brief Resource creation information (UE5-style)
 
-     * 
+     *
 
      * Contains initial data and debug information for resource creation.
 
@@ -444,33 +364,23 @@ namespace MonsterRender::RHI {
 
         String DebugName;
 
-        
-
         /** Initial data to upload to the resource (optional) */
 
         const void* BulkData = nullptr;
-
-        
 
         /** Size of the initial data in bytes */
 
         uint32 BulkDataSize = 0;
 
-        
-
         /** Constructor with debug name */
 
         FRHIResourceCreateInfo() = default;
-
-        
 
         explicit FRHIResourceCreateInfo(const String& InDebugName)
 
             : DebugName(InDebugName)
 
         {}
-
-        
 
         FRHIResourceCreateInfo(const String& InDebugName, const void* InData, uint32 InDataSize)
 
@@ -483,8 +393,6 @@ namespace MonsterRender::RHI {
         {}
 
     };
-
-    
 
     // Buffer description
 
@@ -500,13 +408,9 @@ namespace MonsterRender::RHI {
 
         String debugName;
 
-        
-
         /** Stride for structured/vertex buffers */
 
         uint32 stride = 0;
-
-        
 
         /** Initial data (optional) */
 
@@ -514,15 +418,11 @@ namespace MonsterRender::RHI {
 
         uint32 initialDataSize = 0;
 
-        
-
         BufferDesc() = default;
 
         BufferDesc(uint32 inSize, EResourceUsage inUsage, bool inCpuAccessible = false)
 
             : size(inSize), usage(inUsage), cpuAccessible(inCpuAccessible) {}
-
-        
 
         /** Create a vertex buffer description */
 
@@ -541,8 +441,6 @@ namespace MonsterRender::RHI {
             return desc;
 
         }
-
-        
 
         /** Create an index buffer description */
 
@@ -563,8 +461,6 @@ namespace MonsterRender::RHI {
         }
 
     };
-
-    
 
     // Texture formats
 
@@ -622,8 +518,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Texture description
 
     struct TextureDesc {
@@ -644,8 +538,6 @@ namespace MonsterRender::RHI {
 
         String debugName;
 
-        
-
         // Initial data for texture upload (optional)
 
         // If provided, texture will be initialized with this data
@@ -654,8 +546,6 @@ namespace MonsterRender::RHI {
 
         uint32 initialDataSize = 0;
 
-        
-
         TextureDesc() = default;
 
         TextureDesc(uint32 w, uint32 h, EPixelFormat fmt, EResourceUsage usg)
@@ -663,8 +553,6 @@ namespace MonsterRender::RHI {
             : width(w), height(h), format(fmt), usage(usg) {}
 
     };
-
-    
 
     // Primitive topology
 
@@ -682,8 +570,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Blend state
 
     enum class EBlendOp : uint32 {
@@ -699,8 +585,6 @@ namespace MonsterRender::RHI {
         Max
 
     };
-
-    
 
     enum class EBlendFactor : uint32 {
 
@@ -726,8 +610,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     struct BlendState {
 
         bool blendEnable = false;
@@ -746,8 +628,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Rasterizer state
 
     enum class EFillMode : uint32 {
@@ -757,8 +637,6 @@ namespace MonsterRender::RHI {
         Wireframe
 
     };
-
-    
 
     enum class ECullMode : uint32 {
 
@@ -770,13 +648,11 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     /**
 
      * 引擎统一正面约定 (UE5 Pattern)
 
-     * 
+     *
 
      * MonsterEngine 采用与 UE5 相同的坐标系统统一策略：
 
@@ -786,7 +662,7 @@ namespace MonsterRender::RHI {
 
      * - OpenGL 后端保持传统约定（CCW 为正面）
 
-     * 
+     *
 
      * 引擎层统一使用 frontCounterClockwise = false（CW 为正面）
 
@@ -796,7 +672,7 @@ namespace MonsterRender::RHI {
 
      * - OpenGL: 由于 Y-flip 在 viewport 层已处理，使用 GL_CW
 
-     * 
+     *
 
      * Reference: UE5 VulkanState.h - FVulkanRasterizerState::ResetCreateInfo()
 
@@ -808,8 +684,6 @@ namespace MonsterRender::RHI {
 
         ECullMode cullMode = ECullMode::Back;
 
-        
-
         /**
 
          * Front face winding order convention
@@ -818,7 +692,7 @@ namespace MonsterRender::RHI {
 
          * true  = Counter-Clockwise (CCW) is front face
 
-         * 
+         *
 
          * Note: With Vulkan Y-flip applied, CW should be used as front face
 
@@ -828,15 +702,11 @@ namespace MonsterRender::RHI {
 
         bool frontCounterClockwise = false;
 
-        
-
         bool depthClampEnable = false;
 
         bool scissorEnable = false;
 
     };
-
-    
 
     // Depth stencil state
 
@@ -860,13 +730,9 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Alias for compatibility
 
     using ECompareOp = EComparisonFunc;
-
-    
 
     struct DepthStencilState {
 
@@ -881,8 +747,6 @@ namespace MonsterRender::RHI {
         bool stencilEnable = false;
 
     };
-
-    
 
     // Shader stage
 
@@ -902,8 +766,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Enable bitwise operations for EShaderStage
 
     inline constexpr EShaderStage operator|(EShaderStage lhs, EShaderStage rhs) {
@@ -916,8 +778,6 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr EShaderStage operator&(EShaderStage lhs, EShaderStage rhs) {
 
         return static_cast<EShaderStage>(
@@ -927,8 +787,6 @@ namespace MonsterRender::RHI {
         );
 
     }
-
-    
 
     inline constexpr EShaderStage operator^(EShaderStage lhs, EShaderStage rhs) {
 
@@ -940,15 +798,11 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr EShaderStage operator~(EShaderStage rhs) {
 
         return static_cast<EShaderStage>(~static_cast<uint32>(rhs));
 
     }
-
-    
 
     inline constexpr EShaderStage& operator|=(EShaderStage& lhs, EShaderStage rhs) {
 
@@ -958,8 +812,6 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr EShaderStage& operator&=(EShaderStage& lhs, EShaderStage rhs) {
 
         lhs = lhs & rhs;
@@ -968,8 +820,6 @@ namespace MonsterRender::RHI {
 
     }
 
-    
-
     inline constexpr EShaderStage& operator^=(EShaderStage& lhs, EShaderStage rhs) {
 
         lhs = lhs ^ rhs;
@@ -977,8 +827,6 @@ namespace MonsterRender::RHI {
         return lhs;
 
     }
-
-    
 
     // Vertex attribute format
 
@@ -1012,8 +860,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Vertex attribute description
 
     struct VertexAttribute {
@@ -1028,8 +874,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Vertex input layout description
 
     struct VertexInputLayout {
@@ -1037,8 +881,6 @@ namespace MonsterRender::RHI {
         uint32 stride = 0;            // Size of one vertex in bytes
 
         TArray<VertexAttribute> attributes;
-
-        
 
         // Helper to calculate stride from attributes
 
@@ -1072,8 +914,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Pipeline state description
 
     struct PipelineStateDesc {
@@ -1102,8 +942,6 @@ namespace MonsterRender::RHI {
 
     };
 
-    
-
     // Viewport
 
     struct Viewport {
@@ -1120,19 +958,15 @@ namespace MonsterRender::RHI {
 
         float32 maxDepth = 1.0f;
 
-        
-
         Viewport() = default;
 
         Viewport(float32 w, float32 h) : width(w), height(h) {}
 
-        Viewport(float32 inX, float32 inY, float32 w, float32 h) 
+        Viewport(float32 inX, float32 inY, float32 w, float32 h)
 
             : x(inX), y(inY), width(w), height(h) {}
 
     };
-
-    
 
     // Scissor rect
 
@@ -1146,13 +980,11 @@ namespace MonsterRender::RHI {
 
         int32 bottom = 0;
 
-        
-
         ScissorRect() = default;
 
         ScissorRect(int32 w, int32 h) : right(w), bottom(h) {}
 
-        ScissorRect(int32 l, int32 t, int32 r, int32 b) 
+        ScissorRect(int32 l, int32 t, int32 r, int32 b)
 
             : left(l), top(t), right(r), bottom(b) {}
 

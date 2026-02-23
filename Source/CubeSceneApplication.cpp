@@ -1,4 +1,4 @@
-﻿// Copyright Monster Engine. All Rights Reserved.
+// Copyright Monster Engine. All Rights Reserved.
 
 /**
 
@@ -222,8 +222,6 @@ void CubeSceneApplication::onInitialize()
 
     MR_LOG(LogCubeSceneApp, Log, "Initializing CubeSceneApplication...");
 
-
-
     // Get actual window size from the window system
 
     if (getWindow())
@@ -238,8 +236,6 @@ void CubeSceneApplication::onInitialize()
 
     }
 
-
-
     // Get RHI device from engine
 
     m_device = getEngine() ? getEngine()->getRHIDevice() : nullptr;
@@ -253,8 +249,6 @@ void CubeSceneApplication::onInitialize()
         return;
 
     }
-
-
 
     // Update window title to show render backend
 
@@ -274,8 +268,6 @@ void CubeSceneApplication::onInitialize()
 
     }
 
-
-
     // Initialize scene
 
     if (!initializeScene())
@@ -287,8 +279,6 @@ void CubeSceneApplication::onInitialize()
         return;
 
     }
-
-
 
     // Initialize camera
 
@@ -302,8 +292,6 @@ void CubeSceneApplication::onInitialize()
 
     }
 
-
-
     // Initialize renderer
 
     if (!initializeRenderer())
@@ -315,8 +303,6 @@ void CubeSceneApplication::onInitialize()
         return;
 
     }
-
-
 
     // Initialize FSceneRenderer for UE5-style rendering
 
@@ -336,8 +322,6 @@ void CubeSceneApplication::onInitialize()
 
     }
 
-
-
     // Initialize ImGui (DISABLED for cube rendering focus)
 
     // if (!initializeImGui())
@@ -347,8 +331,6 @@ void CubeSceneApplication::onInitialize()
     //     MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize ImGui, UI will be disabled");
 
     // }
-
-
 
     // Adjust window size to match swapchain extent
 
@@ -386,8 +368,6 @@ void CubeSceneApplication::onInitialize()
 
     }
 
-
-
     // Initialize viewport render target
 
     if (!initializeViewportRenderTarget())
@@ -397,8 +377,6 @@ void CubeSceneApplication::onInitialize()
         MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize viewport render target");
 
     }
-
-
 
     // Initialize shadow map
 
@@ -418,8 +396,6 @@ void CubeSceneApplication::onInitialize()
 
     }
 
-
-
     // Load wood texture for floor
 
     if (!loadWoodTexture())
@@ -431,8 +407,6 @@ void CubeSceneApplication::onInitialize()
         return;
 
     }
-
-
 
     // Initialize PBR helmet rendering
 
@@ -454,8 +428,6 @@ void CubeSceneApplication::onInitialize()
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "CubeSceneApplication initialized successfully");
 
 }
@@ -467,8 +439,6 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
     m_totalTime += deltaTime;
 
     m_deltaTime = deltaTime;
-
-
 
     // Update cube rotation speed from UI for all cubes
 
@@ -486,8 +456,6 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
 
     }
 
-
-
     // Update light properties from UI
 
     if (m_directionalLight)
@@ -500,13 +468,9 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
 
     }
 
-
-
     // Update camera
 
     updateCamera(deltaTime);
-
-
 
     // Update camera manager
 
@@ -517,8 +481,6 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
         m_cameraManager->UpdateCamera(deltaTime);
 
     }
-
-
 
     // Update all cube actors (rotation animation)
 
@@ -535,8 +497,6 @@ void CubeSceneApplication::onUpdate(float32 deltaTime)
         }
 
     }
-
-
 
     // Update scene
 
@@ -562,8 +522,6 @@ void CubeSceneApplication::onRender()
 
     }
 
-
-
     // Handle pending viewport resize - defer to next frame to avoid using uninitialized textures
 
     // The resize will happen at the start of the next frame before rendering
@@ -584,33 +542,23 @@ void CubeSceneApplication::onRender()
 
         }
 
-
-
         resizeViewportRenderTarget(m_pendingViewportWidth, m_pendingViewportHeight);
 
         m_bViewportNeedsResize = false;
 
     }
 
-
-
     RHI::ERHIBackend backend = m_device->getRHIBackend();
-
-
 
     // Get camera view info
 
     const FMinimalViewInfo& cameraView = m_cameraManager->GetCameraCacheView();
-
-
 
     // Calculate view matrix using FPS camera controller if available
 
     FMatrix viewMatrix;
 
     FVector cameraPos = cameraView.Location;
-
-
 
     if (m_fpsCameraController && m_bFPSCameraEnabled)
 
@@ -621,8 +569,6 @@ void CubeSceneApplication::onRender()
         viewMatrix = m_fpsCameraController->GetViewMatrix();
 
         cameraPos = m_fpsCameraController->GetPosition();
-
-
 
         MR_LOG(LogCubeSceneApp, Log, "Using FPS camera: pos=(%.2f, %.2f, %.2f), yaw=%.2f, pitch=%.2f",
 
@@ -642,19 +588,13 @@ void CubeSceneApplication::onRender()
 
         FVector upVector = FVector(0.0, 1.0, 0.0);  // Y-up
 
-
-
         MR_LOG(LogCubeSceneApp, Log, "Using LookAt: cameraPos=(%.2f, %.2f, %.2f), target=(%.2f, %.2f, %.2f)",
 
                cameraPos.X, cameraPos.Y, cameraPos.Z, targetPos.X, targetPos.Y, targetPos.Z);
 
-
-
         viewMatrix = FMatrix::MakeLookAt(cameraPos, targetPos, upVector);
 
     }
-
-
 
     FMatrix projectionMatrix = cameraView.CalculateProjectionMatrix();
 
@@ -664,13 +604,9 @@ void CubeSceneApplication::onRender()
 
     // Do NOT apply additional Y-flip here to avoid double-flip
 
-
-
     // Get camera position
 
     FVector cameraPosition = cameraView.Location;
-
-
 
     // Gather lights from scene
 
@@ -700,8 +636,6 @@ void CubeSceneApplication::onRender()
 
     }
 
-
-
     if (backend == RHI::ERHIBackend::OpenGL)
 
     {
@@ -710,13 +644,9 @@ void CubeSceneApplication::onRender()
 
         using namespace MonsterEngine::OpenGL;
 
-
-
         // Context should already be current from GLFW initialization
 
         // No need to explicitly make it current here
-
-
 
         // Get command list
 
@@ -730,8 +660,6 @@ void CubeSceneApplication::onRender()
 
         }
 
-
-
         // ================================================================
 
         // Shadow Depth Pass (if shadows enabled)
@@ -740,13 +668,9 @@ void CubeSceneApplication::onRender()
 
         FMatrix lightViewProjection = FMatrix::Identity;
 
-
-
         MR_LOG(LogCubeSceneApp, Log, "Shadow check: enabled=%d, texture=%p, lights=%d",
 
                m_bShadowsEnabled, m_shadowMapTexture.Get(), lights.Num());
-
-
 
         if (m_bShadowsEnabled && m_shadowMapTexture && lights.Num() > 0)
 
@@ -755,8 +679,6 @@ void CubeSceneApplication::onRender()
             // Get directional light direction from first light
 
             FVector lightDirection = FVector(0.5, -1.0, 0.3).GetSafeNormal();
-
-
 
             // Check if first light is directional and get its direction
 
@@ -776,13 +698,9 @@ void CubeSceneApplication::onRender()
 
             }
 
-
-
             MR_LOG(LogCubeSceneApp, Log, "Executing shadow depth pass, light dir: (%.2f, %.2f, %.2f)",
 
                    lightDirection.X, lightDirection.Y, lightDirection.Z);
-
-
 
             // Render shadow depth pass
 
@@ -798,8 +716,6 @@ void CubeSceneApplication::onRender()
 
         }
 
-
-
         // ================================================================
 
         // Main Render Pass
@@ -810,13 +726,9 @@ void CubeSceneApplication::onRender()
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-
-
         // Set viewport
 
         glViewport(0, 0, m_windowWidth, m_windowHeight);
-
-
 
         // Clear screen
 
@@ -824,15 +736,11 @@ void CubeSceneApplication::onRender()
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
-
         // Enable depth testing
 
         glEnable(GL_DEPTH_TEST);
 
         glDepthFunc(GL_LESS);
-
-
 
         // Enable back-face culling (CCW is front face to match Vulkan pipeline)
 
@@ -841,8 +749,6 @@ void CubeSceneApplication::onRender()
         glCullFace(GL_BACK);
 
         glFrontFace(GL_CCW);
-
-
 
         // Render cube with or without shadows
 
@@ -866,8 +772,6 @@ void CubeSceneApplication::onRender()
 
         }
 
-
-
         // Render PBR helmet
 
         if (m_bHelmetPBREnabled && m_bHelmetInitialized)
@@ -877,8 +781,6 @@ void CubeSceneApplication::onRender()
             renderHelmetWithPBR(cmdList, viewMatrix, projectionMatrix, cameraPosition);
 
         }
-
-
 
         // Swap buffers
 
@@ -898,25 +800,17 @@ void CubeSceneApplication::onRender()
 
         if (!context) return;
 
-
-
         RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
 
         if (!cmdList) return;
-
-
 
         // Prepare for new frame
 
         context->prepareForNewFrame();
 
-
-
         // Begin command recording
 
         cmdList->begin();
-
-
 
         // ================================================================
 
@@ -942,8 +836,6 @@ void CubeSceneApplication::onRender()
 
             MR_LOG(LogCubeSceneApp, Log, "Using traditional rendering path");
 
-
-
             // ================================================================
 
             // Shadow Depth Pass (if shadows enabled)
@@ -952,8 +844,6 @@ void CubeSceneApplication::onRender()
 
             FMatrix lightViewProjection = FMatrix::Identity;
 
-
-
             if (m_bShadowsEnabled && m_shadowMapTexture && lights.Num() > 0)
 
             {
@@ -961,8 +851,6 @@ void CubeSceneApplication::onRender()
                 // Get directional light direction from first light
 
                 FVector lightDirection = FVector(0.5, -1.0, 0.3).GetSafeNormal();
-
-
 
                 // Check if first light is directional and get its direction
 
@@ -982,21 +870,15 @@ void CubeSceneApplication::onRender()
 
                 }
 
-
-
                 MR_LOG(LogCubeSceneApp, Verbose, "Rendering shadow pass, light dir: (%.2f, %.2f, %.2f)",
 
                        lightDirection.X, lightDirection.Y, lightDirection.Z);
-
-
 
                 // Render shadow depth pass
 
                 renderShadowDepthPass(cmdList, lightDirection, lightViewProjection);
 
             }
-
-
 
             // ================================================================
 
@@ -1009,8 +891,6 @@ void CubeSceneApplication::onRender()
             TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
 
             cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
-
-
 
             // Set viewport to window size
 
@@ -1030,8 +910,6 @@ void CubeSceneApplication::onRender()
 
             cmdList->setViewport(viewport);
 
-
-
             // Set scissor rect
 
             RHI::ScissorRect scissor;
@@ -1045,8 +923,6 @@ void CubeSceneApplication::onRender()
             scissor.bottom = m_windowHeight;
 
             cmdList->setScissorRect(scissor);
-
-
 
             // Render cube with or without shadows
 
@@ -1070,8 +946,6 @@ void CubeSceneApplication::onRender()
 
             }
 
-
-
             // Render PBR helmet
 
             if (m_bHelmetPBREnabled && m_bHelmetInitialized)
@@ -1084,19 +958,13 @@ void CubeSceneApplication::onRender()
 
         }
 
-
-
         // End render pass
 
         cmdList->endRenderPass();
 
-
-
         // End command recording
 
         cmdList->end();
-
-
 
         // Present frame
 
@@ -1132,25 +1000,17 @@ void CubeSceneApplication::renderCube(
 
         if (!cubeActor) continue;
 
-
-
         UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
 
         if (!meshComp) continue;
-
-
 
         // Ensure component transform is up to date before getting it
 
         meshComp->UpdateComponentToWorld();
 
-
-
         FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
 
         FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
-
-
 
         if (cubeProxy)
 
@@ -1166,13 +1026,9 @@ void CubeSceneApplication::renderCube(
 
             }
 
-
-
             // Update model matrix from actor transform
 
             cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
-
-
 
             // Draw with lighting
 
@@ -1181,8 +1037,6 @@ void CubeSceneApplication::renderCube(
         }
 
     }
-
-
 
     // Render floor with lighting (no shadows in this path)
 
@@ -1197,8 +1051,6 @@ void CubeSceneApplication::renderCube(
         {
 
             floorMeshComp->UpdateComponentToWorld();
-
-
 
             FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
 
@@ -1216,13 +1068,9 @@ void CubeSceneApplication::renderCube(
 
                 }
 
-
-
                 // Update floor model matrix
 
                 floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
-
-
 
                 // Draw floor with lighting
 
@@ -1292,11 +1140,7 @@ void CubeSceneApplication::renderWithSceneRenderer(
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Verbose, "Rendering with FSceneRenderer...");
-
-
 
     // Update renderer view family frame number
 
@@ -1310,8 +1154,6 @@ void CubeSceneApplication::renderWithSceneRenderer(
 
     }
 
-
-
     // Ensure cube resources are initialized and update transform for all cubes
 
     for (auto& cubeActor : m_cubeActors)
@@ -1319,8 +1161,6 @@ void CubeSceneApplication::renderWithSceneRenderer(
     {
 
         if (!cubeActor) continue;
-
-
 
         UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
 
@@ -1331,8 +1171,6 @@ void CubeSceneApplication::renderWithSceneRenderer(
             // Ensure component transform is up to date
 
             meshComp->UpdateComponentToWorld();
-
-
 
             FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
 
@@ -1358,8 +1196,6 @@ void CubeSceneApplication::renderWithSceneRenderer(
 
     }
 
-
-
     // Render using FSceneRenderer (UE5-style pipeline)
 
     // The renderer handles visibility, culling, and draw command generation
@@ -1369,8 +1205,6 @@ void CubeSceneApplication::renderWithSceneRenderer(
     m_sceneRenderer->Render(*cmdList);
 
     m_sceneRenderer->RenderThreadEnd(*cmdList);
-
-
 
     // Also render the cube directly for now (until FSceneRenderer fully handles mesh drawing)
 
@@ -1400,8 +1234,6 @@ void CubeSceneApplication::renderWithSceneRenderer(
 
     }
 
-
-
     // Render all cube actors
 
     for (auto& cubeActor : m_cubeActors)
@@ -1409,8 +1241,6 @@ void CubeSceneApplication::renderWithSceneRenderer(
     {
 
         if (!cubeActor) continue;
-
-
 
         UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
 
@@ -1432,8 +1262,6 @@ void CubeSceneApplication::renderWithSceneRenderer(
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Verbose, "FSceneRenderer render complete");
 
 }
@@ -1444,8 +1272,6 @@ bool CubeSceneApplication::initializeSceneRenderer()
 
     MR_LOG(LogCubeSceneApp, Log, "Initializing FSceneRenderer...");
 
-
-
     if (!m_scene)
 
     {
@@ -1455,8 +1281,6 @@ bool CubeSceneApplication::initializeSceneRenderer()
         return false;
 
     }
-
-
 
     // Create Renderer::FSceneViewFamily for FSceneRenderer
 
@@ -1482,8 +1306,6 @@ bool CubeSceneApplication::initializeSceneRenderer()
 
     }
 
-
-
     // Create FForwardShadingSceneRenderer
 
     m_sceneRenderer = MakeUnique<MonsterEngine::Renderer::FForwardShadingSceneRenderer>(m_rendererViewFamily.Get());
@@ -1498,8 +1320,6 @@ bool CubeSceneApplication::initializeSceneRenderer()
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "FSceneRenderer initialized successfully (Forward Shading)");
 
     return true;
@@ -1512,15 +1332,9 @@ void CubeSceneApplication::onShutdown()
 
     MR_LOG(LogCubeSceneApp, Log, "Shutting down CubeSceneApplication...");
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "=== CubeSceneApplication::onShutdown() called ===");
 
-
-
     // CRITICAL: Clean up in reverse order of initialization to avoid dangling pointers
-
-
 
     // Step 1: Shutdown ImGui first (it may reference textures)
 
@@ -1529,8 +1343,6 @@ void CubeSceneApplication::onShutdown()
     shutdownImGui();
 
     MR_LOG(LogCubeSceneApp, Log, "ImGui shutdown complete");
-
-
 
     // Step 2: Unregister viewport texture (after ImGui shutdown)
 
@@ -1542,31 +1354,21 @@ void CubeSceneApplication::onShutdown()
 
     }
 
-
-
     // Step 3: Clean up scene renderer (may reference scene and views)
 
     m_sceneRenderer.Reset();
-
-
 
     // Step 4: Clean up renderer view family
 
     m_rendererViewFamily.Reset();
 
-
-
     // Step 5: Clean up scene view
 
     m_sceneView.Reset();
 
-
-
     // Step 6: Clean up view family
 
     m_viewFamily.Reset();
-
-
 
     // Step 7: Clean up FPS camera controller BEFORE camera manager
 
@@ -1584,13 +1386,9 @@ void CubeSceneApplication::onShutdown()
 
     }
 
-
-
     // Step 8: Clean up camera manager
 
     m_cameraManager.Reset();
-
-
 
     // Step 9: Clean up scene first (this will clean up FPrimitiveSceneInfo which owns proxies)
 
@@ -1599,8 +1397,6 @@ void CubeSceneApplication::onShutdown()
     m_scene.Reset();
 
     MR_LOG(LogCubeSceneApp, Log, "Scene destroyed");
-
-
 
     // Step 10: Clean up actors (they own components, which are now safe to destroy since proxies are gone)
 
@@ -1616,8 +1412,6 @@ void CubeSceneApplication::onShutdown()
 
     MR_LOG(LogCubeSceneApp, Log, "Actors destroyed");
 
-
-
     // Step 11: Release GPU resources (textures, buffers)
 
     // These must be released AFTER scene and actors are destroyed
@@ -1632,19 +1426,13 @@ void CubeSceneApplication::onShutdown()
 
     m_woodSampler.Reset();
 
-
-
     // Step 12: Clear material references
 
     m_cubeMaterial.Reset();
 
-
-
     // Device is owned by Engine, don't delete it
 
     m_device = nullptr;
-
-
 
     MR_LOG(LogCubeSceneApp, Log, "CubeSceneApplication shutdown complete");
 
@@ -1657,8 +1445,6 @@ void CubeSceneApplication::setWindowDimensions(uint32 Width, uint32 Height)
     m_windowWidth = Width;
 
     m_windowHeight = Height;
-
-
 
     // Update camera aspect ratio
 
@@ -1688,8 +1474,6 @@ bool CubeSceneApplication::initializeScene()
 
     MR_LOG(LogCubeSceneApp, Log, "Initializing scene...");
 
-
-
     // Create scene
 
     m_scene = MakeUnique<FScene>(nullptr, false);
@@ -1701,8 +1485,6 @@ bool CubeSceneApplication::initializeScene()
         return false;
 
     }
-
-
 
     // Create multiple cube actors for shadow demonstration
 
@@ -1722,8 +1504,6 @@ bool CubeSceneApplication::initializeScene()
 
     const int32 numCubes = 3;
 
-
-
     for (int32 i = 0; i < numCubes; ++i)
 
     {
@@ -1742,13 +1522,9 @@ bool CubeSceneApplication::initializeScene()
 
         cubeActor->BeginPlay();
 
-
-
         // Set position AFTER BeginPlay to ensure components are initialized
 
         cubeActor->SetActorLocation(cubePositions[i]);
-
-
 
         // Verify the position was set correctly
 
@@ -1757,8 +1533,6 @@ bool CubeSceneApplication::initializeScene()
         MR_LOG(LogCubeSceneApp, Log, "Cube %d position set to: (%.2f, %.2f, %.2f)",
 
                i, actualPos.X, actualPos.Y, actualPos.Z);
-
-
 
         // Add cube to scene
 
@@ -1771,8 +1545,6 @@ bool CubeSceneApplication::initializeScene()
             // Add primitive to scene
 
             m_scene->AddPrimitive(meshComp);
-
-
 
             // Pre-initialize GPU resources for the cube proxy
 
@@ -1790,17 +1562,11 @@ bool CubeSceneApplication::initializeScene()
 
         }
 
-
-
         m_cubeActors.Add(std::move(cubeActor));
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Created %d cube actors for shadow demonstration", numCubes);
-
-
 
     // Create floor actor
 
@@ -1816,8 +1582,6 @@ bool CubeSceneApplication::initializeScene()
 
     m_floorActor->BeginPlay();
 
-
-
     // Add floor to scene and initialize its proxy
 
     UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
@@ -1828,8 +1592,6 @@ bool CubeSceneApplication::initializeScene()
 
         m_scene->AddPrimitive(floorMeshComp);
 
-
-
         // Initialize floor proxy GPU resources
 
         FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
@@ -1839,8 +1601,6 @@ bool CubeSceneApplication::initializeScene()
         {
 
             floorProxy->InitializeResources(m_device);
-
-
 
             // Set floor texture and sampler (will be set after loading)
 
@@ -1864,11 +1624,7 @@ bool CubeSceneApplication::initializeScene()
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Floor actor created at position (0, 0, 0)");
-
-
 
     // Create directional light (sun) - main light source
 
@@ -1886,8 +1642,6 @@ bool CubeSceneApplication::initializeScene()
 
     m_scene->AddLight(m_directionalLight.Get());
 
-
-
     // Point light disabled for now
 
     // m_pointLight = new UPointLightComponent();
@@ -1903,8 +1657,6 @@ bool CubeSceneApplication::initializeScene()
     // m_scene->AddLight(m_pointLight.Get());
 
     m_pointLight.Reset();
-
-
 
     // Create and configure cube material
 
@@ -1926,8 +1678,6 @@ bool CubeSceneApplication::initializeScene()
 
         m_cubeMaterial->SetMaterialProperties(matProps);
 
-
-
         // Set default material parameters
 
         m_cubeMaterial->SetDefaultVectorParameter(FName("BaseColor"), FLinearColor(0.8f, 0.6f, 0.4f, 1.0f));
@@ -1938,13 +1688,9 @@ bool CubeSceneApplication::initializeScene()
 
         m_cubeMaterial->SetDefaultScalarParameter(FName("Specular"), 0.5f);
 
-
-
         MR_LOG(LogCubeSceneApp, Log, "Cube material created with default parameters");
 
     }
-
-
 
     MR_LOG(LogCubeSceneApp, Log, "Scene initialized with cube, lights, and material");
 
@@ -1958,15 +1704,11 @@ bool CubeSceneApplication::initializeCamera()
 
     MR_LOG(LogCubeSceneApp, Log, "Initializing camera...");
 
-
-
     // Create camera manager
 
     m_cameraManager = MakeUnique<FCameraManager>();
 
     m_cameraManager->Initialize(nullptr);
-
-
 
     // Set initial camera view
 
@@ -2000,15 +1742,11 @@ bool CubeSceneApplication::initializeCamera()
 
     viewInfo.PerspectiveNearClipPlane = 0.1f;
 
-
-
     // Set both cache and view target to ensure UpdateCamera doesn't overwrite
 
     m_cameraManager->SetCameraCachePOV(viewInfo);
 
     m_cameraManager->SetViewTargetPOV(viewInfo);
-
-
 
     // Create FPS camera controller
 
@@ -2027,8 +1765,6 @@ bool CubeSceneApplication::initializeCamera()
         -30.0f                     // Pitch (looking down 30 degrees to see floor)
 
     );
-
-
 
     // Configure FPS camera settings
 
@@ -2050,19 +1786,13 @@ bool CubeSceneApplication::initializeCamera()
 
     settings.SprintMultiplier = 2.0f;
 
-
-
     // Set FOV to match camera manager
 
     m_fpsCameraController->SetFOV(45.0f);
 
-
-
     // Initialize with camera manager
 
     m_fpsCameraController->Initialize(m_cameraManager.Get());
-
-
 
     // Verify camera position after FPS controller initialization
 
@@ -2074,11 +1804,7 @@ bool CubeSceneApplication::initializeCamera()
 
            finalView.Rotation.Pitch, finalView.Rotation.Yaw, finalView.Rotation.Roll);
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Camera initialized successfully");
-
-
 
     return true;
 
@@ -2090,15 +1816,11 @@ bool CubeSceneApplication::initializeRenderer()
 
     MR_LOG(LogCubeSceneApp, Log, "Initializing renderer...");
 
-
-
     // Note: FSceneViewFamily and FForwardShadingRenderer would be created here if fully implemented
 
     // For now, we render directly through the scene proxy
 
     m_viewFamily = nullptr;
-
-
 
     MR_LOG(LogCubeSceneApp, Log, "Renderer initialized");
 
@@ -2117,8 +1839,6 @@ void CubeSceneApplication::updateCamera(float DeltaTime)
         return;
 
     }
-
-
 
     // FPS Camera mode - process keyboard input for movement
 
@@ -2139,8 +1859,6 @@ void CubeSceneApplication::updateCamera(float DeltaTime)
             bool bSprinting = inputManager->isKeyDown(EKey::LeftShift) ||
 
                               inputManager->isKeyDown(EKey::RightShift);
-
-
 
             // Process WASD movement
 
@@ -2176,8 +1894,6 @@ void CubeSceneApplication::updateCamera(float DeltaTime)
 
             }
 
-
-
             // Process vertical movement (Q/E or Space/Ctrl)
 
             if (inputManager->isKeyDown(EKey::E) || inputManager->isKeyDown(EKey::Space))
@@ -2198,8 +1914,6 @@ void CubeSceneApplication::updateCamera(float DeltaTime)
 
         }
 
-
-
         // Update FPS camera controller (applies state to camera manager)
 
         m_fpsCameraController->Update(DeltaTime);
@@ -2214,29 +1928,21 @@ void CubeSceneApplication::updateCamera(float DeltaTime)
 
         m_cameraOrbitAngle += DeltaTime * 0.5f;  // Slow orbit
 
-
-
         float radius = 3.0f;
 
         float x = radius * FMath::Sin(m_cameraOrbitAngle);
 
         float z = -radius * FMath::Cos(m_cameraOrbitAngle);
 
-
-
         FMinimalViewInfo viewInfo = m_cameraManager->GetCameraCacheView();
 
         viewInfo.Location = FVector(x, 0.0, z);
-
-
 
         // Look at origin
 
         FVector lookDir = -viewInfo.Location.GetSafeNormal();
 
         viewInfo.Rotation = FRotator(0.0f, 0.0f, 0.0f);  // Simplified - just face forward
-
-
 
         m_cameraManager->SetCameraCachePOV(viewInfo);
 
@@ -2256,8 +1962,6 @@ bool CubeSceneApplication::initializeImGui()
 
     MR_LOG(LogCubeSceneApp, Log, "Initializing ImGui...");
 
-
-
     // Create ImGui context
 
     m_imguiContext = MakeUnique<Editor::FImGuiContext>();
@@ -2272,8 +1976,6 @@ bool CubeSceneApplication::initializeImGui()
 
     }
 
-
-
     // Create ImGui renderer
 
     if (!m_device)
@@ -2285,8 +1987,6 @@ bool CubeSceneApplication::initializeImGui()
         return false;
 
     }
-
-
 
     m_imguiRenderer = MakeUnique<Editor::FImGuiRenderer>();
 
@@ -2300,13 +2000,9 @@ bool CubeSceneApplication::initializeImGui()
 
     }
 
-
-
     // Create input handler
 
     m_imguiInputHandler = MakeUnique<Editor::FImGuiInputHandler>(m_imguiContext.Get());
-
-
 
     // Set initial window size
 
@@ -2318,13 +2014,9 @@ bool CubeSceneApplication::initializeImGui()
 
     }
 
-
-
     m_bImGuiInitialized = true;
 
     MR_LOG(LogCubeSceneApp, Log, "ImGui initialized successfully");
-
-
 
     return true;
 
@@ -2344,25 +2036,17 @@ void CubeSceneApplication::shutdownImGui()
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Shutting down ImGui...");
-
-
 
     // Mark as not initialized first to prevent any further rendering
 
     m_bImGuiInitialized = false;
-
-
 
     // Shutdown in reverse order
 
     // Step 1: Release input handler (doesn't need explicit shutdown)
 
     m_imguiInputHandler.Reset();
-
-
 
     // Step 2: Shutdown renderer (releases GPU resources)
 
@@ -2376,8 +2060,6 @@ void CubeSceneApplication::shutdownImGui()
 
     }
 
-
-
     // Step 3: Shutdown context (destroys ImGui context)
 
     if (m_imguiContext)
@@ -2389,8 +2071,6 @@ void CubeSceneApplication::shutdownImGui()
         m_imguiContext.Reset();
 
     }
-
-
 
     MR_LOG(LogCubeSceneApp, Log, "ImGui shutdown complete");
 
@@ -2408,21 +2088,15 @@ void CubeSceneApplication::renderImGui()
 
     }
 
-
-
     // Get window dimensions
 
     uint32 width = getWindow() ? getWindow()->getWidth() : m_windowWidth;
 
     uint32 height = getWindow() ? getWindow()->getHeight() : m_windowHeight;
 
-
-
     // Begin ImGui frame
 
     m_imguiContext->BeginFrame(m_deltaTime, width, height);
-
-
 
     // Render main menu bar
 
@@ -2452,21 +2126,15 @@ void CubeSceneApplication::renderImGui()
 
         }
 
-
-
         // Show FPS in menu bar
 
         ImGui::Separator();
 
         ImGui::Text("FPS: %.1f (%.3f ms)", 1.0f / m_deltaTime, m_deltaTime * 1000.0f);
 
-
-
         ImGui::EndMainMenuBar();
 
     }
-
-
 
     // Render panels
 
@@ -2478,8 +2146,6 @@ void CubeSceneApplication::renderImGui()
 
     }
 
-
-
     if (m_bShowSceneInfo)
 
     {
@@ -2487,8 +2153,6 @@ void CubeSceneApplication::renderImGui()
         renderSceneInfoPanel();
 
     }
-
-
 
     if (m_bShowCameraControl)
 
@@ -2498,8 +2162,6 @@ void CubeSceneApplication::renderImGui()
 
     }
 
-
-
     if (m_bShowLightingControl)
 
     {
@@ -2507,8 +2169,6 @@ void CubeSceneApplication::renderImGui()
         renderLightingControlPanel();
 
     }
-
-
 
     // Render demo window if enabled
 
@@ -2520,13 +2180,9 @@ void CubeSceneApplication::renderImGui()
 
     }
 
-
-
     // End ImGui frame
 
     m_imguiContext->EndFrame();
-
-
 
     // Get draw data and render
 
@@ -2564,13 +2220,9 @@ void CubeSceneApplication::renderSceneInfoPanel()
 
         ImGui::Separator();
 
-
-
         ImGui::Text("Total Time: %.2f s", m_totalTime);
 
         ImGui::Text("Window: %u x %u", m_windowWidth, m_windowHeight);
-
-
 
         ImGui::Separator();
 
@@ -2579,8 +2231,6 @@ void CubeSceneApplication::renderSceneInfoPanel()
         ImGui::Text("  Backend: %s", m_device ? (m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan ? "Vulkan" : "OpenGL") : "None");
 
         ImGui::Text("  FSceneRenderer: %s", m_bUseSceneRenderer ? "Enabled" : "Disabled");
-
-
 
         ImGui::Separator();
 
@@ -2608,23 +2258,17 @@ void CubeSceneApplication::renderCameraControlPanel()
 
         ImGui::Checkbox("Orbit Camera", &m_bOrbitCamera);
 
-
-
         if (m_cameraManager)
 
         {
 
             FMinimalViewInfo viewInfo = m_cameraManager->GetCameraCacheView();
 
-
-
             ImGui::Separator();
 
             ImGui::Text("Camera Position:");
 
             ImGui::Text("  X: %.2f  Y: %.2f  Z: %.2f", viewInfo.Location.X, viewInfo.Location.Y, viewInfo.Location.Z);
-
-
 
             ImGui::Separator();
 
@@ -2662,8 +2306,6 @@ void CubeSceneApplication::renderLightingControlPanel()
 
         ImGui::SliderFloat("Rotation Speed", &m_cubeRotationSpeed, 0.0f, 5.0f);
 
-
-
         ImGui::Separator();
 
         ImGui::Text("Directional Light");
@@ -2692,13 +2334,9 @@ void CubeSceneApplication::onWindowResize(uint32 width, uint32 height)
 
     MR_LOG(LogCubeSceneApp, Log, "Window resized to %ux%u", width, height);
 
-
-
     m_windowWidth = width;
 
     m_windowHeight = height;
-
-
 
     // Recreate swapchain with new size
 
@@ -2724,13 +2362,9 @@ void CubeSceneApplication::onWindowResize(uint32 width, uint32 height)
 
             }
 
-
-
             // Get actual swapchain extent (may differ from window size)
 
             auto swapchainExtent = vulkanDevice->getSwapchainExtent();
-
-
 
             // Update camera aspect ratio based on actual swapchain size
 
@@ -2751,8 +2385,6 @@ void CubeSceneApplication::onWindowResize(uint32 width, uint32 height)
         }
 
     }
-
-
 
     // Update ImGui renderer
 
@@ -2778,8 +2410,6 @@ void CubeSceneApplication::onKeyPressed(EKey key)
 
     }
 
-
-
     // Handle application shortcuts
 
     if (key == EKey::Escape)
@@ -2789,8 +2419,6 @@ void CubeSceneApplication::onKeyPressed(EKey key)
         requestExit();
 
     }
-
-
 
     // Toggle FPS camera mode with F key
 
@@ -2804,8 +2432,6 @@ void CubeSceneApplication::onKeyPressed(EKey key)
 
     }
 
-
-
     // Toggle orbit camera with O key
 
     if (key == EKey::O)
@@ -2817,8 +2443,6 @@ void CubeSceneApplication::onKeyPressed(EKey key)
         MR_LOG(LogCubeSceneApp, Log, "Orbit Camera %s", m_bOrbitCamera ? "enabled" : "disabled");
 
     }
-
-
 
     // Reset camera with R key
 
@@ -2872,8 +2496,6 @@ void CubeSceneApplication::onMouseButtonPressed(EKey button, const MousePosition
 
     }
 
-
-
     // Enable mouse look when right mouse button is pressed
 
     if (button == EKey::MouseRight)
@@ -2904,8 +2526,6 @@ void CubeSceneApplication::onMouseButtonReleased(EKey button, const MousePositio
 
     }
 
-
-
     // Disable mouse look when right mouse button is released
 
     if (button == EKey::MouseRight)
@@ -2930,8 +2550,6 @@ void CubeSceneApplication::onMouseMoved(const MousePosition& position)
 
     }
 
-
-
     // Process mouse movement for FPS camera look
 
     if (m_bFPSCameraEnabled && m_bMouseLookActive && m_fpsCameraController && !m_bOrbitCamera)
@@ -2941,8 +2559,6 @@ void CubeSceneApplication::onMouseMoved(const MousePosition& position)
         float xpos = static_cast<float>(position.x);
 
         float ypos = static_cast<float>(position.y);
-
-
 
         if (m_bFirstMouseInput)
 
@@ -2956,21 +2572,15 @@ void CubeSceneApplication::onMouseMoved(const MousePosition& position)
 
         }
 
-
-
         // Calculate mouse offset
 
         float xoffset = xpos - m_lastMouseX;
 
         float yoffset = m_lastMouseY - ypos;  // Reversed: y-coordinates go from bottom to top
 
-
-
         m_lastMouseX = xpos;
 
         m_lastMouseY = ypos;
-
-
 
         // Process mouse movement for camera rotation
 
@@ -2991,8 +2601,6 @@ void CubeSceneApplication::onMouseScrolled(float64 xOffset, float64 yOffset)
         m_imguiInputHandler->OnMouseScroll(static_cast<float>(xOffset), static_cast<float>(yOffset));
 
     }
-
-
 
     // Process mouse scroll for FPS camera zoom
 
@@ -3026,8 +2634,6 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
 
     }
 
-
-
     // Get swapchain extent for viewport depth target
 
     // Reference: UE5 ensures depth buffer matches swapchain size
@@ -3036,21 +2642,15 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
 
     auto swapchainExtent = vulkanDevice->getSwapchainExtent();
 
-
-
     // Update viewport dimensions to match swapchain
 
     m_viewportWidth = swapchainExtent.width;
 
     m_viewportHeight = swapchainExtent.height;
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Initializing viewport render target (%ux%u) to match swapchain...",
 
            m_viewportWidth, m_viewportHeight);
-
-
 
     // Create color render target texture
 
@@ -3074,8 +2674,6 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
 
     colorDesc.debugName = "Viewport Color Target";
 
-
-
     m_viewportColorTarget = m_device->createTexture(colorDesc);
 
     if (!m_viewportColorTarget)
@@ -3087,8 +2685,6 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
         return false;
 
     }
-
-
 
     // Create depth target texture
 
@@ -3112,8 +2708,6 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
 
     depthDesc.debugName = "Viewport Depth Target";
 
-
-
     m_viewportDepthTarget = m_device->createTexture(depthDesc);
 
     if (!m_viewportDepthTarget)
@@ -3126,13 +2720,9 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
 
     }
 
-
-
     // NOTE: RTT render pass uses initialLayout=UNDEFINED with loadOp=CLEAR
 
     // This handles any previous layout automatically, no manual initialization needed
-
-
 
     // Register color target with ImGui renderer
 
@@ -3145,8 +2735,6 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
         MR_LOG(LogCubeSceneApp, Log, "Viewport texture registered with ImGui (ID: %llu)", m_viewportTextureID);
 
     }
-
-
 
     // Register viewport color target for per-command-buffer layout transitions
 
@@ -3176,8 +2764,6 @@ bool CubeSceneApplication::initializeViewportRenderTarget()
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Viewport render target initialized successfully");
 
     return true;
@@ -3196,8 +2782,6 @@ void CubeSceneApplication::resizeViewportRenderTarget(uint32 Width, uint32 Heigh
 
     }
 
-
-
     if (Width == m_viewportWidth && Height == m_viewportHeight)
 
     {
@@ -3206,11 +2790,7 @@ void CubeSceneApplication::resizeViewportRenderTarget(uint32 Width, uint32 Heigh
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Resizing viewport render target to %ux%u", Width, Height);
-
-
 
     // Unregister old texture from ImGui
 
@@ -3223,8 +2803,6 @@ void CubeSceneApplication::resizeViewportRenderTarget(uint32 Width, uint32 Heigh
         m_viewportTextureID = 0;
 
     }
-
-
 
     // Clear descriptor set cache to invalidate references to old textures
 
@@ -3246,29 +2824,21 @@ void CubeSceneApplication::resizeViewportRenderTarget(uint32 Width, uint32 Heigh
 
     }
 
-
-
     // Release old textures
 
     m_viewportColorTarget.Reset();
 
     m_viewportDepthTarget.Reset();
 
-
-
     // Mark viewport texture as not ready until it's rendered to
 
     m_bViewportTextureReady = false;
-
-
 
     // Update dimensions
 
     m_viewportWidth = Width;
 
     m_viewportHeight = Height;
-
-
 
     // Recreate render targets
 
@@ -3296,8 +2866,6 @@ void CubeSceneApplication::renderSceneToViewport(
 
     }
 
-
-
     // NOTE: Do NOT transition textures before render pass!
 
     // Device render pass has initialLayout=UNDEFINED with loadOp=CLEAR.
@@ -3305,8 +2873,6 @@ void CubeSceneApplication::renderSceneToViewport(
     // Pre-transitioning to COLOR_ATTACHMENT_OPTIMAL causes layout mismatch.
 
     // The render pass will handle the layout transition automatically.
-
-
 
     // Set viewport render targets
 
@@ -3316,8 +2882,6 @@ void CubeSceneApplication::renderSceneToViewport(
 
     cmdList->setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), m_viewportDepthTarget);
 
-
-
     // Clear render targets
 
     float clearColor[4] = { 0.1f, 0.1f, 0.15f, 1.0f };
@@ -3326,15 +2890,11 @@ void CubeSceneApplication::renderSceneToViewport(
 
     cmdList->clearDepthStencil(m_viewportDepthTarget, 1.0f, 0);
 
-
-
     // Set viewport and scissor
 
     RHI::Viewport viewport(static_cast<float>(m_viewportWidth), static_cast<float>(m_viewportHeight));
 
     cmdList->setViewport(viewport);
-
-
 
     RHI::ScissorRect scissor;
 
@@ -3348,13 +2908,9 @@ void CubeSceneApplication::renderSceneToViewport(
 
     cmdList->setScissorRect(scissor);
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Viewport: %.0fx%.0f, Scissor: %dx%d",
 
            viewport.width, viewport.height, scissor.right, scissor.bottom);
-
-
 
     // Gather lights from scene
 
@@ -3382,8 +2938,6 @@ void CubeSceneApplication::renderSceneToViewport(
 
     }
 
-
-
     // Render all cube actors to viewport
 
     for (auto& cubeActor : m_cubeActors)
@@ -3391,8 +2945,6 @@ void CubeSceneApplication::renderSceneToViewport(
     {
 
         if (!cubeActor) continue;
-
-
 
         UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
 
@@ -3403,8 +2955,6 @@ void CubeSceneApplication::renderSceneToViewport(
             // Ensure component transform is up to date
 
             meshComp->UpdateComponentToWorld();
-
-
 
             FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(meshComp->GetSceneProxy());
 
@@ -3430,15 +2980,11 @@ void CubeSceneApplication::renderSceneToViewport(
 
     }
 
-
-
     // End render pass for viewport
 
     // RTT render pass has finalLayout=SHADER_READ_ONLY_OPTIMAL, no manual transition needed
 
     cmdList->endRenderPass();
-
-
 
     // Mark viewport texture as ready for display
 
@@ -3452,13 +2998,9 @@ void CubeSceneApplication::renderViewportPanel()
 
     ImGui::SetNextWindowSize(ImVec2(820, 640), ImGuiCond_FirstUseEver);
 
-
-
     // Use window flags to allow resize
 
     ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-
-
 
     if (ImGui::Begin("Viewport", &m_bShowViewport, windowFlags))
 
@@ -3472,15 +3014,11 @@ void CubeSceneApplication::renderViewportPanel()
 
         uint32 newHeight = static_cast<uint32>(contentSize.y);
 
-
-
         // Ensure minimum size
 
         if (newWidth < 64) newWidth = 64;
 
         if (newHeight < 64) newHeight = 64;
-
-
 
         // Note: Viewport resize is temporarily disabled due to descriptor set cache issues
 
@@ -3498,8 +3036,6 @@ void CubeSceneApplication::renderViewportPanel()
 
         // }
 
-
-
         // Display the viewport texture only if it has been rendered to
 
         if (m_viewportTextureID != 0 && m_bViewportTextureReady)
@@ -3512,8 +3048,6 @@ void CubeSceneApplication::renderViewportPanel()
 
             ImVec2 uv1(1.0f, 1.0f);
 
-
-
             if (m_device && m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
 
             {
@@ -3525,8 +3059,6 @@ void CubeSceneApplication::renderViewportPanel()
                 uv1 = ImVec2(1.0f, 0.0f);
 
             }
-
-
 
             ImGui::Image(static_cast<ImTextureID>(m_viewportTextureID), ImVec2(static_cast<float>(m_viewportWidth), static_cast<float>(m_viewportHeight)), uv0, uv1);
 
@@ -3541,8 +3073,6 @@ void CubeSceneApplication::renderViewportPanel()
             ImGui::Text("Initializing viewport...");
 
         }
-
-
 
         // Show viewport info
 
@@ -3568,8 +3098,6 @@ bool CubeSceneApplication::initializeShadowMap()
 
     MR_LOG(LogCubeSceneApp, Log, "Initializing shadow map (resolution: %u)", m_shadowMapResolution);
 
-
-
     if (!m_device)
 
     {
@@ -3579,8 +3107,6 @@ bool CubeSceneApplication::initializeShadowMap()
         return false;
 
     }
-
-
 
     // Create shadow map depth texture
 
@@ -3602,8 +3128,6 @@ bool CubeSceneApplication::initializeShadowMap()
 
     shadowMapDesc.debugName = "ShadowMap";
 
-
-
     m_shadowMapTexture = m_device->createTexture(shadowMapDesc);
 
     if (!m_shadowMapTexture)
@@ -3615,8 +3139,6 @@ bool CubeSceneApplication::initializeShadowMap()
         return false;
 
     }
-
-
 
     MR_LOG(LogCubeSceneApp, Log, "Shadow map initialized successfully");
 
@@ -3630,8 +3152,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     MR_LOG(LogCubeSceneApp, Log, "Loading wood texture...");
 
-
-
     if (!m_device)
 
     {
@@ -3641,8 +3161,6 @@ bool CubeSceneApplication::loadWoodTexture()
         return false;
 
     }
-
-
 
     // Load texture using stb_image
 
@@ -3654,13 +3172,9 @@ bool CubeSceneApplication::loadWoodTexture()
 
     const char* texturePath = "E:\\MonsterEngine\\resources\\textures\\wood.png";
 
-
-
     // Flip texture vertically for OpenGL/Vulkan compatibility
 
     stbi_set_flip_vertically_on_load(true);
-
-
 
     unsigned char* imageData = stbi_load(texturePath, &width, &height, &channels, STBI_rgb_alpha);
 
@@ -3674,11 +3188,7 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Wood texture loaded: %dx%d, %d channels", width, height, channels);
-
-
 
     // Create texture descriptor
 
@@ -3700,8 +3210,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     textureDesc.debugName = "WoodTexture";
 
-
-
     m_woodTexture = m_device->createTexture(textureDesc);
 
     if (!m_woodTexture)
@@ -3716,13 +3224,9 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     // Upload texture data using staging buffer
 
     uint32 imageSize = width * height * 4; // RGBA format
-
-
 
     // Create staging buffer
 
@@ -3735,8 +3239,6 @@ bool CubeSceneApplication::loadWoodTexture()
     stagingDesc.cpuAccessible = true;
 
     stagingDesc.debugName = "WoodTextureStagingBuffer";
-
-
 
     TSharedPtr<RHI::IRHIBuffer> stagingBuffer = m_device->createBuffer(stagingDesc);
 
@@ -3751,8 +3253,6 @@ bool CubeSceneApplication::loadWoodTexture()
         return false;
 
     }
-
-
 
     // Copy image data to staging buffer
 
@@ -3770,19 +3270,13 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     FMemory::Memcpy(mappedData, imageData, imageSize);
 
     stagingBuffer->unmap();
 
-
-
     // Free stb_image data
 
     stbi_image_free(imageData);
-
-
 
     // Get immediate command list for texture upload
 
@@ -3798,8 +3292,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     // Cast to Vulkan command list for texture upload
 
     auto* vulkanCmdList = dynamic_cast<MonsterRender::RHI::Vulkan::FVulkanRHICommandListImmediate*>(cmdList);
@@ -3814,8 +3306,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     // Begin command recording if not already recording
 
     bool wasRecording = vulkanCmdList->isRecording();
@@ -3828,8 +3318,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     // Transition texture from UNDEFINED to TRANSFER_DST_OPTIMAL
 
     vulkanCmdList->transitionTextureLayoutSimple(
@@ -3841,8 +3329,6 @@ bool CubeSceneApplication::loadWoodTexture()
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
 
     );
-
-
 
     // Copy from staging buffer to texture
 
@@ -3866,8 +3352,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     );
 
-
-
     // Transition texture from TRANSFER_DST_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
 
     vulkanCmdList->transitionTextureLayoutSimple(
@@ -3880,8 +3364,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     );
 
-
-
     // End command recording if we started it
 
     if (!wasRecording)
@@ -3891,8 +3373,6 @@ bool CubeSceneApplication::loadWoodTexture()
         vulkanCmdList->end();
 
     }
-
-
 
     // Submit commands and wait for completion
 
@@ -3906,13 +3386,9 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     // Wait for GPU to complete texture upload
 
     m_device->waitForIdle();
-
-
 
     // Refresh command buffer for next use
 
@@ -3923,8 +3399,6 @@ bool CubeSceneApplication::loadWoodTexture()
         vulkanDevice->getCommandListContext()->refreshCommandBuffer();
 
     }
-
-
 
     // Register texture for layout transition tracking
 
@@ -3939,8 +3413,6 @@ bool CubeSceneApplication::loadWoodTexture()
         vulkanDevice->registerTextureForLayoutTransition(image, 1, 1);
 
     }
-
-
 
     // Create sampler with repeat mode and linear filtering
 
@@ -3958,8 +3430,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     samplerDesc.debugName = "WoodSampler";
 
-
-
     m_woodSampler = m_device->createSampler(samplerDesc);
 
     if (!m_woodSampler)
@@ -3972,11 +3442,7 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Log, "Wood texture loaded successfully");
-
-
 
     // Set texture to floor proxy if it exists
 
@@ -4008,8 +3474,6 @@ bool CubeSceneApplication::loadWoodTexture()
 
     }
 
-
-
     return true;
 
 }
@@ -4034,15 +3498,11 @@ FMatrix CubeSceneApplication::calculateLightViewProjection(
 
     }
 
-
-
     // Calculate light position (far enough to encompass scene)
 
     float lightDistance = sceneBoundsRadius * 2.0f;
 
     FVector lightPos = -lightDir * lightDistance;
-
-
 
     // Calculate up vector (avoid parallel to light direction)
 
@@ -4056,15 +3516,11 @@ FMatrix CubeSceneApplication::calculateLightViewProjection(
 
     }
 
-
-
     // Create light view matrix
 
     FVector targetPos = FVector::ZeroVector;  // Look at scene center
 
     FMatrix lightViewMatrix = FMatrix::MakeLookAt(lightPos, targetPos, upVector);
-
-
 
     // Create orthographic projection for directional light
 
@@ -4074,11 +3530,7 @@ FMatrix CubeSceneApplication::calculateLightViewProjection(
 
     float farPlane = lightDistance * 2.0f;
 
-
-
     FMatrix lightProjectionMatrix = FMatrix::MakeOrtho(orthoSize * 2.0, orthoSize * 2.0, nearPlane, farPlane);
-
-
 
     // Combine view and projection
 
@@ -4104,11 +3556,7 @@ void CubeSceneApplication::renderShadowDepthPass(
 
     }
 
-
-
     MR_LOG(LogCubeSceneApp, Verbose, "Rendering shadow depth pass");
-
-
 
     // Calculate light view-projection matrix
 
@@ -4117,8 +3565,6 @@ void CubeSceneApplication::renderShadowDepthPass(
     float sceneBoundsRadius = 30.0f;  // Cover floor and cubes
 
     outLightViewProjection = calculateLightViewProjection(lightDirection, sceneBoundsRadius);
-
-
 
     // Set shadow map as render target (depth only)
 
@@ -4131,8 +3577,6 @@ void CubeSceneApplication::renderShadowDepthPass(
         m_shadowMapTexture
 
     );
-
-
 
     // Set viewport for shadow map
 
@@ -4152,8 +3596,6 @@ void CubeSceneApplication::renderShadowDepthPass(
 
     cmdList->setViewport(shadowViewport);
 
-
-
     // Set scissor rect
 
     RHI::ScissorRect shadowScissor;
@@ -4168,27 +3610,19 @@ void CubeSceneApplication::renderShadowDepthPass(
 
     cmdList->setScissorRect(shadowScissor);
 
-
-
     // Clear depth buffer
 
     cmdList->clearDepthStencil(m_shadowMapTexture, 1.0f, 0);
 
-
-
     // Render all cube actors to shadow map
 
     FVector lightPos = -lightDirection.GetSafeNormal() * 10.0f;
-
-
 
     for (auto& cubeActor : m_cubeActors)
 
     {
 
         if (!cubeActor) continue;
-
-
 
         UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
 
@@ -4198,13 +3632,9 @@ void CubeSceneApplication::renderShadowDepthPass(
 
             meshComp->UpdateComponentToWorld();
 
-
-
             FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
 
             FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
-
-
 
             if (cubeProxy && cubeProxy->AreResourcesInitialized())
 
@@ -4213,8 +3643,6 @@ void CubeSceneApplication::renderShadowDepthPass(
                 // Update model matrix
 
                 cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
-
-
 
                 // Draw cube for shadow map (using light's matrices)
 
@@ -4226,19 +3654,13 @@ void CubeSceneApplication::renderShadowDepthPass(
 
     }
 
-
-
     // Note: Floor does not cast shadows (it only receives shadows)
 
     // So we don't render floor to shadow map
 
-
-
     // End shadow render pass
 
     cmdList->endRenderPass();
-
-
 
     // Transition shadow map from depth attachment to shader resource for sampling
 
@@ -4253,8 +3675,6 @@ void CubeSceneApplication::renderShadowDepthPass(
         RHI::EResourceUsage::ShaderResource
 
     );
-
-
 
     MR_LOG(LogCubeSceneApp, Verbose, "Shadow depth pass complete");
 
@@ -4288,8 +3708,6 @@ void CubeSceneApplication::renderCubeWithShadows(
 
     }
 
-
-
     // Create shadow parameters
 
     FVector4 shadowParams(
@@ -4304,8 +3722,6 @@ void CubeSceneApplication::renderCubeWithShadows(
 
     );
 
-
-
     // Render all cube actors with shadows
 
     for (auto& cubeActor : m_cubeActors)
@@ -4314,27 +3730,17 @@ void CubeSceneApplication::renderCubeWithShadows(
 
         if (!cubeActor) continue;
 
-
-
         UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
 
         if (!meshComp) continue;
 
-
-
         meshComp->UpdateComponentToWorld();
-
-
 
         FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
 
         FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
 
-
-
         if (!cubeProxy) continue;
-
-
 
         // Initialize resources if needed
 
@@ -4346,13 +3752,9 @@ void CubeSceneApplication::renderCubeWithShadows(
 
         }
 
-
-
         // Update model matrix
 
         cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
-
-
 
         // Draw with shadows
 
@@ -4378,8 +3780,6 @@ void CubeSceneApplication::renderCubeWithShadows(
 
     }
 
-
-
     // Render floor with shadows (floor receives shadows from cubes)
 
     if (m_floorActor)
@@ -4393,8 +3793,6 @@ void CubeSceneApplication::renderCubeWithShadows(
         {
 
             floorMeshComp->UpdateComponentToWorld();
-
-
 
             FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
 
@@ -4412,13 +3810,9 @@ void CubeSceneApplication::renderCubeWithShadows(
 
                 }
 
-
-
                 // Update floor model matrix
 
                 floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
-
-
 
                 // Draw floor with shadows
 
@@ -4470,8 +3864,6 @@ void CubeSceneApplication::renderWithRDG(
 
     using namespace RDG;
 
-
-
     // Get light direction from light scene info
 
     FVector lightDirection = FVector(0.5f, -1.0f, 0.3f);
@@ -4486,21 +3878,15 @@ void CubeSceneApplication::renderWithRDG(
 
     lightDirection.Normalize();
 
-
-
     // Calculate light view-projection matrix
 
     // Must be large enough to cover entire floor (size = 25.0f, so bounds = ±25)
 
     Math::FMatrix lightViewProjection = calculateLightViewProjection(lightDirection, 30.0f);
 
-
-
     // Create RDG builder
 
     FRDGBuilder graphBuilder(m_device, "CubeSceneRenderGraph");
-
-
 
     // Register external shadow map texture (only if shadows are enabled and texture exists)
 
@@ -4521,8 +3907,6 @@ void CubeSceneApplication::renderWithRDG(
         );
 
     }
-
-
 
     // Add Shadow Depth Pass (conditionally based on m_bShadowsEnabled)
 
@@ -4552,15 +3936,11 @@ void CubeSceneApplication::renderWithRDG(
 
                 MR_LOG(LogCubeSceneApp, Log, "Executing Shadow Depth Pass");
 
-
-
                 // NOTE: Do NOT call setRenderTargets here!
 
                 // RDG automatically calls _setupRenderTargets() before executing this lambda.
 
                 // The shadow map depth target is already set via builder.writeDepth() declaration.
-
-
 
                 // Set viewport for shadow map
 
@@ -4580,8 +3960,6 @@ void CubeSceneApplication::renderWithRDG(
 
                 rhiCmdList.setViewport(viewport);
 
-
-
                 // Set scissor rect
 
                 RHI::ScissorRect scissor;
@@ -4596,13 +3974,9 @@ void CubeSceneApplication::renderWithRDG(
 
                 rhiCmdList.setScissorRect(scissor);
 
-
-
                 // Clear depth buffer
 
                 rhiCmdList.clearDepthStencil(m_shadowMapTexture, 1.0f, 0);
-
-
 
                 // Render all cube actors to shadow map
 
@@ -4611,8 +3985,6 @@ void CubeSceneApplication::renderWithRDG(
                 {
 
                     if (!cubeActor) continue;
-
-
 
                     UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
 
@@ -4626,15 +3998,11 @@ void CubeSceneApplication::renderWithRDG(
 
                         FCubeSceneProxy* cubeProxy = dynamic_cast<FCubeSceneProxy*>(baseProxy);
 
-
-
                         if (cubeProxy && cubeProxy->AreResourcesInitialized())
 
                         {
 
                             cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
-
-
 
                             // Draw depth only using depth-only pipeline (no color attachment)
 
@@ -4646,13 +4014,9 @@ void CubeSceneApplication::renderWithRDG(
 
                 }
 
-
-
                 // NOTE: Floor does NOT cast shadows, only receives them
 
                 // So we don't render floor to shadow map
-
-
 
                 // NOTE: Do NOT call endRenderPass() here!
 
@@ -4660,13 +4024,9 @@ void CubeSceneApplication::renderWithRDG(
 
                 // Calling endRenderPass() manually would cause render pass state corruption.
 
-
-
                 // NOTE: Resource transitions are handled by RDG based on pass declarations.
 
                 // The shadow map will be transitioned to shader resource before MainRenderPass.
-
-
 
                 MR_LOG(LogCubeSceneApp, Log, "Shadow Depth Pass complete");
 
@@ -4675,8 +4035,6 @@ void CubeSceneApplication::renderWithRDG(
         );
 
     }
-
-
 
     // Add Main Render Pass
 
@@ -4708,15 +4066,11 @@ void CubeSceneApplication::renderWithRDG(
 
             MR_LOG(LogCubeSceneApp, Log, "Executing Main Render Pass with shadows");
 
-
-
             // NOTE: Do NOT call setRenderTargets here!
 
             // RDG automatically calls _setupRenderTargets() before executing this lambda.
 
             // Since no explicit render targets are declared, RDG uses swapchain rendering.
-
-
 
             // Set viewport to swapchain size (not window size)
 
@@ -4740,8 +4094,6 @@ void CubeSceneApplication::renderWithRDG(
 
             rhiCmdList.setViewport(viewport);
 
-
-
             // Set scissor rect to match viewport
 
             RHI::ScissorRect scissor;
@@ -4755,8 +4107,6 @@ void CubeSceneApplication::renderWithRDG(
             scissor.bottom = swapchainExtent.height;
 
             rhiCmdList.setScissorRect(scissor);
-
-
 
             // Render cube with shadows
 
@@ -4777,8 +4127,6 @@ void CubeSceneApplication::renderWithRDG(
                 lights.Add(m_pointLight->GetLightSceneInfo());
 
             }
-
-
 
             // Choose rendering path based on shadow state (mirrors traditional path logic)
 
@@ -4812,8 +4160,6 @@ void CubeSceneApplication::renderWithRDG(
 
             }
 
-
-
             // Render PBR helmet in the same render pass
 
             if (m_bHelmetPBREnabled && m_bHelmetInitialized)
@@ -4827,8 +4173,6 @@ void CubeSceneApplication::renderWithRDG(
         }
 
     );
-
-
 
     // Execute the render graph
 

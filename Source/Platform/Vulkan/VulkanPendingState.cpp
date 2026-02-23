@@ -1,4 +1,4 @@
-﻿#include "Platform/Vulkan/VulkanPendingState.h"
+#include "Platform/Vulkan/VulkanPendingState.h"
 
 #include "Platform/Vulkan/VulkanDevice.h"
 
@@ -20,15 +20,11 @@ DEFINE_LOG_CATEGORY_STATIC(LogVulkanRHI, Log, All);
 
 namespace MonsterRender::RHI::Vulkan {
 
-
-
     // ========================================================================
 
     // FVulkanPendingState Implementation
 
     // ========================================================================
-
-
 
     FVulkanPendingState::FVulkanPendingState(VulkanDevice* device, FVulkanCmdBuffer* cmdBuffer)
 
@@ -56,13 +52,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         , m_insideRenderPass(false) {
 
-
-
         // Initialize vertex buffer bindings
 
         m_vertexBuffers.resize(8); // Support up to 8 vertex buffer bindings
-
-
 
         // Initialize viewport with default values (will be overwritten when set)
 
@@ -78,8 +70,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         m_pendingViewport.maxDepth = 1.0f;
 
-
-
         // Initialize scissor with default values (will be overwritten when set)
 
         m_pendingScissor.left = 0;
@@ -92,21 +82,15 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     FVulkanPendingState::~FVulkanPendingState() {
 
     }
-
-
 
     void FVulkanPendingState::updateCommandBuffer(FVulkanCmdBuffer* cmdBuffer) {
 
         m_cmdBuffer = cmdBuffer;
 
     }
-
-
 
     void FVulkanPendingState::reset() {
 
@@ -124,8 +108,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         m_insideRenderPass = false;
 
-
-
         // Clear vertex buffers
 
         for (auto& binding : m_vertexBuffers) {
@@ -136,11 +118,7 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         m_indexBuffer = VK_NULL_HANDLE;
-
-
 
         // Clear resource bindings
 
@@ -154,8 +132,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanPendingState::setGraphicsPipeline(VulkanPipelineState* pipeline) {
 
         if (!pipeline) {
@@ -165,8 +141,6 @@ namespace MonsterRender::RHI::Vulkan {
             return;
 
         }
-
-
 
         VkPipeline vkPipeline = pipeline->getPipeline();
 
@@ -178,13 +152,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         if (m_pendingPipeline != pipeline) {
 
             m_pendingPipeline = pipeline;
-
-
 
             // Clear all resource bindings when switching pipelines to avoid descriptor set mismatch
 
@@ -194,13 +164,9 @@ namespace MonsterRender::RHI::Vulkan {
 
             m_uniformBuffers.clear();
 
-
-
             // Also invalidate current descriptor set since pipeline changed
 
             m_currentDescriptorSet = VK_NULL_HANDLE;
-
-
 
             MR_LOG_DEBUG("FVulkanPendingState::setGraphicsPipeline: Set pipeline (handle: " +
 
@@ -210,8 +176,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanPendingState::setViewport(const Viewport& viewport) {
 
         m_pendingViewport = viewport;
@@ -219,8 +183,6 @@ namespace MonsterRender::RHI::Vulkan {
         m_viewportDirty = true;
 
     }
-
-
 
     void FVulkanPendingState::setScissor(const ScissorRect& scissor) {
 
@@ -235,8 +197,6 @@ namespace MonsterRender::RHI::Vulkan {
                    std::to_string(scissor.right) + "," + std::to_string(scissor.bottom) + "), dirty=true");
 
     }
-
-
 
     void FVulkanPendingState::setVertexBuffer(uint32 binding, VkBuffer buffer, VkDeviceSize offset) {
 
@@ -264,8 +224,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanPendingState::setIndexBuffer(VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType) {
 
         if (m_indexBuffer != buffer || m_indexBufferOffset != offset || m_indexType != indexType) {
@@ -281,8 +239,6 @@ namespace MonsterRender::RHI::Vulkan {
         }
 
     }
-
-
 
     void FVulkanPendingState::setUniformBuffer(uint32 slot, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range) {
 
@@ -303,8 +259,6 @@ namespace MonsterRender::RHI::Vulkan {
         }
 
     }
-
-
 
     void FVulkanPendingState::setTexture(uint32 slot, VkImageView imageView, VkSampler sampler,
 
@@ -334,8 +288,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanPendingState::setSampler(uint32 slot, VkSampler sampler) {
 
         auto& binding = m_textures[slot];
@@ -352,8 +304,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanPendingState::transitionTexturesForShaderRead() {
 
         // Execute layout transitions for all bound textures BEFORE render pass begins
@@ -362,15 +312,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         // and textures uploaded in a different command buffer need explicit transitions
 
-
-
         if (!m_cmdBuffer || m_cmdBuffer->getHandle() == VK_NULL_HANDLE) {
 
             return;
 
         }
-
-
 
         if (m_textures.empty()) {
 
@@ -378,19 +324,13 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
         VkCommandBuffer cmdBuffer = m_cmdBuffer->getHandle();
 
-
-
         TArray<VkImageMemoryBarrier> barriers;
 
         barriers.reserve(m_textures.size());
-
-
 
         for (auto& pair : m_textures) {
 
@@ -402,8 +342,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             VkImageMemoryBarrier barrier{};
 
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -414,15 +352,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-
-
             // Determine aspect mask and correct layout based on format
 
             VkImageAspectFlags aspectMask = VulkanUtils::getImageAspectMask(binding.format);
 
             barrier.subresourceRange.aspectMask = aspectMask;
-
-
 
             // Depth textures use DEPTH_STENCIL_READ_ONLY_OPTIMAL, color textures use SHADER_READ_ONLY_OPTIMAL
 
@@ -435,8 +369,6 @@ namespace MonsterRender::RHI::Vulkan {
                 barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             }
-
-
 
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
@@ -456,13 +388,9 @@ namespace MonsterRender::RHI::Vulkan {
 
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-
-
             barriers.push_back(barrier);
 
         }
-
-
 
         if (!barriers.empty()) {
 
@@ -484,8 +412,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             );
 
-
-
             MR_LOG_DEBUG("transitionTexturesForShaderRead: Transitioned " +
 
                         std::to_string(barriers.size()) + " textures to SHADER_READ_ONLY_OPTIMAL");
@@ -494,13 +420,9 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     bool FVulkanPendingState::prepareForDraw() {
 
         MR_LOG_INFO("===== prepareForDraw() START =====");
-
-
 
         if (!m_cmdBuffer) {
 
@@ -509,8 +431,6 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
 
         }
-
-
 
         VkCommandBuffer cmdBuffer = m_cmdBuffer->getHandle();
 
@@ -522,21 +442,13 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_INFO("  CmdBuffer: " + std::to_string(reinterpret_cast<uint64>(cmdBuffer)));
 
         MR_LOG_INFO("  Inside render pass: " + std::string(m_insideRenderPass ? "YES" : "NO"));
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
-
-
         MR_LOG_DEBUG("prepareForDraw: Starting state preparation");
-
-
 
         // Apply pipeline state if changed
 
@@ -576,8 +488,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // CRITICAL: Viewport and Scissor are REQUIRED for drawing
 
         // Apply viewport (force set if not already set, even if not dirty)
@@ -595,8 +505,6 @@ namespace MonsterRender::RHI::Vulkan {
                 return false;
 
             }
-
-
 
             // UE5 Pattern: Apply Y-flip for Vulkan to match OpenGL/D3D coordinate system
 
@@ -624,8 +532,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             vkViewport.maxDepth = m_pendingViewport.maxDepth;
 
-
-
             MR_LOG_INFO("prepareForDraw: vkCmdSetViewport with Y-flip (x=" +
 
                         std::to_string(vkViewport.x) + ", y=" + std::to_string(vkViewport.y) +
@@ -637,8 +543,6 @@ namespace MonsterRender::RHI::Vulkan {
             m_viewportDirty = false;
 
         }
-
-
 
         // Apply scissor (force set if not already set, even if not dirty)
 
@@ -658,8 +562,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             VkRect2D scissor{};
 
             scissor.offset.x = m_pendingScissor.left;
@@ -669,8 +571,6 @@ namespace MonsterRender::RHI::Vulkan {
             scissor.extent.width = m_pendingScissor.right - m_pendingScissor.left;
 
             scissor.extent.height = m_pendingScissor.bottom - m_pendingScissor.top;
-
-
 
             MR_LOG_INFO("prepareForDraw: vkCmdSetScissor(x=" + std::to_string(scissor.offset.x) +
 
@@ -692,8 +592,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Apply vertex buffers if dirty - use std::vector for Vulkan API compatibility
 
         MR_LOG_INFO("prepareForDraw: m_vertexBuffersDirty=" + std::string(m_vertexBuffersDirty ? "true" : "false") +
@@ -705,8 +603,6 @@ namespace MonsterRender::RHI::Vulkan {
             std::vector<VkBuffer> buffers;
 
             std::vector<VkDeviceSize> offsets;
-
-
 
             MR_LOG_INFO("prepareForDraw: Checking vertex buffers...");
 
@@ -727,8 +623,6 @@ namespace MonsterRender::RHI::Vulkan {
                 }
 
             }
-
-
 
             if (!buffers.empty()) {
 
@@ -752,8 +646,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Apply index buffer if dirty
 
         if (m_indexBufferDirty && m_indexBuffer != VK_NULL_HANDLE) {
@@ -765,8 +657,6 @@ namespace MonsterRender::RHI::Vulkan {
             m_indexBufferDirty = false;
 
         }
-
-
 
         // Bind descriptor sets using UE5-style caching mechanism
 
@@ -800,8 +690,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_INFO("prepareForDraw: State preparation completed successfully");
 
         MR_LOG_INFO("===== prepareForDraw() END =====");
@@ -809,8 +697,6 @@ namespace MonsterRender::RHI::Vulkan {
         return true; // Successfully prepared for draw
 
     }
-
-
 
     VkDescriptorSet FVulkanPendingState::updateAndBindDescriptorSets(VkCommandBuffer CmdBuffer,
 
@@ -820,13 +706,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         // Reference: UE5 FVulkanPendingGfxState::UpdateAndBindDescriptorSets()
 
-
-
         auto& DescriptorLayouts = m_currentPipeline->getDescriptorSetLayouts();
 
         VkPipelineLayout PipelineLayout = m_currentPipeline->getPipelineLayout();
-
-
 
         MR_LOG_INFO("updateAndBindDescriptorSets: DescriptorLayouts.size()=" +
 
@@ -837,8 +719,6 @@ namespace MonsterRender::RHI::Vulkan {
                     ", UniformBuffers=" + std::to_string(m_uniformBuffers.size()) +
 
                     ", Textures=" + std::to_string(m_textures.size()));
-
-
 
         // Log texture details
 
@@ -852,8 +732,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         if (DescriptorLayouts.empty() || PipelineLayout == VK_NULL_HANDLE) {
 
             MR_LOG_WARNING("updateAndBindDescriptorSets: No descriptor layouts (size=" +
@@ -865,8 +743,6 @@ namespace MonsterRender::RHI::Vulkan {
             return VK_NULL_HANDLE;
 
         }
-
-
 
         // Try to use descriptor set cache first (UE5-style optimization)
 
@@ -881,8 +757,6 @@ namespace MonsterRender::RHI::Vulkan {
             FVulkanDescriptorSetKey Key = buildDescriptorSetKey();
 
             Key.Layout = DescriptorLayouts[0];
-
-
 
             // Get or allocate from cache
 
@@ -904,8 +778,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // If cache is disabled, skip descriptor set binding from pending state
 
         if (!m_descriptorSetCacheEnabled) {
@@ -915,8 +787,6 @@ namespace MonsterRender::RHI::Vulkan {
             return VK_NULL_HANDLE;
 
         }
-
-
 
         // Fallback path: descriptor set cache is not available
 
@@ -932,19 +802,13 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     FVulkanDescriptorSetKey FVulkanPendingState::buildDescriptorSetKey() const {
 
         // Build a key for descriptor set cache lookup
 
         // Reference: UE5 descriptor set key generation
 
-
-
         FVulkanDescriptorSetKey Key;
-
-
 
         // Add buffer bindings
 
@@ -966,8 +830,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Add image bindings
 
         for (const auto& [Slot, Binding] : m_textures) {
@@ -979,8 +841,6 @@ namespace MonsterRender::RHI::Vulkan {
                 ImageBinding.ImageView = Binding.imageView;
 
                 ImageBinding.Sampler = Binding.sampler;
-
-
 
                 // Determine correct image layout based on format
 
@@ -996,29 +856,21 @@ namespace MonsterRender::RHI::Vulkan {
 
                 }
 
-
-
                 Key.ImageBindings[Slot] = ImageBinding;
 
             }
 
         }
 
-
-
         return Key;
 
     }
-
-
 
     // ========================================================================
 
     // FVulkanDescriptorPoolSetContainer Implementation
 
     // ========================================================================
-
-
 
     FVulkanDescriptorPoolSetContainer::FVulkanDescriptorPoolSetContainer(VulkanDevice* device)
 
@@ -1029,8 +881,6 @@ namespace MonsterRender::RHI::Vulkan {
         , m_maxSets(1024)
 
         , m_allocatedSets(0) {
-
-
 
         // Configure pool sizes (UE5 typical configuration)
 
@@ -1043,8 +893,6 @@ namespace MonsterRender::RHI::Vulkan {
         m_poolSizes.Add(PoolSizeInfo{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 256});
 
     }
-
-
 
     FVulkanDescriptorPoolSetContainer::~FVulkanDescriptorPoolSetContainer() {
 
@@ -1062,15 +910,11 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     bool FVulkanDescriptorPoolSetContainer::initialize() {
 
         return createDescriptorPool();
 
     }
-
-
 
     bool FVulkanDescriptorPoolSetContainer::createDescriptorPool() {
 
@@ -1078,15 +922,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         VkDevice device = m_device->getLogicalDevice();
 
-
-
         // Prepare pool sizes - use std::vector for Vulkan API compatibility
 
         std::vector<VkDescriptorPoolSize> poolSizes;
 
         poolSizes.reserve(m_poolSizes.size());
-
-
 
         for (const auto& sizeInfo : m_poolSizes) {
 
@@ -1099,8 +939,6 @@ namespace MonsterRender::RHI::Vulkan {
             poolSizes.push_back(poolSize);
 
         }
-
-
 
         // Create descriptor pool
 
@@ -1116,8 +954,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         poolInfo.pPoolSizes = poolSizes.data();
 
-
-
         VkResult result = functions.vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_descriptorPool);
 
         if (result != VK_SUCCESS) {
@@ -1128,15 +964,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("FVulkanDescriptorPoolSetContainer initialized");
 
         return true;
 
     }
-
-
 
     VkDescriptorSet FVulkanDescriptorPoolSetContainer::allocateDescriptorSet(VkDescriptorSetLayout layout) {
 
@@ -1148,13 +980,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getLogicalDevice();
-
-
 
         VkDescriptorSetAllocateInfo allocInfo{};
 
@@ -1165,8 +993,6 @@ namespace MonsterRender::RHI::Vulkan {
         allocInfo.descriptorSetCount = 1;
 
         allocInfo.pSetLayouts = &layout;
-
-
 
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 
@@ -1180,15 +1006,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         m_allocatedSets++;
 
         return descriptorSet;
 
     }
-
-
 
     void FVulkanDescriptorPoolSetContainer::reset() {
 
@@ -1198,15 +1020,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             VkDevice device = m_device->getLogicalDevice();
 
-
-
             // Reset pool - returns all descriptor sets
 
             functions.vkResetDescriptorPool(device, m_descriptorPool, 0);
 
             m_allocatedSets = 0;
-
-
 
             MR_LOG_DEBUG("Descriptor pool reset for new frame");
 

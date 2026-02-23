@@ -1,4 +1,4 @@
-﻿// Copyright MonsterEngine Team. All Rights Reserved.
+// Copyright MonsterEngine Team. All Rights Reserved.
 
 // VulkanRenderTargetCache.cpp - RenderPass and Framebuffer caching implementation
 
@@ -21,8 +21,6 @@ namespace MonsterRender::RHI::Vulkan {
     // FNV-1a Hash Helper (consistent with other cache implementations)
 
     // ============================================================================
-
-
 
     namespace {
 
@@ -68,8 +66,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         uint64 hash = FNV1A_OFFSET_BASIS;
 
-
-
         // Hash color formats
 
         hash = HashCombine(hash, NumColorAttachments);
@@ -80,21 +76,15 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Hash depth format
 
         hash = HashCombine(hash, static_cast<uint64>(DepthStencilFormat));
 
         hash = HashCombine(hash, bHasDepthStencil ? 1ULL : 0ULL);
 
-
-
         // Hash sample count
 
         hash = HashCombine(hash, static_cast<uint64>(SampleCount));
-
-
 
         // Hash load/store ops
 
@@ -110,13 +100,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         hash = HashCombine(hash, static_cast<uint64>(StencilStoreOp));
 
-
-
         // Hash final layout
 
         hash = HashCombine(hash, static_cast<uint64>(ColorFinalLayout));
-
-
 
         return hash;
 
@@ -126,15 +112,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         if (NumColorAttachments != Other.NumColorAttachments) return false;
 
-
-
         for (uint32 i = 0; i < NumColorAttachments; ++i) {
 
             if (ColorFormats[i] != Other.ColorFormats[i]) return false;
 
         }
-
-
 
         return DepthStencilFormat == Other.DepthStencilFormat &&
 
@@ -184,8 +166,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         uint64 hash = Layout.GetHash();
 
-
-
         // Check cache
 
         VkRenderPass* cachedPass = m_cache.Find(hash);
@@ -197,8 +177,6 @@ namespace MonsterRender::RHI::Vulkan {
             return *cachedPass;
 
         }
-
-
 
         // Create new render pass
 
@@ -214,8 +192,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         return renderPass;
 
     }
@@ -225,8 +201,6 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getLogicalDevice();
-
-
 
         for (auto It = m_cache.CreateIterator(); It; ++It) {
 
@@ -240,8 +214,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         m_cache.Empty();
 
-
-
         MR_LOG_DEBUG("FVulkanRenderPassCache: Cleared all cached render passes");
 
     }
@@ -251,8 +223,6 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getLogicalDevice();
-
-
 
         MR_LOG(LogTemp, Log, "CreateRenderPass: NumColorAttachments=%u, bHasDepthStencil=%d, "
 
@@ -266,23 +236,17 @@ namespace MonsterRender::RHI::Vulkan {
 
                    static_cast<uint32>(Layout.DepthStoreOp));
 
-
-
         TArray<VkAttachmentDescription> attachments;
 
         TArray<VkAttachmentReference> colorRefs;
 
         VkAttachmentReference depthRef{};
 
-
-
         // ============================================================================
 
         // Color Attachments
 
         // ============================================================================
-
-
 
         for (uint32 i = 0; i < Layout.NumColorAttachments; ++i) {
 
@@ -300,8 +264,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 
-
-
             // UE5 Pattern: initialLayout must match loadOp
 
             // LOAD requires valid layout (preserve existing content)
@@ -314,11 +276,7 @@ namespace MonsterRender::RHI::Vulkan {
 
             colorAttachment.finalLayout = Layout.ColorFinalLayout;
 
-
-
             attachments.push_back(colorAttachment);
-
-
 
             VkAttachmentReference colorRef{};
 
@@ -330,15 +288,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // ============================================================================
 
         // Depth Attachment
 
         // ============================================================================
-
-
 
         if (Layout.bHasDepthStencil) {
 
@@ -356,8 +310,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             depthAttachment.stencilStoreOp = Layout.StencilStoreOp;
 
-
-
             // UE5 Pattern: initialLayout must match loadOp
 
             // LOAD requires valid layout (preserve existing content)
@@ -370,17 +322,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-
-
             attachments.push_back(depthAttachment);
-
-
 
             depthRef.attachment = static_cast<uint32>(attachments.size() - 1);
 
             depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-
 
             MR_LOG(LogTemp, Log, "CreateRenderPass: Added depth attachment at index %u, format=%u, "
 
@@ -398,15 +344,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // ============================================================================
 
         // Subpass Description
 
         // ============================================================================
-
-
 
         VkSubpassDescription subpass{};
 
@@ -418,8 +360,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         subpass.pDepthStencilAttachment = Layout.bHasDepthStencil ? &depthRef : nullptr;
 
-
-
         // ============================================================================
 
         // Subpass Dependencies
@@ -430,15 +370,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         // ============================================================================
 
-
-
         VkSubpassDependency dependency{};
 
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 
         dependency.dstSubpass = 0;
-
-
 
         // UE5 Pattern: Different dependencies for color vs depth-only passes
 
@@ -468,8 +404,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         if (Layout.bHasDepthStencil) {
 
             // UE5 uses both EARLY and LATE fragment tests for depth
@@ -482,15 +416,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // ============================================================================
 
         // Create Render Pass
 
         // ============================================================================
-
-
 
         VkRenderPassCreateInfo renderPassInfo{};
 
@@ -508,13 +438,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         renderPassInfo.pDependencies = &dependency;
 
-
-
         VkRenderPass renderPass = VK_NULL_HANDLE;
 
         VkResult result = functions.vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass);
-
-
 
         if (result != VK_SUCCESS) {
 
@@ -525,8 +451,6 @@ namespace MonsterRender::RHI::Vulkan {
             return VK_NULL_HANDLE;
 
         }
-
-
 
         MR_LOG(LogTemp, Log, "CreateRenderPass: SUCCESS - renderPass=0x%llx, totalAttachments=%u, "
 
@@ -539,8 +463,6 @@ namespace MonsterRender::RHI::Vulkan {
                    Layout.NumColorAttachments,
 
                    Layout.bHasDepthStencil ? 1 : 0);
-
-
 
         return renderPass;
 
@@ -556,8 +478,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         uint64 hash = FNV1A_OFFSET_BASIS;
 
-
-
         hash = HashCombine(hash, reinterpret_cast<uint64>(RenderPass));
 
         hash = HashCombine(hash, static_cast<uint64>(Width));
@@ -568,15 +488,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         hash = HashCombine(hash, static_cast<uint64>(NumAttachments));
 
-
-
         for (uint32 i = 0; i < NumAttachments; ++i) {
 
             hash = HashCombine(hash, reinterpret_cast<uint64>(Attachments[i]));
 
         }
-
-
 
         return hash;
 
@@ -594,15 +510,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         if (NumAttachments != Other.NumAttachments) return false;
 
-
-
         for (uint32 i = 0; i < NumAttachments; ++i) {
 
             if (Attachments[i] != Other.Attachments[i]) return false;
 
         }
-
-
 
         return true;
 
@@ -634,8 +546,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         uint64 hash = Key.GetHash();
 
-
-
         // Check cache
 
         VkFramebuffer* cachedFB = m_cache.Find(hash);
@@ -647,8 +557,6 @@ namespace MonsterRender::RHI::Vulkan {
             return *cachedFB;
 
         }
-
-
 
         // Create new framebuffer
 
@@ -664,8 +572,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         return framebuffer;
 
     }
@@ -675,8 +581,6 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getLogicalDevice();
-
-
 
         for (auto It = m_cache.CreateIterator(); It; ++It) {
 
@@ -690,8 +594,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         m_cache.Empty();
 
-
-
         MR_LOG_DEBUG("FVulkanFramebufferCache: Cleared all cached framebuffers");
 
     }
@@ -702,8 +604,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         VkDevice device = m_device->getLogicalDevice();
 
-
-
         MR_LOG_INFO("CreateFramebuffer: " + std::to_string(Key.Width) + "x" + std::to_string(Key.Height) +
 
                    ", attachments=" + std::to_string(Key.NumAttachments) +
@@ -713,8 +613,6 @@ namespace MonsterRender::RHI::Vulkan {
                    ", depthView=" + std::to_string(reinterpret_cast<uint64>(Key.NumAttachments > 1 ? Key.Attachments[1] : VK_NULL_HANDLE)) +
 
                    ", renderPass=" + std::to_string(reinterpret_cast<uint64>(Key.RenderPass)));
-
-
 
         VkFramebufferCreateInfo framebufferInfo{};
 
@@ -732,13 +630,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         framebufferInfo.layers = Key.Layers;
 
-
-
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
 
         VkResult result = functions.vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer);
-
-
 
         if (result != VK_SUCCESS) {
 
@@ -750,15 +644,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("FVulkanFramebufferCache: Created framebuffer " +
 
                     std::to_string(Key.Width) + "x" + std::to_string(Key.Height) +
 
                     " with " + std::to_string(Key.NumAttachments) + " attachment(s)");
-
-
 
         return framebuffer;
 
@@ -773,8 +663,6 @@ namespace MonsterRender::RHI::Vulkan {
     FVulkanRenderTargetLayout FVulkanRenderTargetInfo::BuildLayout(VulkanDevice* Device) const {
 
         FVulkanRenderTargetLayout layout;
-
-
 
         // Color attachments
 
@@ -800,8 +688,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Depth attachment
 
         if (DepthStencilTarget) {
@@ -814,8 +700,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Load/store ops based on clear flags
 
         layout.ColorLoadOp = bClearColor[0] ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -823,8 +707,6 @@ namespace MonsterRender::RHI::Vulkan {
         layout.ColorStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 
         layout.DepthLoadOp = bClearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-
-
 
         // UE5 Pattern: Shadow mapping (depth-only RTT) needs to store depth for later sampling
 
@@ -836,13 +718,9 @@ namespace MonsterRender::RHI::Vulkan {
 
             VK_ATTACHMENT_STORE_OP_DONT_CARE;   // Regular depth - don't need after rendering
 
-
-
         layout.StencilLoadOp = bClearStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 
         layout.StencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
-
 
         // Final layout
 
@@ -855,8 +733,6 @@ namespace MonsterRender::RHI::Vulkan {
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR :
 
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-
 
         return layout;
 
@@ -875,8 +751,6 @@ namespace MonsterRender::RHI::Vulkan {
         key.Width = 0;
 
         key.Height = 0;
-
-
 
         // Determine dimensions - priority: explicit RenderArea > ColorTarget > DepthTarget
 
@@ -910,8 +784,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG(LogTemp, Log, "BuildFramebufferKey: NumColorTargets=%u, bIsSwapchain=%d, HasDepthTarget=%d, "
 
                    "RenderArea=%ux%u, FinalSize=%ux%u",
@@ -919,8 +791,6 @@ namespace MonsterRender::RHI::Vulkan {
                    NumColorTargets, bIsSwapchain ? 1 : 0, DepthStencilTarget ? 1 : 0,
 
                    RenderAreaWidth, RenderAreaHeight, key.Width, key.Height);
-
-
 
         // Color attachments - check for swapchain image view first
 
@@ -952,8 +822,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Depth attachment
 
         if (DepthStencilTarget) {
@@ -978,15 +846,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG(LogTemp, Log, "BuildFramebufferKey: Final NumAttachments=%u", key.NumAttachments);
 
-
-
         key.Layers = 1;
-
-
 
         return key;
 

@@ -1,4 +1,4 @@
-﻿#include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
 
 #include "Platform/Vulkan/VulkanDevice.h"
 
@@ -16,8 +16,6 @@
 
 namespace MonsterRender::RHI::Vulkan {
 
-
-
     FVulkanCommandListContext::FVulkanCommandListContext(
 
         VulkanDevice* device,
@@ -32,15 +30,11 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     FVulkanCommandListContext::~FVulkanCommandListContext() {
 
         // Cleanup is handled by unique pointers
 
     }
-
-
 
     bool FVulkanCommandListContext::initialize() {
 
@@ -56,13 +50,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Create pending state
 
         m_pendingState = MakeUnique<FVulkanPendingState>(m_device, m_cmdBuffer);
-
-
 
         // Create descriptor pool
 
@@ -76,21 +66,15 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_DEBUG("FVulkanCommandListContext initialized");
 
         return true;
 
     }
 
-
-
     void FVulkanCommandListContext::prepareForNewFrame() {
 
         MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() START =====");
-
-
 
         // Get next command buffer from ring buffer
 
@@ -98,13 +82,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         m_manager->prepareForNewActiveCommandBuffer();
 
-
-
         MR_LOG_INFO("  Getting active cmd buffer...");
 
         m_cmdBuffer = m_manager->getActiveCmdBuffer();
-
-
 
         MR_LOG_INFO("  m_cmdBuffer: " + std::string(m_cmdBuffer ? "VALID" : "NULL"));
 
@@ -120,8 +100,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Update pending state's command buffer reference
 
         if (m_pendingState && m_cmdBuffer) {
@@ -129,8 +107,6 @@ namespace MonsterRender::RHI::Vulkan {
             m_pendingState->updateCommandBuffer(m_cmdBuffer);
 
         }
-
-
 
         // Reset pending state
 
@@ -140,8 +116,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Reset descriptor pool
 
         if (m_descriptorPool) {
@@ -149,8 +123,6 @@ namespace MonsterRender::RHI::Vulkan {
             m_descriptorPool->reset();
 
         }
-
-
 
         // Acquire next swapchain image BEFORE any rendering begins
 
@@ -162,13 +134,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() END =====");
 
     }
-
-
 
     void FVulkanCommandListContext::refreshCommandBuffer() {
 
@@ -178,15 +146,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         MR_LOG_DEBUG("FVulkanCommandListContext::refreshCommandBuffer()");
 
-
-
         // Get next command buffer from ring buffer
 
         m_manager->prepareForNewActiveCommandBuffer();
 
         m_cmdBuffer = m_manager->getActiveCmdBuffer();
-
-
 
         // Update pending state's command buffer reference
 
@@ -198,23 +162,17 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     bool FVulkanCommandListContext::acquireNextSwapchainImage() {
 
         // Reference: UE5 FVulkanDynamicRHI::RHIBeginDrawingViewport
 
         // Acquire swapchain image at the beginning of frame, not during present
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
 
         VkDevice device = m_device->getLogicalDevice();
 
         VkSwapchainKHR swapchain = m_device->getSwapchain();
-
-
 
         if (swapchain == VK_NULL_HANDLE) {
 
@@ -224,13 +182,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Use frame-specific semaphore for synchronization
 
         uint32 currentFrame = m_device->getCurrentFrame();
-
-
 
         // Wait for this frame's in-flight fence before reusing its resources
 
@@ -252,11 +206,7 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         VkSemaphore imageAvailableSemaphore = m_device->getImageAvailableSemaphore(currentFrame);
-
-
 
         uint32 imageIndex = 0;
 
@@ -276,8 +226,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         );
 
-
-
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 
             MR_LOG_WARNING("acquireNextSwapchainImage: Swapchain out of date");
@@ -291,8 +239,6 @@ namespace MonsterRender::RHI::Vulkan {
             return false;
 
         }
-
-
 
         // Check if a previous frame is still using this image
 
@@ -312,13 +258,9 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // Mark this image as being used by the current frame's fence
 
         m_device->setImageInFlightFence(imageIndex, inFlightFence);
-
-
 
         // Reset the in-flight fence for this frame's use (after all waits are done)
 
@@ -328,8 +270,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         m_device->setCurrentImageIndex(imageIndex);
 
         MR_LOG_DEBUG("acquireNextSwapchainImage: Acquired image index " + std::to_string(imageIndex));
@@ -338,15 +278,11 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanCommandListContext::beginRecording() {
 
         MR_LOG_INFO("  FVulkanCommandListContext::beginRecording() called");
 
         MR_LOG_INFO("    m_cmdBuffer: " + std::string(m_cmdBuffer ? "VALID" : "NULL"));
-
-
 
         if (m_cmdBuffer) {
 
@@ -355,8 +291,6 @@ namespace MonsterRender::RHI::Vulkan {
             m_cmdBuffer->begin();
 
             MR_LOG_INFO("    m_cmdBuffer->begin() returned");
-
-
 
             // Execute texture layout transitions for this command buffer
 
@@ -376,8 +310,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanCommandListContext::endRecording() {
 
         if (m_cmdBuffer) {
@@ -388,15 +320,11 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanCommandListContext::submitCommands(
 
         VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
 
         VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount) {
-
-
 
         if (m_manager && m_device) {
 
@@ -405,8 +333,6 @@ namespace MonsterRender::RHI::Vulkan {
             uint32 currentFrame = m_device->getCurrentFrame();
 
             VkFence inFlightFence = m_device->getInFlightFence(currentFrame);
-
-
 
             m_manager->submitActiveCmdBufferWithFence(
 
@@ -422,8 +348,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanCommandListContext::endRenderPass() {
 
         // Check if we are actually inside a render pass before ending it
@@ -438,29 +362,21 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         if (m_cmdBuffer && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
 
             const auto& functions = VulkanAPI::getFunctions();
 
             functions.vkCmdEndRenderPass(m_cmdBuffer->getHandle());
 
-
-
             // Mark that we are no longer inside a render pass
 
             m_pendingState->setInsideRenderPass(false);
-
-
 
             MR_LOG_DEBUG("FVulkanCommandListContext::endRenderPass: Render pass ended");
 
         }
 
     }
-
-
 
     void FVulkanCommandListContext::setRenderTargets(TSpan<TSharedPtr<RHI::IRHITexture>> renderTargets,
 
@@ -482,8 +398,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         // ============================================================================
 
-
-
         if (!m_device || !m_cmdBuffer) {
 
             MR_LOG_WARNING("setRenderTargets: Invalid device or command buffer");
@@ -491,8 +405,6 @@ namespace MonsterRender::RHI::Vulkan {
             return;
 
         }
-
-
 
         VkRenderPass renderPass = VK_NULL_HANDLE;
 
@@ -502,8 +414,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         uint32 numClearValues = 2; // color + depth
 
-
-
         // Determine if this is swapchain rendering or RTT
 
         // Note: If custom depthStencil is provided, we still need to use RTT mode
@@ -511,8 +421,6 @@ namespace MonsterRender::RHI::Vulkan {
         // to properly use the custom depth buffer instead of device's default
 
         bool bIsSwapchain = renderTargets.empty() && !depthStencil;
-
-
 
         if (bIsSwapchain) {
 
@@ -528,8 +436,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             framebuffer = m_device->getCurrentFramebuffer();
 
-
-
             MR_LOG_DEBUG("setRenderTargets: Using swapchain rendering (default depth)");
 
         } else {
@@ -542,8 +448,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             // ================================================================
 
-
-
             FVulkanRenderTargetInfo rtInfo;
 
             rtInfo.bIsSwapchain = false;
@@ -551,8 +455,6 @@ namespace MonsterRender::RHI::Vulkan {
             rtInfo.bClearDepth = true;
 
             rtInfo.bClearStencil = false;
-
-
 
             // Check if we need to use swapchain as color target (empty renderTargets but custom depth)
 
@@ -573,8 +475,6 @@ namespace MonsterRender::RHI::Vulkan {
                 uint32 depthHeight = depthStencil->getHeight();
 
                 VkExtent2D swapchainExtent = m_device->getSwapchainExtent();
-
-
 
                 if (depthWidth == swapchainExtent.width && depthHeight == swapchainExtent.height)
 
@@ -603,8 +503,6 @@ namespace MonsterRender::RHI::Vulkan {
                 }
 
             }
-
-
 
             if (bUseSwapchainColor) {
 
@@ -650,8 +548,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             // Add depth target if provided, or use device's depth buffer
 
             if (depthStencil) {
@@ -677,8 +573,6 @@ namespace MonsterRender::RHI::Vulkan {
                 }
 
             }
-
-
 
             // Set render area from first color target, or from depth target if no color targets
 
@@ -710,13 +604,9 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             // Get or create render pass from cache
 
             FVulkanRenderTargetLayout layout = rtInfo.BuildLayout(m_device);
-
-
 
             // Add depth format if using device depth buffer without custom depth target
 
@@ -727,8 +617,6 @@ namespace MonsterRender::RHI::Vulkan {
                 layout.DepthStencilFormat = m_device->getVulkanDepthFormat();
 
             }
-
-
 
             // UE5 Pattern: Use render pass cache to dynamically create render pass
 
@@ -756,8 +644,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             // Get or create framebuffer from cache
 
             if (renderPass != VK_NULL_HANDLE) {
@@ -782,15 +668,11 @@ namespace MonsterRender::RHI::Vulkan {
 
                 }
 
-
-
                 FVulkanFramebufferKey fbKey = rtInfo.BuildFramebufferKey(renderPass, depthView);
 
                 fbKey.Width = renderExtent.width;
 
                 fbKey.Height = renderExtent.height;
-
-
 
                 auto* fbCache = m_device->GetFramebufferCache();
 
@@ -802,11 +684,7 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             numClearValues = rtInfo.NumColorTargets + (layout.bHasDepthStencil ? 1 : 0);
-
-
 
             MR_LOG_DEBUG("setRenderTargets: RTT mode with " + std::to_string(rtInfo.NumColorTargets) +
 
@@ -815,8 +693,6 @@ namespace MonsterRender::RHI::Vulkan {
                         std::to_string(renderExtent.height));
 
         }
-
-
 
         // ================================================================
 
@@ -832,15 +708,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         // ================================================================
 
         // Begin render pass
 
         // ================================================================
-
-
 
         if (renderPass != VK_NULL_HANDLE && framebuffer != VK_NULL_HANDLE) {
 
@@ -849,8 +721,6 @@ namespace MonsterRender::RHI::Vulkan {
                        ", framebuffer=" + std::to_string(reinterpret_cast<uint64>(framebuffer)) +
 
                        ", extent=" + std::to_string(renderExtent.width) + "x" + std::to_string(renderExtent.height));
-
-
 
             VkRenderPassBeginInfo renderPassBeginInfo{};
 
@@ -864,8 +734,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             renderPassBeginInfo.renderArea.extent = renderExtent;
 
-
-
             // Clear values: must match attachment order in render pass
 
             // For depth-only pass: clearValues[0] = depth
@@ -873,8 +741,6 @@ namespace MonsterRender::RHI::Vulkan {
             // For color+depth pass: clearValues[0] = color, clearValues[1] = depth
 
             TArray<VkClearValue> clearValues(numClearValues);
-
-
 
             // Depth-only pass: numClearValues == 1 and not swapchain mode
 
@@ -906,15 +772,11 @@ namespace MonsterRender::RHI::Vulkan {
 
             renderPassBeginInfo.pClearValues = clearValues.data();
 
-
-
             const auto& functions = VulkanAPI::getFunctions();
 
             functions.vkCmdBeginRenderPass(m_cmdBuffer->getHandle(), &renderPassBeginInfo,
 
                                          VK_SUBPASS_CONTENTS_INLINE);
-
-
 
             // CRITICAL: Mark that we are now inside a render pass
 
@@ -923,8 +785,6 @@ namespace MonsterRender::RHI::Vulkan {
                 m_pendingState->setInsideRenderPass(true);
 
             }
-
-
 
             MR_LOG_DEBUG("setRenderTargets: Render pass started successfully");
 
@@ -940,8 +800,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanCommandListContext::draw(uint32 vertexCount, uint32 startVertexLocation) {
 
         MR_LOG_INFO("===== FVulkanCommandListContext::draw() START =====");
@@ -950,8 +808,6 @@ namespace MonsterRender::RHI::Vulkan {
 
         MR_LOG_INFO("  startVertexLocation: " + std::to_string(startVertexLocation));
 
-
-
         if (!m_cmdBuffer) {
 
             MR_LOG_ERROR("draw: m_cmdBuffer is nullptr!");
@@ -959,8 +815,6 @@ namespace MonsterRender::RHI::Vulkan {
             return;
 
         }
-
-
 
         VkCommandBuffer cmdBufferHandle = m_cmdBuffer->getHandle();
 
@@ -972,11 +826,7 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_INFO("  CommandBuffer handle: " + std::to_string(reinterpret_cast<uint64>(cmdBufferHandle)));
-
-
 
         if (!m_pendingState) {
 
@@ -985,8 +835,6 @@ namespace MonsterRender::RHI::Vulkan {
             return;
 
         }
-
-
 
         MR_LOG_INFO("  Calling prepareForDraw()...");
 
@@ -998,25 +846,17 @@ namespace MonsterRender::RHI::Vulkan {
 
         }
 
-
-
         MR_LOG_INFO("  prepareForDraw() succeeded");
 
         MR_LOG_INFO("  About to call vkCmdDraw...");
 
-
-
         const auto& functions = VulkanAPI::getFunctions();
-
-
 
         // Log function pointer
 
         MR_LOG_INFO("  vkCmdDraw function pointer: " +
 
                    std::to_string(reinterpret_cast<uint64>(functions.vkCmdDraw)));
-
-
 
         // Call vkCmdDraw
 
@@ -1026,15 +866,11 @@ namespace MonsterRender::RHI::Vulkan {
 
         functions.vkCmdDraw(cmdBufferHandle, vertexCount, 1, startVertexLocation, 0);
 
-
-
         MR_LOG_INFO("  vkCmdDraw completed");
 
         MR_LOG_INFO("===== FVulkanCommandListContext::draw() END =====");
 
     }
-
-
 
     void FVulkanCommandListContext::drawIndexed(uint32 indexCount, uint32 startIndexLocation,
 
@@ -1052,8 +888,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             // Check if we are inside a render pass
 
             if (!m_pendingState->isInsideRenderPass()) {
@@ -1062,8 +896,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             if (!m_pendingState->prepareForDraw()) {
 
                 MR_LOG_ERROR("drawIndexed: Failed to prepare for draw - aborting draw call");
@@ -1071,8 +903,6 @@ namespace MonsterRender::RHI::Vulkan {
                 return;
 
             }
-
-
 
             const auto& functions = VulkanAPI::getFunctions();
 
@@ -1085,8 +915,6 @@ namespace MonsterRender::RHI::Vulkan {
         }
 
     }
-
-
 
     void FVulkanCommandListContext::drawInstanced(uint32 vertexCountPerInstance, uint32 instanceCount,
 
@@ -1104,8 +932,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             if (!m_pendingState->prepareForDraw()) {
 
                 MR_LOG_ERROR("drawInstanced: Failed to prepare for draw - aborting draw call");
@@ -1113,8 +939,6 @@ namespace MonsterRender::RHI::Vulkan {
                 return;
 
             }
-
-
 
             const auto& functions = VulkanAPI::getFunctions();
 
@@ -1125,8 +949,6 @@ namespace MonsterRender::RHI::Vulkan {
         }
 
     }
-
-
 
     void FVulkanCommandListContext::drawIndexedInstanced(uint32 indexCountPerInstance, uint32 instanceCount,
 
@@ -1146,8 +968,6 @@ namespace MonsterRender::RHI::Vulkan {
 
             }
 
-
-
             if (!m_pendingState->prepareForDraw()) {
 
                 MR_LOG_ERROR("drawIndexedInstanced: Failed to prepare for draw - aborting draw call");
@@ -1155,8 +975,6 @@ namespace MonsterRender::RHI::Vulkan {
                 return;
 
             }
-
-
 
             const auto& functions = VulkanAPI::getFunctions();
 
@@ -1168,8 +986,6 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-
-
     void FVulkanCommandListContext::clearRenderTarget(TSharedPtr<RHI::IRHITexture> renderTarget,
 
                                                      const float32 clearColor[4]) {
@@ -1177,8 +993,6 @@ namespace MonsterRender::RHI::Vulkan {
         // Implemented via render pass load operations
 
     }
-
-
 
     void FVulkanCommandListContext::clearDepthStencil(TSharedPtr<RHI::IRHITexture> depthStencil,
 

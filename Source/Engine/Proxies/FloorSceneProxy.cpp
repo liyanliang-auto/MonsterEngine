@@ -1,4 +1,4 @@
-﻿// Copyright Monster Engine. All Rights Reserved.
+// Copyright Monster Engine. All Rights Reserved.
 
 /**
 
@@ -174,8 +174,6 @@ FFloorSceneProxy::FFloorSceneProxy(const UFloorMeshComponent* InComponent)
 
     }
 
-
-
     MR_LOG(LogFloorSceneProxy, Verbose, "FloorSceneProxy created");
 
 }
@@ -185,8 +183,6 @@ FFloorSceneProxy::~FFloorSceneProxy()
 {
 
     MR_LOG(LogFloorSceneProxy, Log, "FloorSceneProxy destructor called - releasing GPU resources");
-
-
 
     // Release GPU resources
 
@@ -215,8 +211,6 @@ FFloorSceneProxy::~FFloorSceneProxy()
     ShadowPipelineState.Reset();
 
     ShadowSampler.Reset();
-
-
 
     MR_LOG(LogFloorSceneProxy, Log, "FloorSceneProxy destroyed - all resources released");
 
@@ -256,8 +250,6 @@ bool FFloorSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDev
 
     }
 
-
-
     if (!InDevice)
 
     {
@@ -268,19 +260,13 @@ bool FFloorSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDev
 
     }
 
-
-
     Device = InDevice;
 
     RHIBackend = Device->getRHIBackend();
 
-
-
     MR_LOG(LogFloorSceneProxy, Log, "Initializing FloorSceneProxy resources for %s",
 
         MonsterRender::RHI::GetRHIBackendName(RHIBackend));
-
-
 
     // Create resources in order
 
@@ -294,8 +280,6 @@ bool FFloorSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDev
 
     }
 
-
-
     if (!CreateUniformBuffers())
 
     {
@@ -305,8 +289,6 @@ bool FFloorSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDev
         return false;
 
     }
-
-
 
     // Create sampler if not provided
 
@@ -342,8 +324,6 @@ bool FFloorSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDev
 
     }
 
-
-
     if (!CreateShaders())
 
     {
@@ -354,8 +334,6 @@ bool FFloorSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDev
 
     }
 
-
-
     if (!CreatePipelineState())
 
     {
@@ -365,8 +343,6 @@ bool FFloorSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDev
         return false;
 
     }
-
-
 
     // Create shadow resources
 
@@ -386,13 +362,9 @@ bool FFloorSceneProxy::InitializeResources(MonsterRender::RHI::IRHIDevice* InDev
 
     }
 
-
-
     bResourcesInitialized = true;
 
     MR_LOG(LogFloorSceneProxy, Log, "FloorSceneProxy resources initialized successfully");
-
-
 
     return true;
 
@@ -440,29 +412,21 @@ void FFloorSceneProxy::DrawWithLighting(
 
     }
 
-
-
     // Update uniform buffers
 
     UpdateTransformBuffer(ViewMatrix, ProjectionMatrix, CameraPosition);
 
     UpdateLightBuffer(AffectingLights);
 
-
-
     // Set pipeline state
 
     CmdList->setPipelineState(PipelineState);
-
-
 
     // Bind uniform buffers
 
     CmdList->setConstantBuffer(0, TransformUniformBuffer);
 
     CmdList->setConstantBuffer(3, LightUniformBuffer);
-
-
 
     // Bind texture to slot 1 and 2 (texture1/texture2 in CubeLit shader)
 
@@ -492,8 +456,6 @@ void FFloorSceneProxy::DrawWithLighting(
 
     }
 
-
-
     // Bind vertex buffer
 
     TArray<TSharedPtr<MonsterRender::RHI::IRHIBuffer>> VertexBuffers;
@@ -502,13 +464,9 @@ void FFloorSceneProxy::DrawWithLighting(
 
     CmdList->setVertexBuffers(0, std::span<TSharedPtr<MonsterRender::RHI::IRHIBuffer>>(VertexBuffers.GetData(), VertexBuffers.Num()));
 
-
-
     // Draw 6 vertices (2 triangles)
 
     CmdList->draw(VertexCount, 0);
-
-
 
     MR_LOG(LogFloorSceneProxy, Verbose, "Floor drawn with %d lights", AffectingLights.Num());
 
@@ -542,8 +500,6 @@ void FFloorSceneProxy::DrawWithShadows(
 
     }
 
-
-
     // Fall back to non-shadow rendering if shadow resources not available
 
     if (!ShadowPipelineState || !ShadowMap)
@@ -556,15 +512,11 @@ void FFloorSceneProxy::DrawWithShadows(
 
     }
 
-
-
     // Update uniform buffers
 
     UpdateTransformBuffer(ViewMatrix, ProjectionMatrix, CameraPosition);
 
     UpdateLightBuffer(AffectingLights);
-
-
 
     // Get shadow map dimensions
 
@@ -574,13 +526,9 @@ void FFloorSceneProxy::DrawWithShadows(
 
     UpdateShadowBuffer(LightViewProjection, ShadowParams, ShadowMapWidth, ShadowMapHeight);
 
-
-
     // Set shadow pipeline state
 
     CmdList->setPipelineState(ShadowPipelineState);
-
-
 
     // Bind uniform buffers
 
@@ -589,8 +537,6 @@ void FFloorSceneProxy::DrawWithShadows(
     CmdList->setConstantBuffer(3, LightUniformBuffer);
 
     CmdList->setConstantBuffer(4, ShadowUniformBuffer);
-
-
 
     // Bind texture to slot 6 (diffuseTexture in CubeLitShadow shader)
 
@@ -624,8 +570,6 @@ void FFloorSceneProxy::DrawWithShadows(
 
     }
 
-
-
     // Bind shadow map to slot 5
 
     if (ShadowMap && ShadowSampler)
@@ -638,8 +582,6 @@ void FFloorSceneProxy::DrawWithShadows(
 
     }
 
-
-
     // Bind vertex buffer
 
     TArray<TSharedPtr<MonsterRender::RHI::IRHIBuffer>> VertexBuffers;
@@ -648,13 +590,9 @@ void FFloorSceneProxy::DrawWithShadows(
 
     CmdList->setVertexBuffers(0, std::span<TSharedPtr<MonsterRender::RHI::IRHIBuffer>>(VertexBuffers.GetData(), VertexBuffers.Num()));
 
-
-
     // Draw 6 vertices (2 triangles)
 
     CmdList->draw(VertexCount, 0);
-
-
 
     MR_LOG(LogFloorSceneProxy, Verbose, "Floor drawn with shadows and %d lights", AffectingLights.Num());
 
@@ -696,8 +634,6 @@ bool FFloorSceneProxy::CreateVertexBuffer()
 
     MR_LOG(LogFloorSceneProxy, Log, "Creating floor vertex buffer...");
 
-
-
     // Floor vertices: 2 triangles forming a large plane at Y=0
 
     // Format: Position(3) + Normal(3) + TexCoord(2) = 8 floats per vertex
@@ -728,13 +664,9 @@ bool FFloorSceneProxy::CreateVertexBuffer()
 
     };
 
-
-
     uint32 vertexDataSize = sizeof(planeVertices);
 
     VertexCount = 6;
-
-
 
     // Create vertex buffer
 
@@ -748,8 +680,6 @@ bool FFloorSceneProxy::CreateVertexBuffer()
 
     BufferDesc.debugName = "FloorProxy Vertex Buffer";
 
-
-
     VertexBuffer = Device->createBuffer(BufferDesc);
 
     if (!VertexBuffer)
@@ -759,8 +689,6 @@ bool FFloorSceneProxy::CreateVertexBuffer()
         return false;
 
     }
-
-
 
     // Upload vertex data
 
@@ -774,13 +702,9 @@ bool FFloorSceneProxy::CreateVertexBuffer()
 
     }
 
-
-
     std::memcpy(MappedData, planeVertices, vertexDataSize);
 
     VertexBuffer->unmap();
-
-
 
     MR_LOG(LogFloorSceneProxy, Log, "Vertex buffer created with %d vertices, size=%u bytes",
 
@@ -796,8 +720,6 @@ bool FFloorSceneProxy::CreateUniformBuffers()
 
     MR_LOG(LogFloorSceneProxy, Log, "Creating uniform buffers...");
 
-
-
     // Transform uniform buffer
 
     MonsterRender::RHI::BufferDesc TransformBufferDesc;
@@ -810,8 +732,6 @@ bool FFloorSceneProxy::CreateUniformBuffers()
 
     TransformBufferDesc.debugName = "FloorProxy Transform UBO";
 
-
-
     TransformUniformBuffer = Device->createBuffer(TransformBufferDesc);
 
     if (!TransformUniformBuffer)
@@ -821,8 +741,6 @@ bool FFloorSceneProxy::CreateUniformBuffers()
         return false;
 
     }
-
-
 
     // Light uniform buffer
 
@@ -836,8 +754,6 @@ bool FFloorSceneProxy::CreateUniformBuffers()
 
     LightBufferDesc.debugName = "FloorProxy Light UBO";
 
-
-
     LightUniformBuffer = Device->createBuffer(LightBufferDesc);
 
     if (!LightUniformBuffer)
@@ -847,8 +763,6 @@ bool FFloorSceneProxy::CreateUniformBuffers()
         return false;
 
     }
-
-
 
     // Shadow uniform buffer
 
@@ -862,8 +776,6 @@ bool FFloorSceneProxy::CreateUniformBuffers()
 
     ShadowBufferDesc.debugName = "FloorProxy Shadow UBO";
 
-
-
     ShadowUniformBuffer = Device->createBuffer(ShadowBufferDesc);
 
     if (!ShadowUniformBuffer)
@@ -873,8 +785,6 @@ bool FFloorSceneProxy::CreateUniformBuffers()
         return false;
 
     }
-
-
 
     MR_LOG(LogFloorSceneProxy, Log, "Uniform buffers created");
 
@@ -888,8 +798,6 @@ bool FFloorSceneProxy::CreateShaders()
 
     MR_LOG(LogFloorSceneProxy, Log, "Creating floor shaders...");
 
-
-
     std::string ProjectRoot = resolveFloorProjectRoot();
 
     if (ProjectRoot.empty())
@@ -899,8 +807,6 @@ bool FFloorSceneProxy::CreateShaders()
         MR_LOG(LogFloorSceneProxy, Warning, "Failed to resolve project root");
 
     }
-
-
 
     if (RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan)
 
@@ -922,8 +828,6 @@ bool FFloorSceneProxy::CreateShaders()
 
         }
 
-
-
         std::string PsPath = ProjectRoot + "Shaders/CubeLit.frag.spv";
 
         std::vector<uint8> PsSpv = MonsterRender::ShaderCompiler::readFileBytes(PsPath.c_str());
@@ -937,8 +841,6 @@ bool FFloorSceneProxy::CreateShaders()
             return false;
 
         }
-
-
 
         VertexShader = Device->createVertexShader(std::span<const uint8>(VsSpv.data(), VsSpv.size()));
 
@@ -956,8 +858,6 @@ bool FFloorSceneProxy::CreateShaders()
 
     }
 
-
-
     if (!VertexShader || !PixelShader)
 
     {
@@ -967,8 +867,6 @@ bool FFloorSceneProxy::CreateShaders()
         return false;
 
     }
-
-
 
     MR_LOG(LogFloorSceneProxy, Log, "Shaders created successfully");
 
@@ -982,13 +880,9 @@ bool FFloorSceneProxy::CreatePipelineState()
 
     MR_LOG(LogFloorSceneProxy, Log, "Creating floor pipeline state...");
 
-
-
     MonsterRender::RHI::EPixelFormat RenderTargetFormat = Device->getSwapChainFormat();
 
     MonsterRender::RHI::EPixelFormat DepthFormat = Device->getDepthFormat();
-
-
 
     MonsterRender::RHI::PipelineStateDesc PipelineDesc;
 
@@ -997,8 +891,6 @@ bool FFloorSceneProxy::CreatePipelineState()
     PipelineDesc.pixelShader = PixelShader;
 
     PipelineDesc.primitiveTopology = MonsterRender::RHI::EPrimitiveTopology::TriangleList;
-
-
 
     // Vertex input layout: Position(3) + Normal(3) + TexCoord(2) = 32 bytes stride
 
@@ -1014,8 +906,6 @@ bool FFloorSceneProxy::CreatePipelineState()
 
     PipelineDesc.vertexLayout.attributes.Add(positionAttr);
 
-
-
     MonsterRender::RHI::VertexAttribute normalAttr;
 
     normalAttr.location = 1;
@@ -1027,8 +917,6 @@ bool FFloorSceneProxy::CreatePipelineState()
     normalAttr.semanticName = "NORMAL";
 
     PipelineDesc.vertexLayout.attributes.Add(normalAttr);
-
-
 
     MonsterRender::RHI::VertexAttribute texCoordAttr;
 
@@ -1042,11 +930,7 @@ bool FFloorSceneProxy::CreatePipelineState()
 
     PipelineDesc.vertexLayout.attributes.Add(texCoordAttr);
 
-
-
     PipelineDesc.vertexLayout.stride = 32;
-
-
 
     // Rasterizer state - match cube settings
 
@@ -1056,8 +940,6 @@ bool FFloorSceneProxy::CreatePipelineState()
 
     PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (after viewport Y-flip)
 
-
-
     // Depth testing - use depthCompareOp like cube
 
     PipelineDesc.depthStencilState.depthEnable = true;
@@ -1066,13 +948,9 @@ bool FFloorSceneProxy::CreatePipelineState()
 
     PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
 
-
-
     // Blend state
 
     PipelineDesc.blendState.blendEnable = false;
-
-
 
     // Render target format - MUST be set like cube
 
@@ -1080,11 +958,7 @@ bool FFloorSceneProxy::CreatePipelineState()
 
     PipelineDesc.depthStencilFormat = DepthFormat;
 
-
-
     PipelineDesc.debugName = "FloorProxy Pipeline State";
-
-
 
     PipelineState = Device->createPipelineState(PipelineDesc);
 
@@ -1098,8 +972,6 @@ bool FFloorSceneProxy::CreatePipelineState()
 
     }
 
-
-
     MR_LOG(LogFloorSceneProxy, Log, "Pipeline state created successfully");
 
     return true;
@@ -1112,8 +984,6 @@ bool FFloorSceneProxy::CreateShadowShaders()
 
     MR_LOG(LogFloorSceneProxy, Log, "Creating shadow shaders...");
 
-
-
     std::string ProjectRoot = resolveFloorProjectRoot();
 
     if (ProjectRoot.empty())
@@ -1125,8 +995,6 @@ bool FFloorSceneProxy::CreateShadowShaders()
         return false;
 
     }
-
-
 
     if (RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan)
 
@@ -1148,8 +1016,6 @@ bool FFloorSceneProxy::CreateShadowShaders()
 
         }
 
-
-
         std::string PsPath = ProjectRoot + "Shaders/CubeLitShadow.frag.spv";
 
         std::vector<uint8> PsSpv = MonsterRender::ShaderCompiler::readFileBytes(PsPath.c_str());
@@ -1163,8 +1029,6 @@ bool FFloorSceneProxy::CreateShadowShaders()
             return false;
 
         }
-
-
 
         ShadowVertexShader = Device->createVertexShader(std::span<const uint8>(VsSpv.data(), VsSpv.size()));
 
@@ -1180,8 +1044,6 @@ bool FFloorSceneProxy::CreateShadowShaders()
 
     }
 
-
-
     if (!ShadowVertexShader || !ShadowPixelShader)
 
     {
@@ -1189,8 +1051,6 @@ bool FFloorSceneProxy::CreateShadowShaders()
         return false;
 
     }
-
-
 
     // Create shadow sampler with clamp to edge (border not always supported)
 
@@ -1208,8 +1068,6 @@ bool FFloorSceneProxy::CreateShadowShaders()
 
     ShadowSampler = Device->createSampler(ShadowSamplerDesc);
 
-
-
     MR_LOG(LogFloorSceneProxy, Log, "Shadow shaders created successfully");
 
     return true;
@@ -1222,13 +1080,9 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
 
     MR_LOG(LogFloorSceneProxy, Log, "Creating shadow pipeline state...");
 
-
-
     MonsterRender::RHI::EPixelFormat RenderTargetFormat = Device->getSwapChainFormat();
 
     MonsterRender::RHI::EPixelFormat DepthFormat = Device->getDepthFormat();
-
-
 
     MonsterRender::RHI::PipelineStateDesc PipelineDesc;
 
@@ -1237,8 +1091,6 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
     PipelineDesc.pixelShader = ShadowPixelShader;
 
     PipelineDesc.primitiveTopology = MonsterRender::RHI::EPrimitiveTopology::TriangleList;
-
-
 
     // Vertex layout: Position(3) + Normal(3) + TexCoord(2) = 32 bytes stride
 
@@ -1254,8 +1106,6 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
 
     PipelineDesc.vertexLayout.attributes.Add(positionAttr);
 
-
-
     MonsterRender::RHI::VertexAttribute normalAttr;
 
     normalAttr.location = 1;
@@ -1267,8 +1117,6 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
     normalAttr.semanticName = "NORMAL";
 
     PipelineDesc.vertexLayout.attributes.Add(normalAttr);
-
-
 
     MonsterRender::RHI::VertexAttribute texCoordAttr;
 
@@ -1282,11 +1130,7 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
 
     PipelineDesc.vertexLayout.attributes.Add(texCoordAttr);
 
-
-
     PipelineDesc.vertexLayout.stride = 32;
-
-
 
     // Rasterizer state - match cube settings
 
@@ -1296,8 +1140,6 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
 
     PipelineDesc.rasterizerState.frontCounterClockwise = false;  // CW is front (after viewport Y-flip)
 
-
-
     // Depth testing - use depthCompareOp like cube
 
     PipelineDesc.depthStencilState.depthEnable = true;
@@ -1306,13 +1148,9 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
 
     PipelineDesc.depthStencilState.depthCompareOp = MonsterRender::RHI::ECompareOp::Less;
 
-
-
     // Blend state
 
     PipelineDesc.blendState.blendEnable = false;
-
-
 
     // Render target format - MUST be set like cube
 
@@ -1320,11 +1158,7 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
 
     PipelineDesc.depthStencilFormat = DepthFormat;
 
-
-
     PipelineDesc.debugName = "FloorProxy Shadow Pipeline State";
-
-
 
     ShadowPipelineState = Device->createPipelineState(PipelineDesc);
 
@@ -1335,8 +1169,6 @@ bool FFloorSceneProxy::CreateShadowPipelineState()
         return false;
 
     }
-
-
 
     MR_LOG(LogFloorSceneProxy, Log, "Shadow pipeline state created successfully");
 
@@ -1368,23 +1200,15 @@ void FFloorSceneProxy::UpdateTransformBuffer(
 
     }
 
-
-
     FFloorUniformBuffer UBOData;
-
-
 
     // Get model matrix from local to world transform
 
     FMatrix ModelMatrix = GetLocalToWorld();
 
-
-
     // Calculate normal matrix (inverse transpose of model matrix)
 
     FMatrix NormalMatrix = ModelMatrix.GetTransposed().Inverse();
-
-
 
     // Convert matrices to float arrays (column-major for GPU)
 
@@ -1396,8 +1220,6 @@ void FFloorSceneProxy::UpdateTransformBuffer(
 
     MatrixToFloatArray(NormalMatrix, UBOData.NormalMatrix);
 
-
-
     // Camera position
 
     UBOData.CameraPosition[0] = static_cast<float>(CameraPosition.X);
@@ -1407,8 +1229,6 @@ void FFloorSceneProxy::UpdateTransformBuffer(
     UBOData.CameraPosition[2] = static_cast<float>(CameraPosition.Z);
 
     UBOData.CameraPosition[3] = 1.0f;
-
-
 
     // Upload to GPU
 
@@ -1438,13 +1258,9 @@ void FFloorSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
 
     }
 
-
-
     FFloorLightUniformBuffer LightUBO;
 
     std::memset(&LightUBO, 0, sizeof(LightUBO));
-
-
 
     // Ambient color
 
@@ -1455,8 +1271,6 @@ void FFloorSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
     LightUBO.AmbientColor[2] = 0.15f;
 
     LightUBO.AmbientColor[3] = 1.0f;
-
-
 
     // Process lights (max 8)
 
@@ -1476,17 +1290,11 @@ void FFloorSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
 
         }
 
-
-
         FLightSceneProxy* Proxy = Light->Proxy;
-
-
 
         // Get light type
 
         ELightType LightType = Proxy->GetLightType();
-
-
 
         // Position/Direction
 
@@ -1522,8 +1330,6 @@ void FFloorSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
 
         }
 
-
-
         // Color and intensity
 
         const FLinearColor& Color = Proxy->GetColor();
@@ -1538,8 +1344,6 @@ void FFloorSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
 
         LightUBO.Lights[i].Color[3] = Intensity;
 
-
-
         // Additional params
 
         LightUBO.Lights[i].Params[0] = Proxy->GetRadius();
@@ -1552,11 +1356,7 @@ void FFloorSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
 
     }
 
-
-
     LightUBO.NumLights = LightCount;
-
-
 
     // Upload to GPU
 
@@ -1594,17 +1394,11 @@ void FFloorSceneProxy::UpdateShadowBuffer(
 
     }
 
-
-
     FFloorShadowUniformBuffer ShadowUBO;
-
-
 
     // Light view projection matrix
 
     MatrixToFloatArray(LightViewProjection, ShadowUBO.LightViewProjection);
-
-
 
     // Shadow parameters
 
@@ -1616,8 +1410,6 @@ void FFloorSceneProxy::UpdateShadowBuffer(
 
     ShadowUBO.ShadowParams[3] = static_cast<float>(ShadowParams.W);  // shadow distance
 
-
-
     // Shadow map size
 
     ShadowUBO.ShadowMapSize[0] = static_cast<float>(ShadowMapWidth);
@@ -1627,8 +1419,6 @@ void FFloorSceneProxy::UpdateShadowBuffer(
     ShadowUBO.ShadowMapSize[2] = 1.0f / static_cast<float>(ShadowMapWidth);
 
     ShadowUBO.ShadowMapSize[3] = 1.0f / static_cast<float>(ShadowMapHeight);
-
-
 
     // Upload to GPU
 
