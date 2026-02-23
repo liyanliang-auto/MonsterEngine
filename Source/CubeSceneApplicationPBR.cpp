@@ -732,9 +732,9 @@ void CubeSceneApplication::updatePBRUniforms(
     rotY.M[0][0] = cosY; rotY.M[0][2] = sinY;
     rotY.M[2][0] = -sinY; rotY.M[2][2] = cosY;
     
-    // Position helmet at center of view
+    // Position helmet to the right of and at the same height as the highest cube (Y=2.0)
     m_helmetModelMatrix = FMatrix::MakeScale(FVector(1, 1, 1)) * rotX * rotY * 
-                          FMatrix::MakeTranslation(FVector(0, 0, 0));
+                          FMatrix::MakeTranslation(FVector(4.0, 2.0, 0.0));
     
     // Update view UBO
     // Note: Transpose matrices before upload because GLSL uses column-major layout
