@@ -2066,7 +2066,7 @@ bool CubeSceneApplication::initializeCamera()
 
     m_fpsCameraController = MakeUnique<FFPSCameraController>(
 
-        FVector(5.0, 3.0, 5.0),   // Position: diagonal view
+        FVector(8.0, 6.0, 8.0),   // Position: diagonal view
 
         FVector(0.0, 1.0, 0.0),   // World up (Y-up)
 
