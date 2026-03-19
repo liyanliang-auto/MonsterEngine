@@ -220,6 +220,7 @@
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandBuffer.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandBufferPool.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanCommandListContext.cpp" />
+    <ClCompile Include="Source\Platform\Vulkan\VulkanContextManager.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanPendingState.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDevice.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanDevice_Swapchain.cpp" />
