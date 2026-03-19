@@ -215,6 +215,8 @@
     <ClCompile Include="Source\TestCommandListPool.cpp" />
     <ClCompile Include="Source\TestParallelTranslator.cpp" />
     <ClCompile Include="Source\TestVulkanParallelRendering.cpp" />
+    <ClCompile Include="Source\TestMain.cpp" />
+    <ClCompile Include="Source\BenchmarkParallelRendering.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanAPI.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanBuffer.cpp" />
     <ClCompile Include="Source\Platform\Vulkan\VulkanRHICommandList.cpp" />
@@ -540,6 +542,11 @@
     <ClInclude Include="Include\Engine\Asset\GLTFLoader.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTest.h" />
     <ClInclude Include="Include\Tests\CubeSceneRendererTestApp.h" />
+    <ClInclude Include="Include\Tests\TestCommandListPool.h" />
+    <ClInclude Include="Include\Tests\TestParallelTranslator.h" />
+    <ClInclude Include="Include\Tests\TestVulkanParallelRendering.h" />
+    <ClInclude Include="Include\Tests\TestMain.h" />
+    <ClInclude Include="Include\Tests\BenchmarkParallelRendering.h" />
     <!-- RDG Module Headers -->
     <ClInclude Include="Include\RDG\RDG.h" />
     <ClInclude Include="Include\RDG\RDGFwd.h" />
