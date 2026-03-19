@@ -1,0 +1,455 @@
+// Copyright Monster Engine. All Rights Reserved.
+
+#include "RHI/FRHICommandListParallelTranslator.h"
+#include "Core/Log.h"
+
+namespace MonsterEngine {
+namespace RHI {
+
+// Initialize static members
+TUniquePtr<FRHICommandListParallelTranslator> FRHICommandListParallelTranslator::s_instance;
+
+FRHICommandListParallelTranslator::FRHICommandListParallelTranslator() {
+    MR_LOG_INFO("FRHICommandListParallelTranslator::FRHICommandListParallelTranslator - Parallel translator created");
+}
+
+FRHICommandListParallelTranslator::~FRHICommandListParallelTranslator() {
+    MR_LOG_INFO("FRHICommandListParallelTranslator::~FRHICommandListParallelTranslator - Destroying parallel translator");
+    
+    // Wait for all pending translations
+    WaitForAllTranslations();
+    
+    // Clean up active contexts
+    {
+        std::lock_guard<std::mutex> lock(m_contextMutex);
+        m_activeContexts.clear();
+    }
+    
+    MR_LOG_INFO("FRHICommandListParallelTranslator::~FRHICommandListParallelTranslator - Parallel translator destroyed. " +
+               std::to_string(m_totalTranslations.load()) + " total translations, " +
+               std::to_string(m_parallelTranslations.load()) + " parallel, " +
+               std::to_string(m_serialTranslations.load()) + " serial");
+}
+
+bool FRHICommandListParallelTranslator::Initialize(bool bEnableParallelTranslate, uint32 MinDrawsPerTranslate) {
+    if (s_instance) {
+        MR_LOG_WARNING("FRHICommandListParallelTranslator::Initialize - Parallel translator already initialized");
+        return true;
+    }
+    
+    MR_LOG_INFO("FRHICommandListParallelTranslator::Initialize - Initializing parallel translator. " +
+               String("Parallel translate: ") + (bEnableParallelTranslate ? "enabled" : "disabled") +
+               ", Min draws: " + std::to_string(MinDrawsPerTranslate));
+    
+    s_instance = MakeUnique<FRHICommandListParallelTranslator>();
+    s_instance->m_bEnableParallelTranslate = bEnableParallelTranslate;
+    s_instance->m_minDrawsPerTranslate = MinDrawsPerTranslate;
+    
+    MR_LOG_INFO("FRHICommandListParallelTranslator::Initialize - Parallel translator initialized successfully");
+    return true;
+}
+
+void FRHICommandListParallelTranslator::Shutdown() {
+    if (!s_instance) {
+        MR_LOG_WARNING("FRHICommandListParallelTranslator::Shutdown - Parallel translator not initialized");
+        return;
+    }
+    
+    MR_LOG_INFO("FRHICommandListParallelTranslator::Shutdown - Shutting down parallel translator");
+    
+    // Get final statistics
+    auto stats = s_instance->GetStatsInternal();
+    MR_LOG_INFO("FRHICommandListParallelTranslator::Shutdown - Final stats: " +
+               std::to_string(stats.totalTranslations) + " total, " +
+               std::to_string(stats.parallelTranslations) + " parallel, " +
+               std::to_string(stats.serialTranslations) + " serial, " +
+               std::to_string(stats.peakActiveTasks) + " peak active tasks");
+    
+    s_instance.reset();
+    
+    MR_LOG_INFO("FRHICommandListParallelTranslator::Shutdown - Parallel translator shutdown complete");
+}
+
+bool FRHICommandListParallelTranslator::IsInitialized() {
+    return s_instance != nullptr;
+}
+
+FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslate(
+    TSpan<FQueuedCommandList> CommandLists,
+    ETranslatePriority Priority,
+    uint32 MinDrawsPerTranslate
+) {
+    if (!s_instance) {
+        MR_LOG_ERROR("FRHICommandListParallelTranslator::QueueParallelTranslate - Parallel translator not initialized");
+        return nullptr;
+    }
+    
+    return s_instance->QueueParallelTranslateInternal(CommandLists, Priority, MinDrawsPerTranslate);
+}
+
+FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslate(
+    FQueuedCommandList CommandList,
+    ETranslatePriority Priority
+) {
+    TArray<FQueuedCommandList> cmdLists = { CommandList };
+    return QueueParallelTranslate(TSpan<FQueuedCommandList>(cmdLists), Priority, 0);
+}
+
+void FRHICommandListParallelTranslator::WaitForAllTranslations() {
+    if (!s_instance) {
+        return;
+    }
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::WaitForAllTranslations - Waiting for all translations");
+    
+    TArray<FGraphEventRef> eventsToWait;
+    
+    {
+        std::lock_guard<std::mutex> lock(s_instance->m_contextMutex);
+        
+        for (const auto& context : s_instance->m_activeContexts) {
+            if (context && context->completionEvent) {
+                eventsToWait.push_back(context->completionEvent);
+            }
+        }
+    }
+    
+    // Wait for all events
+    for (auto& event : eventsToWait) {
+        if (event) {
+            event->Wait();
+        }
+    }
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::WaitForAllTranslations - All translations complete");
+}
+
+FRHICommandListParallelTranslator::FStats FRHICommandListParallelTranslator::GetStats() {
+    if (!s_instance) {
+        return FStats{};
+    }
+    
+    return s_instance->GetStatsInternal();
+}
+
+FRHICommandListParallelTranslator& FRHICommandListParallelTranslator::Get() {
+    return *s_instance;
+}
+
+FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslateInternal(
+    TSpan<FQueuedCommandList> CommandLists,
+    ETranslatePriority Priority,
+    uint32 MinDrawsPerTranslate
+) {
+    if (CommandLists.empty()) {
+        MR_LOG_WARNING("FRHICommandListParallelTranslator::QueueParallelTranslateInternal - Empty command list array");
+        return nullptr;
+    }
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::QueueParallelTranslateInternal - Queueing " +
+               std::to_string(CommandLists.size()) + " command lists for translation");
+    
+    // Create parallel context
+    auto context = MakeUnique<FParallelContext>();
+    context->priority = Priority;
+    context->numCommandLists = static_cast<uint32>(CommandLists.size());
+    
+    // Copy command lists
+    for (const auto& queuedCmdList : CommandLists) {
+        context->commandLists.push_back(queuedCmdList);
+        context->totalDraws += queuedCmdList.numDraws;
+    }
+    
+    // Determine if we should use parallel translation
+    bool bUseParallel = ShouldUseParallelTranslation(CommandLists, Priority, MinDrawsPerTranslate);
+    
+    if (bUseParallel) {
+        MR_LOG_DEBUG("FRHICommandListParallelTranslator::QueueParallelTranslateInternal - Using parallel translation");
+        
+        // Create translation tasks
+        TArray<FGraphEventRef> translationEvents;
+        auto tasks = CreateTranslationTasks(CommandLists, translationEvents);
+        
+        context->translationEvents = translationEvents;
+        
+        // Dispatch translation tasks to worker threads
+        for (auto& task : tasks) {
+            // Determine task priority based on translation priority
+            String taskName = "ParallelTranslate_" + std::to_string(task.taskIndex);
+            
+            FGraphEventRef taskEvent = FTaskGraph::QueueNamedTask(
+                taskName,
+                [this, task]() {
+                    TranslateCommandList(task);
+                },
+                {} // No prerequisites for now
+            );
+            
+            // Store the task event
+            if (task.taskIndex < translationEvents.size()) {
+                translationEvents[task.taskIndex] = taskEvent;
+            }
+        }
+        
+        // Create completion event that waits for all translation tasks
+        context->completionEvent = MakeGraphEvent();
+        
+        // Dispatch a task to mark completion when all translations are done
+        FTaskGraph::QueueNamedTask(
+            "ParallelTranslateComplete",
+            [completionEvent = context->completionEvent]() {
+                completionEvent->Complete();
+            },
+            translationEvents // Wait for all translation tasks
+        );
+        
+        m_parallelTranslations.fetch_add(1, std::memory_order_relaxed);
+    }
+    else {
+        MR_LOG_DEBUG("FRHICommandListParallelTranslator::QueueParallelTranslateInternal - Using serial translation");
+        
+        // Serial translation - execute on current thread or RHI thread
+        context->completionEvent = MakeGraphEvent();
+        
+        for (const auto& queuedCmdList : CommandLists) {
+            if (queuedCmdList.cmdList) {
+                // For now, just mark as complete
+                // In production, this would submit to RHI thread
+                MR_LOG_DEBUG("FRHICommandListParallelTranslator::QueueParallelTranslateInternal - "
+                           "Serial translate command list (placeholder)");
+            }
+        }
+        
+        context->completionEvent->Complete();
+        m_serialTranslations.fetch_add(1, std::memory_order_relaxed);
+    }
+    
+    m_totalTranslations.fetch_add(1, std::memory_order_relaxed);
+    
+    // Store context
+    FGraphEventRef completionEvent = context->completionEvent;
+    {
+        std::lock_guard<std::mutex> lock(m_contextMutex);
+        m_activeContexts.push_back(std::move(context));
+    }
+    
+    return completionEvent;
+}
+
+void FRHICommandListParallelTranslator::TranslateCommandList(FTranslationTask Task) {
+    if (!Task.cmdList) {
+        MR_LOG_WARNING("FRHICommandListParallelTranslator::TranslateCommandList - Null command list");
+        return;
+    }
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - Translating command list " +
+               std::to_string(Task.taskIndex));
+    
+    // Update active task count
+    uint32 activeCount = m_activeTasks.fetch_add(1, std::memory_order_relaxed) + 1;
+    
+    // Update peak count
+    uint32 currentPeak = m_peakActiveTasks.load(std::memory_order_relaxed);
+    while (activeCount > currentPeak) {
+        if (m_peakActiveTasks.compare_exchange_weak(currentPeak, activeCount, std::memory_order_relaxed)) {
+            break;
+        }
+    }
+    
+    // Perform translation
+    // In a real implementation, this would:
+    // 1. Replay RHI commands into platform-specific command buffer
+    // 2. Handle resource transitions and barriers
+    // 3. Optimize command ordering
+    // 4. Submit to GPU queue
+    
+    // For now, just simulate translation work
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
+               "Translation complete for task " + std::to_string(Task.taskIndex));
+    
+    // Mark task complete
+    if (Task.completionEvent) {
+        Task.completionEvent->Complete();
+    }
+    
+    // Update active task count
+    m_activeTasks.fetch_sub(1, std::memory_order_relaxed);
+}
+
+bool FRHICommandListParallelTranslator::ShouldUseParallelTranslation(
+    TSpan<FQueuedCommandList> CommandLists,
+    ETranslatePriority Priority,
+    uint32 MinDrawsPerTranslate
+) const {
+    // Check if parallel translation is disabled
+    if (Priority == ETranslatePriority::Disabled) {
+        return false;
+    }
+    
+    // Check if parallel translation is globally disabled
+    if (!m_bEnableParallelTranslate) {
+        return false;
+    }
+    
+    // Need at least 2 command lists for parallel translation
+    if (CommandLists.size() < 2) {
+        return false;
+    }
+    
+    // Check if we have enough draws to justify parallel translation
+    uint32 totalDraws = 0;
+    for (const auto& cmdList : CommandLists) {
+        totalDraws += cmdList.numDraws;
+    }
+    
+    uint32 minDraws = MinDrawsPerTranslate > 0 ? MinDrawsPerTranslate : m_minDrawsPerTranslate;
+    if (totalDraws < minDraws) {
+        MR_LOG_DEBUG("FRHICommandListParallelTranslator::ShouldUseParallelTranslation - "
+                   "Not enough draws (" + std::to_string(totalDraws) + " < " + 
+                   std::to_string(minDraws) + "), using serial translation");
+        return false;
+    }
+    
+    return true;
+}
+
+TArray<FRHICommandListParallelTranslator::FTranslationTask> 
+FRHICommandListParallelTranslator::CreateTranslationTasks(
+    TSpan<FQueuedCommandList> CommandLists,
+    TArray<FGraphEventRef>& OutEvents
+) {
+    TArray<FTranslationTask> tasks;
+    tasks.reserve(CommandLists.size());
+    OutEvents.reserve(CommandLists.size());
+    
+    for (uint32 i = 0; i < CommandLists.size(); ++i) {
+        auto& queuedCmdList = CommandLists[i];
+        
+        if (!queuedCmdList.cmdList) {
+            MR_LOG_WARNING("FRHICommandListParallelTranslator::CreateTranslationTasks - "
+                         "Null command list at index " + std::to_string(i));
+            continue;
+        }
+        
+        // Create completion event for this task
+        FGraphEventRef taskEvent = MakeGraphEvent();
+        OutEvents.push_back(taskEvent);
+        
+        // Create translation task
+        FTranslationTask task(queuedCmdList.cmdList, taskEvent, i);
+        tasks.push_back(task);
+        
+        MR_LOG_DEBUG("FRHICommandListParallelTranslator::CreateTranslationTasks - "
+                   "Created task " + std::to_string(i) + " with " + 
+                   std::to_string(queuedCmdList.numDraws) + " draws");
+    }
+    
+    return tasks;
+}
+
+FRHICommandListParallelTranslator::FStats FRHICommandListParallelTranslator::GetStatsInternal() const {
+    FStats stats;
+    
+    stats.totalTranslations = m_totalTranslations.load(std::memory_order_relaxed);
+    stats.parallelTranslations = m_parallelTranslations.load(std::memory_order_relaxed);
+    stats.serialTranslations = m_serialTranslations.load(std::memory_order_relaxed);
+    stats.activeTasks = m_activeTasks.load(std::memory_order_relaxed);
+    stats.peakActiveTasks = m_peakActiveTasks.load(std::memory_order_relaxed);
+    
+    return stats;
+}
+
+// ============================================================================
+// FParallelCommandListSet Implementation
+// ============================================================================
+
+FParallelCommandListSet::FParallelCommandListSet() {
+    MR_LOG_DEBUG("FParallelCommandListSet::FParallelCommandListSet - Created parallel command list set");
+}
+
+FParallelCommandListSet::~FParallelCommandListSet() {
+    MR_LOG_DEBUG("FParallelCommandListSet::~FParallelCommandListSet - Destroying parallel command list set");
+    
+    // Wait for completion if submitted
+    if (m_bSubmitted && m_completionEvent) {
+        Wait();
+    }
+    
+    // Recycle all command lists back to pool
+    for (auto* cmdList : m_commandLists) {
+        if (cmdList) {
+            FRHICommandListPool::RecycleCommandList(cmdList);
+        }
+    }
+    
+    m_commandLists.clear();
+}
+
+MonsterRender::RHI::IRHICommandList* FParallelCommandListSet::AllocateCommandList(
+    FRHICommandListPool::ECommandListType Type
+) {
+    if (m_bSubmitted) {
+        MR_LOG_ERROR("FParallelCommandListSet::AllocateCommandList - Cannot allocate after submission");
+        return nullptr;
+    }
+    
+    auto* cmdList = FRHICommandListPool::AllocateCommandList(Type);
+    if (cmdList) {
+        m_commandLists.push_back(cmdList);
+        MR_LOG_DEBUG("FParallelCommandListSet::AllocateCommandList - Allocated command list " +
+                   std::to_string(m_commandLists.size()));
+    }
+    
+    return cmdList;
+}
+
+FGraphEventRef FParallelCommandListSet::Submit(ETranslatePriority Priority) {
+    if (m_bSubmitted) {
+        MR_LOG_WARNING("FParallelCommandListSet::Submit - Already submitted");
+        return m_completionEvent;
+    }
+    
+    if (m_commandLists.empty()) {
+        MR_LOG_WARNING("FParallelCommandListSet::Submit - No command lists to submit");
+        return nullptr;
+    }
+    
+    MR_LOG_DEBUG("FParallelCommandListSet::Submit - Submitting " +
+               std::to_string(m_commandLists.size()) + " command lists");
+    
+    // Create queued command list array
+    TArray<FQueuedCommandList> queuedLists;
+    queuedLists.reserve(m_commandLists.size());
+    
+    for (auto* cmdList : m_commandLists) {
+        if (cmdList) {
+            queuedLists.emplace_back(cmdList, 0);
+        }
+    }
+    
+    // Submit for parallel translation
+    m_completionEvent = FRHICommandListParallelTranslator::QueueParallelTranslate(
+        TSpan<FQueuedCommandList>(queuedLists),
+        Priority
+    );
+    
+    m_bSubmitted = true;
+    
+    return m_completionEvent;
+}
+
+void FParallelCommandListSet::Wait() {
+    if (!m_bSubmitted) {
+        MR_LOG_WARNING("FParallelCommandListSet::Wait - Not yet submitted");
+        return;
+    }
+    
+    if (m_completionEvent) {
+        MR_LOG_DEBUG("FParallelCommandListSet::Wait - Waiting for completion");
+        m_completionEvent->Wait();
+        MR_LOG_DEBUG("FParallelCommandListSet::Wait - Completion event signaled");
+    }
+}
+
+} // namespace RHI
+} // namespace MonsterEngine
