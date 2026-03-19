@@ -248,7 +248,7 @@ void FRHICommandListParallelTranslator::TranslateCommandList(FTranslationTask Ta
     // Update active task count
     uint32 activeCount = m_activeTasks.fetch_add(1, std::memory_order_relaxed) + 1;
     
-    // Update peak count
+    // Update peak count using CAS loop
     uint32 currentPeak = m_peakActiveTasks.load(std::memory_order_relaxed);
     while (activeCount > currentPeak) {
         if (m_peakActiveTasks.compare_exchange_weak(currentPeak, activeCount, std::memory_order_relaxed)) {
@@ -257,15 +257,30 @@ void FRHICommandListParallelTranslator::TranslateCommandList(FTranslationTask Ta
     }
     
     // Perform translation
-    // In a real implementation, this would:
-    // 1. Replay RHI commands into platform-specific command buffer
-    // 2. Handle resource transitions and barriers
-    // 3. Optimize command ordering
-    // 4. Submit to GPU queue
+    // This is the core parallel translation logic that integrates with Vulkan backend
+    // 
+    // Translation steps:
+    // 1. Get or create Vulkan context for current thread
+    // 2. Allocate secondary command buffer from thread-local pool
+    // 3. Replay RHI commands into Vulkan command buffer
+    // 4. Handle resource transitions and barriers
+    // 5. Store translated command buffer for later merging
+    //
+    // Note: In a full implementation, this would:
+    // - Use FVulkanContextManager::GetOrCreateForCurrentThread()
+    // - Use FVulkanThreadLocalCommandPool for command buffer allocation
+    // - Cast Task.cmdList to VulkanRHICommandList and call ReplayToVulkanCommandBuffer()
+    // - Manage secondary command buffer lifecycle
+    // - Store the translated VkCommandBuffer in the task for later vkCmdExecuteCommands
+    //
+    // For now, we simulate the translation work as the actual Vulkan integration
+    // requires VulkanRHICommandList to be fully implemented with command recording.
+    // This will be completed in the next phase when we implement the full command
+    // replay system.
     
-    // For now, just simulate translation work
     MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
-               "Translation complete for task " + std::to_string(Task.taskIndex));
+               "Translation complete for task " + std::to_string(Task.taskIndex) +
+               ". Thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
     
     // Mark task complete
     if (Task.completionEvent) {
