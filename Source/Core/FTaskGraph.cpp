@@ -194,7 +194,7 @@ void FTaskGraph::ProcessTasks(uint32 WorkerIndex) {
     MR_LOG_DEBUG("FTaskGraph::ProcessTasks - Worker " + std::to_string(WorkerIndex) + " started");
     
     while (!m_isShuttingDown.load(std::memory_order_acquire)) {
-        FTaskEntry taskEntry("", nullptr, {}, "");
+        FTaskEntry taskEntry;
         
         if (TryGetNextTask(taskEntry)) {
             // Execute the task

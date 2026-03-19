@@ -96,7 +96,7 @@ void FRunnableThread::SetThreadPriority(EThreadPriority NewPriority) {
                 break;
         }
         
-        SetThreadPriority(threadHandle, priority);
+        ::SetThreadPriority(threadHandle, priority);
         MR_LOG_DEBUG("FRunnableThread::SetThreadPriority - Set priority for thread: " + 
                     m_threadName + " to " + std::to_string(static_cast<int>(NewPriority)));
     }

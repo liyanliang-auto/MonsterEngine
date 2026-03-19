@@ -1,13 +1,39 @@
 #pragma once
 
 #include "Core/CoreMinimal.h"
+#include "Core/FGraphEvent.h"
+#include "Core/Assert.h"
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHIResource.h"
 #include "RHI/RHIResources.h"
 #include "RHI/IRHIDescriptorSet.h"
 #include "RDG/RDGDefinitions.h"
+#include <atomic>
 
 namespace MonsterRender::RHI {
+    
+    /**
+     * Command list state enumeration
+     * Tracks the lifecycle of a command list from allocation to execution
+     * Reference: UE5 command list state management
+     */
+    enum class ERHICommandListState : uint8 {
+        NotAllocated,    // Command list has not been allocated from pool
+        Recording,       // Currently recording commands
+        Recorded,        // Recording finished, ready for submission
+        Executing,       // Currently being executed on RHI thread
+        Executed         // Execution completed
+    };
+    
+    /**
+     * Recording thread type
+     * Identifies which thread is recording commands
+     * Reference: UE5 ERecordingThread
+     */
+    enum class ERecordingThread : uint8 {
+        Render,          // Main render thread
+        Any              // Any worker thread (for parallel recording)
+    };
     
 	//IRHICommandList（命令列表接口）
 	//	├── 生命周期：begin / end / reset
@@ -25,10 +51,23 @@ namespace MonsterRender::RHI {
     /**
      * Command list interface for recording GPU commands
      * Follows a deferred execution model similar to D3D12/Vulkan
+     * 
+     * Enhanced for parallel recording support:
+     * - State tracking (NotAllocated -> Recording -> Recorded -> Executing -> Executed)
+     * - Dispatch prerequisites for dependency management
+     * - Completion events for synchronization
+     * - Thread-safe parallel recording
+     * 
+     * Reference: UE5 FRHICommandListBase
      */
     class IRHICommandList {
     public:
-        IRHICommandList() = default;
+        IRHICommandList()
+            : m_state(ERHICommandListState::NotAllocated)
+            , m_recordingThread(ERecordingThread::Render)
+            , m_uid(s_nextUID.fetch_add(1, std::memory_order_relaxed))
+        {}
+        
         virtual ~IRHICommandList() = default;
         
         // Non-copyable, movable
@@ -37,22 +76,150 @@ namespace MonsterRender::RHI {
         IRHICommandList(IRHICommandList&&) = default;
         IRHICommandList& operator=(IRHICommandList&&) = default;
         
+        // ========================================================================
+        // Lifecycle Management
+        // ========================================================================
+        
         /**
          * Begin recording commands
          * Must be called before any draw/dispatch commands
+         * Transitions state: NotAllocated/Executed -> Recording
          */
-        virtual void begin() = 0;
+        virtual void begin() {
+            m_state = ERHICommandListState::Recording;
+        }
         
         /**
          * End recording commands
          * After this call, the command list can be submitted for execution
+         * Transitions state: Recording -> Recorded
          */
-        virtual void end() = 0;
+        virtual void end() {
+            m_state = ERHICommandListState::Recorded;
+        }
         
         /**
          * Reset the command list for reuse
+         * Clears all recorded commands and resets state
+         * Transitions state: Any -> NotAllocated
          */
-        virtual void reset() = 0;
+        virtual void reset() {
+            m_state = ERHICommandListState::NotAllocated;
+            m_dispatchPrerequisites.clear();
+            m_completionEvent.reset();
+        }
+        
+        /**
+         * Finish recording and mark ready for dispatch
+         * Must be called as the last command in a parallel rendering task
+         * Not safe to continue using the command list after this call
+         * 
+         * Reference: UE5 FRHICommandListBase::FinishRecording()
+         * 
+         * @note Never call on the immediate command list
+         */
+        virtual void FinishRecording() {
+            MR_ASSERT(m_state == ERHICommandListState::Recording);
+            m_state = ERHICommandListState::Recorded;
+            
+            // Signal completion event if it exists
+            if (m_completionEvent) {
+                m_completionEvent->Complete();
+            }
+        }
+        
+        // ========================================================================
+        // State Query
+        // ========================================================================
+        
+        /**
+         * Check if command list is currently recording
+         */
+        bool IsRecording() const {
+            return m_state == ERHICommandListState::Recording;
+        }
+        
+        /**
+         * Check if command list has finished recording
+         */
+        bool IsRecorded() const {
+            return m_state == ERHICommandListState::Recorded;
+        }
+        
+        /**
+         * Check if command list is currently executing
+         */
+        bool IsExecuting() const {
+            return m_state == ERHICommandListState::Executing;
+        }
+        
+        /**
+         * Get current command list state
+         */
+        ERHICommandListState GetState() const {
+            return m_state;
+        }
+        
+        /**
+         * Get unique identifier for this command list
+         */
+        uint32 GetUID() const {
+            return m_uid;
+        }
+        
+        /**
+         * Get recording thread type
+         */
+        ERecordingThread GetRecordingThread() const {
+            return m_recordingThread;
+        }
+        
+        // ========================================================================
+        // Dispatch Prerequisites and Events
+        // ========================================================================
+        
+        /**
+         * Add a graph event as a dispatch dependency
+         * The command list will not be dispatched to the RHI thread until
+         * all its dispatch prerequisites have been completed
+         * 
+         * Reference: UE5 FRHICommandListBase::AddDispatchPrerequisite()
+         * 
+         * @param Prereq Graph event that must complete before dispatch
+         * @note Not safe to call after FinishRecording()
+         */
+        void AddDispatchPrerequisite(const MonsterEngine::FGraphEventRef& Prereq) {
+            MR_ASSERT(m_state == ERHICommandListState::Recording);
+            if (Prereq) {
+                m_dispatchPrerequisites.push_back(Prereq);
+            }
+        }
+        
+        /**
+         * Get all dispatch prerequisites
+         */
+        const MonsterEngine::FGraphEventArray& GetDispatchPrerequisites() const {
+            return m_dispatchPrerequisites;
+        }
+        
+        /**
+         * Set the completion event for this command list
+         * This event will be signaled when the command list finishes execution
+         */
+        void SetCompletionEvent(const MonsterEngine::FGraphEventRef& Event) {
+            m_completionEvent = Event;
+        }
+        
+        /**
+         * Get the completion event for this command list
+         */
+        MonsterEngine::FGraphEventRef GetCompletionEvent() const {
+            return m_completionEvent;
+        }
+        
+        // ========================================================================
+        // Resource Binding
+        // ========================================================================
         
         // Resource binding
         /**
@@ -318,6 +485,40 @@ namespace MonsterRender::RHI {
          * Insert debug marker
          */
         virtual void setMarker(const String& name) = 0;
+        
+    protected:
+        /**
+         * Set command list state (for derived classes)
+         */
+        void SetState(ERHICommandListState NewState) {
+            m_state = NewState;
+        }
+        
+        /**
+         * Set recording thread type (for derived classes)
+         */
+        void SetRecordingThread(ERecordingThread Thread) {
+            m_recordingThread = Thread;
+        }
+        
+    private:
+        /** Current state of the command list */
+        ERHICommandListState m_state;
+        
+        /** Thread that is recording commands */
+        ERecordingThread m_recordingThread;
+        
+        /** Unique identifier for this command list */
+        uint32 m_uid;
+        
+        /** Graph events that must complete before this command list can be dispatched */
+        MonsterEngine::FGraphEventArray m_dispatchPrerequisites;
+        
+        /** Event that will be signaled when this command list completes execution */
+        MonsterEngine::FGraphEventRef m_completionEvent;
+        
+        /** Global counter for generating unique IDs */
+        static std::atomic<uint32> s_nextUID;
     };
     
     /**

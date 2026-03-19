@@ -86,7 +86,7 @@ bool FRHICommandListExecutor::IsInitialized() {
     return s_instance != nullptr;
 }
 
-IRHICommandList* FRHICommandListExecutor::GetImmediateCommandList() {
+MonsterRender::RHI::IRHICommandList* FRHICommandListExecutor::GetImmediateCommandList() {
     if (!m_immediateCommandList) {
         MR_LOG_WARNING("FRHICommandListExecutor::GetImmediateCommandList - Immediate command list not created yet");
         // TODO: Create immediate command list based on current RHI
@@ -113,7 +113,7 @@ void FRHICommandListExecutor::ExecuteAndResetImmediate() {
 }
 
 FGraphEventRef FRHICommandListExecutor::QueueAsyncCommandListSubmit(
-    IRHICommandList* CommandList,
+    MonsterRender::RHI::IRHICommandList* CommandList,
     const FGraphEventArray& Prerequisites
 ) {
     if (!CommandList) {
@@ -208,7 +208,7 @@ FRHICommandListExecutor::FStats FRHICommandListExecutor::GetStats() const {
     return stats;
 }
 
-void FRHICommandListExecutor::ExecuteCommandList(IRHICommandList* CommandList) {
+void FRHICommandListExecutor::ExecuteCommandList(MonsterRender::RHI::IRHICommandList* CommandList) {
     if (!CommandList) {
         return;
     }
@@ -227,7 +227,7 @@ void FRHICommandListExecutor::ExecuteCommandList(IRHICommandList* CommandList) {
     MR_LOG_DEBUG("FRHICommandListExecutor::ExecuteCommandList - Command list executed");
 }
 
-FGraphEventRef FRHICommandListExecutor::SubmitCommandListToRHIThread(IRHICommandList* CommandList) {
+FGraphEventRef FRHICommandListExecutor::SubmitCommandListToRHIThread(MonsterRender::RHI::IRHICommandList* CommandList) {
     if (!CommandList) {
         return nullptr;
     }
