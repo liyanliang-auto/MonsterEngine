@@ -83,9 +83,10 @@ public:
     virtual void Stop() override;
     virtual void Exit() override;
 
-private:
     FRHIThread();
     ~FRHIThread();
+    
+private:
 
     /**
      * Process tasks from the queue

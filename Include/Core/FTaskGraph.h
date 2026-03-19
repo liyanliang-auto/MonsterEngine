@@ -89,6 +89,16 @@ public:
      */
     static uint32 GetNumPendingTasks();
     
+    /**
+     * Constructor (public for TUniquePtr)
+     */
+    FTaskGraph();
+    
+    /**
+     * Destructor
+     */
+    ~FTaskGraph();
+    
 private:
     /**
      * Task worker thread
@@ -118,6 +128,8 @@ private:
         FGraphEventArray prerequisites;
         String taskName;
         
+        FTaskEntry() = default;
+        
         FTaskEntry(FTaskDelegate&& InTask, FGraphEventRef InEvent, 
                   const FGraphEventArray& InPrereqs, const String& InName)
             : task(std::move(InTask))
@@ -127,15 +139,7 @@ private:
         {}
     };
     
-    /**
-     * Constructor (private - singleton pattern)
-     */
-    FTaskGraph();
-    
-    /**
-     * Destructor
-     */
-    ~FTaskGraph();
+private:
     
     /**
      * Get singleton instance

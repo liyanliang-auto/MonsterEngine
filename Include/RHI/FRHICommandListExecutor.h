@@ -12,9 +12,6 @@
 namespace MonsterEngine {
 namespace RHI {
 
-// Forward declarations
-class IRHICommandContext;
-
 /**
  * FRHICommandListExecutor
  * 
@@ -58,7 +55,7 @@ public:
      * Get the immediate command list (used by render thread)
      * This is the main command list for recording rendering commands
      */
-    IRHICommandList* GetImmediateCommandList();
+    MonsterRender::RHI::IRHICommandList* GetImmediateCommandList();
 
     /**
      * Execute and reset the immediate command list
@@ -73,7 +70,7 @@ public:
      * @return Event that will be signaled when command list completes
      */
     FGraphEventRef QueueAsyncCommandListSubmit(
-        IRHICommandList* CommandList,
+        MonsterRender::RHI::IRHICommandList* CommandList,
         const FGraphEventArray& Prerequisites = FGraphEventArray()
     );
 
@@ -104,38 +101,39 @@ public:
 
     FStats GetStats() const;
 
-private:
     FRHICommandListExecutor();
     ~FRHICommandListExecutor();
+
+private:
 
     /**
      * Execute a command list on the RHI thread
      */
-    void ExecuteCommandList(IRHICommandList* CommandList);
+    void ExecuteCommandList(MonsterRender::RHI::IRHICommandList* CommandList);
 
     /**
      * Internal helper to submit command list to RHI thread
      */
-    FGraphEventRef SubmitCommandListToRHIThread(IRHICommandList* CommandList);
+    FGraphEventRef SubmitCommandListToRHIThread(MonsterRender::RHI::IRHICommandList* CommandList);
 
 private:
     /** Singleton instance */
     static TUniquePtr<FRHICommandListExecutor> s_instance;
 
     /** The immediate command list (owned by executor) */
-    TUniquePtr<IRHICommandList> m_immediateCommandList;
+    TUniquePtr<MonsterRender::RHI::IRHICommandList> m_immediateCommandList;
 
     /** Whether to use RHI thread */
     bool m_bUseRHIThread;
 
     /** Command list queue entry */
     struct FCommandListEntry {
-        IRHICommandList* commandList;
+        MonsterRender::RHI::IRHICommandList* commandList;
         FGraphEventRef completionEvent;
         FGraphEventArray prerequisites;
 
         FCommandListEntry() : commandList(nullptr) {}
-        FCommandListEntry(IRHICommandList* InCmdList, FGraphEventRef InEvent, const FGraphEventArray& InPrereqs)
+        FCommandListEntry(MonsterRender::RHI::IRHICommandList* InCmdList, FGraphEventRef InEvent, const FGraphEventArray& InPrereqs)
             : commandList(InCmdList)
             , completionEvent(InEvent)
             , prerequisites(InPrereqs)
@@ -144,7 +142,7 @@ private:
 
     /** Pending command lists */
     std::queue<FCommandListEntry> m_commandListQueue;
-    std::mutex m_queueMutex;
+    mutable std::mutex m_queueMutex;
 
     /** Statistics */
     std::atomic<uint32> m_totalCommandListsQueued;
