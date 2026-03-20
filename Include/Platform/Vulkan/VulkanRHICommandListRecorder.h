@@ -10,7 +10,7 @@ namespace MonsterRender::RHI::Vulkan {
 
 // Forward declarations
 class VulkanDevice;
-class FVulkanCommandBuffer;
+class FVulkanCmdBuffer;
 class FVulkanContext;
 
 /**
@@ -341,7 +341,7 @@ public:
      * @param context Vulkan context for resource access
      * @return true if replay succeeded, false otherwise
      */
-    bool ReplayToVulkanCommandBuffer(FVulkanCommandBuffer* cmdBuffer, FVulkanContext* context);
+    bool ReplayToVulkanCommandBuffer(FVulkanCmdBuffer* cmdBuffer, FVulkanContext* context);
     
     /**
      * Get the number of recorded commands

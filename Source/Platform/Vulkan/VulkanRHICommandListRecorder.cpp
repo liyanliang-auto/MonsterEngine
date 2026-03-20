@@ -208,7 +208,7 @@ void VulkanRHICommandListRecorder::setMarker(const String& name) {
 // Command Replay Implementation
 // ============================================================================
 
-bool VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer(FVulkanCommandBuffer* cmdBuffer, 
+bool VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer(FVulkanCmdBuffer* cmdBuffer, 
                                                                FVulkanContext* context) {
     if (!cmdBuffer || !context) {
         MR_LOG_ERROR("VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer - Invalid parameters");
