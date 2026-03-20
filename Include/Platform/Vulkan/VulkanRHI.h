@@ -123,6 +123,9 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Pipeline barriers and synchronization
         PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier = nullptr;
+        
+        // Secondary command buffer execution
+        PFN_vkCmdExecuteCommands vkCmdExecuteCommands = nullptr;
 
         // Descriptor sets
         PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout = nullptr;

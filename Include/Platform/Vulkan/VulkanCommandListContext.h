@@ -66,6 +66,34 @@ namespace MonsterRender::RHI::Vulkan {
         FVulkanCommandBufferManager* getCommandBufferManager() const { return m_manager; }
         
         /**
+         * Allocate a secondary command buffer for parallel recording
+         * Secondary command buffers can be recorded in parallel and executed within a primary buffer
+         * 
+         * @param renderPass Render pass to inherit from (optional)
+         * @param subpass Subpass index (default 0)
+         * @param framebuffer Framebuffer to inherit from (optional)
+         * @return Secondary command buffer, nullptr on failure
+         */
+        FVulkanCmdBuffer* AllocateSecondaryCommandBuffer(
+            VkRenderPass renderPass = VK_NULL_HANDLE,
+            uint32 subpass = 0,
+            VkFramebuffer framebuffer = VK_NULL_HANDLE
+        );
+        
+        /**
+         * Free a secondary command buffer back to the pool
+         * 
+         * @param cmdBuffer Secondary command buffer to free
+         */
+        void FreeSecondaryCommandBuffer(FVulkanCmdBuffer* cmdBuffer);
+        
+        /**
+         * Reset all secondary command buffers in the pool
+         * Called at the end of frame to recycle buffers
+         */
+        void ResetSecondaryCommandBuffers();
+        
+        /**
          * Begin recording commands
          */
         void beginRecording();
@@ -123,5 +151,24 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Per-frame descriptor pool
         TUniquePtr<FVulkanDescriptorPoolSetContainer> m_descriptorPool;
+        
+        // ========================================================================
+        // Secondary Command Buffer Pool
+        // ========================================================================
+        
+        /**
+         * Pool of secondary command buffers for parallel recording
+         * These buffers are allocated on demand and recycled at the end of frame
+         */
+        struct FSecondaryCommandBufferEntry {
+            TUniquePtr<FVulkanCmdBuffer> cmdBuffer;
+            bool isInUse = false;
+            VkRenderPass inheritedRenderPass = VK_NULL_HANDLE;
+            uint32 inheritedSubpass = 0;
+            VkFramebuffer inheritedFramebuffer = VK_NULL_HANDLE;
+        };
+        
+        TArray<FSecondaryCommandBufferEntry> m_secondaryCommandBuffers;
+        VkCommandPool m_secondaryCommandPool = VK_NULL_HANDLE;
     };
 }
