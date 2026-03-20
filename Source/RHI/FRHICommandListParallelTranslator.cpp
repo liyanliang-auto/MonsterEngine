@@ -346,17 +346,35 @@ void FRHICommandListParallelTranslator::TranslateCommandList(FTranslationTask Ta
     // Step 7: Add the translated secondary command buffer to the collection
     // The main thread will execute all collected buffers using vkCmdExecuteCommands
     // 
-    // Note: We need to get the command buffer collection from the translator
-    // For now, we'll store it in the context until we have a proper collection mechanism
-    // In a full implementation, this would be managed by the translator's collection
-    
-    // TODO: Add to FTranslatedCommandBufferCollection when available
-    // For now, we free the buffer to avoid memory leaks
-    // The collection integration will be completed in the next step
-    vulkanContext->FreeSecondaryCommandBuffer(secondaryCmdBuffer);
-    
-    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
-               "Secondary command buffer ready for collection (currently freed)");
+    // Check if we have a command buffer collection available
+    // If not, we free the buffer to avoid memory leaks (fallback behavior)
+    {
+        std::lock_guard<std::mutex> lock(m_contextMutex);
+        
+        if (m_commandBufferCollection) {
+            // Add the secondary command buffer to the collection
+            // The collection will manage the buffer lifetime and execute it later
+            m_commandBufferCollection->AddSecondaryCommandBuffer(
+                secondaryCmdBuffer,
+                vulkanContext,
+                Task.taskIndex,
+                recorder->GetCommandCount(),
+                recorder->GetDrawCallCount()
+            );
+            
+            MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
+                       "Added secondary command buffer to collection for task " + 
+                       std::to_string(Task.taskIndex));
+        } else {
+            // No collection available - free the buffer to avoid memory leak
+            // This is a fallback path for when collection is not set up
+            vulkanContext->FreeSecondaryCommandBuffer(secondaryCmdBuffer);
+            
+            MR_LOG_WARNING("FRHICommandListParallelTranslator::TranslateCommandList - "
+                         "No command buffer collection available, freeing buffer immediately. "
+                         "This indicates the collection was not set up properly.");
+        }
+    }
     
     MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
                "Translation complete for task " + std::to_string(Task.taskIndex) +

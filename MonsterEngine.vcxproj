@@ -216,6 +216,7 @@
     <ClCompile Include="Source\TestCommandListPool.cpp" />
     <ClCompile Include="Source\TestParallelTranslator.cpp" />
     <ClCompile Include="Source\TestParallelCommandBufferExecution.cpp" />
+    <ClCompile Include="Source\ParallelRenderingIntegrationExample.cpp" />
     <ClCompile Include="Source\TestVulkanParallelRendering.cpp" />
     <ClCompile Include="Source\TestMain.cpp" />
     <ClCompile Include="Source\BenchmarkParallelRendering.cpp" />

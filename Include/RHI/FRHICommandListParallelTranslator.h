@@ -202,6 +202,7 @@ private:
      */
     FStats GetStatsInternal() const;
     
+public:
     /**
      * Get the current command buffer collection
      * This collection stores all translated secondary command buffers
@@ -222,7 +223,6 @@ private:
      */
     void ResetCommandBufferCollection();
     
-public:
     /**
      * Translate a single command list asynchronously
      * This is a convenience method for testing
