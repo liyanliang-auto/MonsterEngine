@@ -2,6 +2,10 @@
 
 #include "RHI/FRHICommandListParallelTranslator.h"
 #include "Core/Log.h"
+#include "Platform/Vulkan/VulkanContextManager.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/Vulkan/VulkanRHICommandListRecorder.h"
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
 
 namespace MonsterEngine {
 namespace RHI {
@@ -256,31 +260,88 @@ void FRHICommandListParallelTranslator::TranslateCommandList(FTranslationTask Ta
         }
     }
     
-    // Perform translation
-    // This is the core parallel translation logic that integrates with Vulkan backend
+    // ========================================================================
+    // Perform translation - Core parallel translation logic
+    // ========================================================================
+    // This integrates all components:
+    // - VulkanContextManager: Thread-local context management
+    // - VulkanRHICommandListRecorder: Recorded RHI commands
+    // - VulkanResourceStateTracker: Automatic barrier insertion
+    // - Secondary command buffers: Parallel command recording
+    
+    // Step 1: Get or create Vulkan context for current thread
+    // Each worker thread gets its own context to avoid synchronization
+    auto* vulkanContext = MonsterRender::RHI::Vulkan::FVulkanContextManager::GetOrCreateForCurrentThread();
+    if (!vulkanContext) {
+        MR_LOG_ERROR("FRHICommandListParallelTranslator::TranslateCommandList - "
+                   "Failed to get Vulkan context for thread " + 
+                   std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
+        return;
+    }
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
+               "Got Vulkan context for thread " + 
+               std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
+    
+    // Step 2: Get the command buffer from the context
+    // For now, we use the primary command buffer from the context
+    // TODO: In the future, allocate secondary command buffers for true parallel recording
+    // Secondary command buffers would allow parallel recording and merging with vkCmdExecuteCommands
+    auto* cmdBuffer = vulkanContext->getCmdBuffer();
+    if (!cmdBuffer) {
+        MR_LOG_ERROR("FRHICommandListParallelTranslator::TranslateCommandList - "
+                   "Failed to get command buffer from context");
+        return;
+    }
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
+               "Got command buffer from context");
+    
+    // Step 3: Cast to VulkanRHICommandListRecorder and prepare for replay
+    // The recorder has stored all RHI commands, now we translate them to Vulkan
+    auto* recorder = static_cast<MonsterRender::RHI::Vulkan::VulkanRHICommandListRecorder*>(Task.cmdList);
+    if (!recorder) {
+        MR_LOG_ERROR("FRHICommandListParallelTranslator::TranslateCommandList - "
+                   "Failed to cast command list to VulkanRHICommandListRecorder");
+        return;
+    }
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
+               "Replaying " + std::to_string(recorder->GetCommandCount()) + " commands, " +
+               std::to_string(recorder->GetDrawCallCount()) + " draw calls");
+    
+    // Step 4: Replay all recorded commands to the command buffer
+    // This translates high-level RHI commands to low-level Vulkan API calls
+    // The resource state tracker will automatically insert barriers as needed
     // 
-    // Translation steps:
-    // 1. Get or create Vulkan context for current thread
-    // 2. Allocate secondary command buffer from thread-local pool
-    // 3. Replay RHI commands into Vulkan command buffer
-    // 4. Handle resource transitions and barriers
-    // 5. Store translated command buffer for later merging
-    //
-    // Note: In a full implementation, this would:
-    // - Use FVulkanContextManager::GetOrCreateForCurrentThread()
-    // - Use FVulkanThreadLocalCommandPool for command buffer allocation
-    // - Cast Task.cmdList to VulkanRHICommandList and call ReplayToVulkanCommandBuffer()
-    // - Manage secondary command buffer lifecycle
-    // - Store the translated VkCommandBuffer in the task for later vkCmdExecuteCommands
-    //
-    // For now, we simulate the translation work as the actual Vulkan integration
-    // requires VulkanRHICommandList to be fully implemented with command recording.
-    // This will be completed in the next phase when we implement the full command
-    // replay system.
+    // Note: ReplayToVulkanCommandBuffer expects:
+    // - FVulkanCommandBuffer* (which is FVulkanCmdBuffer)
+    // - FVulkanContext* (which we pass as the context)
+    bool replaySuccess = recorder->ReplayToVulkanCommandBuffer(
+        cmdBuffer, 
+        reinterpret_cast<MonsterRender::RHI::Vulkan::FVulkanContext*>(vulkanContext)
+    );
+    
+    if (!replaySuccess) {
+        MR_LOG_ERROR("FRHICommandListParallelTranslator::TranslateCommandList - "
+                   "Failed to replay commands to Vulkan command buffer");
+        return;
+    }
+    
+    // Step 5: Translation complete
+    // The commands have been successfully translated and recorded into the Vulkan command buffer
+    // In a full implementation with secondary command buffers:
+    // - We would store the secondary command buffer handle
+    // - The main thread would collect all secondary buffers
+    // - Execute them using vkCmdExecuteCommands in the primary command buffer
+    // 
+    // For now, the commands are directly recorded into the thread-local primary buffer
     
     MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
                "Translation complete for task " + std::to_string(Task.taskIndex) +
-               ". Thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
+               ". Thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) +
+               ". Commands: " + std::to_string(recorder->GetCommandCount()) +
+               ", Draws: " + std::to_string(recorder->GetDrawCallCount()));
     
     // Mark task complete
     if (Task.completionEvent) {
