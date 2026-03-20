@@ -53,6 +53,10 @@ void RunContainerTests();
 // Implementation in Source/Tests/SmartPointerTest.cpp
 void RunSmartPointerTests();
 
+// Parallel Rendering Test Forward Declaration
+// Implementation in Source/TestMain.cpp
+int RunAllParallelRenderingTests();
+
 // Entry point following UE5's application architecture
 int main(int argc, char** argv) {
     using namespace MonsterRender;
@@ -86,6 +90,7 @@ int main(int argc, char** argv) {
     bool runMathTests = false;
     bool runContainerTests = false;
     bool runSmartPointerTests = false;
+    bool runParallelRenderingTests = true;  // Run parallel rendering tests
     bool runAllTests = false;
     bool runCubeScene = false;  // Run CubeSceneApplication with lighting
     bool runCubeSceneTest = false;  // Run CubeSceneRendererTest (pipeline integration test)
@@ -118,6 +123,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-smartptr") == 0 || strcmp(argv[i], "-tsp") == 0) {
             runSmartPointerTests = true;
         }
+        else if (strcmp(argv[i], "--test-parallel") == 0 || strcmp(argv[i], "-tp") == 0) {
+            runParallelRenderingTests = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -147,7 +155,8 @@ int main(int argc, char** argv) {
     // Default behavior: don't run tests, run application
     if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
         !runVulkanMemoryTests && !runVulkanResourceTests && !runLoggingTests && 
-        !runMathTests && !runContainerTests && !runSmartPointerTests && !runAllTests) {
+        !runMathTests && !runContainerTests && !runSmartPointerTests && 
+        !runParallelRenderingTests && !runAllTests) {
         runAllTests = false;
     }
     
@@ -184,6 +193,21 @@ int main(int argc, char** argv) {
     if (runSmartPointerTests) {
         RunSmartPointerTests();
         return 0;
+    }
+    
+    // Run parallel rendering tests
+    if (runParallelRenderingTests) {
+        printf("\n");
+        printf("==========================================\n");
+        printf("  Parallel Rendering System Tests\n");
+        printf("==========================================\n");
+        printf("\n");
+        
+        int exitCode = RunAllParallelRenderingTests();
+        
+        printf("\n");
+        ShutdownLogging();
+        return exitCode;
     }
     
     // Run tests if requested
