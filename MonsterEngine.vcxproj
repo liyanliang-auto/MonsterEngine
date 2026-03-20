@@ -212,6 +212,7 @@
     <ClCompile Include="Source\RHI\FRHICommandListExecutor.cpp" />
     <ClCompile Include="Source\RHI\FRHICommandListPool.cpp" />
     <ClCompile Include="Source\RHI\FRHICommandListParallelTranslator.cpp" />
+    <ClCompile Include="Source\RHI\FTranslatedCommandBufferCollection.cpp" />
     <ClCompile Include="Source\TestCommandListPool.cpp" />
     <ClCompile Include="Source\TestParallelTranslator.cpp" />
     <ClCompile Include="Source\TestVulkanParallelRendering.cpp" />
@@ -394,6 +395,7 @@
     <ClInclude Include="Include\RHI\IRHIResource.h" />
     <ClInclude Include="Include\RHI\RHI.h" />
     <ClInclude Include="Include\RHI\RHIDefinitions.h" />
+    <ClInclude Include="Include\RHI\FTranslatedCommandBufferCollection.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanBuffer.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanRHICommandList.h" />
     <ClInclude Include="Include\Platform\Vulkan\VulkanRHICommandListRecorder.h" />

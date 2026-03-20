@@ -283,19 +283,21 @@ void FRHICommandListParallelTranslator::TranslateCommandList(FTranslationTask Ta
                "Got Vulkan context for thread " + 
                std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
     
-    // Step 2: Get the command buffer from the context
-    // For now, we use the primary command buffer from the context
-    // TODO: In the future, allocate secondary command buffers for true parallel recording
-    // Secondary command buffers would allow parallel recording and merging with vkCmdExecuteCommands
-    auto* cmdBuffer = vulkanContext->getCmdBuffer();
-    if (!cmdBuffer) {
+    // Step 2: Allocate secondary command buffer for parallel recording
+    // Secondary command buffers can be recorded in parallel and executed within a primary buffer
+    // This is the key to true parallel command recording
+    // 
+    // Note: For now, we pass VK_NULL_HANDLE for render pass inheritance
+    // In a full implementation, we would get the current render pass from the context
+    auto* secondaryCmdBuffer = vulkanContext->AllocateSecondaryCommandBuffer();
+    if (!secondaryCmdBuffer) {
         MR_LOG_ERROR("FRHICommandListParallelTranslator::TranslateCommandList - "
-                   "Failed to get command buffer from context");
+                   "Failed to allocate secondary command buffer");
         return;
     }
     
     MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
-               "Got command buffer from context");
+               "Allocated secondary command buffer for parallel recording");
     
     // Step 3: Cast to VulkanRHICommandListRecorder and prepare for replay
     // The recorder has stored all RHI commands, now we translate them to Vulkan
@@ -310,32 +312,46 @@ void FRHICommandListParallelTranslator::TranslateCommandList(FTranslationTask Ta
                "Replaying " + std::to_string(recorder->GetCommandCount()) + " commands, " +
                std::to_string(recorder->GetDrawCallCount()) + " draw calls");
     
-    // Step 4: Replay all recorded commands to the command buffer
+    // Step 4: Begin recording the secondary command buffer
+    // Secondary command buffers must be begun with inheritance info
+    // For now, we use a simple begin without render pass inheritance
+    secondaryCmdBuffer->begin();
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
+               "Began recording secondary command buffer");
+    
+    // Step 5: Replay all recorded commands to the secondary command buffer
     // This translates high-level RHI commands to low-level Vulkan API calls
     // The resource state tracker will automatically insert barriers as needed
-    // 
-    // Note: ReplayToVulkanCommandBuffer expects:
-    // - FVulkanCommandBuffer* (which is FVulkanCmdBuffer)
-    // - FVulkanContext* (which we pass as the context)
     bool replaySuccess = recorder->ReplayToVulkanCommandBuffer(
-        cmdBuffer, 
+        secondaryCmdBuffer, 
         reinterpret_cast<MonsterRender::RHI::Vulkan::FVulkanContext*>(vulkanContext)
     );
     
     if (!replaySuccess) {
         MR_LOG_ERROR("FRHICommandListParallelTranslator::TranslateCommandList - "
                    "Failed to replay commands to Vulkan command buffer");
+        secondaryCmdBuffer->end();
+        vulkanContext->FreeSecondaryCommandBuffer(secondaryCmdBuffer);
         return;
     }
     
-    // Step 5: Translation complete
-    // The commands have been successfully translated and recorded into the Vulkan command buffer
-    // In a full implementation with secondary command buffers:
-    // - We would store the secondary command buffer handle
-    // - The main thread would collect all secondary buffers
-    // - Execute them using vkCmdExecuteCommands in the primary command buffer
+    // Step 6: End recording the secondary command buffer
+    secondaryCmdBuffer->end();
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
+               "Ended recording secondary command buffer");
+    
+    // Step 7: Store the translated secondary command buffer for later merging
+    // The main thread will collect all secondary command buffers and execute them
+    // using vkCmdExecuteCommands in the primary command buffer
     // 
-    // For now, the commands are directly recorded into the thread-local primary buffer
+    // TODO: Add the secondary command buffer to a collection for later execution
+    // For now, we just log the successful translation and free the buffer
+    // In the next phase (4.5.3), we'll implement FTranslatedCommandBufferCollection
+    
+    // Temporarily free the buffer (will be stored in collection in phase 4.5.3)
+    vulkanContext->FreeSecondaryCommandBuffer(secondaryCmdBuffer);
     
     MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
                "Translation complete for task " + std::to_string(Task.taskIndex) +

@@ -235,6 +235,9 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Pipeline barriers and synchronization
         s_functions.vkCmdPipelineBarrier = (PFN_vkCmdPipelineBarrier)vkGetDeviceProcAddr(device, "vkCmdPipelineBarrier");
+        
+        // Secondary command buffer execution
+        s_functions.vkCmdExecuteCommands = (PFN_vkCmdExecuteCommands)vkGetDeviceProcAddr(device, "vkCmdExecuteCommands");
 
         // Descriptor set functions
         s_functions.vkCreateDescriptorSetLayout = (PFN_vkCreateDescriptorSetLayout)vkGetDeviceProcAddr(device, "vkCreateDescriptorSetLayout");
