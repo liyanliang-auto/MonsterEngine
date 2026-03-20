@@ -73,10 +73,16 @@ public:
     bool RunTest() {
         MR_LOG_INFO("=== FParallelCommandBufferExecutionTest::RunTest START ===");
         
-        // Step 1: Create multiple command lists
+        // Step 1: Set up command buffer collection in the translator
+        // This is critical - the translator needs the collection to store translated buffers
+        MR_LOG_INFO("Step 1: Setting up command buffer collection");
+        m_translator->SetCommandBufferCollection(std::move(m_collection));
+        
+        // Step 2: Create multiple command lists
         const uint32 numCommandLists = 4;
         TArray<TSharedPtr<VulkanRHICommandListRecorder>> commandLists;
         
+        MR_LOG_INFO("Step 2: Creating " + std::to_string(numCommandLists) + " command lists");
         for (uint32 i = 0; i < numCommandLists; ++i) {
             auto cmdList = CreateTestCommandList(i);
             if (!cmdList) {
@@ -86,14 +92,17 @@ public:
             commandLists.push_back(cmdList);
         }
         
-        MR_LOG_INFO("Created " + std::to_string(numCommandLists) + " command lists");
+        MR_LOG_INFO("Created " + std::to_string(numCommandLists) + " command lists successfully");
         
-        // Step 2: Submit command lists for parallel translation
+        // Step 3: Submit command lists for parallel translation
         TArray<FGraphEventRef> translationEvents;
         
+        MR_LOG_INFO("Step 3: Submitting command lists for parallel translation");
         for (uint32 i = 0; i < numCommandLists; ++i) {
             // Finish recording
             commandLists[i]->FinishRecording();
+            
+            MR_LOG_DEBUG("Submitting command list " + std::to_string(i) + " for translation");
             
             // Submit for translation
             auto completionEvent = m_translator->TranslateCommandListAsync(
@@ -109,8 +118,8 @@ public:
         MR_LOG_INFO("Submitted " + std::to_string(translationEvents.size()) + 
                    " command lists for parallel translation");
         
-        // Step 3: Wait for all translations to complete
-        MR_LOG_INFO("Waiting for parallel translation to complete...");
+        // Step 4: Wait for all translations to complete
+        MR_LOG_INFO("Step 4: Waiting for parallel translation to complete...");
         
         for (auto& event : translationEvents) {
             if (event) {
@@ -118,25 +127,42 @@ public:
             }
         }
         
-        MR_LOG_INFO("All translations completed");
+        MR_LOG_INFO("All translations completed successfully");
         
-        // Step 4: Collect translated secondary command buffers
-        // In the actual implementation, this would be done by the translator
-        // For now, we just verify the collection interface
-        
-        if (m_collection->IsEmpty()) {
-            MR_LOG_WARNING("Command buffer collection is empty - "
-                         "this is expected in current implementation");
-            MR_LOG_INFO("In the full implementation, translated buffers would be added here");
+        // Step 5: Verify the command buffer collection
+        auto* collection = m_translator->GetCommandBufferCollection();
+        if (!collection) {
+            MR_LOG_ERROR("Command buffer collection is null after translation");
+            return false;
         }
         
-        // Step 5: Execute in primary command buffer (simulated)
-        MR_LOG_INFO("Test execution flow validated successfully");
+        MR_LOG_INFO("Step 5: Verifying command buffer collection");
+        MR_LOG_INFO("Collection contains " + std::to_string(collection->GetCount()) + 
+                   " secondary command buffers");
+        MR_LOG_INFO("Total commands: " + std::to_string(collection->GetTotalCommandCount()));
+        MR_LOG_INFO("Total draw calls: " + std::to_string(collection->GetTotalDrawCallCount()));
         
-        // Print statistics
+        if (collection->IsEmpty()) {
+            MR_LOG_ERROR("Command buffer collection is empty - translation failed to add buffers");
+            return false;
+        }
+        
+        // Step 6: Execute in primary command buffer (simulated)
+        // In a real scenario, we would get the primary command buffer from the context
+        // and execute all secondary buffers using vkCmdExecuteCommands
+        MR_LOG_INFO("Step 6: Secondary command buffers ready for execution");
+        MR_LOG_INFO("In a real rendering scenario, these would be executed via:");
+        MR_LOG_INFO("  collection->ExecuteInPrimaryCommandBuffer(primaryCmdBuffer)");
+        
+        // Step 7: Print statistics
         PrintStatistics(commandLists);
         
+        // Step 8: Reset the collection to prepare for next frame
+        MR_LOG_INFO("Step 7: Resetting command buffer collection");
+        m_translator->ResetCommandBufferCollection();
+        
         MR_LOG_INFO("=== FParallelCommandBufferExecutionTest::RunTest END ===");
+        MR_LOG_INFO("TEST PASSED - All steps completed successfully");
         return true;
     }
     
