@@ -202,6 +202,40 @@ private:
      */
     FStats GetStatsInternal() const;
     
+    /**
+     * Get the current command buffer collection
+     * This collection stores all translated secondary command buffers
+     */
+    class FTranslatedCommandBufferCollection* GetCommandBufferCollection() const {
+        return m_commandBufferCollection.get();
+    }
+    
+    /**
+     * Set the command buffer collection for this frame
+     * Should be called at the beginning of each frame
+     */
+    void SetCommandBufferCollection(TUniquePtr<FTranslatedCommandBufferCollection> collection);
+    
+    /**
+     * Reset the command buffer collection
+     * Called at the end of frame to prepare for next frame
+     */
+    void ResetCommandBufferCollection();
+    
+public:
+    /**
+     * Translate a single command list asynchronously
+     * This is a convenience method for testing
+     * 
+     * @param cmdList Command list to translate
+     * @param taskIndex Index of this task
+     * @return Completion event
+     */
+    FGraphEventRef TranslateCommandListAsync(
+        MonsterRender::RHI::IRHICommandList* cmdList,
+        uint32 taskIndex
+    );
+    
 private:
     /** Singleton instance */
     static TUniquePtr<FRHICommandListParallelTranslator> s_instance;
@@ -217,6 +251,9 @@ private:
     
     /** Mutex for context management */
     mutable std::mutex m_contextMutex;
+    
+    /** Command buffer collection for current frame */
+    TUniquePtr<FTranslatedCommandBufferCollection> m_commandBufferCollection;
     
     /** Statistics */
     std::atomic<uint32> m_totalTranslations{0};

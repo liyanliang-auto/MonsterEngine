@@ -1,6 +1,7 @@
 // Copyright Monster Engine. All Rights Reserved.
 
 #include "RHI/FRHICommandListParallelTranslator.h"
+#include "RHI/FTranslatedCommandBufferCollection.h"
 #include "Core/Log.h"
 #include "Platform/Vulkan/VulkanContextManager.h"
 #include "Platform/Vulkan/VulkanCommandListContext.h"
@@ -342,16 +343,20 @@ void FRHICommandListParallelTranslator::TranslateCommandList(FTranslationTask Ta
     MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
                "Ended recording secondary command buffer");
     
-    // Step 7: Store the translated secondary command buffer for later merging
-    // The main thread will collect all secondary command buffers and execute them
-    // using vkCmdExecuteCommands in the primary command buffer
+    // Step 7: Add the translated secondary command buffer to the collection
+    // The main thread will execute all collected buffers using vkCmdExecuteCommands
     // 
-    // TODO: Add the secondary command buffer to a collection for later execution
-    // For now, we just log the successful translation and free the buffer
-    // In the next phase (4.5.3), we'll implement FTranslatedCommandBufferCollection
+    // Note: We need to get the command buffer collection from the translator
+    // For now, we'll store it in the context until we have a proper collection mechanism
+    // In a full implementation, this would be managed by the translator's collection
     
-    // Temporarily free the buffer (will be stored in collection in phase 4.5.3)
+    // TODO: Add to FTranslatedCommandBufferCollection when available
+    // For now, we free the buffer to avoid memory leaks
+    // The collection integration will be completed in the next step
     vulkanContext->FreeSecondaryCommandBuffer(secondaryCmdBuffer);
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
+               "Secondary command buffer ready for collection (currently freed)");
     
     MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandList - "
                "Translation complete for task " + std::to_string(Task.taskIndex) +
@@ -541,6 +546,56 @@ void FParallelCommandListSet::Wait() {
         m_completionEvent->Wait();
         MR_LOG_DEBUG("FParallelCommandListSet::Wait - Completion event signaled");
     }
+}
+
+// ============================================================================
+// Command Buffer Collection Management
+// ============================================================================
+
+void FRHICommandListParallelTranslator::SetCommandBufferCollection(
+    TUniquePtr<FTranslatedCommandBufferCollection> collection) {
+    std::lock_guard<std::mutex> lock(m_contextMutex);
+    m_commandBufferCollection = std::move(collection);
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::SetCommandBufferCollection - "
+               "Set new command buffer collection");
+}
+
+void FRHICommandListParallelTranslator::ResetCommandBufferCollection() {
+    std::lock_guard<std::mutex> lock(m_contextMutex);
+    if (m_commandBufferCollection) {
+        m_commandBufferCollection->Reset();
+        MR_LOG_DEBUG("FRHICommandListParallelTranslator::ResetCommandBufferCollection - "
+                   "Reset command buffer collection");
+    }
+}
+
+FGraphEventRef FRHICommandListParallelTranslator::TranslateCommandListAsync(
+    MonsterRender::RHI::IRHICommandList* cmdList,
+    uint32 taskIndex) {
+    
+    if (!cmdList) {
+        MR_LOG_ERROR("FRHICommandListParallelTranslator::TranslateCommandListAsync - "
+                   "Null command list");
+        return nullptr;
+    }
+    
+    // Create completion event
+    auto completionEvent = MakeShared<FGraphEvent>();
+    
+    // Create translation task
+    FTranslationTask task(cmdList, completionEvent, taskIndex);
+    
+    // Queue task on task graph
+    FTaskGraph::QueueTask(
+        [this, task]() {
+            this->TranslateCommandList(task);
+        }
+    );
+    
+    MR_LOG_DEBUG("FRHICommandListParallelTranslator::TranslateCommandListAsync - "
+               "Queued translation task " + std::to_string(taskIndex));
+    
+    return completionEvent;
 }
 
 } // namespace RHI
