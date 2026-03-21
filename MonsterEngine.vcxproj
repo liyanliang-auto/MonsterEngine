@@ -217,6 +217,8 @@
     <ClCompile Include="Source\TestParallelTranslator.cpp" />
     <ClCompile Include="Source\TestParallelCommandBufferExecution.cpp" />
     <ClCompile Include="Source\ParallelRenderingIntegrationExample.cpp" />
+    <ClCompile Include="Source\RunParallelRenderingTest.cpp" />
+    <ClCompile Include="Source\ParallelRenderingTestMain.cpp" />
     <ClCompile Include="Source\TestVulkanParallelRendering.cpp" />
     <ClCompile Include="Source\TestMain.cpp" />
     <ClCompile Include="Source\BenchmarkParallelRendering.cpp" />
@@ -552,6 +554,7 @@
     <ClInclude Include="Include\Tests\CubeSceneRendererTestApp.h" />
     <ClInclude Include="Include\Tests\TestCommandListPool.h" />
     <ClInclude Include="Include\Tests\TestParallelTranslator.h" />
+    <ClInclude Include="Include\Tests\TestParallelRendering.h" />
     <ClInclude Include="Include\Tests\TestVulkanParallelRendering.h" />
     <ClInclude Include="Include\Tests\TestMain.h" />
     <ClInclude Include="Include\Tests\BenchmarkParallelRendering.h" />

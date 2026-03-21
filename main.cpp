@@ -90,7 +90,8 @@ int main(int argc, char** argv) {
     bool runMathTests = false;
     bool runContainerTests = false;
     bool runSmartPointerTests = false;
-    bool runParallelRenderingTests = true;  // Run parallel rendering tests
+    bool runParallelRenderingTests = false;  // Run parallel rendering tests
+    bool runParallelIntegrationExample = true;  // Run parallel rendering integration example
     bool runAllTests = false;
     bool runCubeScene = false;  // Run CubeSceneApplication with lighting
     bool runCubeSceneTest = false;  // Run CubeSceneRendererTest (pipeline integration test)
@@ -126,6 +127,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--test-parallel") == 0 || strcmp(argv[i], "-tp") == 0) {
             runParallelRenderingTests = true;
         }
+        else if (strcmp(argv[i], "--parallel-rendering-integration") == 0 || strcmp(argv[i], "-pri") == 0) {
+            runParallelIntegrationExample = true;
+        }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
         }
@@ -152,12 +156,11 @@ int main(int argc, char** argv) {
         }
     }
     
-    // Default behavior: don't run tests, run application
-    if (!runMemoryTests && !runTextureTests && !runVirtualTextureTests && 
-        !runVulkanMemoryTests && !runVulkanResourceTests && !runLoggingTests && 
-        !runMathTests && !runContainerTests && !runSmartPointerTests && 
-        !runParallelRenderingTests && !runAllTests) {
-        runAllTests = false;
+    // Default behavior: run parallel rendering integration example by default
+    // If no command line arguments provided, keep runParallelIntegrationExample = true
+    if (argc == 1) {
+        // No arguments, run parallel rendering integration example by default
+        runParallelIntegrationExample = true;
     }
     
     // Run logging tests separately (can run standalone)
@@ -193,6 +196,23 @@ int main(int argc, char** argv) {
     if (runSmartPointerTests) {
         RunSmartPointerTests();
         return 0;
+    }
+    
+    // Run parallel rendering integration example
+    if (runParallelIntegrationExample) {
+        printf("\n");
+        printf("==========================================\n");
+        printf("  Parallel Rendering Integration Example\n");
+        printf("==========================================\n");
+        printf("\n");
+        
+        // Call RunParallelRenderingTestMain to initialize Vulkan device and run example
+        extern int RunParallelRenderingTestMain(int argc, char** argv);
+        int exitCode = RunParallelRenderingTestMain(argc, argv);
+        
+        printf("\n");
+        ShutdownLogging();
+        return exitCode;
     }
     
     // Run parallel rendering tests
