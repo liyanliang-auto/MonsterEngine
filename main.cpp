@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
     bool runContainerTests = false;
     bool runSmartPointerTests = false;
     bool runParallelRenderingTests = false;  // Run parallel rendering tests
-    bool runParallelIntegrationExample = true;  // Run parallel rendering integration example
+    bool runParallelIntegrationExample = false;  // Run parallel rendering integration example
     bool runAllTests = false;
     bool runCubeScene = false;  // Run CubeSceneApplication with lighting
     bool runCubeSceneTest = false;  // Run CubeSceneRendererTest (pipeline integration test)

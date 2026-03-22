@@ -14,6 +14,7 @@
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/Vulkan/VulkanContextManager.h"
 #include "Core/Log.h"
 #include "Core/Logging/LogMacros.h"
 
@@ -216,7 +217,14 @@ namespace MonsterRender::RHI::Vulkan {
         }
         MR_LOG_INFO("Command list context initialized");
         
-        // Step 16: Query device capabilities
+        // Step 16: Initialize context manager for parallel rendering (UE5 pattern)
+        if (!FVulkanContextManager::Initialize(this, 32)) {
+            MR_LOG_ERROR("Failed to initialize Vulkan context manager");
+            return false;
+        }
+        MR_LOG_INFO("Vulkan context manager initialized (max 32 contexts)");
+        
+        // Step 17: Query device capabilities
         queryCapabilities();
         
         MR_LOG_INFO("Vulkan device initialized successfully");
@@ -247,6 +255,9 @@ namespace MonsterRender::RHI::Vulkan {
             }
             m_perImageRenderFinishedSemaphores.clear();
             m_imagesInFlight.clear();
+            
+            // Shutdown context manager for parallel rendering
+            FVulkanContextManager::Shutdown();
             
             // Clean up command lists and managers BEFORE destroying command pool
             // (command buffers must be freed before the pool is destroyed)
