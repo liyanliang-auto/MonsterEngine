@@ -422,6 +422,52 @@ protected:
         const MonsterEngine::Math::FMatrix& projectionMatrix,
         const MonsterEngine::Math::FVector& cameraPosition);
 
+    // ========================================================================
+    // Parallel Rendering Functions
+    // ========================================================================
+
+    /**
+     * Render scene with parallel renderer (UE5 pattern)
+     * @param cmdList Command list
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     */
+    void renderWithParallelRenderer(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
+
+    /**
+     * Dispatch base pass for parallel rendering
+     * @return Completion event
+     */
+    MonsterEngine::FGraphEventRef dispatchBasePass();
+
+    /**
+     * Dispatch PBR pass for parallel rendering
+     * @return Completion event
+     */
+    MonsterEngine::FGraphEventRef dispatchPBRPass();
+
+    /**
+     * Dispatch shadow depth pass for parallel rendering
+     * @return Completion event
+     */
+    MonsterEngine::FGraphEventRef dispatchShadowDepthPass();
+
+    /**
+     * Initialize parallel rendering system
+     * @return True if successful
+     */
+    bool initializeParallelRendering();
+
+    /**
+     * Shutdown parallel rendering system
+     */
+    void shutdownParallelRendering();
+
 protected:
 
     /** RHI device */
@@ -459,6 +505,28 @@ protected:
 
     /** Flag to use FSceneRenderer for rendering */
     bool m_bUseSceneRenderer;
+
+    // ========================================================================
+    // Parallel Rendering System (UE5 Pattern)
+    // ========================================================================
+
+    /** Parallel scene renderer */
+    MonsterEngine::TUniquePtr<MonsterEngine::Renderer::FParallelSceneRenderer> m_parallelRenderer;
+
+    /** Enable parallel rendering (can be toggled at runtime) */
+    bool m_bEnableParallelRendering;
+
+    /** Number of parallel worker threads */
+    uint32 m_numParallelThreads;
+
+    /** Temporary storage for view matrix (used in parallel dispatch) */
+    MonsterEngine::Math::FMatrix m_viewMatrix;
+
+    /** Temporary storage for projection matrix (used in parallel dispatch) */
+    MonsterEngine::Math::FMatrix m_projMatrix;
+
+    /** Temporary storage for camera position (used in parallel dispatch) */
+    MonsterEngine::Math::FVector m_cameraPosition;
 
     /** Cube material */
     MonsterEngine::TSharedPtr<MonsterEngine::FMaterial> m_cubeMaterial;
