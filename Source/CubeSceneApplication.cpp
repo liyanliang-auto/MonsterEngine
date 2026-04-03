@@ -1,4 +1,4 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
 
 /**
  * @file CubeSceneApplication.cpp
@@ -53,6 +53,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 
 #include "../3rd-party/stb/stb_image.h"
+
+// Include FRHICommandListPool before namespace MonsterRender to avoid namespace conflicts
+#include "RHI/FRHICommandListPool.h"
 
 namespace MonsterRender
 {
@@ -2422,6 +2425,17 @@ bool CubeSceneApplication::initializeParallelRendering()
 {
     MR_LOG(LogCubeSceneApp, Log, "Initializing parallel rendering system...");
 
+    // Initialize command list pool
+    if (!MonsterRender::RHI::FRHICommandListPool::IsInitialized())
+    {
+        if (!MonsterRender::RHI::FRHICommandListPool::Initialize(8))
+        {
+            MR_LOG(LogCubeSceneApp, Error, "Failed to initialize command list pool");
+            return false;
+        }
+        MR_LOG(LogCubeSceneApp, Log, "Command list pool initialized successfully");
+    }
+
     // Verify scene is initialized
     if (!m_scene)
     {
@@ -2465,6 +2479,13 @@ void CubeSceneApplication::shutdownParallelRendering()
     MR_LOG(LogCubeSceneApp, Log, "Shutting down parallel rendering system...");
     
     m_parallelRenderer.reset();
+    
+    // Shutdown command list pool
+    if (MonsterRender::RHI::FRHICommandListPool::IsInitialized())
+    {
+        MonsterRender::RHI::FRHICommandListPool::Shutdown();
+        MR_LOG(LogCubeSceneApp, Log, "Command list pool shutdown complete");
+    }
     
     MR_LOG(LogCubeSceneApp, Log, "Parallel rendering system shutdown complete");
 }
@@ -2563,14 +2584,87 @@ MonsterEngine::FGraphEventRef CubeSceneApplication::dispatchBasePass()
     {
         MR_LOG(LogCubeSceneApp, Verbose, "Executing Base Pass in parallel");
 
-        // Note: In full implementation, this would:
-        // 1. Create command list from pool
-        // 2. Record rendering commands
-        // 3. Submit to parallel translator
-        // 4. Queue secondary command buffer for execution
-        //
-        // For now, we just mark the task as complete
-        // The actual rendering will be done by the existing single-threaded path
+        // Allocate command list from pool
+        auto* cmdList = MonsterRender::RHI::FRHICommandListPool::AllocateCommandList(
+            MonsterRender::RHI::FRHICommandListPool::ECommandListType::Graphics,
+            MonsterRender::RHI::ERecordingThread::Any
+        );
+
+        if (!cmdList)
+        {
+            MR_LOG(LogCubeSceneApp, Error, "Failed to allocate command list for Base Pass");
+            completionEvent->Complete();
+            return;
+        }
+
+        // Begin recording
+        cmdList->begin();
+
+        // Set debug marker for RenderDoc
+        cmdList->setMarker("BasePass_OpaqueGeometry");
+
+        // Gather lights for this pass
+        TArray<MonsterEngine::FLightSceneInfo*> lights;
+        // TODO: Gather lights from scene
+
+        // Render all cube actors
+        for (auto& cubeActor : m_cubeActors)
+        {
+            if (!cubeActor) continue;
+
+            MonsterEngine::UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
+            if (!meshComp) continue;
+
+            // Update component transform
+            meshComp->UpdateComponentToWorld();
+
+            MonsterEngine::FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+            MonsterEngine::FCubeSceneProxy* cubeProxy = static_cast<MonsterEngine::FCubeSceneProxy*>(baseProxy);
+            if (cubeProxy)
+            {
+                // Initialize resources if needed
+                if (!cubeProxy->AreResourcesInitialized())
+                {
+                    cubeProxy->InitializeResources(m_device);
+                }
+
+                // Update model matrix
+                cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
+
+                // Draw with lighting
+                cubeProxy->DrawWithLighting(cmdList, m_viewMatrix, m_projMatrix, m_cameraPosition, lights);
+            }
+        }
+
+        // Render floor
+        if (m_floorActor)
+        {
+            MonsterEngine::UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
+            if (floorMeshComp)
+            {
+                floorMeshComp->UpdateComponentToWorld();
+                MonsterEngine::FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
+                if (floorProxy)
+                {
+                    if (!floorProxy->AreResourcesInitialized())
+                    {
+                        floorProxy->InitializeResources(m_device);
+                    }
+
+                    floorProxy->UpdateModelMatrix(m_floorActor->GetActorTransform().ToMatrixWithScale());
+                    floorProxy->DrawWithLighting(cmdList, m_viewMatrix, m_projMatrix, m_cameraPosition, lights);
+                }
+            }
+        }
+
+        // Finish recording
+        cmdList->end();
+
+        // TODO: Submit to parallel translator for secondary command buffer generation
+        // For now, we just recycle the command list
+
+        // Recycle command list back to pool
+        MonsterRender::RHI::FRHICommandListPool::RecycleCommandList(cmdList);
 
         MR_LOG(LogCubeSceneApp, Verbose, "Base Pass task complete");
         completionEvent->Complete();
@@ -2591,13 +2685,35 @@ MonsterEngine::FGraphEventRef CubeSceneApplication::dispatchPBRPass()
     {
         MR_LOG(LogCubeSceneApp, Verbose, "Executing PBR Pass in parallel");
 
-        // Note: In full implementation, this would:
-        // 1. Create command list from pool
-        // 2. Record PBR helmet rendering commands
-        // 3. Submit to parallel translator
-        // 4. Queue secondary command buffer for execution
-        //
-        // For now, we just mark the task as complete
+        // Allocate command list from pool
+        auto* cmdList = MonsterRender::RHI::FRHICommandListPool::AllocateCommandList(
+            MonsterRender::RHI::FRHICommandListPool::ECommandListType::Graphics,
+            MonsterRender::RHI::ERecordingThread::Any
+        );
+
+        if (!cmdList)
+        {
+            MR_LOG(LogCubeSceneApp, Error, "Failed to allocate command list for PBR Pass");
+            completionEvent->Complete();
+            return;
+        }
+
+        // Begin recording
+        cmdList->begin();
+
+        // Set debug marker for RenderDoc
+        cmdList->setMarker("PBRPass_Helmet");
+
+        // Render PBR Helmet
+        renderHelmetWithPBR(cmdList, m_viewMatrix, m_projMatrix, m_cameraPosition);
+
+        // Finish recording
+        cmdList->end();
+
+        // TODO: Submit to parallel translator for secondary command buffer generation
+
+        // Recycle command list back to pool
+        MonsterRender::RHI::FRHICommandListPool::RecycleCommandList(cmdList);
 
         MR_LOG(LogCubeSceneApp, Verbose, "PBR Pass task complete");
         completionEvent->Complete();
@@ -2618,13 +2734,45 @@ MonsterEngine::FGraphEventRef CubeSceneApplication::dispatchShadowDepthPass()
     {
         MR_LOG(LogCubeSceneApp, Verbose, "Executing Shadow Depth Pass in parallel");
 
-        // Note: In full implementation, this would:
-        // 1. Create command list from pool
-        // 2. Record shadow depth rendering commands
-        // 3. Submit to parallel translator
-        // 4. Queue secondary command buffer for execution
-        //
-        // For now, we just mark the task as complete
+        // Allocate command list from pool
+        auto* cmdList = MonsterRender::RHI::FRHICommandListPool::AllocateCommandList(
+            MonsterRender::RHI::FRHICommandListPool::ECommandListType::Graphics,
+            MonsterRender::RHI::ERecordingThread::Any
+        );
+
+        if (!cmdList)
+        {
+            MR_LOG(LogCubeSceneApp, Error, "Failed to allocate command list for Shadow Depth Pass");
+            completionEvent->Complete();
+            return;
+        }
+
+        // Begin recording
+        cmdList->begin();
+
+        // Set debug marker for RenderDoc
+        cmdList->setMarker("ShadowDepthPass");
+
+        // Render shadow depth
+        MonsterEngine::Math::FMatrix lightViewProj;
+        if (m_directionalLight)
+        {
+            // Get light direction from scene proxy
+            MonsterEngine::Math::FVector lightDirection(0.5f, -1.0f, 0.3f);
+            lightDirection = lightDirection.GetSafeNormal();
+            
+            // TODO: Get actual direction from light component's scene proxy
+            // For now, use default direction
+            renderShadowDepthPass(cmdList, lightDirection, lightViewProj);
+        }
+
+        // Finish recording
+        cmdList->end();
+
+        // TODO: Submit to parallel translator for secondary command buffer generation
+
+        // Recycle command list back to pool
+        MonsterRender::RHI::FRHICommandListPool::RecycleCommandList(cmdList);
 
         MR_LOG(LogCubeSceneApp, Verbose, "Shadow Depth Pass task complete");
         completionEvent->Complete();

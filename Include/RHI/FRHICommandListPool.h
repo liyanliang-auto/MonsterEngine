@@ -8,7 +8,7 @@
 #include <mutex>
 #include <queue>
 
-namespace MonsterEngine {
+namespace MonsterRender {
 namespace RHI {
 
 /**
@@ -236,4 +236,4 @@ private:
 };
 
 } // namespace RHI
-} // namespace MonsterEngine
+} // namespace MonsterRender
