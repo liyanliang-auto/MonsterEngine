@@ -2,6 +2,10 @@
 
 #include "RHI/FRHICommandListPool.h"
 #include "Core/Log.h"
+#include "Core/Logging/LogMacros.h"
+
+// Define log category for RHI command list pool
+DEFINE_LOG_CATEGORY_STATIC(LogRHICommandListPool, Log, All);
 
 // Define USE_MOCK_COMMAND_LIST for testing
 #define USE_MOCK_COMMAND_LIST
@@ -13,11 +17,11 @@
 #include "Platform/OpenGL/OpenGLCommandList.h"
 #endif
 
-namespace MonsterEngine {
+namespace MonsterRender {
 namespace RHI {
 
 // Initialize static members
-TUniquePtr<FRHICommandListPool> FRHICommandListPool::s_instance;
+MonsterEngine::TUniquePtr<FRHICommandListPool> FRHICommandListPool::s_instance;
 
 FRHICommandListPool::FRHICommandListPool() {
     MR_LOG_INFO("FRHICommandListPool::FRHICommandListPool - Command list pool created");
@@ -38,9 +42,8 @@ FRHICommandListPool::~FRHICommandListPool() {
         }
     }
     
-    MR_LOG_INFO("FRHICommandListPool::~FRHICommandListPool - Command list pool destroyed. " +
-               std::to_string(m_totalAllocated.load()) + " total allocations, " +
-               std::to_string(m_totalRecycled.load()) + " total recycled");
+    MR_LOG(LogRHICommandListPool, Log, "FRHICommandListPool destroyed. Total allocations: %u, Total recycled: %u",
+           m_totalAllocated.load(), m_totalRecycled.load());
 }
 
 bool FRHICommandListPool::Initialize(uint32 InitialPoolSize) {
@@ -49,8 +52,7 @@ bool FRHICommandListPool::Initialize(uint32 InitialPoolSize) {
         return true;
     }
     
-    MR_LOG_INFO("FRHICommandListPool::Initialize - Initializing command list pool with " +
-               std::to_string(InitialPoolSize) + " initial command lists");
+    MR_LOG(LogRHICommandListPool, Log, "Initializing command list pool with %u initial command lists", InitialPoolSize);
     
     s_instance = MakeUnique<FRHICommandListPool>();
     
@@ -81,12 +83,9 @@ void FRHICommandListPool::Shutdown() {
     
     // Get final statistics
     auto stats = s_instance->GetStatsInternal();
-    MR_LOG_INFO("FRHICommandListPool::Shutdown - Final stats: " +
-               std::to_string(stats.totalAllocated) + " allocated, " +
-               std::to_string(stats.totalRecycled) + " recycled, " +
-               std::to_string(stats.activeCommandLists) + " active, " +
-               std::to_string(stats.pooledCommandLists) + " pooled, " +
-               std::to_string(stats.peakActiveCount) + " peak active");
+    MR_LOG(LogRHICommandListPool, Log, "Command list pool final stats: Allocated=%u, Recycled=%u, Active=%u, Pooled=%u, Peak=%u",
+           stats.totalAllocated, stats.totalRecycled, stats.activeCommandLists, 
+           stats.pooledCommandLists, stats.peakActiveCount);
     
     s_instance.reset();
     
@@ -191,8 +190,7 @@ MonsterRender::RHI::IRHICommandList* FRHICommandListPool::AllocateCommandListInt
         }
     }
     
-    MR_LOG_DEBUG("FRHICommandListPool::AllocateCommandListInternal - Allocated command list. Active: " +
-               std::to_string(activeCount));
+    MR_LOG(LogRHICommandListPool, VeryVerbose, "Allocated command list. Active count: %u", activeCount);
     
     return cmdList;
 }
@@ -215,8 +213,7 @@ void FRHICommandListPool::RecycleCommandListInternal(MonsterRender::RHI::IRHICom
     m_totalRecycled.fetch_add(1, std::memory_order_relaxed);
     uint32 activeCount = m_activeCommandLists.fetch_sub(1, std::memory_order_relaxed) - 1;
     
-    MR_LOG_DEBUG("FRHICommandListPool::RecycleCommandListInternal - Recycled command list. Active: " +
-               std::to_string(activeCount));
+    MR_LOG(LogRHICommandListPool, VeryVerbose, "Recycled command list. Active count: %u", activeCount);
 }
 
 MonsterRender::RHI::IRHICommandList* FRHICommandListPool::CreateCommandList(
@@ -270,17 +267,14 @@ void FRHICommandListPool::TrimPoolInternal(uint32 TargetPoolSize) {
     uint32 currentSize = static_cast<uint32>(m_commandListPool.size());
     
     if (currentSize <= TargetPoolSize) {
-        MR_LOG_DEBUG("FRHICommandListPool::TrimPoolInternal - Pool size " +
-                   std::to_string(currentSize) + " already at or below target " +
-                   std::to_string(TargetPoolSize));
+        MR_LOG(LogRHICommandListPool, Verbose, "Pool size %u already at or below target %u", currentSize, TargetPoolSize);
         return;
     }
     
     uint32 toRemove = currentSize - TargetPoolSize;
     
-    MR_LOG_INFO("FRHICommandListPool::TrimPoolInternal - Trimming pool from " +
-               std::to_string(currentSize) + " to " + std::to_string(TargetPoolSize) +
-               " (removing " + std::to_string(toRemove) + " command lists)");
+    MR_LOG(LogRHICommandListPool, Log, "Trimming pool from %u to %u (removing %u command lists)",
+           currentSize, TargetPoolSize, toRemove);
     
     for (uint32 i = 0; i < toRemove; ++i) {
         if (m_commandListPool.empty()) {
@@ -295,9 +289,9 @@ void FRHICommandListPool::TrimPoolInternal(uint32 TargetPoolSize) {
         }
     }
     
-    MR_LOG_INFO("FRHICommandListPool::TrimPoolInternal - Pool trimmed to " +
-               std::to_string(m_commandListPool.size()) + " command lists");
+    MR_LOG(LogRHICommandListPool, Log, "Pool trimmed to %u command lists", 
+           static_cast<uint32>(m_commandListPool.size()));
 }
 
 } // namespace RHI
-} // namespace MonsterEngine
+} // namespace MonsterRender
