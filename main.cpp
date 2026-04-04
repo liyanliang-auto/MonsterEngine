@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
     // If no command line arguments provided, keep runParallelIntegrationExample = true
     if (argc == 1) {
         // No arguments, run parallel rendering integration example by default
-        runParallelIntegrationExample = true;
+        runParallelIntegrationExample = false;
     }
     
     // Run logging tests separately (can run standalone)
