@@ -17,14 +17,14 @@ FRenderPassManager::~FRenderPassManager() {
 
 void FRenderPassManager::RegisterPass(const FRenderPassDesc& Desc, TSharedPtr<FRenderPassExecutor> Executor) {
     if (!Executor) {
-        MR_LOG_ERROR("FRenderPassManager::RegisterPass - Null executor for pass: " + Desc.Name);
+        MR_LOG_ERROR((FString("FRenderPassManager::RegisterPass - Null executor for pass: ") + Desc.Name).ToStdString());
         return;
     }
     
     // Check if pass already registered
     for (const auto& Entry : m_registeredPasses) {
         if (Entry.Desc.Type == Desc.Type) {
-            MR_LOG_WARNING("FRenderPassManager::RegisterPass - Pass already registered: " + Desc.Name);
+            MR_LOG_WARNING((FString("FRenderPassManager::RegisterPass - Pass already registered: ") + Desc.Name).ToStdString());
             return;
         }
     }
@@ -34,14 +34,14 @@ void FRenderPassManager::RegisterPass(const FRenderPassDesc& Desc, TSharedPtr<FR
     Entry.Executor = Executor;
     m_registeredPasses.push_back(Entry);
     
-    MR_LOG_INFO("FRenderPassManager::RegisterPass - Registered pass: " + Desc.Name + 
-                " (Parallel: " + (Desc.bParallelExecute ? "Yes" : "No") + ")");
+    MR_LOG_INFO((FString("FRenderPassManager::RegisterPass - Registered pass: ") + Desc.Name + 
+                FString(" (Parallel: ") + FString(Desc.bParallelExecute ? "Yes" : "No") + FString(")")).ToStdString());
 }
 
 void FRenderPassManager::ExecutePass(ERenderPassType Type, const FRenderPassContext& Context) {
     for (const auto& Entry : m_registeredPasses) {
         if (Entry.Desc.Type == Type) {
-            MR_LOG_DEBUG("FRenderPassManager::ExecutePass - Executing pass: " + Entry.Desc.Name);
+            MR_LOG_DEBUG((FString("FRenderPassManager::ExecutePass - Executing pass: ") + Entry.Desc.Name).ToStdString());
             Entry.Executor->Execute(Context);
             return;
         }
