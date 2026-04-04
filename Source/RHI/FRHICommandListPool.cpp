@@ -228,21 +228,14 @@ MonsterRender::RHI::IRHICommandList* FRHICommandListPool::CreateCommandList(
     
     MonsterRender::RHI::IRHICommandList* cmdList = nullptr;
     
-    // For testing purposes, create a mock command list
-    // In production, this would create VulkanRHICommandList or OpenGLCommandList
-    // based on the current RHI backend
-    
-#ifdef USE_MOCK_COMMAND_LIST
-    cmdList = new MockCommandList(RecordingThread);
-    MR_LOG_DEBUG("FRHICommandListPool::CreateCommandList - Created mock command list for testing");
-#else
     // Production path - integrate with actual RHI backend
     // This will be implemented when we integrate with VulkanRHICommandList
-    MR_LOG_WARNING("FRHICommandListPool::CreateCommandList - Command list creation not yet implemented. "
-                  "Need to integrate with platform-specific RHI backend");
-#endif
+    // For now, return nullptr to indicate not yet implemented
+    MR_LOG(LogRHICommandListPool, Warning, 
+           "FRHICommandListPool::CreateCommandList - Command list creation not yet implemented. "
+           "Need to integrate with platform-specific RHI backend");
     
-    return cmdList;
+    return nullptr;
 }
 
 FRHICommandListPool::FPoolStats FRHICommandListPool::GetStatsInternal() const {
