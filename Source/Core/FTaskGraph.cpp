@@ -152,17 +152,34 @@ void FTaskGraph::WaitForAllTasks() {
     
     // Wait until queue is empty and no active tasks
     while (true) {
-        {
-            std::lock_guard<std::mutex> lock(s_instance->m_queueMutex);
-            if (s_instance->m_taskQueue.empty() && 
-                s_instance->m_activeTasks.load(std::memory_order_acquire) == 0) {
-                break;
-            }
+        std::unique_lock<std::mutex> lock(s_instance->m_queueMutex);
+        
+        if (s_instance->m_taskQueue.empty() && s_instance->m_activeTasks == 0) {
+            break;
         }
+        
+        lock.unlock();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     
     MR_LOG_DEBUG("FTaskGraph::WaitForAllTasks - All tasks completed");
+}
+
+void FTaskGraph::WaitForTasks(const FGraphEventArray& Tasks) {
+    if (Tasks.empty()) {
+        return;
+    }
+    
+    MR_LOG_DEBUG("FTaskGraph::WaitForTasks - Waiting for " + std::to_string(Tasks.size()) + " tasks");
+    
+    // Wait for each task to complete
+    for (const auto& task : Tasks) {
+        if (task) {
+            task->Wait();
+        }
+    }
+    
+    MR_LOG_DEBUG("FTaskGraph::WaitForTasks - All specified tasks completed");
 }
 
 uint32 FTaskGraph::GetNumWorkerThreads() {

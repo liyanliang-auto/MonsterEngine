@@ -13,7 +13,6 @@
 #include <thread>
 #include <chrono>
 
-using namespace MonsterEngine::RHI;
 using namespace MonsterRender::RHI;
 using namespace MonsterRender::RHI::Vulkan;
 

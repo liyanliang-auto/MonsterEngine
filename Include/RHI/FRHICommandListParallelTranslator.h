@@ -10,7 +10,7 @@
 #include <atomic>
 #include <mutex>
 
-namespace MonsterEngine {
+namespace MonsterRender {
 namespace RHI {
 
 /**
@@ -68,8 +68,8 @@ public:
      */
     struct FParallelContext {
         TArray<FQueuedCommandList> commandLists;
-        TArray<FGraphEventRef> translationEvents;
-        FGraphEventRef completionEvent;
+        TArray<MonsterEngine::FGraphEventRef> translationEvents;
+        MonsterEngine::FGraphEventRef completionEvent;
         ETranslatePriority priority = ETranslatePriority::Normal;
         uint32 numCommandLists = 0;
         uint32 totalDraws = 0;
@@ -83,13 +83,13 @@ public:
      */
     struct FTranslationTask {
         MonsterRender::RHI::IRHICommandList* cmdList = nullptr;
-        FGraphEventRef completionEvent;
+        MonsterEngine::FGraphEventRef completionEvent;
         uint32 taskIndex = 0;
         
         FTranslationTask() = default;
         
         FTranslationTask(MonsterRender::RHI::IRHICommandList* InCmdList, 
-                        FGraphEventRef InEvent, 
+                        MonsterEngine::FGraphEventRef InEvent, 
                         uint32 InIndex)
             : cmdList(InCmdList)
             , completionEvent(InEvent)
@@ -123,7 +123,7 @@ public:
      * @param MinDrawsPerTranslate Minimum draws to enable parallel translation
      * @return Completion event for all translations
      */
-    static FGraphEventRef QueueParallelTranslate(
+    static MonsterEngine::FGraphEventRef QueueParallelTranslate(
         TSpan<FQueuedCommandList> CommandLists,
         ETranslatePriority Priority = ETranslatePriority::Normal,
         uint32 MinDrawsPerTranslate = 100
@@ -133,7 +133,7 @@ public:
      * Queue a single command list for translation
      * Convenience method for single command list
      */
-    static FGraphEventRef QueueParallelTranslate(
+    static MonsterEngine::FGraphEventRef QueueParallelTranslate(
         FQueuedCommandList CommandList,
         ETranslatePriority Priority = ETranslatePriority::Normal
     );
@@ -168,7 +168,7 @@ private:
     /**
      * Internal implementation of parallel translate
      */
-    FGraphEventRef QueueParallelTranslateInternal(
+    MonsterEngine::FGraphEventRef QueueParallelTranslateInternal(
         TSpan<FQueuedCommandList> CommandLists,
         ETranslatePriority Priority,
         uint32 MinDrawsPerTranslate
@@ -194,7 +194,7 @@ private:
      */
     TArray<FTranslationTask> CreateTranslationTasks(
         TSpan<FQueuedCommandList> CommandLists,
-        TArray<FGraphEventRef>& OutEvents
+        TArray<MonsterEngine::FGraphEventRef>& OutEvents
     );
     
     /**
@@ -231,7 +231,7 @@ public:
      * @param taskIndex Index of this task
      * @return Completion event
      */
-    FGraphEventRef TranslateCommandListAsync(
+    MonsterEngine::FGraphEventRef TranslateCommandListAsync(
         MonsterRender::RHI::IRHICommandList* cmdList,
         uint32 taskIndex
     );
@@ -301,7 +301,7 @@ public:
      * @param Priority Translation priority
      * @return Completion event
      */
-    FGraphEventRef Submit(ETranslatePriority Priority = ETranslatePriority::Normal);
+    MonsterEngine::FGraphEventRef Submit(ETranslatePriority Priority = ETranslatePriority::Normal);
     
     /**
      * Wait for all command lists to complete translation
@@ -315,9 +315,9 @@ public:
     
 private:
     TArray<MonsterRender::RHI::IRHICommandList*> m_commandLists;
-    FGraphEventRef m_completionEvent;
+    MonsterEngine::FGraphEventRef m_completionEvent;
     bool m_bSubmitted = false;
 };
 
 } // namespace RHI
-} // namespace MonsterEngine
+} // namespace MonsterRender

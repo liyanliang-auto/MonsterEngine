@@ -80,6 +80,14 @@ public:
     static void WaitForAllTasks();
     
     /**
+     * Wait for specific tasks to complete
+     * Blocks until all specified tasks are complete
+     * 
+     * @param Tasks - Array of task events to wait for
+     */
+    static void WaitForTasks(const FGraphEventArray& Tasks);
+    
+    /**
      * Get number of worker threads
      */
     static uint32 GetNumWorkerThreads();

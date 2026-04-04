@@ -17,7 +17,7 @@ namespace MonsterRender::RHI::Vulkan {
     class FVulkanCommandListContext;
 }
 
-namespace MonsterEngine::RHI {
+namespace MonsterRender::RHI {
 
 /**
  * FTranslatedCommandBufferCollection
@@ -161,4 +161,4 @@ private:
     std::atomic<uint32> m_executionCount{0};
 };
 
-} // namespace MonsterEngine::RHI
+} // namespace MonsterRender::RHI

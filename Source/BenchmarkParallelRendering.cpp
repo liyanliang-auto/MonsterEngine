@@ -12,7 +12,6 @@
 #include <iomanip>
 #include <sstream>
 
-using namespace MonsterEngine::RHI;
 using namespace MonsterRender::RHI;
 
 namespace MonsterEngine {

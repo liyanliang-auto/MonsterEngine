@@ -4,8 +4,9 @@
 #include "Core/Log.h"
 #include "RHI/FRHICommandListParallelTranslator.h"
 #include "RHI/FTranslatedCommandBufferCollection.h"
-#include "Scene/Scene.h"
-#include "Scene/SceneView.h"
+#include "Renderer/Scene.h"
+#include "Renderer/SceneView.h"
+#include "Core/FTaskGraph.h"
 
 namespace MonsterEngine {
 namespace Renderer {
@@ -20,7 +21,7 @@ FParallelSceneRenderer::FParallelSceneRenderer(FScene* Scene, FSceneViewFamily* 
     MR_LOG_INFO("FParallelSceneRenderer created");
     
     // Create parallel translator
-    m_parallelTranslator = MakeUnique<RHI::FRHICommandListParallelTranslator>();
+    m_parallelTranslator = MakeUnique<MonsterRender::RHI::FRHICommandListParallelTranslator>();
     
     // Create render pass manager
     m_passManager = MakeUnique<FRenderPassManager>();
@@ -34,7 +35,7 @@ FParallelSceneRenderer::~FParallelSceneRenderer() {
     MR_LOG_INFO("FParallelSceneRenderer destroyed");
 }
 
-void FParallelSceneRenderer::Render(RHI::IRHICommandList* RHICmdList) {
+void FParallelSceneRenderer::Render(MonsterRender::RHI::IRHICommandList* RHICmdList) {
     if (!RHICmdList) {
         MR_LOG_ERROR("FParallelSceneRenderer::Render - Null command list");
         return;
@@ -83,7 +84,7 @@ bool FParallelSceneRenderer::BeginFrame() {
     MR_LOG_INFO("FParallelSceneRenderer::BeginFrame");
     
     // Create a new command buffer collection for this frame
-    m_commandBufferCollection = MakeUnique<RHI::FTranslatedCommandBufferCollection>();
+    m_commandBufferCollection = MakeUnique<MonsterRender::RHI::FTranslatedCommandBufferCollection>();
     if (!m_commandBufferCollection) {
         MR_LOG_ERROR("Failed to create command buffer collection");
         return false;
@@ -115,7 +116,7 @@ void FParallelSceneRenderer::EndFrame() {
     m_bFrameBegun = false;
 }
 
-void FParallelSceneRenderer::ExecuteSecondaryCommandBuffers(RHI::IRHICommandList* RHICmdList) {
+void FParallelSceneRenderer::ExecuteSecondaryCommandBuffers(MonsterRender::RHI::IRHICommandList* RHICmdList) {
     if (!RHICmdList) {
         MR_LOG_ERROR("FParallelSceneRenderer::ExecuteSecondaryCommandBuffers - Null command list");
         return;
@@ -153,19 +154,19 @@ void FParallelSceneRenderer::InitViews() {
     // For now, this is a placeholder
 }
 
-void FParallelSceneRenderer::RenderBasePassParallel(RHI::IRHICommandList* RHICmdList) {
+void FParallelSceneRenderer::RenderBasePassParallel(MonsterRender::RHI::IRHICommandList* RHICmdList) {
     MR_LOG_DEBUG("FParallelSceneRenderer::RenderBasePassParallel");
     
     // Base pass rendering will be implemented in Phase 3
 }
 
-void FParallelSceneRenderer::RenderPBRPassParallel(RHI::IRHICommandList* RHICmdList) {
+void FParallelSceneRenderer::RenderPBRPassParallel(MonsterRender::RHI::IRHICommandList* RHICmdList) {
     MR_LOG_DEBUG("FParallelSceneRenderer::RenderPBRPassParallel");
     
     // PBR pass rendering will be implemented in Phase 3
 }
 
-void FParallelSceneRenderer::RenderShadowDepthPassParallel(RHI::IRHICommandList* RHICmdList) {
+void FParallelSceneRenderer::RenderShadowDepthPassParallel(MonsterRender::RHI::IRHICommandList* RHICmdList) {
     MR_LOG_DEBUG("FParallelSceneRenderer::RenderShadowDepthPassParallel");
     
     // Shadow depth pass rendering will be implemented in Phase 3
@@ -187,7 +188,7 @@ void FParallelSceneRenderer::WaitForParallelTasks() {
                std::to_string(m_parallelTaskEvents.size()) + " tasks");
     
     // Wait for all tasks
-    FTaskGraph::WaitForTasks(m_parallelTaskEvents);
+    MonsterEngine::FTaskGraph::WaitForTasks(m_parallelTaskEvents);
     
     MR_LOG_INFO("All parallel tasks completed");
 }

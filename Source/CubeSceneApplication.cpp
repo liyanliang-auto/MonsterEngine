@@ -2457,14 +2457,20 @@ bool CubeSceneApplication::initializeParallelRendering()
     // For now, we create a persistent one for parallel renderer initialization
     if (!m_viewFamily)
     {
-        m_viewFamily = MakeUnique<MonsterEngine::FSceneViewFamily>();
+        MonsterEngine::FSceneViewFamily::ConstructionValues cvs;
+        cvs.RenderTarget = nullptr; // TODO: Set proper render target
+        cvs.Scene = m_scene.get();
+        
+        m_viewFamily = MakeUnique<MonsterEngine::FSceneViewFamily>(cvs);
         MR_LOG(LogCubeSceneApp, Log, "Created scene view family for parallel rendering");
     }
 
     // Create parallel scene renderer
+    // Note: FParallelSceneRenderer expects MonsterEngine::Renderer::FScene, but we have MonsterEngine::FScene
+    // For now, pass nullptr as temporary solution until we integrate proper Renderer::FScene
     m_parallelRenderer = MakeUnique<MonsterEngine::Renderer::FParallelSceneRenderer>(
-        m_scene.get(),
-        m_viewFamily.get()
+        nullptr,  // TODO: Create proper Renderer::FScene
+        nullptr   // TODO: Create proper Renderer::FSceneViewFamily
     );
 
     if (!m_parallelRenderer)

@@ -7,7 +7,7 @@
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Core/Log.h"
 
-namespace MonsterEngine::RHI {
+namespace MonsterRender::RHI {
 
 using namespace MonsterRender::RHI::Vulkan;
 
@@ -131,4 +131,4 @@ void FTranslatedCommandBufferCollection::Reset() {
                "Freed " + std::to_string(bufferCount) + " secondary buffers");
 }
 
-} // namespace MonsterEngine::RHI
+} // namespace MonsterRender::RHI

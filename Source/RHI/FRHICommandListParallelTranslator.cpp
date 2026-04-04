@@ -8,7 +8,7 @@
 #include "Platform/Vulkan/VulkanRHICommandListRecorder.h"
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 
-namespace MonsterEngine {
+namespace MonsterRender {
 namespace RHI {
 
 // Initialize static members
@@ -79,7 +79,7 @@ bool FRHICommandListParallelTranslator::IsInitialized() {
     return s_instance != nullptr;
 }
 
-FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslate(
+MonsterEngine::FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslate(
     TSpan<FQueuedCommandList> CommandLists,
     ETranslatePriority Priority,
     uint32 MinDrawsPerTranslate
@@ -92,7 +92,7 @@ FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslate(
     return s_instance->QueueParallelTranslateInternal(CommandLists, Priority, MinDrawsPerTranslate);
 }
 
-FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslate(
+MonsterEngine::FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslate(
     FQueuedCommandList CommandList,
     ETranslatePriority Priority
 ) {
@@ -107,7 +107,7 @@ void FRHICommandListParallelTranslator::WaitForAllTranslations() {
     
     MR_LOG_DEBUG("FRHICommandListParallelTranslator::WaitForAllTranslations - Waiting for all translations");
     
-    TArray<FGraphEventRef> eventsToWait;
+    TArray<MonsterEngine::FGraphEventRef> eventsToWait;
     
     {
         std::lock_guard<std::mutex> lock(s_instance->m_contextMutex);
@@ -141,7 +141,7 @@ FRHICommandListParallelTranslator& FRHICommandListParallelTranslator::Get() {
     return *s_instance;
 }
 
-FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslateInternal(
+MonsterEngine::FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslateInternal(
     TSpan<FQueuedCommandList> CommandLists,
     ETranslatePriority Priority,
     uint32 MinDrawsPerTranslate
@@ -172,7 +172,7 @@ FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslateInternal
         MR_LOG_DEBUG("FRHICommandListParallelTranslator::QueueParallelTranslateInternal - Using parallel translation");
         
         // Create translation tasks
-        TArray<FGraphEventRef> translationEvents;
+        TArray<MonsterEngine::FGraphEventRef> translationEvents;
         auto tasks = CreateTranslationTasks(CommandLists, translationEvents);
         
         context->translationEvents = translationEvents;
@@ -182,7 +182,7 @@ FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslateInternal
             // Determine task priority based on translation priority
             String taskName = "ParallelTranslate_" + std::to_string(task.taskIndex);
             
-            FGraphEventRef taskEvent = FTaskGraph::QueueNamedTask(
+            MonsterEngine::FGraphEventRef taskEvent = MonsterEngine::FTaskGraph::QueueNamedTask(
                 taskName,
                 [this, task]() {
                     TranslateCommandList(task);
@@ -197,10 +197,10 @@ FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslateInternal
         }
         
         // Create completion event that waits for all translation tasks
-        context->completionEvent = MakeGraphEvent();
+        context->completionEvent = MonsterEngine::MakeGraphEvent();
         
         // Dispatch a task to mark completion when all translations are done
-        FTaskGraph::QueueNamedTask(
+        MonsterEngine::FTaskGraph::QueueNamedTask(
             "ParallelTranslateComplete",
             [completionEvent = context->completionEvent]() {
                 completionEvent->Complete();
@@ -214,7 +214,7 @@ FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslateInternal
         MR_LOG_DEBUG("FRHICommandListParallelTranslator::QueueParallelTranslateInternal - Using serial translation");
         
         // Serial translation - execute on current thread or RHI thread
-        context->completionEvent = MakeGraphEvent();
+        context->completionEvent = MonsterEngine::MakeGraphEvent();
         
         for (const auto& queuedCmdList : CommandLists) {
             if (queuedCmdList.cmdList) {
@@ -232,7 +232,7 @@ FGraphEventRef FRHICommandListParallelTranslator::QueueParallelTranslateInternal
     m_totalTranslations.fetch_add(1, std::memory_order_relaxed);
     
     // Store context
-    FGraphEventRef completionEvent = context->completionEvent;
+    MonsterEngine::FGraphEventRef completionEvent = context->completionEvent;
     {
         std::lock_guard<std::mutex> lock(m_contextMutex);
         m_activeContexts.push_back(std::move(context));
@@ -431,7 +431,7 @@ bool FRHICommandListParallelTranslator::ShouldUseParallelTranslation(
 TArray<FRHICommandListParallelTranslator::FTranslationTask> 
 FRHICommandListParallelTranslator::CreateTranslationTasks(
     TSpan<FQueuedCommandList> CommandLists,
-    TArray<FGraphEventRef>& OutEvents
+    TArray<MonsterEngine::FGraphEventRef>& OutEvents
 ) {
     TArray<FTranslationTask> tasks;
     tasks.reserve(CommandLists.size());
@@ -447,7 +447,7 @@ FRHICommandListParallelTranslator::CreateTranslationTasks(
         }
         
         // Create completion event for this task
-        FGraphEventRef taskEvent = MakeGraphEvent();
+        MonsterEngine::FGraphEventRef taskEvent = MonsterEngine::MakeGraphEvent();
         OutEvents.push_back(taskEvent);
         
         // Create translation task
@@ -518,7 +518,7 @@ MonsterRender::RHI::IRHICommandList* FParallelCommandListSet::AllocateCommandLis
     return cmdList;
 }
 
-FGraphEventRef FParallelCommandListSet::Submit(ETranslatePriority Priority) {
+MonsterEngine::FGraphEventRef FParallelCommandListSet::Submit(ETranslatePriority Priority) {
     if (m_bSubmitted) {
         MR_LOG_WARNING("FParallelCommandListSet::Submit - Already submitted");
         return m_completionEvent;
@@ -587,7 +587,7 @@ void FRHICommandListParallelTranslator::ResetCommandBufferCollection() {
     }
 }
 
-FGraphEventRef FRHICommandListParallelTranslator::TranslateCommandListAsync(
+MonsterEngine::FGraphEventRef FRHICommandListParallelTranslator::TranslateCommandListAsync(
     MonsterRender::RHI::IRHICommandList* cmdList,
     uint32 taskIndex) {
     
@@ -598,13 +598,13 @@ FGraphEventRef FRHICommandListParallelTranslator::TranslateCommandListAsync(
     }
     
     // Create completion event
-    auto completionEvent = MakeShared<FGraphEvent>();
+    auto completionEvent = MonsterEngine::MakeShared<MonsterEngine::FGraphEvent>();
     
     // Create translation task
     FTranslationTask task(cmdList, completionEvent, taskIndex);
     
     // Queue task on task graph
-    FTaskGraph::QueueTask(
+    MonsterEngine::FTaskGraph::QueueTask(
         [this, task]() {
             this->TranslateCommandList(task);
         }
@@ -617,4 +617,4 @@ FGraphEventRef FRHICommandListParallelTranslator::TranslateCommandListAsync(
 }
 
 } // namespace RHI
-} // namespace MonsterEngine
+} // namespace MonsterRender
