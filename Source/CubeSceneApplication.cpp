@@ -491,18 +491,27 @@ void CubeSceneApplication::onRender()
 
         // ================================================================
 
-        // Choose rendering path: Parallel, RDG, or traditional
+        // Choose rendering path: RDG+Parallel, Parallel, RDG, or traditional
 
         // ================================================================
 
-        if (m_bEnableParallelRendering && m_parallelRenderer)
+        if (m_bEnableParallelRendering && m_bUseRDG)
         {
+            // RDG + Parallel Rendering (combined approach)
+            MR_LOG(LogCubeSceneApp, Log, "Using RDG + Parallel rendering path");
+            renderWithRDGParallel(cmdList, viewMatrix, projectionMatrix, cameraPosition);
+            // NOTE: RDG parallel renderer handles all passes with parallel execution
+        }
+        else if (m_bEnableParallelRendering && m_parallelRenderer)
+        {
+            // Pure parallel rendering (without RDG)
             MR_LOG(LogCubeSceneApp, Log, "Using parallel rendering path");
             renderWithParallelRenderer(cmdList, viewMatrix, projectionMatrix, cameraPosition);
             // NOTE: Parallel renderer handles all passes internally
         }
         else if (m_bUseRDG/* && m_bShadowsEnabled*/)
         {
+            // Pure RDG rendering (without parallel)
             MR_LOG(LogCubeSceneApp, Log, "Using RDG rendering path");
             renderWithRDG(cmdList, viewMatrix, projectionMatrix, cameraPosition);
             // NOTE: PBR helmet rendering is integrated into RDG MainRenderPass
@@ -2779,6 +2788,115 @@ MonsterEngine::FGraphEventRef CubeSceneApplication::dispatchShadowDepthPass()
     });
 
     return completionEvent;
+}
+
+// ============================================================================
+// RDG + Parallel Rendering Integration Example
+// ============================================================================
+
+void CubeSceneApplication::renderWithRDGParallel(
+    RHI::IRHICommandList* cmdList,
+    const MonsterEngine::Math::FMatrix& viewMatrix,
+    const MonsterEngine::Math::FMatrix& projectionMatrix,
+    const MonsterEngine::Math::FVector& cameraPosition)
+{
+    using namespace MonsterRender::RDG;
+    
+    MR_LOG(LogCubeSceneApp, Log, "Rendering with RDG + Parallel Rendering integration");
+    
+    // Create RDG builder
+    FRDGBuilder graphBuilder(m_device, "ParallelRenderGraph");
+    
+    // Register external render targets
+    FRDGTextureRef colorTarget = graphBuilder.registerExternalTexture(
+        "ColorTarget",
+        m_viewportColorTarget.Get(),
+        ERHIAccess::RTV);
+    
+    FRDGTextureRef depthTarget = graphBuilder.registerExternalTexture(
+        "DepthTarget",
+        m_viewportDepthTarget.Get(),
+        ERHIAccess::DSVWrite);
+    
+    FRDGTextureRef shadowMap = graphBuilder.registerExternalTexture(
+        "ShadowMap",
+        m_shadowMapTexture.Get(),
+        ERHIAccess::DSVWrite);
+    
+    // ========================================================================
+    // Pass 1: Shadow Depth Pass (Sequential)
+    // ========================================================================
+    graphBuilder.addPass(
+        "ShadowDepthPass",
+        ERDGPassFlags::Raster,
+        [&](FRDGPassBuilder& builder) {
+            builder.writeDepth(shadowMap, ERHIAccess::DSVWrite);
+        },
+        [=](RHI::IRHICommandList& rhiCmdList) {
+            MR_LOG(LogCubeSceneApp, Verbose, "Executing Shadow Depth Pass in RDG");
+            
+            // Setup shadow render targets
+            rhiCmdList.setMarker("RDG_ShadowDepth");
+            
+            // TODO: Render shadow depth
+            // This would normally call the shadow rendering code
+        });
+    
+    // ========================================================================
+    // Pass 2: Parallel Geometry Pass (Base + PBR + Additional geometry)
+    // ========================================================================
+    graphBuilder.addParallelPass(
+        "ParallelGeometryPass",
+        ERDGPassFlags::Raster,
+        [&](FRDGPassBuilder& builder) {
+            // Declare resource dependencies
+            builder.writeTexture(colorTarget, ERHIAccess::RTV);
+            builder.writeDepth(depthTarget, ERHIAccess::DSVWrite);
+            builder.readTexture(shadowMap, ERHIAccess::SRVGraphics);
+        },
+        [this](RHI::IRHICommandList& rhiCmdList, TArray<MonsterEngine::FGraphEventRef>& outTasks) {
+            MR_LOG(LogCubeSceneApp, Log, "Dispatching parallel geometry rendering tasks");
+            
+            // Dispatch multiple parallel rendering tasks
+            // Each task will allocate its own command list from the pool
+            
+            // Task 1: Base Pass (opaque geometry)
+            outTasks.Add(dispatchBasePass());
+            
+            // Task 2: PBR Pass (PBR materials)
+            outTasks.Add(dispatchPBRPass());
+            
+            // Task 3: Shadow Depth Pass (if needed for cascaded shadows)
+            outTasks.Add(dispatchShadowDepthPass());
+            
+            MR_LOG(LogCubeSceneApp, Verbose, "Dispatched %d parallel rendering tasks", outTasks.Num());
+        });
+    
+    // ========================================================================
+    // Pass 3: Post-Processing Pass (Sequential)
+    // ========================================================================
+    graphBuilder.addPass(
+        "PostProcessPass",
+        ERDGPassFlags::Raster,
+        [&](FRDGPassBuilder& builder) {
+            builder.readTexture(colorTarget, ERHIAccess::SRVGraphics);
+            builder.writeTexture(colorTarget, ERHIAccess::RTV);
+        },
+        [=](RHI::IRHICommandList& rhiCmdList) {
+            MR_LOG(LogCubeSceneApp, Verbose, "Executing Post-Process Pass in RDG");
+            
+            rhiCmdList.setMarker("RDG_PostProcess");
+            
+            // TODO: Apply post-processing effects
+            // This would normally apply tone mapping, bloom, etc.
+        });
+    
+    // ========================================================================
+    // Execute the render graph
+    // ========================================================================
+    MR_LOG(LogCubeSceneApp, Log, "Executing RDG with parallel passes...");
+    graphBuilder.execute(*cmdList);
+    MR_LOG(LogCubeSceneApp, Log, "RDG execution complete");
 }
 
 } // namespace MonsterRender
