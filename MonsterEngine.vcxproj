@@ -293,6 +293,7 @@
     <ClCompile Include="Source\Engine\Mesh\GLTFMeshLoader.cpp" />
     <ClCompile Include="Source\Renderer\LightUniformBuffer.cpp" />
     <ClCompile Include="Source\Renderer\RenderPass.cpp" />
+    <ClCompile Include="Source\Renderer\RenderPasses.cpp" />
     <ClCompile Include="Source\Renderer\ForwardRenderPasses.cpp" />
     <ClCompile Include="Source\Renderer\ForwardShaderCompiler.cpp" />
     <ClCompile Include="Source\Engine\Camera\CameraTypes.cpp" />
@@ -321,6 +322,7 @@
     <ClCompile Include="Source\Renderer\RendererSceneView.cpp" />
     <ClCompile Include="Source\Renderer\RendererSceneRenderer.cpp" />
     <ClCompile Include="Source\Renderer\RendererSceneVisibility.cpp" />
+    <ClCompile Include="Source\Renderer\ParallelSceneRenderer.cpp" />
     <ClCompile Include="Source\Renderer\MeshDrawCommand.cpp" />
     <ClCompile Include="Source\Renderer\RenderQueue.cpp" />
     <ClCompile Include="Source\Renderer\ShadowRendering.cpp" />

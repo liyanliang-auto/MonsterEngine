@@ -19,19 +19,19 @@
 #include "Renderer/RenderPasses.h"
 #include "Core/FTaskGraph.h"
 
+// Forward declarations
+namespace MonsterRender::RHI {
+class FRHICommandListParallelTranslator;
+class FTranslatedCommandBufferCollection;
+}
+
 namespace MonsterEngine {
+namespace Renderer {
 
 // Forward declarations
 class FScene;
 class FSceneViewFamily;
 class FSceneView;
-
-namespace RHI {
-class FRHICommandListParallelTranslator;
-class FTranslatedCommandBufferCollection;
-}
-
-namespace Renderer {
 
 /**
  * Parallel scene renderer
@@ -63,7 +63,7 @@ public:
      * Main rendering entry point
      * @param RHICmdList RHI command list for rendering
      */
-    void Render(RHI::IRHICommandList* RHICmdList);
+    void Render(MonsterRender::RHI::IRHICommandList* RHICmdList);
     
     /**
      * Begin a new frame
@@ -82,7 +82,7 @@ public:
      * Execute all secondary command buffers in primary command buffer
      * @param RHICmdList Primary command list
      */
-    void ExecuteSecondaryCommandBuffers(RHI::IRHICommandList* RHICmdList);
+    void ExecuteSecondaryCommandBuffers(MonsterRender::RHI::IRHICommandList* RHICmdList);
     
     /**
      * Enable or disable parallel rendering
@@ -118,21 +118,21 @@ private:
      * Renders opaque geometry
      * @param RHICmdList Command list
      */
-    void RenderBasePassParallel(RHI::IRHICommandList* RHICmdList);
+    void RenderBasePassParallel(MonsterRender::RHI::IRHICommandList* RHICmdList);
     
     /**
      * Render PBR pass in parallel
      * Renders PBR materials
      * @param RHICmdList Command list
      */
-    void RenderPBRPassParallel(RHI::IRHICommandList* RHICmdList);
+    void RenderPBRPassParallel(MonsterRender::RHI::IRHICommandList* RHICmdList);
     
     /**
      * Render shadow depth pass in parallel
      * Generates shadow maps
      * @param RHICmdList Command list
      */
-    void RenderShadowDepthPassParallel(RHI::IRHICommandList* RHICmdList);
+    void RenderShadowDepthPassParallel(MonsterRender::RHI::IRHICommandList* RHICmdList);
     
     /**
      * Dispatch all parallel render passes
@@ -158,8 +158,8 @@ private:
     FSceneViewFamily* m_viewFamily;
     
     // Parallel rendering system
-    MonsterEngine::TUniquePtr<RHI::FRHICommandListParallelTranslator> m_parallelTranslator;
-    MonsterEngine::TUniquePtr<RHI::FTranslatedCommandBufferCollection> m_commandBufferCollection;
+    MonsterEngine::TUniquePtr<MonsterRender::RHI::FRHICommandListParallelTranslator> m_parallelTranslator;
+    MonsterEngine::TUniquePtr<MonsterRender::RHI::FTranslatedCommandBufferCollection> m_commandBufferCollection;
     
     // Render pass management
     MonsterEngine::TUniquePtr<FRenderPassManager> m_passManager;

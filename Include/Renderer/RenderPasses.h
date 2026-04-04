@@ -55,7 +55,7 @@ struct FRenderPassDesc {
  * Contains all data needed to execute a render pass
  */
 struct FRenderPassContext {
-    RHI::IRHICommandList* CmdList;
+    MonsterRender::RHI::IRHICommandList* CmdList;
     class FScene* Scene;
     struct FSceneView* View;
     
