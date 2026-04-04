@@ -493,7 +493,7 @@ FParallelCommandListSet::~FParallelCommandListSet() {
     // Recycle all command lists back to pool
     for (auto* cmdList : m_commandLists) {
         if (cmdList) {
-            FRHICommandListPool::RecycleCommandList(cmdList);
+            MonsterRender::RHI::FRHICommandListPool::RecycleCommandList(cmdList);
         }
     }
     
@@ -501,14 +501,14 @@ FParallelCommandListSet::~FParallelCommandListSet() {
 }
 
 MonsterRender::RHI::IRHICommandList* FParallelCommandListSet::AllocateCommandList(
-    FRHICommandListPool::ECommandListType Type
-) {
+    MonsterRender::RHI::FRHICommandListPool::ECommandListType Type)
+{
     if (m_bSubmitted) {
         MR_LOG_ERROR("FParallelCommandListSet::AllocateCommandList - Cannot allocate after submission");
         return nullptr;
     }
     
-    auto* cmdList = FRHICommandListPool::AllocateCommandList(Type);
+    auto* cmdList = MonsterRender::RHI::FRHICommandListPool::AllocateCommandList(Type);
     if (cmdList) {
         m_commandLists.push_back(cmdList);
         MR_LOG_DEBUG("FParallelCommandListSet::AllocateCommandList - Allocated command list " +

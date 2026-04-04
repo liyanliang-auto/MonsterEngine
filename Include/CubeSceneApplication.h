@@ -467,6 +467,21 @@ protected:
      * Shutdown parallel rendering system
      */
     void shutdownParallelRendering();
+    
+    /**
+     * Render using RDG with parallel passes
+     * Demonstrates integration of RDG system with parallel rendering
+     * 
+     * @param cmdList Command list for recording
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     */
+    void renderWithRDGParallel(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
 
 protected:
 

@@ -179,6 +179,60 @@ public:
     }
     
     /**
+     * Add a parallel render pass to the graph
+     * 
+     * Parallel passes execute multiple sub-tasks concurrently using FTaskGraph.
+     * The execute lambda receives a task array to populate with parallel work.
+     * 
+     * @param name Pass name for debugging
+     * @param flags Pass execution flags
+     * @param setupFunc Lambda to declare resource dependencies
+     * @param executeFunc Lambda to dispatch parallel tasks
+     * 
+     * Example:
+     * builder.AddParallelPass("ParallelGeometry", ERDGPassFlags::Raster,
+     *     [&](FRDGPassBuilder& passBuilder) {
+     *         passBuilder.WriteTexture(colorTarget);
+     *         passBuilder.WriteDepth(depthTarget);
+     *     },
+     *     [=](RHI::IRHICommandList& cmdList, TArray<MonsterEngine::FGraphEventRef>& outTasks) {
+     *         // Dispatch parallel rendering tasks
+     *         outTasks.Add(dispatchBasePass());
+     *         outTasks.Add(dispatchPBRPass());
+     *         outTasks.Add(dispatchShadowDepthPass());
+     *     });
+     */
+    template<typename SetupLambdaType, typename ParallelExecuteLambdaType>
+    FRDGPassRef addParallelPass(
+        const FString& name,
+        ERDGPassFlags flags,
+        SetupLambdaType&& setupFunc,
+        ParallelExecuteLambdaType&& executeFunc)
+    {
+        // Create parallel pass
+        auto* pass = new TRDGParallelPass<ParallelExecuteLambdaType>(
+            name,
+            flags,
+            std::move(executeFunc));
+        
+        // Assign handle
+        pass->m_handle = FRDGPassHandle(static_cast<uint16>(m_passes.Num()));
+        
+        // Setup resource dependencies
+        FRDGPassBuilder passBuilder;
+        setupFunc(passBuilder);
+        
+        // Record dependencies
+        pass->m_textureAccesses = passBuilder.getTextureAccesses();
+        pass->m_bufferAccesses = passBuilder.getBufferAccesses();
+        
+        // Add to pass list
+        m_passes.Add(pass);
+        
+        return pass;
+    }
+    
+    /**
      * Compile and execute the render graph
      * 
      * This will:

@@ -10,6 +10,12 @@
  * Reference: UE5 RenderGraphPass.h
  */
 
+// Forward declarations for parallel rendering support
+namespace MonsterEngine {
+    class FGraphEvent;
+    using FGraphEventRef = TSharedPtr<FGraphEvent>;
+}
+
 namespace MonsterRender {
 namespace RDG {
 
@@ -17,6 +23,7 @@ namespace RDG {
 using MonsterEngine::FString;
 using MonsterEngine::TArray;
 using MonsterEngine::TFunction;
+using MonsterEngine::FGraphEventRef;
 
 // Forward declarations
 class FRDGBuilder;
@@ -168,6 +175,9 @@ public:
     // Execute the pass
     virtual void execute(RHI::IRHICommandList& rhiCmdList) = 0;
     
+    // Check if this pass supports parallel execution
+    virtual bool isParallel() const { return false; }
+    
 protected:
     FString m_name;
     ERDGPassFlags m_flags;
@@ -205,8 +215,59 @@ public:
         m_executeLambda(rhiCmdList);
     }
     
+    virtual bool isParallel() const override { return false; }
+    
 private:
     ExecuteLambdaType m_executeLambda;
+};
+
+/**
+ * Parallel pass implementation
+ * Executes multiple sub-passes in parallel using FTaskGraph
+ * 
+ * Usage:
+ * builder.AddParallelPass("ParallelGeometry", ERDGPassFlags::Raster,
+ *     [&](FRDGPassBuilder& builder) {
+ *         builder.WriteTexture(colorTarget);
+ *         builder.WriteDepth(depthTarget);
+ *     },
+ *     [=](RHI::IRHICommandList& cmdList, TArray<MonsterEngine::FGraphEventRef>& outTasks) {
+ *         // Dispatch parallel tasks
+ *         outTasks.Add(dispatchBasePass());
+ *         outTasks.Add(dispatchPBRPass());
+ *     });
+ */
+template<typename ParallelExecuteLambdaType>
+class TRDGParallelPass : public FRDGPass
+{
+public:
+    TRDGParallelPass(const FString& inName,
+                     ERDGPassFlags inFlags,
+                     ParallelExecuteLambdaType&& inExecuteLambda)
+        : FRDGPass(inName, inFlags)
+        , m_executeLambda(std::move(inExecuteLambda))
+    {}
+    
+    virtual void execute(RHI::IRHICommandList& rhiCmdList) override
+    {
+        // Execute parallel dispatch lambda
+        TArray<MonsterEngine::FGraphEventRef> parallelTasks;
+        m_executeLambda(rhiCmdList, parallelTasks);
+        
+        // Wait for all parallel tasks to complete
+        for (auto& task : parallelTasks)
+        {
+            if (task)
+            {
+                task->Wait();
+            }
+        }
+    }
+    
+    virtual bool isParallel() const override { return true; }
+    
+private:
+    ParallelExecuteLambdaType m_executeLambda;
 };
 
 }} // namespace MonsterRender::RDG
