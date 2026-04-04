@@ -293,7 +293,7 @@ public:
      * Allocate a command list from the pool for parallel recording
      */
     MonsterRender::RHI::IRHICommandList* AllocateCommandList(
-        FRHICommandListPool::ECommandListType Type = FRHICommandListPool::ECommandListType::Graphics
+        MonsterRender::RHI::FRHICommandListPool::ECommandListType Type = MonsterRender::RHI::FRHICommandListPool::ECommandListType::Graphics
     );
     
     /**

@@ -46,6 +46,7 @@ namespace MonsterEngine { namespace Renderer {
 
     class FSceneRenderer;
     class FForwardShadingSceneRenderer;
+    class FParallelSceneRenderer;
     class FScene;
     struct FSceneViewFamily;
     struct FViewInfo;
