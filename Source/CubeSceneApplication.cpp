@@ -816,6 +816,8 @@ void CubeSceneApplication::onShutdown()
 {
     MR_LOG(LogCubeSceneApp, Log, "Shutting down CubeSceneApplication...");
     MR_LOG(LogCubeSceneApp, Log, "=== CubeSceneApplication::onShutdown() called ===");
+    shutdownParallelRendering();
+
     // CRITICAL: Clean up in reverse order of initialization to avoid dangling pointers
     // Step 1: Shutdown ImGui first (it may reference textures)
     MR_LOG(LogCubeSceneApp, Log, "Step 1: Shutting down ImGui...");
