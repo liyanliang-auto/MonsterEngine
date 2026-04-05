@@ -2438,7 +2438,7 @@ bool CubeSceneApplication::initializeParallelRendering()
     if (!MonsterEngine::FTaskGraph::IsInitialized())
     {
         // Auto-detect number of threads (0 = auto)
-        MonsterEngine::FTaskGraph::Initialize(0);
+        MonsterEngine::FTaskGraph::Initialize(4);
         MR_LOG(LogCubeSceneApp, Log, "Task graph initialized with %u worker threads", 
                MonsterEngine::FTaskGraph::GetNumWorkerThreads());
     }
