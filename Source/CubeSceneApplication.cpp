@@ -2434,6 +2434,15 @@ bool CubeSceneApplication::initializeParallelRendering()
 {
     MR_LOG(LogCubeSceneApp, Log, "Initializing parallel rendering system...");
 
+    // Initialize task graph system
+    if (!MonsterEngine::FTaskGraph::IsInitialized())
+    {
+        // Auto-detect number of threads (0 = auto)
+        MonsterEngine::FTaskGraph::Initialize(0);
+        MR_LOG(LogCubeSceneApp, Log, "Task graph initialized with %u worker threads", 
+               MonsterEngine::FTaskGraph::GetNumWorkerThreads());
+    }
+
     // Initialize command list pool
     if (!MonsterRender::RHI::FRHICommandListPool::IsInitialized())
     {
@@ -2494,6 +2503,13 @@ void CubeSceneApplication::shutdownParallelRendering()
     MR_LOG(LogCubeSceneApp, Log, "Shutting down parallel rendering system...");
     
     m_parallelRenderer.reset();
+    
+    // Shutdown task graph system
+    if (MonsterEngine::FTaskGraph::IsInitialized())
+    {
+        MonsterEngine::FTaskGraph::Shutdown();
+        MR_LOG(LogCubeSceneApp, Log, "Task graph shutdown complete");
+    }
     
     // Shutdown command list pool
     if (MonsterRender::RHI::FRHICommandListPool::IsInitialized())
