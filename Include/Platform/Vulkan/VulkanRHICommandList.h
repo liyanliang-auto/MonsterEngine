@@ -16,6 +16,7 @@ using MonsterEngine::TMap;
     // Forward declarations
     class VulkanDevice;
     class FVulkanCommandListContext;
+    class FVulkanCmdBuffer;
     
     /**
      * FVulkanRHICommandListImmediate - Vulkan RHI Command List Implementation (UE5 Pattern)
@@ -151,6 +152,13 @@ using MonsterEngine::TMap;
          * Check if command list is currently recording
          */
         bool isRecording() const;
+        
+        /**
+         * Get the underlying Vulkan command buffer
+         * This is used for executing secondary command buffers
+         * @return Pointer to the Vulkan command buffer, or nullptr if not available
+         */
+        FVulkanCmdBuffer* GetVulkanCommandBuffer() const;
         
     private:
         VulkanDevice* m_device;
