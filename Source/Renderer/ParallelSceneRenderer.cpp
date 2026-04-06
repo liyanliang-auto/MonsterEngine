@@ -172,11 +172,52 @@ void FParallelSceneRenderer::RenderShadowDepthPassParallel(MonsterRender::RHI::I
     // Shadow depth pass rendering will be implemented in Phase 3
 }
 
+void FParallelSceneRenderer::SetRenderTaskDelegates(
+    FRenderTaskDelegate ShadowDepthTask,
+    FRenderTaskDelegate BasePassTask,
+    FRenderTaskDelegate PBRPassTask
+) {
+    m_shadowDepthTaskDelegate = std::move(ShadowDepthTask);
+    m_basePassTaskDelegate = std::move(BasePassTask);
+    m_pbrPassTaskDelegate = std::move(PBRPassTask);
+    
+    MR_LOG_INFO("FParallelSceneRenderer::SetRenderTaskDelegates - Delegates configured");
+}
+
 void FParallelSceneRenderer::DispatchParallelRenderPasses() {
     MR_LOG_INFO("FParallelSceneRenderer::DispatchParallelRenderPasses");
     
-    // Parallel pass dispatch will be implemented in Phase 3
-    // For now, this is a placeholder
+    // Clear previous task events
+    m_parallelTaskEvents.clear();
+    
+    // Dispatch shadow depth pass
+    if (m_shadowDepthTaskDelegate) {
+        MR_LOG_DEBUG("Dispatching shadow depth pass");
+        auto shadowTask = m_shadowDepthTaskDelegate();
+        if (shadowTask) {
+            m_parallelTaskEvents.push_back(shadowTask);
+        }
+    }
+    
+    // Dispatch base pass
+    if (m_basePassTaskDelegate) {
+        MR_LOG_DEBUG("Dispatching base pass");
+        auto baseTask = m_basePassTaskDelegate();
+        if (baseTask) {
+            m_parallelTaskEvents.push_back(baseTask);
+        }
+    }
+    
+    // Dispatch PBR pass
+    if (m_pbrPassTaskDelegate) {
+        MR_LOG_DEBUG("Dispatching PBR pass");
+        auto pbrTask = m_pbrPassTaskDelegate();
+        if (pbrTask) {
+            m_parallelTaskEvents.push_back(pbrTask);
+        }
+    }
+    
+    MR_LOG_INFO("Dispatched " + std::to_string(m_parallelTaskEvents.size()) + " parallel render tasks");
 }
 
 void FParallelSceneRenderer::WaitForParallelTasks() {

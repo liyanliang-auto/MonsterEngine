@@ -2494,6 +2494,32 @@ bool CubeSceneApplication::initializeParallelRendering()
     m_parallelRenderer.Get()->SetEnableParallelRendering(m_bEnableParallelRendering);
     m_parallelRenderer.Get()->SetNumParallelThreads(m_numParallelThreads);
 
+    // Configure render task delegates
+    // These delegates will be called by FParallelSceneRenderer::DispatchParallelRenderPasses()
+    m_parallelRenderer.Get()->SetRenderTaskDelegates(
+        // Shadow depth pass delegate
+        [this]() -> MonsterEngine::FGraphEventRef {
+            if (m_bShadowsEnabled && m_directionalLight) {
+                return dispatchShadowDepthPass();
+            }
+            return nullptr;
+        },
+        // Base pass delegate
+        [this]() -> MonsterEngine::FGraphEventRef {
+            if (m_bRenderCube) {
+                return dispatchBasePass();
+            }
+            return nullptr;
+        },
+        // PBR pass delegate
+        [this]() -> MonsterEngine::FGraphEventRef {
+            if (m_bHelmetPBREnabled) {
+                return dispatchPBRPass();
+            }
+            return nullptr;
+        }
+    );
+
     MR_LOG(LogCubeSceneApp, Log, "Parallel rendering system initialized successfully (threads: %u)",
            m_numParallelThreads);
 
@@ -2535,72 +2561,21 @@ void CubeSceneApplication::renderWithParallelRenderer(
         return;
     }
 
-    MR_LOG(LogCubeSceneApp, VeryVerbose, "=== Rendering with Parallel Renderer ===");
+    MR_LOG(LogCubeSceneApp, VeryVerbose, "=== Rendering with FParallelSceneRenderer ===");
 
     // Store view/projection matrices for dispatch functions
     m_viewMatrix = viewMatrix;
     m_projMatrix = projectionMatrix;
     m_cameraPosition = cameraPosition;
 
-    // Begin parallel rendering frame
-    if (!m_parallelRenderer.Get()->BeginFrame())
-    {
-        MR_LOG(LogCubeSceneApp, Error, "Failed to begin parallel rendering frame");
-        return;
-    }
-
-    // Dispatch parallel render passes
-    TArray<MonsterEngine::FGraphEventRef> parallelTasks;
-
-    // Shadow depth pass (if enabled)
-    if (m_bShadowsEnabled && m_directionalLight)
-    {
-        auto shadowTask = dispatchShadowDepthPass();
-        if (shadowTask)
-        {
-            parallelTasks.Add(shadowTask);
-        }
-    }
-
-    // Base pass (Cube and Floor rendering)
-    if (m_bRenderCube)
-    {
-        auto basePassTask = dispatchBasePass();
-        if (basePassTask)
-        {
-            parallelTasks.Add(basePassTask);
-        }
-    }
-
-    // PBR pass (Helmet rendering)
-    if (m_bHelmetPBREnabled)
-    {
-        auto pbrTask = dispatchPBRPass();
-        if (pbrTask)
-        {
-            parallelTasks.Add(pbrTask);
-        }
-    }
-
-    // Wait for all parallel tasks to complete
-    if (parallelTasks.Num() > 0)
-    {
-        // Wait for each task to complete
-        for (auto& task : parallelTasks)
-        {
-            if (task)
-            {
-                task->Wait();
-            }
-        }
-        MR_LOG(LogCubeSceneApp, Verbose, "All parallel tasks completed (%d tasks)", parallelTasks.Num());
-    }
-
-    // Execute all secondary command buffers
-    m_parallelRenderer.Get()->ExecuteSecondaryCommandBuffers(cmdList);
-
-    // End frame
-    m_parallelRenderer.Get()->EndFrame();
+    // Call FParallelSceneRenderer::Render() which handles the complete rendering flow:
+    // 1. BeginFrame()
+    // 2. InitViews()
+    // 3. DispatchParallelRenderPasses() - calls our delegates
+    // 4. WaitForParallelTasks()
+    // 5. ExecuteSecondaryCommandBuffers()
+    // 6. EndFrame()
+    m_parallelRenderer->Render(cmdList);
 
     MR_LOG(LogCubeSceneApp, VeryVerbose, "=== Parallel Rendering Complete ===");
 }
