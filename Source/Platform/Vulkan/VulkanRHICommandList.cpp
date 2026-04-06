@@ -878,6 +878,13 @@ namespace MonsterRender::RHI::Vulkan {
         return cmdBuffer && cmdBuffer->hasBegun() && !cmdBuffer->hasEnded();
     }
     
+    FVulkanCmdBuffer* FVulkanRHICommandListImmediate::GetVulkanCommandBuffer() const {
+        if (!m_context) {
+            return nullptr;
+        }
+        return m_context->getCmdBuffer();
+    }
+    
     void FVulkanRHICommandListImmediate::transitionTextureLayoutSimple(
         TSharedPtr<IRHITexture> texture,
         VkImageLayout oldLayout,

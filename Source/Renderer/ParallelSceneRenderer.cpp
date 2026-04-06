@@ -7,6 +7,8 @@
 #include "Renderer/Scene.h"
 #include "Renderer/SceneView.h"
 #include "Core/FTaskGraph.h"
+#include "Platform/Vulkan/VulkanRHICommandList.h"
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
 
 namespace MonsterEngine {
 namespace Renderer {
@@ -131,9 +133,40 @@ void FParallelSceneRenderer::ExecuteSecondaryCommandBuffers(MonsterRender::RHI::
         return;
     }
     
-    // Execute all secondary command buffers
-    // This will be implemented when we have the actual command buffer execution
-    MR_LOG_INFO("Executing secondary command buffers (implementation pending)");
+    // Check if there are any secondary command buffers to execute
+    if (collection->GetCount() == 0) {
+        MR_LOG_INFO("No secondary command buffers to execute");
+        return;
+    }
+    
+    // Get the underlying Vulkan command buffer from the RHI command list
+    // We need to cast to the Vulkan-specific implementation
+    auto* vulkanCmdList = dynamic_cast<MonsterRender::RHI::Vulkan::FVulkanRHICommandListImmediate*>(RHICmdList);
+    if (!vulkanCmdList) {
+        MR_LOG_ERROR("Failed to cast RHICmdList to FVulkanRHICommandListImmediate");
+        return;
+    }
+    
+    // Get the Vulkan command buffer
+    auto* vulkanCmdBuffer = vulkanCmdList->GetVulkanCommandBuffer();
+    if (!vulkanCmdBuffer) {
+        MR_LOG_ERROR("Failed to get Vulkan command buffer from RHICmdList");
+        return;
+    }
+    
+    // Execute all secondary command buffers in the primary command buffer
+    // This calls vkCmdExecuteCommands internally
+    bool success = collection->ExecuteInPrimaryCommandBuffer(vulkanCmdBuffer);
+    
+    if (success) {
+        MR_LOG_INFO("Successfully executed " + 
+                   std::to_string(collection->GetCount()) + 
+                   " secondary command buffers");
+        MR_LOG_INFO("Total commands: " + std::to_string(collection->GetTotalCommandCount()) + 
+                   ", Total draws: " + std::to_string(collection->GetTotalDrawCallCount()));
+    } else {
+        MR_LOG_ERROR("Failed to execute secondary command buffers");
+    }
 }
 
 void FParallelSceneRenderer::SetNumParallelThreads(uint32 NumThreads) {

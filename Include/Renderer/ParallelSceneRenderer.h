@@ -18,7 +18,6 @@
 #include "RHI/RHI.h"
 #include "Renderer/RenderPasses.h"
 #include "Core/FTaskGraph.h"
-#include "Core/Templates/Function.h"
 
 // Forward declarations
 namespace MonsterRender::RHI {
