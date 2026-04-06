@@ -18,6 +18,7 @@
 #include "RHI/RHI.h"
 #include "Renderer/RenderPasses.h"
 #include "Core/FTaskGraph.h"
+#include "Core/Templates/Function.h"
 
 // Forward declarations
 namespace MonsterRender::RHI {
@@ -32,6 +33,12 @@ namespace Renderer {
 class FScene;
 class FSceneViewFamily;
 class FSceneView;
+
+/**
+ * Delegate for dispatching render tasks
+ * Returns FGraphEventRef for task completion tracking
+ */
+using FRenderTaskDelegate = TFunction<FGraphEventRef()>;
 
 /**
  * Parallel scene renderer
@@ -106,6 +113,19 @@ public:
      */
     uint32 GetNumParallelThreads() const { return m_numParallelThreads; }
     
+    /**
+     * Set render task delegates
+     * These delegates will be called to dispatch parallel render tasks
+     * @param ShadowDepthTask Delegate for shadow depth pass
+     * @param BasePassTask Delegate for base pass
+     * @param PBRPassTask Delegate for PBR pass
+     */
+    void SetRenderTaskDelegates(
+        FRenderTaskDelegate ShadowDepthTask,
+        FRenderTaskDelegate BasePassTask,
+        FRenderTaskDelegate PBRPassTask
+    );
+    
 private:
     /**
      * Initialize views for rendering
@@ -173,6 +193,11 @@ private:
     
     // Frame state
     bool m_bFrameBegun;
+    
+    // Render task delegates
+    FRenderTaskDelegate m_shadowDepthTaskDelegate;
+    FRenderTaskDelegate m_basePassTaskDelegate;
+    FRenderTaskDelegate m_pbrPassTaskDelegate;
 };
 
 } // namespace Renderer
