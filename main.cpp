@@ -53,6 +53,10 @@ void RunContainerTests();
 // Implementation in Source/Tests/SmartPointerTest.cpp
 void RunSmartPointerTests();
 
+// Shader Preprocessor Test Forward Declaration
+// Implementation in Source/RHI/ShaderPreprocessorTest.cpp
+void RunShaderPreprocessorTests();
+
 // Parallel Rendering Test Forward Declaration
 // Implementation in Source/TestMain.cpp
 int RunAllParallelRenderingTests();
@@ -241,6 +245,15 @@ int main(int argc, char** argv) {
         
         // Initialize FMemoryManager before any test that uses FMemory::Malloc
         FMemoryManager::Get().Initialize();
+        
+        // Run ShaderPreprocessor tests first (no dependencies)
+        printf("======================================\n");
+        printf("  Shader Preprocessor Tests\n");
+        printf("======================================\n");
+        printf("\n");
+        
+        RunShaderPreprocessorTests();
+        printf("\n");
         
         // Run memory system tests
         if (runMemoryTests || runAllTests) {
