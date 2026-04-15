@@ -948,34 +948,40 @@ void FCubeSceneProxy::DrawWithShadows(
     // Set shadow pipeline state
     CmdList->setPipelineState(ShadowPipelineState);
     
-    // Bind uniform buffers
+    // Bind uniform buffers (using new linear flatten slots)
+    // Set 0, Binding 0 -> slot 0
     CmdList->setConstantBuffer(0, TransformUniformBuffer);
-    CmdList->setConstantBuffer(3, LightUniformBuffer);
-    CmdList->setConstantBuffer(4, ShadowUniformBuffer);
+    // Set 1, Binding 0 -> slot 8
+    CmdList->setConstantBuffer(8, LightUniformBuffer);
+    // Set 1, Binding 1 -> slot 9
+    CmdList->setConstantBuffer(9, ShadowUniformBuffer);
     
-    // Bind textures
-    if (Texture1)
-    {
-        CmdList->setShaderResource(1, Texture1);
-    }
-    if (Texture2)
-    {
-        CmdList->setShaderResource(2, Texture2);
-    }
-    
-    // Bind shadow map texture and sampler
+    // Bind shadow map texture and sampler (Set 1, Binding 2 -> slot 10)
     if (ShadowMap && ShadowSampler)
     {
-        CmdList->setShaderResource(5, ShadowMap);
-        CmdList->setSampler(5, ShadowSampler);
+        CmdList->setShaderResource(10, ShadowMap);
+        CmdList->setSampler(10, ShadowSampler);
     }
     
-    // Bind a default texture to binding 6 (diffuseTexture) for cube rendering
-    // The shader will detect alpha = 0 and use texture1/texture2 instead
-    // This ensures the descriptor set is complete for both cube and floor rendering
+    // Bind material textures (Set 2)
+    // Set 2, Binding 1 -> slot 17
     if (Texture1)
     {
-        CmdList->setShaderResource(6, Texture1);
+        CmdList->setShaderResource(17, Texture1);
+    }
+    // Set 2, Binding 2 -> slot 18
+    if (Texture2)
+    {
+        CmdList->setShaderResource(18, Texture2);
+    }
+    
+    // Bind a default texture to binding 19 (diffuseTexture) for cube rendering
+    // The shader will detect alpha = 0 and use texture1/texture2 instead
+    // This ensures the descriptor set is complete for both cube and floor rendering
+    // Set 2, Binding 3 -> slot 19
+    if (Texture1)
+    {
+        CmdList->setShaderResource(19, Texture1);
     }
     
     // Bind vertex buffer
