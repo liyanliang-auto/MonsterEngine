@@ -19,8 +19,8 @@ layout(set = 0, binding = 0) uniform TransformUBO {
     vec4 textureBlend;
 } transform;
 
-// Shadow matrix uniform buffer
-layout(set = 0, binding = 4) uniform ShadowUBO {
+// Shadow matrix uniform buffer (Per-Pass data)
+layout(set = 1, binding = 1) uniform ShadowUBO {
     mat4 lightViewProjection;   // Light space VP matrix
     vec4 shadowParams;          // x = bias, y = slope bias, z = normal bias, w = shadow distance
     vec4 shadowMapSize;         // xy = size, zw = 1/size
