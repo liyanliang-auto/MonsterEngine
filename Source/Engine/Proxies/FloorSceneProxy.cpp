@@ -313,33 +313,41 @@ void FFloorSceneProxy::DrawWithShadows(
     UpdateShadowBuffer(LightViewProjection, ShadowParams, ShadowMapWidth, ShadowMapHeight);
     // Set shadow pipeline state
     CmdList->setPipelineState(ShadowPipelineState);
-    // Bind uniform buffers
+    // Bind uniform buffers (using new linear flatten slots)
+    // Set 0, Binding 0 -> slot 0
     CmdList->setConstantBuffer(0, TransformUniformBuffer);
-    CmdList->setConstantBuffer(3, LightUniformBuffer);
-    CmdList->setConstantBuffer(4, ShadowUniformBuffer);
-    // Bind texture to slot 6 (diffuseTexture in CubeLitShadow shader)
-    // Also bind to slots 1 and 2 (texture1/texture2) for shader compatibility
+    // Set 1, Binding 0 -> slot 8
+    CmdList->setConstantBuffer(8, LightUniformBuffer);
+    // Set 1, Binding 1 -> slot 9
+    CmdList->setConstantBuffer(9, ShadowUniformBuffer);
+    
+    // Bind shadow map to Set 1, Binding 2 -> slot 10
+    if (ShadowMap && ShadowSampler)
+    {
+        CmdList->setShaderResource(10, ShadowMap);
+        CmdList->setSampler(10, ShadowSampler);
+    }
+    
+    // Bind material textures (Set 2)
+    // Bind texture to slot 19 (diffuseTexture in CubeLitShadow shader)
+    // Also bind to slots 17 and 18 (texture1/texture2) for shader compatibility
     // Both texture and sampler must be valid for COMBINED_IMAGE_SAMPLER
     if (FloorTexture && Sampler)
     {
-        CmdList->setShaderResource(1, FloorTexture);
-        CmdList->setSampler(1, Sampler);
-        CmdList->setShaderResource(2, FloorTexture);
-        CmdList->setSampler(2, Sampler);
-        CmdList->setShaderResource(6, FloorTexture);
-        CmdList->setSampler(6, Sampler);
+        // Set 2, Binding 1 -> slot 17
+        CmdList->setShaderResource(17, FloorTexture);
+        CmdList->setSampler(17, Sampler);
+        // Set 2, Binding 2 -> slot 18
+        CmdList->setShaderResource(18, FloorTexture);
+        CmdList->setSampler(18, Sampler);
+        // Set 2, Binding 3 -> slot 19
+        CmdList->setShaderResource(19, FloorTexture);
+        CmdList->setSampler(19, Sampler);
     }
 
     else
     {
         MR_LOG(LogFloorSceneProxy, Warning, "Floor texture or sampler is null in shadow pass - rendering without texture");
-    }
-
-    // Bind shadow map to slot 5
-    if (ShadowMap && ShadowSampler)
-    {
-        CmdList->setShaderResource(5, ShadowMap);
-        CmdList->setSampler(5, ShadowSampler);
     }
 
     // Bind vertex buffer
