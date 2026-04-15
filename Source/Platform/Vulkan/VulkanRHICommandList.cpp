@@ -236,6 +236,26 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        // Convert slot to (set, binding) using linear flatten formula
+        uint32 set, binding;
+        RHI::GetSetAndBinding(slot, set, binding);
+        
+        // Validate range
+        if (set >= RHI::RHILimits::MAX_DESCRIPTOR_SETS) {
+            MR_LOG_ERROR("setConstantBuffer: Set " + std::to_string(set) + 
+                        " exceeds MAX_DESCRIPTOR_SETS (" + std::to_string(RHI::RHILimits::MAX_DESCRIPTOR_SETS) + ")");
+            return;
+        }
+        
+        if (binding >= RHI::RHILimits::MAX_BINDINGS_PER_SET) {
+            MR_LOG_ERROR("setConstantBuffer: Binding " + std::to_string(binding) + 
+                        " exceeds MAX_BINDINGS_PER_SET (" + std::to_string(RHI::RHILimits::MAX_BINDINGS_PER_SET) + ")");
+            return;
+        }
+        
+        MR_LOG_DEBUG("setConstantBuffer: slot=" + std::to_string(slot) + 
+                    " -> set=" + std::to_string(set) + ", binding=" + std::to_string(binding));
+        
         // Track bound resource for descriptor set management
         auto& resource = m_boundResources[slot];
         resource.buffer = buffer;
@@ -267,6 +287,20 @@ namespace MonsterRender::RHI::Vulkan {
                           std::to_string(slot));
             return;
         }
+        
+        // Convert slot to (set, binding) using linear flatten formula
+        uint32 set, binding;
+        RHI::GetSetAndBinding(slot, set, binding);
+        
+        // Validate range
+        if (set >= RHI::RHILimits::MAX_DESCRIPTOR_SETS) {
+            MR_LOG_ERROR("setShaderResource: Set " + std::to_string(set) + 
+                        " exceeds MAX_DESCRIPTOR_SETS (" + std::to_string(RHI::RHILimits::MAX_DESCRIPTOR_SETS) + ")");
+            return;
+        }
+        
+        MR_LOG_DEBUG("setShaderResource: slot=" + std::to_string(slot) + 
+                    " -> set=" + std::to_string(set) + ", binding=" + std::to_string(binding));
         
         // Track bound resource for descriptor set management
         auto& resource = m_boundResources[slot];
