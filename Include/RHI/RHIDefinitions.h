@@ -18,7 +18,7 @@ namespace MonsterRender::RHI {
          * Must be coordinated with shader layout and device capabilities
          */
 
-        static constexpr uint32 MAX_BINDINGS_PER_SET = 16;
+        static constexpr uint32 MAX_BINDINGS_PER_SET = 8;
 
         /**
          * Maximum number of descriptor sets
@@ -41,6 +41,45 @@ namespace MonsterRender::RHI {
 
         static constexpr uint32 MAX_TOTAL_UBO_BINDING_POINTS = MAX_DESCRIPTOR_SETS * MAX_BINDINGS_PER_SET;
     };
+
+    /**
+     * Descriptor Set usage enumeration
+     * Defines the purpose of each descriptor set based on update frequency
+     * Reference: UE5 and Godot 4 descriptor set organization
+     */
+    enum class EDescriptorSet : uint32
+    {
+        PerFrame = 0,      // Set 0: Per-frame data (updated once per frame)
+        PerPass = 1,       // Set 1: Per-pass data (updated per render pass)
+        PerMaterial = 2,   // Set 2: Per-material data (updated per material)
+        PerObject = 3      // Set 3: Per-object data (updated per object)
+    };
+
+    /**
+     * Convert Vulkan-style (set, binding) to OpenGL-style global binding
+     * Formula: globalBinding = set * MAX_BINDINGS_PER_SET + binding
+     * 
+     * @param set Descriptor set index (0-3)
+     * @param binding Binding index within the set (0-7)
+     * @return Global binding point for OpenGL
+     */
+    constexpr uint32 GetGlobalBinding(uint32 set, uint32 binding)
+    {
+        return set * RHILimits::MAX_BINDINGS_PER_SET + binding;
+    }
+
+    /**
+     * Convert OpenGL-style global binding to Vulkan-style (set, binding)
+     * 
+     * @param globalBinding Global binding point
+     * @param outSet Output descriptor set index
+     * @param outBinding Output binding index within the set
+     */
+    constexpr void GetSetAndBinding(uint32 globalBinding, uint32& outSet, uint32& outBinding)
+    {
+        outSet = globalBinding / RHILimits::MAX_BINDINGS_PER_SET;
+        outBinding = globalBinding % RHILimits::MAX_BINDINGS_PER_SET;
+    }
 
     /**
      * RHI Backend type enumeration
