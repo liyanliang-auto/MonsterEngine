@@ -242,6 +242,7 @@
     <ClCompile Include="Source\Core\ShaderCompiler.cpp" />
     <ClCompile Include="Source\RHI\ShaderPreprocessor.cpp" />
     <ClCompile Include="Source\RHI\ShaderPreprocessorTest.cpp" />
+    <ClCompile Include="Source\RHI\SlotConversionTest.cpp" />
     <ClCompile Include="Source\Core\FGraphEvent.cpp" />
     <ClCompile Include="Source\Core\FRunnableThread.cpp" />
     <ClCompile Include="Source\Core\FTaskGraph.cpp" />

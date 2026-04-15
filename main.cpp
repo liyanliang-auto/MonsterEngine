@@ -56,6 +56,7 @@ void RunSmartPointerTests();
 // Shader Preprocessor Test Forward Declaration
 // Implementation in Source/RHI/ShaderPreprocessorTest.cpp
 void RunShaderPreprocessorTests();
+void RunSlotConversionTests();
 
 // Parallel Rendering Test Forward Declaration
 // Implementation in Source/TestMain.cpp
@@ -253,6 +254,15 @@ int main(int argc, char** argv) {
         printf("\n");
         
         RunShaderPreprocessorTests();
+        printf("\n");
+        
+        // Run Slot Conversion tests
+        printf("======================================\n");
+        printf("  Slot Conversion Tests\n");
+        printf("======================================\n");
+        printf("\n");
+        
+        RunSlotConversionTests();
         printf("\n");
         
         // Run memory system tests
