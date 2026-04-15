@@ -31,17 +31,14 @@ layout(set = 0, binding = 0) uniform TransformUBO {
     vec4 textureBlend;
 } transform;
 
-// Textures moved to set 0 for compatibility with single descriptor set binding
-layout(set = 0, binding = 1) uniform sampler2D texture1;
-layout(set = 0, binding = 2) uniform sampler2D texture2;
-
 struct LightData {
     vec4 position;    // xyz = position/direction, w = type (0=directional, 1=point/spot)
     vec4 color;       // rgb = color, a = intensity
     vec4 params;      // x = radius, y = source radius, z/w = reserved
 };
 
-layout(set = 0, binding = 3) uniform LightingUBO {
+// Per-Pass lighting data
+layout(set = 1, binding = 0) uniform LightingUBO {
     LightData lights[8];
     vec4 ambientColor;
     int numLights;
@@ -50,14 +47,20 @@ layout(set = 0, binding = 3) uniform LightingUBO {
     float padding3;
 } lighting;
 
-layout(set = 0, binding = 4) uniform ShadowUBO {
+// Per-Pass shadow data
+layout(set = 1, binding = 1) uniform ShadowUBO {
     mat4 lightViewProjection;
     vec4 shadowParams;      // x = bias, y = slope bias, z = normal bias, w = shadow distance
     vec4 shadowMapSize;     // xy = size, zw = 1/size
 } shadow;
 
-layout(set = 0, binding = 5) uniform sampler2D shadowMap;
-layout(set = 0, binding = 6) uniform sampler2D diffuseTexture;
+// Per-Pass shadow map
+layout(set = 1, binding = 2) uniform sampler2D shadowMap;
+
+// Per-Material textures
+layout(set = 2, binding = 1) uniform sampler2D texture1;
+layout(set = 2, binding = 2) uniform sampler2D texture2;
+layout(set = 2, binding = 3) uniform sampler2D diffuseTexture;
 
 // ============================================================================
 // Fragment Input
