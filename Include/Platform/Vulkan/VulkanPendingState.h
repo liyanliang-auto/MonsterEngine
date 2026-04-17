@@ -5,6 +5,7 @@
 #include "RHI/RHI.h"
 #include <vector>
 #include <map>
+#include <array>
 
 namespace MonsterRender::RHI::Vulkan {
     // Forward declarations
@@ -12,6 +13,58 @@ namespace MonsterRender::RHI::Vulkan {
     class VulkanPipelineState;
     class FVulkanCmdBuffer;
     struct FVulkanDescriptorSetKey;
+
+    // Uniform buffer binding info
+    struct UniformBufferBinding {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VkDeviceSize offset = 0;
+        VkDeviceSize range = 0;
+    };
+
+    // Texture binding info
+    struct TextureBinding {
+        VkImageView imageView = VK_NULL_HANDLE;
+        VkSampler sampler = VK_NULL_HANDLE;
+        VkImage image = VK_NULL_HANDLE;
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        uint32 mipLevels = 1;
+        uint32 arrayLayers = 1;
+    };
+
+    /**
+     * FDescriptorSetState - State for a single descriptor set
+     * Tracks bindings and dirty flag for one descriptor set (Set 0, 1, 2, or 3)
+     */
+    struct FDescriptorSetState {
+        // Buffer bindings: binding index -> buffer info
+        std::map<uint32, UniformBufferBinding> buffers;
+        
+        // Texture bindings: binding index -> texture info
+        std::map<uint32, TextureBinding> textures;
+        
+        // Dirty flag: needs update
+        bool dirty = true;
+        
+        // Cached descriptor set handle
+        VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+        
+        /**
+         * Clear all bindings and reset state
+         */
+        void clear() {
+            buffers.clear();
+            textures.clear();
+            dirty = true;
+            descriptorSet = VK_NULL_HANDLE;
+        }
+        
+        /**
+         * Check if this set has any bindings
+         */
+        bool hasBindings() const {
+            return !buffers.empty() || !textures.empty();
+        }
+    };
 
     /**
      * FVulkanPendingState - Manages pending state for command buffer (UE5 pattern)
@@ -74,14 +127,17 @@ namespace MonsterRender::RHI::Vulkan {
         void setIndexBuffer(VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType);
 
         /**
-         * Set uniform buffer at binding slot (UE5: SetShaderUniformBuffer())
+         * Set uniform buffer at (set, binding)
+         * @param set Descriptor set index (0-3)
+         * @param binding Binding index within set (0-7)
          */
 
-        void setUniformBuffer(uint32 slot, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range);
+        void setUniformBuffer(uint32 set, uint32 binding, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range);
 
         /**
-         * Bind a texture to a descriptor slot
-         * @param slot Descriptor binding slot
+         * Bind a texture to (set, binding)
+         * @param set Descriptor set index (0-3)
+         * @param binding Binding index within set (0-7)
          * @param imageView Vulkan image view
          * @param sampler Vulkan sampler
          * @param image Vulkan image (for layout transitions)
@@ -90,18 +146,18 @@ namespace MonsterRender::RHI::Vulkan {
          * @param arrayLayers Number of array layers for barrier
          */
 
-        void setTexture(uint32 slot, VkImageView imageView, VkSampler sampler,
+        void setTexture(uint32 set, uint32 binding, VkImageView imageView, VkSampler sampler,
                        VkImage image = VK_NULL_HANDLE, VkFormat format = VK_FORMAT_UNDEFINED,
                        uint32 mipLevels = 1, uint32 arrayLayers = 1);
 
         /**
-         * Update only the sampler for an existing texture binding at the given slot.
-         * If no texture is bound at the slot yet, stores the sampler for later use.
-         * @param slot Descriptor binding slot
+         * Update sampler for texture at (set, binding)
+         * @param set Descriptor set index (0-3)
+         * @param binding Binding index within set (0-7)
          * @param sampler Vulkan sampler handle
          */
 
-        void setSampler(uint32 slot, VkSampler sampler);
+        void setSampler(uint32 set, uint32 binding, VkSampler sampler);
 
         /**
          * Prepare for draw call - ensure all pending state is applied (UE5: PrepareForDraw())
@@ -136,6 +192,15 @@ namespace MonsterRender::RHI::Vulkan {
         void setInsideRenderPass(bool inside) { m_insideRenderPass = inside; }
 
         /**
+         * Get descriptor set state for testing/debugging
+         * @param set Descriptor set index (0-3)
+         */
+
+        const FDescriptorSetState& getDescriptorSetState(uint32 set) const {
+            return m_descriptorSets[set];
+        }
+
+        /**
          * Disable descriptor set cache (for PBR rendering with pre-updated descriptor sets)
          */
 
@@ -161,6 +226,21 @@ namespace MonsterRender::RHI::Vulkan {
 
         FVulkanDescriptorSetKey buildDescriptorSetKey() const;
 
+        /**
+         * Update descriptor set for specific set index
+         * @param set Descriptor set index (0-3)
+         * @return Updated descriptor set handle
+         */
+
+        VkDescriptorSet updateDescriptorSet(uint32 set);
+
+        /**
+         * Bind all dirty descriptor sets
+         * @param cmdBuffer Command buffer to bind to
+         */
+
+        void bindDescriptorSets(VkCommandBuffer cmdBuffer);
+
     private:
         VulkanDevice* m_device;
         FVulkanCmdBuffer* m_cmdBuffer;
@@ -185,24 +265,8 @@ namespace MonsterRender::RHI::Vulkan {
         VkIndexType m_indexType;
         bool m_indexBufferDirty;
         // Resource bindings for descriptor sets
-        struct UniformBufferBinding {
-            VkBuffer buffer = VK_NULL_HANDLE;
-            VkDeviceSize offset = 0;
-            VkDeviceSize range = 0;
-        };
-
-        std::map<uint32, UniformBufferBinding> m_uniformBuffers;
-
-        struct TextureBinding {
-            VkImageView imageView = VK_NULL_HANDLE;
-            VkSampler sampler = VK_NULL_HANDLE;
-            VkImage image = VK_NULL_HANDLE;  // For layout transitions
-            VkFormat format = VK_FORMAT_UNDEFINED;  // For aspect mask determination
-            uint32 mipLevels = 1;
-            uint32 arrayLayers = 1;
-        };
-
-        std::map<uint32, TextureBinding> m_textures;
+        // 4 independent descriptor set states (Set 0-3)
+        std::array<FDescriptorSetState, RHI::RHILimits::MAX_DESCRIPTOR_SETS> m_descriptorSets;
         bool m_descriptorsDirty = true;
         VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
         // Descriptor set cache control
