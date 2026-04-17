@@ -69,9 +69,10 @@ namespace MonsterRender::RHI::Vulkan {
         }
 
         m_indexBuffer = VK_NULL_HANDLE;
-        // Clear resource bindings
-        m_uniformBuffers.clear();
-        m_textures.clear();
+        // Clear all descriptor set states
+        for (auto& setState : m_descriptorSets) {
+            setState.clear();
+        }
         m_descriptorsDirty = true;
         m_currentDescriptorSet = VK_NULL_HANDLE;
     }
@@ -145,42 +146,79 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-    void FVulkanPendingState::setUniformBuffer(uint32 slot, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range) {
-        auto& binding = m_uniformBuffers[slot];
-        if (binding.buffer != buffer || binding.offset != offset || binding.range != range) {
-            binding.buffer = buffer;
-            binding.offset = offset;
-            binding.range = range;
-            m_descriptorsDirty = true;
-            MR_LOG_DEBUG("FVulkanPendingState::setUniformBuffer: slot=" + std::to_string(slot));
+    void FVulkanPendingState::setUniformBuffer(uint32 set, uint32 binding,
+                                               VkBuffer buffer, 
+                                               VkDeviceSize offset, 
+                                               VkDeviceSize range) {
+        // Validate range
+        if (!RHI::ValidateSetBinding(set, binding, "FVulkanPendingState::setUniformBuffer")) {
+            return;
         }
-
+        
+        // Get descriptor set state
+        auto& setState = m_descriptorSets[set];
+        auto& bufferBinding = setState.buffers[binding];
+        
+        // Check if changed
+        if (bufferBinding.buffer != buffer || 
+            bufferBinding.offset != offset || 
+            bufferBinding.range != range) {
+            bufferBinding.buffer = buffer;
+            bufferBinding.offset = offset;
+            bufferBinding.range = range;
+            setState.dirty = true;
+            
+            MR_LOG_DEBUG("FVulkanPendingState::setUniformBuffer: set=" + 
+                        std::to_string(set) + ", binding=" + std::to_string(binding));
+        }
     }
 
-    void FVulkanPendingState::setTexture(uint32 slot, VkImageView imageView, VkSampler sampler,
-                                         VkImage image, VkFormat format, uint32 mipLevels, uint32 arrayLayers) {
-        auto& binding = m_textures[slot];
-        if (binding.imageView != imageView || binding.sampler != sampler) {
-            binding.imageView = imageView;
-            binding.sampler = sampler;
-            binding.image = image;
-            binding.format = format;
-            binding.mipLevels = mipLevels;
-            binding.arrayLayers = arrayLayers;
-            m_descriptorsDirty = true;
-            MR_LOG_DEBUG("FVulkanPendingState::setTexture: slot=" + std::to_string(slot));
+    void FVulkanPendingState::setTexture(uint32 set, uint32 binding,
+                                         VkImageView imageView, VkSampler sampler,
+                                         VkImage image, VkFormat format, 
+                                         uint32 mipLevels, uint32 arrayLayers) {
+        // Validate range
+        if (!RHI::ValidateSetBinding(set, binding, "FVulkanPendingState::setTexture")) {
+            return;
         }
-
+        
+        // Get descriptor set state
+        auto& setState = m_descriptorSets[set];
+        auto& textureBinding = setState.textures[binding];
+        
+        // Check if changed
+        if (textureBinding.imageView != imageView || textureBinding.sampler != sampler) {
+            textureBinding.imageView = imageView;
+            textureBinding.sampler = sampler;
+            textureBinding.image = image;
+            textureBinding.format = format;
+            textureBinding.mipLevels = mipLevels;
+            textureBinding.arrayLayers = arrayLayers;
+            setState.dirty = true;
+            
+            MR_LOG_DEBUG("FVulkanPendingState::setTexture: set=" + 
+                        std::to_string(set) + ", binding=" + std::to_string(binding));
+        }
     }
 
-    void FVulkanPendingState::setSampler(uint32 slot, VkSampler sampler) {
-        auto& binding = m_textures[slot];
-        if (binding.sampler != sampler) {
-            binding.sampler = sampler;
-            m_descriptorsDirty = true;
-            MR_LOG_DEBUG("FVulkanPendingState::setSampler: slot=" + std::to_string(slot));
+    void FVulkanPendingState::setSampler(uint32 set, uint32 binding, VkSampler sampler) {
+        // Validate range
+        if (!RHI::ValidateSetBinding(set, binding, "FVulkanPendingState::setSampler")) {
+            return;
         }
-
+        
+        // Get descriptor set state
+        auto& setState = m_descriptorSets[set];
+        auto& textureBinding = setState.textures[binding];
+        
+        // Update sampler
+        if (textureBinding.sampler != sampler) {
+            textureBinding.sampler = sampler;
+            setState.dirty = true;
+            
+            MR_LOG_DEBUG("FVulkanPendingState::setSampler: set=" + 
+                        std::to_string(set) + ", binding=" + std::to_string(binding));
+        }
     }
 
     void FVulkanPendingState::transitionTexturesForShaderRead() {
@@ -191,16 +229,25 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
 
-        if (m_textures.empty()) {
+        // Count total textures across all descriptor sets
+        uint32 totalTextures = 0;
+        for (const auto& setState : m_descriptorSets) {
+            totalTextures += setState.textures.size();
+        }
+        
+        if (totalTextures == 0) {
             return;
         }
 
         const auto& functions = VulkanAPI::getFunctions();
         VkCommandBuffer cmdBuffer = m_cmdBuffer->getHandle();
         TArray<VkImageMemoryBarrier> barriers;
-        barriers.reserve(m_textures.size());
-        for (auto& pair : m_textures) {
-            auto& binding = pair.second;
+        barriers.reserve(totalTextures);
+        
+        // Iterate through all descriptor sets
+        for (const auto& setState : m_descriptorSets) {
+            for (auto& pair : setState.textures) {
+                auto& binding = pair.second;
             if (binding.image == VK_NULL_HANDLE) {
                 continue;
             }
@@ -230,6 +277,7 @@ namespace MonsterRender::RHI::Vulkan {
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             barriers.push_back(barrier);
+            }
         }
 
         if (!barriers.empty()) {
