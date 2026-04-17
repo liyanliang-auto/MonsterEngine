@@ -91,10 +91,10 @@ namespace MonsterRender::RHI::Vulkan {
 
         if (m_pendingPipeline != pipeline) {
             m_pendingPipeline = pipeline;
-            // Clear all resource bindings when switching pipelines to avoid descriptor set mismatch
-            // Different pipelines may have different descriptor set layouts
-            m_textures.clear();
-            m_uniformBuffers.clear();
+            // Clear all descriptor set states when switching pipelines
+            for (auto& setState : m_descriptorSets) {
+                setState.clear();
+            }
             // Also invalidate current descriptor set since pipeline changed
             m_currentDescriptorSet = VK_NULL_HANDLE;
 
@@ -469,22 +469,19 @@ namespace MonsterRender::RHI::Vulkan {
         // Reference: UE5 FVulkanPendingGfxState::UpdateAndBindDescriptorSets()
         auto& DescriptorLayouts = m_currentPipeline->getDescriptorSetLayouts();
         VkPipelineLayout PipelineLayout = m_currentPipeline->getPipelineLayout();
-        MR_LOG_INFO("updateAndBindDescriptorSets: DescriptorLayouts.size()=" +
-
-                    std::to_string(DescriptorLayouts.size()) +
-
-                    ", PipelineLayout=" + std::to_string(reinterpret_cast<uint64>(PipelineLayout)) +
-
-                    ", UniformBuffers=" + std::to_string(m_uniformBuffers.size()) +
-                    ", Textures=" + std::to_string(m_textures.size()));
-        // Log texture details
-        for (const auto& [Slot, Binding] : m_textures) {
-
-            MR_LOG_INFO("  Texture slot " + std::to_string(Slot) +
-
-                       ": imageView=" + std::to_string(reinterpret_cast<uint64>(Binding.imageView)) +
-                       ", sampler=" + std::to_string(reinterpret_cast<uint64>(Binding.sampler)));
+        
+        // Count total bindings across all descriptor sets
+        uint32 totalBuffers = 0, totalTextures = 0;
+        for (const auto& setState : m_descriptorSets) {
+            totalBuffers += setState.buffers.size();
+            totalTextures += setState.textures.size();
         }
+        
+        MR_LOG_INFO("updateAndBindDescriptorSets: DescriptorLayouts.size()=" +
+                    std::to_string(DescriptorLayouts.size()) +
+                    ", PipelineLayout=" + std::to_string(reinterpret_cast<uint64>(PipelineLayout)) +
+                    ", TotalBuffers=" + std::to_string(totalBuffers) +
+                    ", TotalTextures=" + std::to_string(totalTextures));
 
         if (DescriptorLayouts.empty() || PipelineLayout == VK_NULL_HANDLE) {
             MR_LOG_WARNING("updateAndBindDescriptorSets: No descriptor layouts (size=" +
@@ -562,7 +559,12 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Get or allocate descriptor set from cache
-        auto* cache = m_device->getDescriptorSetLayoutCache();
+        auto* cache = m_device->GetDescriptorSetCache();
+        if (!cache) {
+            MR_LOG_ERROR("FVulkanPendingState::updateDescriptorSet: Descriptor set cache unavailable");
+            return VK_NULL_HANDLE;
+        }
+        
         VkDescriptorSet descriptorSet = cache->GetOrAllocate(key);
         
         MR_LOG_DEBUG("FVulkanPendingState::updateDescriptorSet: set=" + 

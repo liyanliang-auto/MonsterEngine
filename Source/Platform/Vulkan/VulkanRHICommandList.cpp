@@ -264,12 +264,13 @@ namespace MonsterRender::RHI::Vulkan {
         resource.isDirty = true;
         m_descriptorsDirty = true;
         
-        // Pass to pending state for descriptor set binding
+        // Pass (set, binding) to pending state
         if (m_context && m_context->getPendingState()) {
             VulkanBuffer* vulkanBuffer = dynamic_cast<VulkanBuffer*>(buffer.get());
             if (vulkanBuffer) {
                 m_context->getPendingState()->setUniformBuffer(
-                    slot, 
+                    set,      // Pass set
+                    binding,  // Pass binding
                     vulkanBuffer->getBuffer(), 
                     vulkanBuffer->getOffset(), 
                     vulkanBuffer->getSize()
@@ -337,7 +338,7 @@ namespace MonsterRender::RHI::Vulkan {
                 uint32 mipLevels = texture->getDesc().mipLevels;
                 uint32 arrayLayers = texture->getDesc().arraySize;
                 
-                m_context->getPendingState()->setTexture(slot, imageView, sampler, image, format, mipLevels, arrayLayers);
+                m_context->getPendingState()->setTexture(set, binding, imageView, sampler, image, format, mipLevels, arrayLayers);
             } else {
                 MR_LOG_ERROR("setShaderResource: Failed to cast texture to VulkanTexture for slot " + std::to_string(slot));
             }
@@ -348,6 +349,18 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) {
+        // Convert slot to (set, binding)
+        uint32 set, binding;
+        RHI::GetSetAndBinding(slot, set, binding);
+        
+        // Validate range
+        if (!RHI::ValidateSetBinding(set, binding, "setSampler")) {
+            return;
+        }
+        
+        MR_LOG_DEBUG("setSampler: slot=" + std::to_string(slot) + 
+                    " -> set=" + std::to_string(set) + ", binding=" + std::to_string(binding));
+        
         // Track bound sampler
         if (m_boundResources.Contains(slot)) {
             m_boundResources[slot].sampler = sampler;
@@ -359,12 +372,12 @@ namespace MonsterRender::RHI::Vulkan {
         }
         m_descriptorsDirty = true;
         
-        // Update the pending state's sampler for the descriptor write
+        // Pass (set, binding) to pending state
         if (sampler && m_context) {
             auto* vulkanSampler = dynamic_cast<Vulkan::VulkanSampler*>(sampler.Get());
             if (vulkanSampler) {
                 VkSampler vkSampler = vulkanSampler->getSampler();
-                m_context->getPendingState()->setSampler(slot, vkSampler);
+                m_context->getPendingState()->setSampler(set, binding, vkSampler);
                 MR_LOG_DEBUG("FVulkanRHICommandListImmediate::setSampler: Updated pending state sampler for slot " + 
                             std::to_string(slot));
             }
