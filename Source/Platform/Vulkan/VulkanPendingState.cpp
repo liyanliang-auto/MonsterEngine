@@ -528,41 +528,95 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     FVulkanDescriptorSetKey FVulkanPendingState::buildDescriptorSetKey() const {
-        // Build a key for descriptor set cache lookup
-        // Reference: UE5 descriptor set key generation
+        // NOTE: This method is deprecated and will be removed
+        // Use updateDescriptorSet(set) instead for multi-set architecture
         FVulkanDescriptorSetKey Key;
-        // Add buffer bindings
-        for (const auto& [Slot, Binding] : m_uniformBuffers) {
-            if (Binding.buffer != VK_NULL_HANDLE) {
-                FVulkanDescriptorSetKey::FBufferBinding BufferBinding;
-                BufferBinding.Buffer = Binding.buffer;
-                BufferBinding.Offset = Binding.offset;
-                BufferBinding.Range = Binding.range;
-                Key.BufferBindings[Slot] = BufferBinding;
-            }
-
-        }
-
-        // Add image bindings
-        for (const auto& [Slot, Binding] : m_textures) {
-            if (Binding.imageView != VK_NULL_HANDLE) {
-                FVulkanDescriptorSetKey::FImageBinding ImageBinding;
-                ImageBinding.ImageView = Binding.imageView;
-                ImageBinding.Sampler = Binding.sampler;
-                // Determine correct image layout based on format
-                VkImageAspectFlags aspectMask = VulkanUtils::getImageAspectMask(Binding.format);
-                if (aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
-                    ImageBinding.ImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                } else {
-                    ImageBinding.ImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                }
-
-                Key.ImageBindings[Slot] = ImageBinding;
-            }
-
-        }
-
         return Key;
+    }
+
+    VkDescriptorSet FVulkanPendingState::updateDescriptorSet(uint32 set) {
+        auto& setState = m_descriptorSets[set];
+        
+        // Build descriptor set key
+        FVulkanDescriptorSetKey key;
+        key.SetIndex = set;
+        
+        // Add buffer bindings
+        for (const auto& [binding, bufferInfo] : setState.buffers) {
+            FVulkanDescriptorSetKey::FBufferBinding bufferBinding;
+            bufferBinding.Binding = binding;
+            bufferBinding.Buffer = bufferInfo.buffer;
+            bufferBinding.Offset = bufferInfo.offset;
+            bufferBinding.Range = bufferInfo.range;
+            key.BufferBindings[binding] = bufferBinding;
+        }
+        
+        // Add texture bindings
+        for (const auto& [binding, textureInfo] : setState.textures) {
+            FVulkanDescriptorSetKey::FImageBinding imageBinding;
+            imageBinding.Binding = binding;
+            imageBinding.ImageView = textureInfo.imageView;
+            imageBinding.Sampler = textureInfo.sampler;
+            imageBinding.ImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            key.ImageBindings[binding] = imageBinding;
+        }
+        
+        // Get or allocate descriptor set from cache
+        auto* cache = m_device->getDescriptorSetLayoutCache();
+        VkDescriptorSet descriptorSet = cache->GetOrAllocate(key);
+        
+        MR_LOG_DEBUG("FVulkanPendingState::updateDescriptorSet: set=" + 
+                    std::to_string(set) + ", descriptorSet=0x" + 
+                    std::to_string(reinterpret_cast<uint64>(descriptorSet)));
+        
+        return descriptorSet;
+    }
+
+    void FVulkanPendingState::bindDescriptorSets(VkCommandBuffer cmdBuffer) {
+        if (!m_currentPipeline) {
+            MR_LOG_WARNING("FVulkanPendingState::bindDescriptorSets: No pipeline bound");
+            return;
+        }
+        
+        VkPipelineLayout pipelineLayout = m_currentPipeline->getPipelineLayout();
+        if (pipelineLayout == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("FVulkanPendingState::bindDescriptorSets: Invalid pipeline layout");
+            return;
+        }
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        
+        // Iterate through all descriptor sets
+        for (uint32 set = 0; set < RHI::RHILimits::MAX_DESCRIPTOR_SETS; ++set) {
+            auto& setState = m_descriptorSets[set];
+            
+            // Skip sets with no bindings
+            if (!setState.hasBindings()) {
+                continue;
+            }
+            
+            // Update dirty sets
+            if (setState.dirty) {
+                setState.descriptorSet = updateDescriptorSet(set);
+                setState.dirty = false;
+            }
+            
+            // Bind descriptor set
+            if (setState.descriptorSet != VK_NULL_HANDLE) {
+                functions.vkCmdBindDescriptorSets(
+                    cmdBuffer,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    pipelineLayout,
+                    set,                        // firstSet
+                    1,                          // descriptorSetCount
+                    &setState.descriptorSet,    // pDescriptorSets
+                    0, nullptr                  // dynamic offsets
+                );
+                
+                MR_LOG_DEBUG("FVulkanPendingState::bindDescriptorSets: Bound set " + 
+                            std::to_string(set));
+            }
+        }
     }
 
     // ========================================================================
