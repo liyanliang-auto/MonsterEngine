@@ -82,6 +82,32 @@ namespace MonsterRender::RHI {
     }
 
     /**
+     * Validate descriptor set and binding indices
+     * 
+     * @param set Descriptor set index (0-3)
+     * @param binding Binding index within set (0-7)
+     * @param funcName Function name for error logging
+     * @return true if valid, false otherwise
+     */
+    inline bool ValidateSetBinding(uint32 set, uint32 binding, const char* funcName) {
+        if (set >= RHILimits::MAX_DESCRIPTOR_SETS) {
+            MR_LOG_ERROR(std::string(funcName) + ": Set " + std::to_string(set) + 
+                        " exceeds MAX_DESCRIPTOR_SETS (" + 
+                        std::to_string(RHILimits::MAX_DESCRIPTOR_SETS) + ")");
+            return false;
+        }
+        
+        if (binding >= RHILimits::MAX_BINDINGS_PER_SET) {
+            MR_LOG_ERROR(std::string(funcName) + ": Binding " + std::to_string(binding) + 
+                        " exceeds MAX_BINDINGS_PER_SET (" + 
+                        std::to_string(RHILimits::MAX_BINDINGS_PER_SET) + ")");
+            return false;
+        }
+        
+        return true;
+    }
+
+    /**
      * RHI Backend type enumeration
      * Identifies which graphics API implementation a resource belongs to
      */
