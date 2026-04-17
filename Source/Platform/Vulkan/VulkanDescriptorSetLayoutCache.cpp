@@ -295,11 +295,14 @@ namespace MonsterRender::RHI::Vulkan {
         Hash ^= reinterpret_cast<uint64>(Layout);
         Hash *= 1099511628211ULL;
         
+        // Hash set index
+        Hash ^= static_cast<uint64>(SetIndex);
+        Hash *= 1099511628211ULL;
+        
         // Hash buffer bindings
         for (auto It = BufferBindings.CreateConstIterator(); It; ++It) {
-            uint32 Slot = It->Key;
             const auto& Binding = It->Value;
-            Hash ^= static_cast<uint64>(Slot);
+            Hash ^= static_cast<uint64>(Binding.Binding);
             Hash *= 1099511628211ULL;
             Hash ^= reinterpret_cast<uint64>(Binding.Buffer);
             Hash *= 1099511628211ULL;
@@ -311,9 +314,8 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Hash image bindings
         for (auto It = ImageBindings.CreateConstIterator(); It; ++It) {
-            uint32 Slot = It->Key;
             const auto& Binding = It->Value;
-            Hash ^= static_cast<uint64>(Slot);
+            Hash ^= static_cast<uint64>(Binding.Binding);
             Hash *= 1099511628211ULL;
             Hash ^= reinterpret_cast<uint64>(Binding.ImageView);
             Hash *= 1099511628211ULL;
@@ -328,6 +330,7 @@ namespace MonsterRender::RHI::Vulkan {
 
     bool FVulkanDescriptorSetKey::operator==(const FVulkanDescriptorSetKey& Other) const {
         if (Layout != Other.Layout) return false;
+        if (SetIndex != Other.SetIndex) return false;
         if (BufferBindings.Num() != Other.BufferBindings.Num()) return false;
         if (ImageBindings.Num() != Other.ImageBindings.Num()) return false;
         
