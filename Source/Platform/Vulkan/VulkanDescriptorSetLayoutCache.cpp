@@ -450,7 +450,8 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& Functions = VulkanAPI::getFunctions();
         VkDevice VkDev = Device->getLogicalDevice();
         
-        MR_LOG_INFO("UpdateDescriptorSet: BufferBindings=" + std::to_string(Key.BufferBindings.size()) +
+        MR_LOG_INFO("UpdateDescriptorSet: Set=" + std::to_string(Key.SetIndex) +
+                   ", BufferBindings=" + std::to_string(Key.BufferBindings.size()) +
                    ", ImageBindings=" + std::to_string(Key.ImageBindings.size()));
         
         // Use std::vector for Vulkan API compatibility
@@ -458,37 +459,42 @@ namespace MonsterRender::RHI::Vulkan {
         std::vector<VkDescriptorBufferInfo> BufferInfos;
         std::vector<VkDescriptorImageInfo> ImageInfos;
         
-        // Store binding slots for later write setup
-        std::vector<uint32> BufferSlots;
-        std::vector<uint32> ImageSlots;
+        // Store binding indices for later write setup
+        std::vector<uint32> BufferBindings;
+        std::vector<uint32> ImageBindings;
         
         // Reserve to prevent reallocation
         BufferInfos.reserve(Key.BufferBindings.size());
         ImageInfos.reserve(Key.ImageBindings.size());
-        BufferSlots.reserve(Key.BufferBindings.size());
-        ImageSlots.reserve(Key.ImageBindings.size());
+        BufferBindings.reserve(Key.BufferBindings.size());
+        ImageBindings.reserve(Key.ImageBindings.size());
         
         // First pass: Collect all buffer infos
-        for (const auto& [Slot, Binding] : Key.BufferBindings) {
-            if (Binding.Buffer == VK_NULL_HANDLE) continue;
+        for (const auto& [_, Binding] : Key.BufferBindings) {
+            if (Binding.Buffer == VK_NULL_HANDLE) {
+                MR_LOG_WARNING("UpdateDescriptorSet: Null buffer at set=" + 
+                              std::to_string(Key.SetIndex) + ", binding=" + 
+                              std::to_string(Binding.Binding));
+                continue;
+            }
             
             VkDescriptorBufferInfo& BufferInfo = BufferInfos.emplace_back();
             BufferInfo.buffer = Binding.Buffer;
             BufferInfo.offset = Binding.Offset;
             BufferInfo.range = Binding.Range > 0 ? Binding.Range : VK_WHOLE_SIZE;
-            BufferSlots.push_back(Slot);
+            BufferBindings.push_back(Binding.Binding);
+            
+            MR_LOG_DEBUG("UpdateDescriptorSet: Buffer at set=" + 
+                        std::to_string(Key.SetIndex) + ", binding=" + 
+                        std::to_string(Binding.Binding));
         }
         
         // Second pass: Collect all image infos
-        for (const auto& [Slot, Binding] : Key.ImageBindings) {
-            if (Binding.ImageView == VK_NULL_HANDLE) {
-                MR_LOG_WARNING("UpdateDescriptorSet: Skipping slot " + std::to_string(Slot) + " - ImageView is NULL");
-                continue;
-            }
-            
-            // For COMBINED_IMAGE_SAMPLER, both ImageView and Sampler must be valid
-            if (Binding.Sampler == VK_NULL_HANDLE) {
-                MR_LOG_WARNING("UpdateDescriptorSet: Skipping slot " + std::to_string(Slot) + " - Sampler is NULL (ImageView is valid)");
+        for (const auto& [_, Binding] : Key.ImageBindings) {
+            if (Binding.ImageView == VK_NULL_HANDLE || Binding.Sampler == VK_NULL_HANDLE) {
+                MR_LOG_WARNING("UpdateDescriptorSet: Null image/sampler at set=" + 
+                              std::to_string(Key.SetIndex) + ", binding=" + 
+                              std::to_string(Binding.Binding));
                 continue;
             }
             
@@ -496,22 +502,25 @@ namespace MonsterRender::RHI::Vulkan {
             ImageInfo.imageView = Binding.ImageView;
             ImageInfo.sampler = Binding.Sampler;
             ImageInfo.imageLayout = Binding.ImageLayout;
-            ImageSlots.push_back(Slot);
+            ImageBindings.push_back(Binding.Binding);
+            
+            MR_LOG_DEBUG("UpdateDescriptorSet: Image at set=" + 
+                        std::to_string(Key.SetIndex) + ", binding=" + 
+                        std::to_string(Binding.Binding));
         }
         
         // Third pass: Build write descriptors with stable pointers
-        // Now that BufferInfos and ImageInfos are fully populated, their addresses won't change
         Writes.reserve(BufferInfos.size() + ImageInfos.size());
         
         for (size_t i = 0; i < BufferInfos.size(); ++i) {
             VkWriteDescriptorSet Write{};
             Write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             Write.dstSet = Set;
-            Write.dstBinding = BufferSlots[i];
+            Write.dstBinding = BufferBindings[i];  // Use binding, not slot
             Write.dstArrayElement = 0;
             Write.descriptorCount = 1;
             Write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            Write.pBufferInfo = &BufferInfos[i];  // Stable pointer after all insertions
+            Write.pBufferInfo = &BufferInfos[i];
             Writes.push_back(Write);
         }
         
@@ -519,11 +528,11 @@ namespace MonsterRender::RHI::Vulkan {
             VkWriteDescriptorSet Write{};
             Write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             Write.dstSet = Set;
-            Write.dstBinding = ImageSlots[i];
+            Write.dstBinding = ImageBindings[i];  // Use binding, not slot
             Write.dstArrayElement = 0;
             Write.descriptorCount = 1;
             Write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            Write.pImageInfo = &ImageInfos[i];  // Stable pointer after all insertions
+            Write.pImageInfo = &ImageInfos[i];
             Writes.push_back(Write);
         }
         
@@ -531,8 +540,11 @@ namespace MonsterRender::RHI::Vulkan {
         if (!Writes.empty()) {
             Functions.vkUpdateDescriptorSets(VkDev, static_cast<uint32>(Writes.size()), 
                                              Writes.data(), 0, nullptr);
+            MR_LOG_DEBUG("UpdateDescriptorSet: Set " + std::to_string(Key.SetIndex) + 
+                        ", " + std::to_string(Writes.size()) + " writes");
         } else {
-            MR_LOG_WARNING("UpdateDescriptorSet: No descriptor writes to execute!");
+            MR_LOG_WARNING("UpdateDescriptorSet: No descriptor writes for set " + 
+                          std::to_string(Key.SetIndex));
         }
     }
 
