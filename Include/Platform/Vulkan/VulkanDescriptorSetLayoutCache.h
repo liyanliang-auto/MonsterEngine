@@ -177,27 +177,34 @@ using MonsterEngine::TMap;
      */
     struct FVulkanDescriptorSetKey {
         VkDescriptorSetLayout Layout = VK_NULL_HANDLE;
+        uint32 SetIndex = 0;  // Descriptor set index (0-3)
         
-        // Buffer bindings: slot -> (buffer, offset, range)
+        // Buffer bindings: binding index -> (buffer, offset, range)
         struct FBufferBinding {
+            uint32 Binding = 0;   // Binding index within set
             VkBuffer Buffer = VK_NULL_HANDLE;
             VkDeviceSize Offset = 0;
             VkDeviceSize Range = 0;
             
             bool operator==(const FBufferBinding& Other) const {
-                return Buffer == Other.Buffer && Offset == Other.Offset && Range == Other.Range;
+                return Binding == Other.Binding &&
+                       Buffer == Other.Buffer && 
+                       Offset == Other.Offset && 
+                       Range == Other.Range;
             }
         };
         TMap<uint32, FBufferBinding> BufferBindings;
         
-        // Image bindings: slot -> (imageView, sampler, layout)
+        // Image bindings: binding index -> (imageView, sampler, layout)
         struct FImageBinding {
+            uint32 Binding = 0;   // Binding index within set
             VkImageView ImageView = VK_NULL_HANDLE;
             VkSampler Sampler = VK_NULL_HANDLE;
             VkImageLayout ImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             
             bool operator==(const FImageBinding& Other) const {
-                return ImageView == Other.ImageView && 
+                return Binding == Other.Binding &&
+                       ImageView == Other.ImageView && 
                        Sampler == Other.Sampler && 
                        ImageLayout == Other.ImageLayout;
             }
