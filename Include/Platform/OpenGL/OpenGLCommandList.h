@@ -105,6 +105,82 @@ public:
     GLenum GetIndexType() const { return m_indexType; }
     
 private:
+    // Constants for array sizes
+    static constexpr uint32 MaxVertexBuffers = 16;
+    static constexpr uint32 MaxConstantBuffers = 16;
+    static constexpr uint32 MaxTextureSlots = 32;
+    static constexpr uint32 MaxRenderTargets = 8;
+    
+    /**
+     * Pending state structure (UE5-style)
+     * Records resource bindings before submission
+     */
+    struct FOpenGLPendingState
+    {
+        // Pending constant buffers
+        FOpenGLBuffer* ConstantBuffers[MaxConstantBuffers] = {};
+        uint32 DirtyConstantBufferMask = 0;
+        
+        // Pending textures
+        FOpenGLTexture* Textures[MaxTextureSlots] = {};
+        uint32 DirtyTextureMask = 0;
+        
+        // Pending samplers
+        FOpenGLSampler* Samplers[MaxTextureSlots] = {};
+        uint32 DirtySamplerMask = 0;
+        
+        void Reset()
+        {
+            for (uint32 i = 0; i < MaxConstantBuffers; ++i)
+            {
+                ConstantBuffers[i] = nullptr;
+            }
+            for (uint32 i = 0; i < MaxTextureSlots; ++i)
+            {
+                Textures[i] = nullptr;
+                Samplers[i] = nullptr;
+            }
+            DirtyConstantBufferMask = 0;
+            DirtyTextureMask = 0;
+            DirtySamplerMask = 0;
+        }
+    };
+    
+    /**
+     * Cached state structure (UE5-style)
+     * Tracks committed OpenGL state to avoid redundant API calls
+     */
+    struct FOpenGLCachedState
+    {
+        // Cached constant buffer handles
+        GLuint ConstantBufferHandles[MaxConstantBuffers] = {};
+        
+        // Cached texture handles
+        GLuint TextureHandles[MaxTextureSlots] = {};
+        
+        // Cached sampler handles
+        GLuint SamplerHandles[MaxTextureSlots] = {};
+        
+        void Reset()
+        {
+            for (uint32 i = 0; i < MaxConstantBuffers; ++i)
+            {
+                ConstantBufferHandles[i] = 0;
+            }
+            for (uint32 i = 0; i < MaxTextureSlots; ++i)
+            {
+                TextureHandles[i] = 0;
+                SamplerHandles[i] = 0;
+            }
+        }
+    };
+    
+    /**
+     * Commit pending state to OpenGL (UE5-style)
+     * Only updates state that has changed
+     */
+    void CommitState();
+    
     /**
      * Bind current vertex buffers to VAO
      */
@@ -118,6 +194,10 @@ private:
 private:
     FOpenGLDevice* m_device = nullptr;
     
+    // Pending and cached state (UE5-style)
+    FOpenGLPendingState m_pendingState;
+    FOpenGLCachedState m_cachedState;
+    
     // Recording state
     bool m_recording = false;
     
@@ -126,7 +206,6 @@ private:
     GLenum m_primitiveTopology = GL_TRIANGLES;
     
     // Current vertex/index buffers
-    static constexpr uint32 MaxVertexBuffers = 16;
     struct VertexBufferBinding
     {
         FOpenGLBuffer* buffer = nullptr;
@@ -139,16 +218,13 @@ private:
     GLenum m_indexType = GL_UNSIGNED_INT;
     
     // Current constant buffers
-    static constexpr uint32 MaxConstantBuffers = 16;
     FOpenGLBuffer* m_constantBuffers[MaxConstantBuffers] = {};
     
     // Current textures and samplers
-    static constexpr uint32 MaxTextureSlots = 32;
     FOpenGLTexture* m_textures[MaxTextureSlots] = {};
     FOpenGLSampler* m_samplers[MaxTextureSlots] = {};
     
     // Current render targets
-    static constexpr uint32 MaxRenderTargets = 8;
     FOpenGLTexture* m_renderTargets[MaxRenderTargets] = {};
     uint32 m_numRenderTargets = 0;
     FOpenGLTexture* m_depthStencilTarget = nullptr;
