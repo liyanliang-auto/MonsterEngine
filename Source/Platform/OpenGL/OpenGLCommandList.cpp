@@ -81,6 +81,10 @@ void FOpenGLCommandList::reset()
     m_numRenderTargets = 0;
     m_depthStencilTarget = nullptr;
     m_framebufferDirty = true;
+    
+    // Reset pending and cached state (UE5-style)
+    m_pendingState.Reset();
+    m_cachedState.Reset();
 }
 
 void FOpenGLCommandList::setPipelineState(TSharedPtr<IRHIPipelineState> pipelineState)
@@ -333,6 +337,9 @@ void FOpenGLCommandList::endRenderPass()
 
 void FOpenGLCommandList::draw(uint32 vertexCount, uint32 startVertexLocation)
 {
+    // Commit pending state before draw (UE5-style)
+    CommitState();
+    
     // Check for OpenGL errors before draw
     GLenum err = glGetError();
     if (err != GL_NO_ERROR)
@@ -359,6 +366,9 @@ void FOpenGLCommandList::draw(uint32 vertexCount, uint32 startVertexLocation)
 
 void FOpenGLCommandList::drawIndexed(uint32 indexCount, uint32 startIndexLocation, int32 baseVertexLocation)
 {
+    // Commit pending state before draw (UE5-style)
+    CommitState();
+    
     const void* indexOffset = reinterpret_cast<const void*>(
         static_cast<uintptr_t>(startIndexLocation * (m_indexType == GL_UNSIGNED_INT ? 4 : 2))
     );
@@ -378,6 +388,9 @@ void FOpenGLCommandList::drawIndexed(uint32 indexCount, uint32 startIndexLocatio
 void FOpenGLCommandList::drawInstanced(uint32 vertexCountPerInstance, uint32 instanceCount,
                                        uint32 startVertexLocation, uint32 startInstanceLocation)
 {
+    // Commit pending state before draw (UE5-style)
+    CommitState();
+    
     if (startInstanceLocation != 0 && glDrawArraysInstancedBaseInstance)
     {
         // GL 4.2+ function
@@ -410,6 +423,9 @@ void FOpenGLCommandList::drawIndexedInstanced(uint32 indexCountPerInstance, uint
                                               uint32 startIndexLocation, int32 baseVertexLocation,
                                               uint32 startInstanceLocation)
 {
+    // Commit pending state before draw (UE5-style)
+    CommitState();
+    
     const void* indexOffset = reinterpret_cast<const void*>(
         static_cast<uintptr_t>(startIndexLocation * (m_indexType == GL_UNSIGNED_INT ? 4 : 2))
     );
