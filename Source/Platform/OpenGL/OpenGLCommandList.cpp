@@ -228,11 +228,15 @@ void FOpenGLCommandList::setConstantBuffer(uint32 slot, TSharedPtr<IRHIBuffer> b
     }
     
     auto* glBuffer = static_cast<FOpenGLBuffer*>(buffer.get());
+    
+    // Record to pending state (UE5-style)
+    m_pendingState.ConstantBuffers[slot] = glBuffer;
+    m_pendingState.DirtyConstantBufferMask |= (1u << slot);
+    
+    // Also update legacy array for compatibility
     m_constantBuffers[slot] = glBuffer;
     
-    // Use state cache to avoid redundant OpenGL calls
-    GLuint glBufferHandle = glBuffer ? glBuffer->GetGLBuffer() : 0;
-    m_device->GetStateCache().SetUniformBuffer(slot, glBufferHandle);
+    // Do NOT call OpenGL API here - defer to CommitState()
 }
 
 void FOpenGLCommandList::setShaderResource(uint32 slot, TSharedPtr<IRHITexture> texture)
@@ -243,17 +247,15 @@ void FOpenGLCommandList::setShaderResource(uint32 slot, TSharedPtr<IRHITexture> 
     }
     
     auto* glTexture = static_cast<FOpenGLTexture*>(texture.get());
+    
+    // Record to pending state (UE5-style)
+    m_pendingState.Textures[slot] = glTexture;
+    m_pendingState.DirtyTextureMask |= (1u << slot);
+    
+    // Also update legacy array for compatibility
     m_textures[slot] = glTexture;
     
-    if (glTexture)
-    {
-        glTexture->Bind(slot);
-    }
-    else
-    {
-        glActiveTexture(GL_TEXTURE0 + slot);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
+    // Do NOT call OpenGL API here - defer to CommitState()
 }
 
 void FOpenGLCommandList::setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler)
@@ -264,16 +266,15 @@ void FOpenGLCommandList::setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler
     }
     
     auto* glSampler = static_cast<FOpenGLSampler*>(sampler.get());
+    
+    // Record to pending state (UE5-style)
+    m_pendingState.Samplers[slot] = glSampler;
+    m_pendingState.DirtySamplerMask |= (1u << slot);
+    
+    // Also update legacy array for compatibility
     m_samplers[slot] = glSampler;
     
-    if (glSampler)
-    {
-        glSampler->Bind(slot);
-    }
-    else
-    {
-        glBindSampler(slot, 0);
-    }
+    // Do NOT call OpenGL API here - defer to CommitState()
 }
 
 void FOpenGLCommandList::setViewport(const Viewport& viewport)
