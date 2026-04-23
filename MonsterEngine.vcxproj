@@ -310,6 +310,7 @@
     <ClCompile Include="Source\Engine\Actors\FloorActor.cpp" />
     <ClCompile Include="Source\Engine\Components\CubeMeshComponent.cpp" />
     <ClCompile Include="Source\Engine\Components\FloorMeshComponent.cpp" />
+    <ClCompile Include="Source\Engine\Deferred\FDeferredRenderer.cpp" />
     <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Proxies\FloorSceneProxy.cpp" />
     <ClCompile Include="Source\CubeSceneApplication.cpp" />
@@ -532,6 +533,8 @@
     <ClInclude Include="Include\Engine\Actors\FloorActor.h" />
     <ClInclude Include="Include\Engine\Components\CubeMeshComponent.h" />
     <ClInclude Include="Include\Engine\Components\FloorMeshComponent.h" />
+    <ClInclude Include="Include\Engine\Deferred\DeferredUniformTypes.h" />
+    <ClInclude Include="Include\Engine\Deferred\FDeferredRenderer.h" />
     <ClInclude Include="Include\Engine\Proxies\CubeSceneProxy.h" />
     <ClInclude Include="Include\Engine\Proxies\FloorSceneProxy.h" />
     <ClInclude Include="Include\CubeSceneApplication.h" />
