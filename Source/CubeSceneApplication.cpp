@@ -29,6 +29,7 @@
 #include "Renderer/SceneView.h"
 #include "Renderer/Scene.h"
 #include "Renderer/ParallelSceneRenderer.h"
+#include "Engine/Deferred/FDeferredRenderer.h"
 #include "Editor/ImGui/ImGuiContext.h"
 #include "Editor/ImGui/ImGuiRenderer.h"
 #include "Editor/ImGui/ImGuiInputHandler.h"
@@ -264,6 +265,16 @@ void CubeSceneApplication::onInitialize()
 
     }
 
+    // Initialize Deferred Renderer (if enabled)
+    if (m_bUseDeferredRendering)
+    {
+        if (!initializeDeferredRenderer())
+        {
+            MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize Deferred Renderer, falling back to Forward");
+            m_bUseDeferredRendering = false;
+        }
+    }
+
     MR_LOG(LogCubeSceneApp, Log, "CubeSceneApplication initialized successfully");
 }
 
@@ -491,11 +502,18 @@ void CubeSceneApplication::onRender()
 
         // ================================================================
 
-        // Choose rendering path: RDG+Parallel, Parallel, RDG, or traditional
+        // Choose rendering path: Deferred, RDG+Parallel, Parallel, RDG, or traditional
 
         // ================================================================
 
-        if (m_bEnableParallelRendering && m_bUseRDG)
+        if (m_bUseDeferredRendering && m_deferredRenderer && m_deferredRenderer->IsInitialized())
+        {
+            // Deferred Rendering (MVP)
+            MR_LOG(LogCubeSceneApp, Log, "Using Deferred Rendering path");
+            renderWithDeferred(cmdList, viewMatrix, projectionMatrix, cameraPosition);
+            // NOTE: Deferred renderer uses RDG with 2 passes: Geometry + Lighting
+        }
+        else if (m_bEnableParallelRendering && m_bUseRDG)
         {
             // RDG + Parallel Rendering (combined approach)
             MR_LOG(LogCubeSceneApp, Log, "Using RDG + Parallel rendering path");
@@ -829,9 +847,16 @@ void CubeSceneApplication::onShutdown()
         m_viewportTextureID = 0;
     }
 
-    // Step 3: Clean up scene renderer (may reference scene and views)
+    // Step 3: Clean up deferred renderer (may reference GPU resources)
+    if (m_deferredRenderer)
+    {
+        m_deferredRenderer->Shutdown();
+        m_deferredRenderer.Reset();
+    }
+
+    // Step 4: Clean up scene renderer (may reference scene and views)
     m_sceneRenderer.Reset();
-    // Step 4: Clean up renderer view family
+    // Step 5: Clean up renderer view family
     m_rendererViewFamily.Reset();
     // Step 5: Clean up scene view
     m_sceneView.Reset();
@@ -2896,6 +2921,308 @@ void CubeSceneApplication::renderWithRDGParallel(
     MR_LOG(LogCubeSceneApp, Log, "Executing RDG with parallel passes...");
     graphBuilder.execute(*cmdList);
     MR_LOG(LogCubeSceneApp, Log, "RDG execution complete");
+}
+
+// ============================================================================
+// Deferred Rendering Implementation
+// ============================================================================
+
+bool CubeSceneApplication::initializeDeferredRenderer()
+{
+    MR_LOG(LogCubeSceneApp, Log, "Initializing Deferred Renderer...");
+
+    if (!m_device)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Cannot initialize deferred renderer: no device");
+        return false;
+    }
+
+    m_deferredRenderer = MakeUnique<MonsterEngine::Deferred::FDeferredRenderer>();
+    if (!m_deferredRenderer)
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to allocate FDeferredRenderer");
+        return false;
+    }
+
+    if (!m_deferredRenderer->Initialize(m_device, m_windowWidth, m_windowHeight))
+    {
+        MR_LOG(LogCubeSceneApp, Error, "FDeferredRenderer::Initialize failed");
+        m_deferredRenderer.Reset();
+        return false;
+    }
+
+    MR_LOG(LogCubeSceneApp, Log, "Deferred Renderer initialized successfully");
+    return true;
+}
+
+void CubeSceneApplication::renderWithDeferred(
+    RHI::IRHICommandList* cmdList,
+    const Math::FMatrix& viewMatrix,
+    const Math::FMatrix& projectionMatrix,
+    const Math::FVector& cameraPosition)
+{
+    using namespace RDG;
+    using namespace MonsterEngine;
+
+    if (!m_deferredRenderer || !m_deferredRenderer->IsInitialized())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "renderWithDeferred: deferred renderer not ready");
+        return;
+    }
+
+    // Calculate inverse view-projection for position reconstruction
+    // Convert FMatrix (double) to FMatrix44f (float)
+    Math::FMatrix viewProj = viewMatrix * projectionMatrix;
+    Math::FMatrix invViewProj = viewProj.Inverse();
+    
+    // Manual conversion to FMatrix44f
+    Math::FMatrix44f invViewProj44f;
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            invViewProj44f.M[i][j] = static_cast<float>(invViewProj.M[i][j]);
+        }
+    }
+
+    // Gather light data
+    Math::FVector4f dirLightDir(0.5f, -1.0f, 0.3f, 0.0f);
+    Math::FVector4f dirLightColor(1.0f, 0.95f, 0.9f, 3.0f);  // w = intensity
+    Math::FVector4f pointLightPosRadius(0.0f, 2.0f, 0.0f, 5.0f);  // w = radius
+    Math::FVector4f pointLightColor(1.0f, 0.8f, 0.6f, 2.0f);  // w = intensity
+
+    if (m_directionalLight && m_directionalLight->GetLightSceneInfo() && m_directionalLight->GetLightSceneInfo()->Proxy)
+    {
+        Math::FVector dir = m_directionalLight->GetLightSceneInfo()->Proxy->GetDirection();
+        dirLightDir = Math::FVector4f(dir.X, dir.Y, dir.Z, 0.0f);
+        
+        FLinearColor color = m_directionalLight->GetLightColor();
+        float intensity = m_directionalLight->GetIntensity();
+        dirLightColor = Math::FVector4f(color.R, color.G, color.B, intensity);
+    }
+
+    if (m_pointLight && m_pointLight->GetLightSceneInfo() && m_pointLight->GetLightSceneInfo()->Proxy)
+    {
+        // Point light doesn't have GetOrigin(), use location from transform
+        Math::FVector pos(0.0f, 2.0f, 0.0f);  // Default position
+        float radius = m_pointLight->GetAttenuationRadius();
+        pointLightPosRadius = Math::FVector4f(pos.X, pos.Y, pos.Z, radius);
+        
+        FLinearColor color = m_pointLight->GetLightColor();
+        float intensity = m_pointLight->GetIntensity();
+        pointLightColor = Math::FVector4f(color.R, color.G, color.B, intensity);
+    }
+
+    // Update Scene UBO (only once per frame, shared by all objects)
+    m_deferredRenderer->UpdateSceneUBO(
+        invViewProj44f,
+        Math::FVector4f(cameraPosition.X, cameraPosition.Y, cameraPosition.Z, 1.0f),
+        dirLightDir,
+        dirLightColor,
+        pointLightPosRadius,
+        pointLightColor,
+        0.1f  // ambient factor
+    );
+
+    // Create RDG builder
+    FRDGBuilder graphBuilder(m_device, "DeferredRenderGraph");
+
+    // Register GBuffer textures as external resources
+    auto gbuffer = m_deferredRenderer->GetGBuffer();
+    FRDGTextureRef normalRT = graphBuilder.registerExternalTexture(
+        "GBuffer_Normal", gbuffer.NormalTarget.Get(), ERHIAccess::Unknown);
+    FRDGTextureRef albedoRT = graphBuilder.registerExternalTexture(
+        "GBuffer_Albedo", gbuffer.AlbedoTarget.Get(), ERHIAccess::Unknown);
+    FRDGTextureRef depthRT = graphBuilder.registerExternalTexture(
+        "GBuffer_Depth", gbuffer.DepthTarget.Get(), ERHIAccess::Unknown);
+
+    // ========================================================================
+    // Pass 1: Geometry Pass (write GBuffer MRT)
+    // ========================================================================
+    graphBuilder.addPass(
+        "GeometryPass",
+        ERDGPassFlags::Raster,
+        [&](FRDGPassBuilder& builder)
+        {
+            builder.writeTexture(normalRT, ERHIAccess::RTV);
+            builder.writeTexture(albedoRT, ERHIAccess::RTV);
+            builder.writeDepth(depthRT, ERHIAccess::DSVWrite);
+        },
+        [this, viewMatrix, projectionMatrix, cameraPosition](RHI::IRHICommandList& rhiCmdList)
+        {
+            MR_LOG(LogCubeSceneApp, Log, "Executing Deferred Geometry Pass");
+
+            // Set viewport
+            auto gbuf = m_deferredRenderer->GetGBuffer();
+            RHI::Viewport viewport(static_cast<float32>(gbuf.Width), static_cast<float32>(gbuf.Height));
+            rhiCmdList.setViewport(viewport);
+
+            RHI::ScissorRect scissor;
+            scissor.left = 0;
+            scissor.top = 0;
+            scissor.right = static_cast<int32>(gbuf.Width);
+            scissor.bottom = static_cast<int32>(gbuf.Height);
+            rhiCmdList.setScissorRect(scissor);
+
+            // Clear GBuffer
+            float32 clearBlack[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float32 clearAlbedo[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+            rhiCmdList.clearRenderTarget(gbuf.NormalTarget, clearBlack);
+            rhiCmdList.clearRenderTarget(gbuf.AlbedoTarget, clearAlbedo);
+            rhiCmdList.clearDepthStencil(gbuf.DepthTarget, 1.0f, 0);
+
+            // Bind geometry pipeline
+            rhiCmdList.setPipelineState(m_deferredRenderer->GetGeometryPipeline());
+
+            // Render all cubes
+            for (auto& cubeActor : m_cubeActors)
+            {
+                if (!cubeActor) continue;
+
+                UCubeMeshComponent* meshComp = cubeActor->GetCubeMeshComponent();
+                if (!meshComp) continue;
+
+                meshComp->UpdateComponentToWorld();
+                FPrimitiveSceneProxy* baseProxy = meshComp->GetSceneProxy();
+                FCubeSceneProxy* cubeProxy = static_cast<FCubeSceneProxy*>(baseProxy);
+
+                if (cubeProxy && cubeProxy->AreResourcesInitialized())
+                {
+                    // Manual conversion FMatrix to FMatrix44f
+                    Math::FMatrix model = cubeActor->GetActorTransform().ToMatrixWithScale();
+                    Math::FMatrix44f modelMatrix44f, viewMatrix44f, projMatrix44f;
+                    for (int i = 0; i < 4; ++i) {
+                        for (int j = 0; j < 4; ++j) {
+                            modelMatrix44f.M[i][j] = static_cast<float>(model.M[i][j]);
+                            viewMatrix44f.M[i][j] = static_cast<float>(viewMatrix.M[i][j]);
+                            projMatrix44f.M[i][j] = static_cast<float>(projectionMatrix.M[i][j]);
+                        }
+                    }
+
+                    // Update Transform UBO for this object
+                    m_deferredRenderer->UpdateTransformUBO(
+                        modelMatrix44f,
+                        viewMatrix44f,
+                        projMatrix44f,
+                        Math::FVector4f(cameraPosition.X, cameraPosition.Y, cameraPosition.Z, 1.0f)
+                    );
+
+                    // Bind Transform UBO (Set 0, Binding 0)
+                    rhiCmdList.setConstantBuffer(0, m_deferredRenderer->GetTransformUBO());
+
+                    // Bind vertex buffer from proxy
+                    TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers;
+                    vertexBuffers.Add(cubeProxy->GetVertexBuffer());
+                    rhiCmdList.setVertexBuffers(0, TSpan<TSharedPtr<RHI::IRHIBuffer>>(vertexBuffers.GetData(), vertexBuffers.Num()));
+
+                    // Draw (cube has 36 vertices, no index buffer)
+                    rhiCmdList.draw(36, 0);
+                }
+            }
+
+            // Render floor
+            if (m_floorActor)
+            {
+                UFloorMeshComponent* floorMeshComp = m_floorActor->GetFloorMeshComponent();
+                if (floorMeshComp)
+                {
+                    floorMeshComp->UpdateComponentToWorld();
+                    FFloorSceneProxy* floorProxy = floorMeshComp->GetFloorSceneProxy();
+
+                    if (floorProxy && floorProxy->AreResourcesInitialized())
+                    {
+                        // Manual conversion FMatrix to FMatrix44f
+                        Math::FMatrix model = m_floorActor->GetActorTransform().ToMatrixWithScale();
+                        Math::FMatrix44f modelMatrix44f, viewMatrix44f, projMatrix44f;
+                        for (int i = 0; i < 4; ++i) {
+                            for (int j = 0; j < 4; ++j) {
+                                modelMatrix44f.M[i][j] = static_cast<float>(model.M[i][j]);
+                                viewMatrix44f.M[i][j] = static_cast<float>(viewMatrix.M[i][j]);
+                                projMatrix44f.M[i][j] = static_cast<float>(projectionMatrix.M[i][j]);
+                            }
+                        }
+
+                        m_deferredRenderer->UpdateTransformUBO(
+                            modelMatrix44f,
+                            viewMatrix44f,
+                            projMatrix44f,
+                            Math::FVector4f(cameraPosition.X, cameraPosition.Y, cameraPosition.Z, 1.0f)
+                        );
+
+                        rhiCmdList.setConstantBuffer(0, m_deferredRenderer->GetTransformUBO());
+                        
+                        TArray<TSharedPtr<RHI::IRHIBuffer>> vertexBuffers;
+                        vertexBuffers.Add(floorProxy->GetVertexBuffer());
+                        rhiCmdList.setVertexBuffers(0, TSpan<TSharedPtr<RHI::IRHIBuffer>>(vertexBuffers.GetData(), vertexBuffers.Num()));
+                        
+                        // Draw (floor has 6 vertices, no index buffer)
+                        rhiCmdList.draw(6, 0);
+                    }
+                }
+            }
+
+            MR_LOG(LogCubeSceneApp, Log, "Geometry Pass complete");
+        }
+    );
+
+    // ========================================================================
+    // Pass 2: Lighting Pass (fullscreen triangle, read GBuffer, write swapchain)
+    // ========================================================================
+    graphBuilder.addPass(
+        "LightingPass",
+        ERDGPassFlags::Raster,
+        [&](FRDGPassBuilder& builder)
+        {
+            builder.readTexture(normalRT, ERHIAccess::SRVGraphics);
+            builder.readTexture(albedoRT, ERHIAccess::SRVGraphics);
+            builder.readTexture(depthRT, ERHIAccess::SRVGraphics);
+        },
+        [this](RHI::IRHICommandList& rhiCmdList)
+        {
+            MR_LOG(LogCubeSceneApp, Log, "Executing Deferred Lighting Pass");
+
+            // Set viewport to swapchain size
+            auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+            auto swapchainExtent = vulkanDevice->getSwapchainExtent();
+
+            RHI::Viewport viewport;
+            viewport.x = 0.0f;
+            viewport.y = 0.0f;
+            viewport.width = static_cast<float32>(swapchainExtent.width);
+            viewport.height = static_cast<float32>(swapchainExtent.height);
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            rhiCmdList.setViewport(viewport);
+
+            RHI::ScissorRect scissor;
+            scissor.left = 0;
+            scissor.top = 0;
+            scissor.right = swapchainExtent.width;
+            scissor.bottom = swapchainExtent.height;
+            rhiCmdList.setScissorRect(scissor);
+
+            // Bind lighting pipeline
+            rhiCmdList.setPipelineState(m_deferredRenderer->GetLightingPipeline());
+
+            // Bind Scene UBO (Set 0, Binding 0)
+            rhiCmdList.setConstantBuffer(0, m_deferredRenderer->GetSceneUBO());
+
+            // Bind GBuffer textures (Set 1, Bindings 0-2) and sampler (Set 1, Binding 3)
+            auto gbuf = m_deferredRenderer->GetGBuffer();
+            rhiCmdList.setShaderResource(0, gbuf.NormalTarget);
+            rhiCmdList.setShaderResource(1, gbuf.AlbedoTarget);
+            rhiCmdList.setShaderResource(2, gbuf.DepthTarget);
+            rhiCmdList.setSampler(3, m_deferredRenderer->GetGBufferSampler());
+
+            // Draw fullscreen triangle (3 vertices, no VBO)
+            rhiCmdList.draw(3, 0);
+
+            MR_LOG(LogCubeSceneApp, Log, "Lighting Pass complete");
+        }
+    );
+
+    // Execute the render graph
+    MR_LOG(LogCubeSceneApp, Log, "Executing Deferred RDG with 2 passes");
+    graphBuilder.execute(*cmdList);
+    MR_LOG(LogCubeSceneApp, Log, "Deferred RDG execution complete");
 }
 
 } // namespace MonsterRender

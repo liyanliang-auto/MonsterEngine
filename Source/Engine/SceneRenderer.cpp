@@ -467,129 +467,6 @@ void FSceneRenderer::SubmitDrawCommands(IRHICommandList& RHICmdList, const TArra
 }
 
 // ============================================================================
-// FDeferredShadingRenderer Implementation
-// ============================================================================
-
-FDeferredShadingRenderer::FDeferredShadingRenderer(FScene* InScene, const FSceneViewFamily& InViewFamily)
-    : FSceneRenderer(InScene, InViewFamily)
-{
-    MR_LOG(LogSceneRenderer, Verbose, "DeferredShadingRenderer created");
-}
-
-FDeferredShadingRenderer::~FDeferredShadingRenderer()
-{
-    MR_LOG(LogSceneRenderer, Verbose, "DeferredShadingRenderer destroyed");
-}
-
-void FDeferredShadingRenderer::Render(IRHICommandList& RHICmdList)
-{
-    if (!Scene)
-    {
-        MR_LOG(LogSceneRenderer, Warning, "Cannot render: no scene");
-        return;
-    }
-
-    // Initialize views
-    InitViews();
-
-    // Compute visibility
-    ComputeVisibility();
-
-    // Gather visible primitives
-    GatherVisiblePrimitives();
-
-    // Sort primitives
-    SortPrimitives();
-
-    // Deferred rendering pipeline
-    RenderDepthPrepass(RHICmdList);
-    RenderShadowDepths(RHICmdList);
-    RenderGBuffer(RHICmdList);
-    RenderSSAO(RHICmdList);
-    RenderDeferredLighting(RHICmdList);
-    RenderSSR(RHICmdList);
-    RenderTranslucency(RHICmdList);
-    RenderPostProcess(RHICmdList);
-
-    MR_LOG(LogSceneRenderer, Verbose, "Deferred frame %u rendered", FrameNumber);
-}
-
-void FDeferredShadingRenderer::RenderGBuffer(IRHICommandList& RHICmdList)
-{
-    MR_LOG(LogSceneRenderer, Verbose, "Rendering GBuffer");
-    
-    // GBuffer pass renders to multiple render targets:
-    // - GBufferA: World Normal (RGB), Per-object data (A)
-    // - GBufferB: Metallic (R), Specular (G), Roughness (B), Shading Model (A)
-    // - GBufferC: Base Color (RGB), AO (A)
-    // - GBufferD: Custom data
-    // - Scene Depth
-    
-    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
-    {
-        TArray<FMeshDrawCommand> DrawCommands;
-        GenerateDrawCommands(ViewIndex, ERenderPass::BasePass, DrawCommands);
-        SubmitDrawCommands(RHICmdList, DrawCommands);
-    }
-}
-
-void FDeferredShadingRenderer::RenderDeferredLighting(IRHICommandList& RHICmdList)
-{
-    MR_LOG(LogSceneRenderer, Verbose, "Rendering deferred lighting");
-    
-    for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
-    {
-        FViewInfo& ViewInfo = Views[ViewIndex];
-        
-        // Render each light
-        for (FLightSceneInfo* LightInfo : ViewInfo.VisibleLights)
-        {
-            if (!LightInfo)
-            {
-                continue;
-            }
-            
-            FLightSceneProxy* LightProxy = LightInfo->GetProxy();
-            if (!LightProxy)
-            {
-                continue;
-            }
-            
-            // In a real implementation:
-            // 1. Set light shader parameters
-            // 2. Render light volume or full-screen quad
-            // 3. Accumulate lighting contribution
-            
-            MR_LOG(LogSceneRenderer, Verbose, "Processing light type %d", 
-                   static_cast<int32>(LightProxy->GetLightType()));
-        }
-    }
-}
-
-void FDeferredShadingRenderer::RenderSSAO(IRHICommandList& RHICmdList)
-{
-    MR_LOG(LogSceneRenderer, Verbose, "Rendering SSAO");
-    
-    // Screen-space ambient occlusion
-    // In a real implementation:
-    // 1. Sample depth buffer
-    // 2. Reconstruct view-space positions
-    // 3. Sample hemisphere and compute occlusion
-    // 4. Blur and apply to lighting
-}
-
-void FDeferredShadingRenderer::RenderSSR(IRHICommandList& RHICmdList)
-{
-    MR_LOG(LogSceneRenderer, Verbose, "Rendering SSR");
-    
-    // Screen-space reflections
-    // In a real implementation:
-    // 1. Ray march in screen space
-    // 2. Sample scene color at hit points
-    // 3. Blend with environment reflections
-}
-
-// ============================================================================
 // FForwardShadingRenderer Implementation
 // ============================================================================
 
@@ -706,14 +583,10 @@ void FForwardShadingRenderer::RenderForwardOpaque(IRHICommandList& RHICmdList)
 
 FSceneRenderer* CreateSceneRenderer(FScene* Scene, const FSceneViewFamily& ViewFamily, bool bUseDeferred)
 {
-    if (bUseDeferred)
-    {
-        return new FDeferredShadingRenderer(Scene, ViewFamily);
-    }
-    else
-    {
-        return new FForwardShadingRenderer(Scene, ViewFamily);
-    }
+    // Only forward shading renderer is available
+    // (Deferred rendering is implemented in Engine/Deferred/FDeferredRenderer)
+    (void)bUseDeferred;  // Unused parameter
+    return new FForwardShadingRenderer(Scene, ViewFamily);
 }
 
 } // namespace MonsterEngine
