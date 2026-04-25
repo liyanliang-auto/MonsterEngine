@@ -100,6 +100,7 @@ int main(int argc, char** argv) {
     bool runAllTests = false;
     bool runCubeScene = false;  // Run CubeSceneApplication with lighting
     bool runCubeSceneTest = false;  // Run CubeSceneRendererTest (pipeline integration test)
+    bool useDeferredRendering = false;  // Enable deferred rendering in CubeSceneApplication
     
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
@@ -143,6 +144,9 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(argv[i], "--cube-scene-test") == 0 || strcmp(argv[i], "-cst") == 0) {
             runCubeSceneTest = true;
+        }
+        else if (strcmp(argv[i], "--deferred") == 0 || strcmp(argv[i], "-def") == 0) {
+            useDeferredRendering = true;
         }
         else if (strcmp(argv[i], "--imgui-test") == 0 || strcmp(argv[i], "-imgui") == 0) {
             // Run ImGui test application directly
@@ -365,11 +369,19 @@ int main(int argc, char** argv) {
     // Default: Run CubeSceneApplication (rotating cube demo)
     TUniquePtr<Application> app;
     MR_LOG(LogInit, Log, "Running CubeSceneApplication (default demo)...");
-    app = MakeUnique<CubeSceneApplication>();
-    if (!app) {
+    auto cubeApp = MakeUnique<CubeSceneApplication>();
+    if (!cubeApp) {
         printf("Failed to create application");
         return -1;
     }
+    
+    // Enable deferred rendering if requested
+    if (useDeferredRendering) {
+        MR_LOG(LogInit, Log, "Deferred Rendering enabled via command line");
+        cubeApp->setUseDeferredRendering(true);
+    }
+    
+    app = std::move(cubeApp);
     
     // Run the application
     int32 exitCode = app->run();

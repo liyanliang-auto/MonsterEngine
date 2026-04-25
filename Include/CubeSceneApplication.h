@@ -60,6 +60,11 @@ namespace MonsterEngine { namespace Editor {
     class FImGuiInputHandler;
 }}
 
+// Forward declarations for Deferred namespace
+namespace MonsterEngine { namespace Deferred {
+    class FDeferredRenderer;
+}}
+
 namespace MonsterRender
 {
 
@@ -100,6 +105,13 @@ public:
      */
 
     void setWindowDimensions(uint32 Width, uint32 Height);
+
+    /**
+     * Enable or disable deferred rendering
+     * Must be called before onInitialize()
+     * @param bEnable - Whether to enable deferred rendering
+     */
+    void setUseDeferredRendering(bool bEnable) { m_bUseDeferredRendering = bEnable; }
 
 protected:
 
@@ -423,6 +435,26 @@ protected:
         const MonsterEngine::Math::FMatrix& projectionMatrix,
         const MonsterEngine::Math::FVector& cameraPosition);
 
+    /**
+     * Render scene using Deferred Rendering (MVP)
+     * Uses RDG with two passes: Geometry Pass (write GBuffer) and Lighting Pass (fullscreen composite)
+     * @param cmdList Command list
+     * @param viewMatrix View matrix
+     * @param projectionMatrix Projection matrix
+     * @param cameraPosition Camera position
+     */
+    void renderWithDeferred(
+        RHI::IRHICommandList* cmdList,
+        const MonsterEngine::Math::FMatrix& viewMatrix,
+        const MonsterEngine::Math::FMatrix& projectionMatrix,
+        const MonsterEngine::Math::FVector& cameraPosition);
+
+    /**
+     * Initialize deferred renderer
+     * @return True if successful
+     */
+    bool initializeDeferredRenderer();
+
     // ========================================================================
     // Parallel Rendering Functions
     // ========================================================================
@@ -659,6 +691,16 @@ protected:
 
     /** Whether to use RDG for rendering */
     bool m_bUseRDG = true;  // Temporarily disabled for debugging
+
+    /** Whether to use Deferred Rendering */
+    bool m_bUseDeferredRendering = false;
+
+    // ========================================================================
+    // Deferred Rendering
+    // ========================================================================
+
+    /** Deferred renderer (MVP) */
+    MonsterEngine::TUniquePtr<MonsterEngine::Deferred::FDeferredRenderer> m_deferredRenderer;
 
     // ========================================================================
 

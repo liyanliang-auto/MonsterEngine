@@ -343,59 +343,6 @@ protected:
 };
 
 // ============================================================================
-// Deferred Shading Renderer
-// ============================================================================
-
-/**
- * Deferred shading renderer
- * Implements a deferred rendering pipeline with GBuffer
- */
-class FDeferredShadingRenderer : public FSceneRenderer
-{
-public:
-    /**
-     * Constructor
-     * @param InScene - The scene to render
-     * @param InViewFamily - The view family to render
-     */
-    FDeferredShadingRenderer(FScene* InScene, const FSceneViewFamily& InViewFamily);
-
-    /** Destructor */
-    virtual ~FDeferredShadingRenderer();
-
-    /**
-     * Renders the scene using deferred shading
-     * @param RHICmdList - RHI command list
-     */
-    virtual void Render(IRHICommandList& RHICmdList) override;
-
-protected:
-    /**
-     * Renders the GBuffer pass
-     * @param RHICmdList - RHI command list
-     */
-    virtual void RenderGBuffer(IRHICommandList& RHICmdList);
-
-    /**
-     * Renders deferred lighting
-     * @param RHICmdList - RHI command list
-     */
-    virtual void RenderDeferredLighting(IRHICommandList& RHICmdList);
-
-    /**
-     * Renders screen-space ambient occlusion
-     * @param RHICmdList - RHI command list
-     */
-    virtual void RenderSSAO(IRHICommandList& RHICmdList);
-
-    /**
-     * Renders screen-space reflections
-     * @param RHICmdList - RHI command list
-     */
-    virtual void RenderSSR(IRHICommandList& RHICmdList);
-};
-
-// ============================================================================
 // Forward Shading Renderer
 // ============================================================================
 
