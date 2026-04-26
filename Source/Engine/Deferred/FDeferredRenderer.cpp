@@ -295,11 +295,31 @@ bool FDeferredRenderer::CreateGBuffer(uint32 InWidth, uint32 InHeight)
         }
     }
 
+    // ---- Motion Vector Target (RG16F) for TAA ----
+    {
+        TextureDesc Desc;
+        Desc.width     = InWidth;
+        Desc.height    = InHeight;
+        Desc.depth     = 1;
+        Desc.mipLevels = 1;
+        Desc.arraySize = 1;
+        Desc.format    = EPixelFormat::R16G16_FLOAT;
+        Desc.usage     = EResourceUsage::RenderTarget | EResourceUsage::ShaderResource;
+        Desc.debugName = "Motion Vector RT";
+
+        MotionVectorTarget = Device->createTexture(Desc);
+        if (!MotionVectorTarget)
+        {
+            MR_LOG(LogDeferredRenderer, Error, "Failed to create Motion Vector RT");
+            return false;
+        }
+    }
+
     GBuffer.Width  = InWidth;
     GBuffer.Height = InHeight;
 
     MR_LOG(LogDeferredRenderer, Log,
-           "GBuffer created: Normal=RGBA32F, Albedo=RGBA8, Depth=device-default (%ux%u)",
+           "GBuffer created: Normal=RGBA32F, Albedo=RGBA8, Depth=device-default, MotionVector=RG16F (%ux%u)",
            InWidth, InHeight);
     return true;
 }
@@ -309,6 +329,7 @@ void FDeferredRenderer::ReleaseGBuffer()
     GBuffer.NormalTarget.Reset();
     GBuffer.AlbedoTarget.Reset();
     GBuffer.DepthTarget.Reset();
+    MotionVectorTarget.Reset();
     GBuffer.Width  = 0;
     GBuffer.Height = 0;
 }
