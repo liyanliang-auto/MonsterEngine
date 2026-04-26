@@ -15,6 +15,8 @@ layout(set = 0, binding = 0) uniform TransformUBO {
     mat4 proj;                  // offset 128
     mat4 normalMatrix;          // offset 192  inverse-transpose(model)
     vec4 cameraPos;             // offset 256  xyz=pos, w=1.0
+    mat4 previousModel;         // offset 272  TAA: previous frame model matrix
+    vec4 padding;               // offset 336  alignment padding
 } ubo;
 
 // -----------------------------------------------------------------------------
@@ -30,12 +32,22 @@ layout(location = 2) in vec2 inTexCoord;
 layout(location = 0) out vec3 vWorldPos;
 layout(location = 1) out vec3 vWorldNormal;
 layout(location = 2) out vec2 vTexCoord;
+layout(location = 3) out vec2 vMotionVector;
 
 void main() {
     // UE5 row-vector convention: v * M（向量在左，矩阵在右）
     vec4 worldPos = vec4(inPosition, 1.0) * ubo.model;
     vec4 viewPos  = worldPos * ubo.view;
     vec4 clipPos  = viewPos * ubo.proj;
+
+    // TAA: Calculate motion vector (current position - previous position in NDC space)
+    mat4 previousMVP = ubo.previousModel * ubo.view * ubo.proj;
+    vec4 previousClipPos = vec4(inPosition, 1.0) * previousMVP;
+    
+    // Convert to NDC space and compute motion vector
+    vec2 currentNDC = clipPos.xy / clipPos.w;
+    vec2 previousNDC = previousClipPos.xy / previousClipPos.w;
+    vMotionVector = currentNDC - previousNDC;
 
     // 世界坐标（用于 Lighting Pass 的 Position 重建对比验证）
     vWorldPos = worldPos.xyz;
