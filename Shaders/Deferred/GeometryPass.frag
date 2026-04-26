@@ -21,6 +21,7 @@
 layout(location = 0) in vec3 vWorldPos;
 layout(location = 1) in vec3 vWorldNormal;
 layout(location = 2) in vec2 vTexCoord;
+layout(location = 3) in vec2 vMotionVector;
 
 // -----------------------------------------------------------------------------
 // 纹理采样器（与 CubeLit 兼容：binding = 1 是 Albedo）
@@ -32,6 +33,7 @@ layout(set = 0, binding = 1) uniform sampler2D albedoMap;
 // -----------------------------------------------------------------------------
 layout(location = 0) out vec4 outNormal;
 layout(location = 1) out vec4 outAlbedo;
+layout(location = 2) out vec2 outMotionVector;
 
 void main() {
     // 1. 输出归一化后的世界法线（.w 预留作为 Shading Model ID 等用途）
@@ -41,5 +43,8 @@ void main() {
     vec4 albedo = texture(albedoMap, vTexCoord);
     outAlbedo = vec4(albedo.rgb, 1.0);
 
-    // 3. Depth 由光栅化硬件自动写入 Depth Buffer，无需显式输出
+    // 3. TAA: Output motion vector for temporal reprojection
+    outMotionVector = vMotionVector;
+
+    // 4. Depth 由光栅化硬件自动写入 Depth Buffer，无需显式输出
 }
