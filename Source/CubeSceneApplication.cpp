@@ -2951,7 +2951,20 @@ bool CubeSceneApplication::initializeDeferredRenderer()
         return false;
     }
 
-    MR_LOG(LogCubeSceneApp, Log, "Deferred Renderer initialized successfully");
+    // TAA: Initialize TAA resources and pipeline
+    if (!m_deferredRenderer->CreateTAAResources())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create TAA resources");
+        return false;
+    }
+
+    if (!m_deferredRenderer->CreateTAAPipeline())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create TAA pipeline");
+        return false;
+    }
+
+    MR_LOG(LogCubeSceneApp, Log, "Deferred Renderer initialized successfully (with TAA)");
     return true;
 }
 
@@ -3033,9 +3046,17 @@ void CubeSceneApplication::renderWithDeferred(
         "GBuffer_Albedo", gbuffer.AlbedoTarget.Get(), ERHIAccess::Unknown);
     FRDGTextureRef depthRT = graphBuilder.registerExternalTexture(
         "GBuffer_Depth", gbuffer.DepthTarget.Get(), ERHIAccess::Unknown);
+    
+    // TAA: Register Motion Vector RT
+    FRDGTextureRef motionVectorRT = graphBuilder.registerExternalTexture(
+        "MotionVector_RT", m_deferredRenderer->GetMotionVectorTarget().Get(), ERHIAccess::Unknown);
+    
+    // TAA: Register Lighting RT (temp storage)
+    FRDGTextureRef lightingRT = graphBuilder.registerExternalTexture(
+        "Lighting_RT", m_deferredRenderer->GetLightingTarget().Get(), ERHIAccess::Unknown);
 
     // ========================================================================
-    // Pass 1: Geometry Pass (write GBuffer MRT)
+    // Pass 1: Geometry Pass (write GBuffer MRT + Motion Vector)
     // ========================================================================
     graphBuilder.addPass(
         "GeometryPass",
@@ -3044,6 +3065,7 @@ void CubeSceneApplication::renderWithDeferred(
         {
             builder.writeTexture(normalRT, ERHIAccess::RTV);
             builder.writeTexture(albedoRT, ERHIAccess::RTV);
+            builder.writeTexture(motionVectorRT, ERHIAccess::RTV);  // TAA: Motion Vector output
             builder.writeDepth(depthRT, ERHIAccess::DSVWrite);
         },
         [this, viewMatrix, projectionMatrix, cameraPosition](RHI::IRHICommandList& rhiCmdList)
@@ -3164,7 +3186,7 @@ void CubeSceneApplication::renderWithDeferred(
     );
 
     // ========================================================================
-    // Pass 2: Lighting Pass (fullscreen triangle, read GBuffer, write swapchain)
+    // Pass 2: Lighting Pass (fullscreen triangle, read GBuffer, write Lighting RT)
     // ========================================================================
     graphBuilder.addPass(
         "LightingPass",
@@ -3174,6 +3196,7 @@ void CubeSceneApplication::renderWithDeferred(
             builder.readTexture(normalRT, ERHIAccess::SRVGraphics);
             builder.readTexture(albedoRT, ERHIAccess::SRVGraphics);
             builder.readTexture(depthRT, ERHIAccess::SRVGraphics);
+            builder.writeTexture(lightingRT, ERHIAccess::RTV);  // TAA: Write to Lighting RT
         },
         [this](RHI::IRHICommandList& rhiCmdList)
         {
@@ -3219,10 +3242,36 @@ void CubeSceneApplication::renderWithDeferred(
         }
     );
 
+    // ========================================================================
+    // Pass 3: TAA Pass (read Lighting RT + Motion Vector + History, write swapchain)
+    // ========================================================================
+    graphBuilder.addPass(
+        "TAAPass",
+        ERDGPassFlags::Raster,
+        [&](FRDGPassBuilder& builder)
+        {
+            builder.readTexture(lightingRT, ERHIAccess::SRVGraphics);
+            builder.readTexture(motionVectorRT, ERHIAccess::SRVGraphics);
+            // History RT is read directly in shader, not through RDG
+        },
+        [this](RHI::IRHICommandList& rhiCmdList)
+        {
+            MR_LOG(LogCubeSceneApp, Log, "Executing TAA Pass");
+
+            // TAA Pass renders directly to swapchain
+            m_deferredRenderer->RenderTAAPass(&rhiCmdList);
+
+            MR_LOG(LogCubeSceneApp, Log, "TAA Pass complete");
+        }
+    );
+
     // Execute the render graph
-    MR_LOG(LogCubeSceneApp, Log, "Executing Deferred RDG with 2 passes");
+    MR_LOG(LogCubeSceneApp, Log, "Executing Deferred RDG with 3 passes (Geometry + Lighting + TAA)");
     graphBuilder.execute(*cmdList);
     MR_LOG(LogCubeSceneApp, Log, "Deferred RDG execution complete");
+
+    // TAA: Copy swapchain to history for next frame
+    m_deferredRenderer->CopyToHistory(cmdList);
 }
 
 } // namespace MonsterRender

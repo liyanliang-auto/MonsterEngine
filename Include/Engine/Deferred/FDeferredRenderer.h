@@ -159,6 +159,12 @@ public:
 
     TSharedPtr<MonsterRender::RHI::IRHISampler> GetGBufferSampler() const { return GBufferSampler; }
 
+    // TAA resource accessors
+    TSharedPtr<MonsterRender::RHI::IRHITexture> GetMotionVectorTarget() const { return MotionVectorTarget; }
+    TSharedPtr<MonsterRender::RHI::IRHITexture> GetLightingTarget() const { return LightingTarget; }
+    TSharedPtr<MonsterRender::RHI::IRHITexture> GetHistoryTarget() const { return HistoryTarget; }
+    TSharedPtr<MonsterRender::RHI::IRHIPipelineState> GetTAAPipeline() const { return TAAPipeline; }
+
     // ========================================================================
     // TAA (Temporal Anti-Aliasing) Methods
     // ========================================================================
