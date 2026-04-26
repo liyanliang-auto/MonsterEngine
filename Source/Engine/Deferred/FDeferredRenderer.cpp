@@ -2,12 +2,12 @@
 
 /**
  * @file FDeferredRenderer.cpp
- * @brief 延迟渲染器 MVP 实现
+ * @brief Deferred Renderer MVP Implementation
  *
- * 参考：
- *   - FCubeSceneProxy::CreatePipelineState  (Pipeline 模板)
- *   - CubeSceneApplication::createPBRPipeline (Shader 加载模板)
- *   - CubeSceneApplication::initializeViewportRenderTarget (RT 创建模板)
+ * References:
+ *   - FCubeSceneProxy::CreatePipelineState  (Pipeline template)
+ *   - CubeSceneApplication::createPBRPipeline (Shader loading template)
+ *   - CubeSceneApplication::initializeViewportRenderTarget (RT creation template)
  */
 
 #include "Engine/Deferred/FDeferredRenderer.h"
@@ -27,22 +27,22 @@ namespace Deferred
 {
 
 // ============================================================================
-// 常量定义
+// Constants
 // ============================================================================
 
 namespace
 {
-    /** GBuffer 各 RT 的固定格式（MVP 版本） */
+    /** Fixed formats for GBuffer render targets (MVP version) */
     constexpr MonsterRender::RHI::EPixelFormat kNormalFormat =
         MonsterRender::RHI::EPixelFormat::R32G32B32A32_FLOAT;
 
     constexpr MonsterRender::RHI::EPixelFormat kAlbedoFormat =
         MonsterRender::RHI::EPixelFormat::R8G8B8A8_UNORM;
 
-    /** 顶点步长，匹配 FCubeLitVertex（pos3 + normal3 + uv2） */
+    /** Vertex stride, matches FCubeLitVertex (pos3 + normal3 + uv2) */
     constexpr uint32 kCubeLitVertexStride = sizeof(float) * 8;
 
-    /** Shader SPIR-V 相对路径 */
+    /** Shader SPIR-V relative paths */
     constexpr const char* kGeometryVsPath = "Shaders/Deferred/GeometryPass.vert.spv";
     constexpr const char* kGeometryPsPath = "Shaders/Deferred/GeometryPass.frag.spv";
     constexpr const char* kLightingVsPath = "Shaders/Deferred/LightingPass.vert.spv";
@@ -52,7 +52,7 @@ namespace
 
 
 // ============================================================================
-// 构造 / 析构
+// Constructor / Destructor
 // ============================================================================
 
 FDeferredRenderer::FDeferredRenderer() = default;
@@ -64,7 +64,7 @@ FDeferredRenderer::~FDeferredRenderer()
 
 
 // ============================================================================
-// 生命周期
+// Lifecycle
 // ============================================================================
 
 bool FDeferredRenderer::Initialize(
@@ -90,7 +90,7 @@ bool FDeferredRenderer::Initialize(
         return false;
     }
 
-    // MVP 目前只支持 Vulkan（OpenGL 待后续扩展）
+    // MVP currently only supports Vulkan (OpenGL support to be added later)
     if (InDevice->getRHIBackend() != MonsterRender::RHI::ERHIBackend::Vulkan)
     {
         MR_LOG(LogDeferredRenderer, Error,
@@ -103,8 +103,8 @@ bool FDeferredRenderer::Initialize(
 
     MR_LOG(LogDeferredRenderer, Log, "=== Initializing Deferred Renderer (%ux%u) ===", InWidth, InHeight);
 
-    // 顺序创建：Shader → UBO → Sampler → Pipeline → GBuffer
-    // Shader 和 Pipeline 只创建一次；GBuffer 会随 Resize 重建
+    // Creation order: Shader → UBO → Sampler → Pipeline → GBuffer
+    // Shader and Pipeline are created once; GBuffer is recreated on Resize
     if (!LoadShaders())            { Shutdown(); return false; }
     if (!CreateUniformBuffers())   { Shutdown(); return false; }
     if (!CreateSampler())          { Shutdown(); return false; }
@@ -124,7 +124,7 @@ void FDeferredRenderer::Shutdown()
         return;
     }
 
-    // 资源按创建逆序释放（TSharedPtr 自动 Release）
+    // Resources released in reverse creation order (TSharedPtr auto-releases)
     ReleaseGBuffer();
 
     LightingPipeline.Reset();
@@ -157,7 +157,7 @@ bool FDeferredRenderer::Resize(uint32 InWidth, uint32 InHeight)
 
     if (InWidth == GBuffer.Width && InHeight == GBuffer.Height)
     {
-        return true;  // 无需重建
+        return true;  // No need to recreate
     }
 
     MR_LOG(LogDeferredRenderer, Log, "Resizing GBuffer from %ux%u to %ux%u",
@@ -169,7 +169,7 @@ bool FDeferredRenderer::Resize(uint32 InWidth, uint32 InHeight)
 
 
 // ============================================================================
-// Uniform Buffer 更新
+// Uniform Buffer Updates
 // ============================================================================
 
 void FDeferredRenderer::UpdateTransformUBO(
@@ -190,7 +190,7 @@ void FDeferredRenderer::UpdateTransformUBO(
     Data.Proj          = Proj;
 
     // NormalMatrix = inverse-transpose(Model)
-    // row-vector 下，法线变换为  worldNormal = normal * mat3(NormalMatrix)
+    // In row-vector convention: worldNormal = normal * mat3(NormalMatrix)
     Data.NormalMatrix  = Model.Inverse().GetTransposed();
 
     Data.CameraPos     = CameraPosition;
@@ -227,7 +227,7 @@ void FDeferredRenderer::UpdateSceneUBO(
 
 
 // ============================================================================
-// 内部构建步骤
+// Internal Build Steps
 // ============================================================================
 
 bool FDeferredRenderer::CreateGBuffer(uint32 InWidth, uint32 InHeight)
@@ -275,7 +275,7 @@ bool FDeferredRenderer::CreateGBuffer(uint32 InWidth, uint32 InHeight)
     }
 
     // ---- Depth Target (match device depth format, typically D32_FLOAT) ----
-    // 使用 ShaderResource 标志，以便 Lighting Pass 采样重建 Position
+    // Use ShaderResource flag so Lighting Pass can sample to reconstruct Position
     {
         TextureDesc Desc;
         Desc.width     = InWidth;
@@ -391,11 +391,11 @@ bool FDeferredRenderer::CreateSampler()
     using namespace MonsterRender::RHI;
 
     SamplerDesc Desc;
-    Desc.filter         = ESamplerFilter::Bilinear;    // GBuffer 采样用 Linear 即可，无 mip
-    Desc.addressU       = ESamplerAddressMode::Clamp;  // 防止越界采样到 wrap 边缘
+    Desc.filter         = ESamplerFilter::Bilinear;    // Linear is sufficient for GBuffer sampling, no mip
+    Desc.addressU       = ESamplerAddressMode::Clamp;  // Prevent out-of-bounds sampling to wrap edges
     Desc.addressV       = ESamplerAddressMode::Clamp;
     Desc.addressW       = ESamplerAddressMode::Clamp;
-    Desc.maxAnisotropy  = 1;                            // 全屏采样无需各向异性
+    Desc.maxAnisotropy  = 1;                            // Fullscreen sampling doesn't need anisotropy
     Desc.debugName      = "Deferred GBuffer Sampler";
 
     GBufferSampler = Device->createSampler(Desc);
@@ -417,7 +417,7 @@ bool FDeferredRenderer::CreateGeometryPipeline()
     Desc.pixelShader       = GeometryPS;
     Desc.primitiveTopology = EPrimitiveTopology::TriangleList;
 
-    // ---- Vertex layout (匹配 FCubeLitVertex: pos3 + normal3 + uv2) ----
+    // ---- Vertex layout (matches FCubeLitVertex: pos3 + normal3 + uv2) ----
     VertexAttribute PosAttr;
     PosAttr.location     = 0;
     PosAttr.format       = EVertexFormat::Float3;
@@ -441,17 +441,17 @@ bool FDeferredRenderer::CreateGeometryPipeline()
     Desc.vertexLayout.attributes.push_back(UVAttr);
     Desc.vertexLayout.stride = kCubeLitVertexStride;
 
-    // ---- Rasterizer (与 Cube pipeline 保持一致：viewport Y-flip 后 CW 为 front) ----
+    // ---- Rasterizer (consistent with Cube pipeline: CW is front after viewport Y-flip) ----
     Desc.rasterizerState.fillMode                = EFillMode::Solid;
     Desc.rasterizerState.cullMode                = ECullMode::Back;
     Desc.rasterizerState.frontCounterClockwise   = false;
 
-    // ---- Depth (开启测试与写入) ----
+    // ---- Depth (enable testing and writing) ----
     Desc.depthStencilState.depthEnable      = true;
     Desc.depthStencilState.depthWriteEnable = true;
     Desc.depthStencilState.depthCompareOp   = ECompareOp::Less;
 
-    // ---- Blend (不启用，GBuffer 不做混合) ----
+    // ---- Blend (disabled, GBuffer doesn't blend) ----
     Desc.blendState.blendEnable = false;
 
     // ---- MRT render targets ----
@@ -484,27 +484,27 @@ bool FDeferredRenderer::CreateLightingPipeline()
     Desc.pixelShader       = LightingPS;
     Desc.primitiveTopology = EPrimitiveTopology::TriangleList;
 
-    // ---- Vertex layout 空（LightingPass.vert 用 gl_VertexIndex 生成全屏三角形） ----
+    // ---- Vertex layout empty (LightingPass.vert uses gl_VertexIndex to generate fullscreen triangle) ----
     Desc.vertexLayout.stride = 0;
-    // Desc.vertexLayout.attributes 保持默认空
+    // Desc.vertexLayout.attributes remains default empty
 
     // ---- Rasterizer ----
-    //   全屏三角形超出 NDC 的顶点会被硬件裁剪。关闭背面剔除避免方向问题
+    //   Fullscreen triangle vertices outside NDC are clipped by hardware. Disable backface culling to avoid orientation issues
     Desc.rasterizerState.fillMode              = EFillMode::Solid;
     Desc.rasterizerState.cullMode              = ECullMode::None;
     Desc.rasterizerState.frontCounterClockwise = false;
 
-    // ---- Depth 全部关闭（光照合成不需要也不应写深度） ----
+    // ---- Depth all disabled (lighting composition doesn't need and shouldn't write depth) ----
     Desc.depthStencilState.depthEnable      = false;
     Desc.depthStencilState.depthWriteEnable = false;
     Desc.depthStencilState.depthCompareOp   = ECompareOp::Always;
 
-    // ---- Blend 关闭（直接覆盖写入最终颜色） ----
+    // ---- Blend disabled (directly overwrite final color) ----
     Desc.blendState.blendEnable = false;
 
-    // ---- 输出：目标是当前 viewport color（与 Cube 相同） ----
+    // ---- Output: target is current viewport color (same as Cube) ----
     Desc.renderTargetFormats.push_back(Device->getSwapChainFormat());
-    Desc.depthStencilFormat = EPixelFormat::Unknown;  // 不使用深度附件
+    Desc.depthStencilFormat = EPixelFormat::Unknown;  // No depth attachment used
 
     Desc.debugName = "Deferred Lighting Pipeline";
 
@@ -528,6 +528,7 @@ bool FDeferredRenderer::WriteUniformBuffer(
     {
         return false;
     }
+
 
     void* Mapped = Buffer->map();
     if (!Mapped)
