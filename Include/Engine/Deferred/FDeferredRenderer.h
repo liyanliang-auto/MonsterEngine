@@ -26,6 +26,7 @@
 #include "Core/Templates/SharedPointer.h"
 #include "Engine/Deferred/DeferredUniformTypes.h"
 #include "Math/MathFwd.h"
+#include "Math/Vector2.h"
 #include "RHI/RHI.h"
 
 namespace MonsterEngine
@@ -158,6 +159,75 @@ public:
 
     TSharedPtr<MonsterRender::RHI::IRHISampler> GetGBufferSampler() const { return GBufferSampler; }
 
+    // ========================================================================
+    // TAA (Temporal Anti-Aliasing) Methods
+    // ========================================================================
+
+    /**
+     * Create TAA-specific resources (Motion Vector RT, Lighting RT, History RT)
+     * @return true if all resources created successfully
+     */
+    bool CreateTAAResources();
+
+    /**
+     * Create TAA pipeline for temporal reprojection and filtering
+     * @return true if pipeline created successfully
+     */
+    bool CreateTAAPipeline();
+
+    /**
+     * Render TAA pass (temporal reprojection + variance clipping + optional sharpening)
+     * @param CmdList Command list to record draw commands
+     */
+    void RenderTAAPass(MonsterRender::RHI::IRHICommandList* CmdList);
+
+    /**
+     * Copy current frame result to history buffer for next frame's TAA
+     * @param CmdList Command list to record copy command
+     */
+    void CopyToHistory(MonsterRender::RHI::IRHICommandList* CmdList);
+
+    /**
+     * Generate Halton sequence value for jitter pattern
+     * @param Index Sequence index (1-based)
+     * @param Base Prime number base (2 or 3 for 2D jitter)
+     * @return Halton sequence value in [0, 1)
+     */
+    float Halton(uint32 Index, uint32 Base);
+
+    /**
+     * Generate 2D jitter offset using Halton sequence (8-sample pattern)
+     * @param FrameIndex Current frame index
+     * @return Jitter offset in [-0.5, 0.5] range
+     */
+    Math::FVector2f GenerateJitter(uint32 FrameIndex);
+
+    /**
+     * Apply jitter offset to projection matrix
+     * @param Proj Original projection matrix
+     * @param Jitter Jitter offset in pixel space
+     * @param Width Viewport width
+     * @param Height Viewport height
+     * @return Jittered projection matrix
+     */
+    Math::FMatrix44f ApplyJitter(
+        const Math::FMatrix44f& Proj,
+        const Math::FVector2f& Jitter,
+        uint32 Width,
+        uint32 Height);
+
+    /**
+     * Handle viewport resize (recreate TAA resources)
+     * @param NewWidth New viewport width
+     * @param NewHeight New viewport height
+     */
+    void OnResize(uint32 NewWidth, uint32 NewHeight);
+
+    /**
+     * Handle scene change (clear history buffer)
+     */
+    void OnSceneChanged();
+
 protected:
     // ========================================================================
     // 内部构建步骤（失败返回 false）
@@ -219,6 +289,37 @@ protected:
 
     /** 是否完成初始化 */
     bool bInitialized = false;
+
+    // ========================================================================
+    // TAA (Temporal Anti-Aliasing) Resources
+    // ========================================================================
+
+    /** TAA textures */
+    TSharedPtr<MonsterRender::RHI::IRHITexture> MotionVectorTarget;  // Motion Vector RT (RG16F)
+    TSharedPtr<MonsterRender::RHI::IRHITexture> LightingTarget;      // Lighting RT (RGBA8, temp)
+    TSharedPtr<MonsterRender::RHI::IRHITexture> HistoryTarget;       // History RT (RGBA8)
+
+    /** TAA pipeline */
+    TSharedPtr<MonsterRender::RHI::IRHIPipelineState> TAAPipeline;
+
+    /** TAA shaders */
+    TSharedPtr<MonsterRender::RHI::IRHIVertexShader> TAAVS;
+    TSharedPtr<MonsterRender::RHI::IRHIPixelShader>  TAAPS;
+
+    /** TAA state */
+    uint32 FrameIndex = 0;
+    Math::FVector2f CurrentJitter;
+    Math::FVector2f PreviousJitter;
+    Math::FMatrix44f PreviousViewProj;
+
+    /** TAA configuration */
+    struct FTAAConfig
+    {
+        bool EnableTAA = true;
+        bool EnableSharpening = false;
+        float BlendFactor = 0.1f;
+        float Sharpness = 0.3f;
+    } TAAConfig;
 };
 
 } // namespace Deferred
