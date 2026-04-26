@@ -55,6 +55,12 @@ struct alignas(16) FDeferredTransformUBO
 
     /** 相机世界坐标（xyz = pos, w = 1.0） */
     Math::FVector4f  CameraPos;                 // offset 256, size 16
+
+    /** TAA: Previous frame model matrix for motion vector calculation */
+    Math::FMatrix44f PreviousModel;             // offset 272, size 64
+
+    /** Alignment padding to maintain std140 layout */
+    Math::FVector4f  Padding;                   // offset 336, size 16
 };
 
 // ----- FDeferredTransformUBO 布局静态验证 -----
@@ -63,8 +69,8 @@ static_assert(sizeof(Math::FMatrix44f) == 64,
 static_assert(sizeof(Math::FVector4f) == 16,
     "FVector4f must be exactly 16 bytes (4 floats)!");
 
-static_assert(sizeof(FDeferredTransformUBO) == 272,
-    "FDeferredTransformUBO size mismatch - must be 272 bytes for std140!");
+static_assert(sizeof(FDeferredTransformUBO) == 352,
+    "FDeferredTransformUBO size mismatch - must be 352 bytes for std140!");
 static_assert(offsetof(FDeferredTransformUBO, Model)          == 0,
     "FDeferredTransformUBO::Model offset mismatch!");
 static_assert(offsetof(FDeferredTransformUBO, View)           == 64,
@@ -75,6 +81,8 @@ static_assert(offsetof(FDeferredTransformUBO, NormalMatrix)   == 192,
     "FDeferredTransformUBO::NormalMatrix offset mismatch!");
 static_assert(offsetof(FDeferredTransformUBO, CameraPos)      == 256,
     "FDeferredTransformUBO::CameraPos offset mismatch!");
+static_assert(offsetof(FDeferredTransformUBO, PreviousModel)  == 272,
+    "FDeferredTransformUBO::PreviousModel offset mismatch!");
 
 
 // ============================================================================
@@ -115,11 +123,20 @@ struct alignas(16) FDeferredSceneUBO
 
     /** 环境光（x = ambientFactor, yzw 保留） */
     Math::FVector4f  Ambient;                       // offset 144, size 16
+
+    /** TAA: Previous frame View-Projection matrix for motion vector calculation */
+    Math::FMatrix44f PreviousViewProj;              // offset 160, size 64
+
+    /** TAA: Jitter offset (xy = current jitter, zw = previous jitter) */
+    Math::FVector4f  JitterOffset;                  // offset 224, size 16
+
+    /** TAA: Parameters (x = blendFactor, y = sharpness, z = enableSharpening, w = reserved) */
+    Math::FVector4f  TAAParams;                     // offset 240, size 16
 };
 
 // ----- FDeferredSceneUBO 布局静态验证 -----
-static_assert(sizeof(FDeferredSceneUBO) == 160,
-    "FDeferredSceneUBO size mismatch - must be 160 bytes for std140!");
+static_assert(sizeof(FDeferredSceneUBO) == 256,
+    "FDeferredSceneUBO size mismatch - must be 256 bytes for std140!");
 static_assert(offsetof(FDeferredSceneUBO, InvViewProj)               == 0,
     "FDeferredSceneUBO::InvViewProj offset mismatch!");
 static_assert(offsetof(FDeferredSceneUBO, CameraPos)                 == 64,
@@ -134,6 +151,12 @@ static_assert(offsetof(FDeferredSceneUBO, PointLightColorIntensity)  == 128,
     "FDeferredSceneUBO::PointLightColorIntensity offset mismatch!");
 static_assert(offsetof(FDeferredSceneUBO, Ambient)                   == 144,
     "FDeferredSceneUBO::Ambient offset mismatch!");
+static_assert(offsetof(FDeferredSceneUBO, PreviousViewProj)          == 160,
+    "FDeferredSceneUBO::PreviousViewProj offset mismatch!");
+static_assert(offsetof(FDeferredSceneUBO, JitterOffset)              == 224,
+    "FDeferredSceneUBO::JitterOffset offset mismatch!");
+static_assert(offsetof(FDeferredSceneUBO, TAAParams)                 == 240,
+    "FDeferredSceneUBO::TAAParams offset mismatch!");
 
 } // namespace Deferred
 } // namespace MonsterEngine
