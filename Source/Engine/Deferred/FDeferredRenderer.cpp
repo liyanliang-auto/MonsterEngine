@@ -197,6 +197,14 @@ void FDeferredRenderer::UpdateTransformUBO(
 
     Data.CameraPos     = CameraPosition;
 
+    // TAA: Use previous model matrix (or current if first frame)
+    static Math::FMatrix44f previousModel = Model;
+    Data.PreviousModel = previousModel;
+    Data.Padding       = Math::FVector4f(0.0f, 0.0f, 0.0f, 0.0f);
+    
+    // Update previous model for next frame
+    previousModel = Model;
+
     WriteUniformBuffer(TransformUniformBuffer, &Data, sizeof(Data));
 }
 
@@ -223,6 +231,13 @@ void FDeferredRenderer::UpdateSceneUBO(
     Data.PointLightPositionRadius    = PointLightPositionRadius;
     Data.PointLightColorIntensity    = PointLightColorIntensity;
     Data.Ambient                     = Math::FVector4f(AmbientFactor, 0.0f, 0.0f, 0.0f);
+
+    // TAA parameters
+    Data.PreviousViewProj            = PreviousViewProj;
+    Data.JitterOffset                = Math::FVector4f(CurrentJitter.x, CurrentJitter.y, 
+                                                       PreviousJitter.x, PreviousJitter.y);
+    Data.TAAParams                   = Math::FVector4f(TAAConfig.BlendFactor, TAAConfig.Sharpness,
+                                                       TAAConfig.EnableSharpening ? 1.0f : 0.0f, 0.0f);
 
     WriteUniformBuffer(SceneUniformBuffer, &Data, sizeof(Data));
 }
