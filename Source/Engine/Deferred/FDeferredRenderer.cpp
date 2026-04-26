@@ -47,6 +47,8 @@ namespace
     constexpr const char* kGeometryPsPath = "Shaders/Deferred/GeometryPass.frag.spv";
     constexpr const char* kLightingVsPath = "Shaders/Deferred/LightingPass.vert.spv";
     constexpr const char* kLightingPsPath = "Shaders/Deferred/LightingPass.frag.spv";
+    constexpr const char* kTAAVsPath      = "Shaders/Deferred/TAAPass.vert.spv";
+    constexpr const char* kTAAPsPath      = "Shaders/Deferred/TAAPass.frag.spv";
 
 } // anonymous namespace
 
@@ -618,6 +620,146 @@ bool FDeferredRenderer::CreateTAAResources()
 
     MR_LOG(LogDeferredRenderer, Log, "TAA resources created: Lighting RT + History RT (%ux%u)", width, height);
     return true;
+}
+
+bool FDeferredRenderer::CreateTAAPipeline()
+{
+    using namespace MonsterRender::RHI;
+
+    // Load TAA shaders
+    std::vector<MonsterRender::uint8> SpvTAAVS = MonsterRender::ShaderCompiler::readFileBytes(kTAAVsPath);
+    std::vector<MonsterRender::uint8> SpvTAAPS = MonsterRender::ShaderCompiler::readFileBytes(kTAAPsPath);
+
+    if (SpvTAAVS.empty() || SpvTAAPS.empty())
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to load TAA shader SPIR-V files");
+        return false;
+    }
+
+    TAAVS = Device->createVertexShader(SpvTAAVS.data(), SpvTAAVS.size(), "main");
+    TAAPS = Device->createPixelShader(SpvTAAPS.data(), SpvTAAPS.size(), "main");
+
+    if (!TAAVS || !TAAPS)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to create TAA shader objects");
+        return false;
+    }
+
+    // Create TAA pipeline state
+    PipelineStateDesc Desc;
+    Desc.vertexShader   = TAAVS;
+    Desc.pixelShader    = TAAPS;
+    Desc.primitiveTopology = EPrimitiveTopology::TriangleList;
+
+    // No vertex input (fullscreen triangle generated in shader)
+    Desc.vertexInputLayout.clear();
+
+    // Rasterizer state
+    Desc.rasterizerState.cullMode = ECullMode::None;
+    Desc.rasterizerState.fillMode = EFillMode::Solid;
+
+    // Depth/stencil disabled
+    Desc.depthStencilState.depthTestEnable  = false;
+    Desc.depthStencilState.depthWriteEnable = false;
+    Desc.depthStencilState.depthCompareOp   = ECompareOp::Always;
+
+    // Blend disabled
+    Desc.blendState.blendEnable = false;
+
+    // Output to swapchain
+    Desc.renderTargetFormats.push_back(Device->getSwapChainFormat());
+    Desc.depthStencilFormat = EPixelFormat::Unknown;
+
+    Desc.debugName = "TAA Pipeline";
+
+    TAAPipeline = Device->createPipelineState(Desc);
+    if (!TAAPipeline)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to create TAA pipeline");
+        return false;
+    }
+
+    MR_LOG(LogDeferredRenderer, Log, "TAA pipeline created successfully");
+    return true;
+}
+
+void FDeferredRenderer::RenderTAAPass(MonsterRender::RHI::IRHICommandList* CmdList)
+{
+    if (!CmdList || !TAAPipeline)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Invalid command list or TAA pipeline");
+        return;
+    }
+
+    CmdList->setPipelineState(TAAPipeline.Get());
+    
+    // Bind textures
+    CmdList->setTexture(0, LightingTarget.Get());
+    CmdList->setTexture(1, MotionVectorTarget.Get());
+    CmdList->setTexture(2, HistoryTarget.Get());
+    CmdList->setUniformBuffer(3, SceneUniformBuffer.Get());
+    
+    // Set render target to swapchain
+    CmdList->setRenderTarget(0, Device->getCurrentBackBuffer());
+    
+    // Draw fullscreen triangle
+    CmdList->draw(3, 0);
+}
+
+void FDeferredRenderer::CopyToHistory(MonsterRender::RHI::IRHICommandList* CmdList)
+{
+    if (!CmdList)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Invalid command list for history copy");
+        return;
+    }
+
+    CmdList->blitTexture(Device->getCurrentBackBuffer(), HistoryTarget.Get());
+}
+
+void FDeferredRenderer::OnResize(uint32 NewWidth, uint32 NewHeight)
+{
+    if (NewWidth == GBuffer.Width && NewHeight == GBuffer.Height)
+    {
+        return;
+    }
+
+    MR_LOG(LogDeferredRenderer, Log, "Resizing renderer: %ux%u -> %ux%u", 
+           GBuffer.Width, GBuffer.Height, NewWidth, NewHeight);
+
+    // Release old resources
+    ReleaseGBuffer();
+    LightingTarget.Reset();
+    HistoryTarget.Reset();
+
+    // Recreate with new size
+    CreateGBuffer(NewWidth, NewHeight);
+    CreateTAAResources();
+
+    // Reset frame index to avoid stale history
+    FrameIndex = 0;
+
+    MR_LOG(LogDeferredRenderer, Log, "Resize completed");
+}
+
+void FDeferredRenderer::OnSceneChanged()
+{
+    // Clear history buffer to avoid ghosting from previous scene
+    if (Device && HistoryTarget)
+    {
+        MonsterRender::RHI::IRHICommandList* cmdList = Device->createCommandList();
+        if (cmdList)
+        {
+            Math::FVector4f clearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            cmdList->clearRenderTarget(HistoryTarget.Get(), clearColor);
+            Device->submitCommandList(cmdList);
+        }
+    }
+
+    // Reset frame index
+    FrameIndex = 0;
+
+    MR_LOG(LogDeferredRenderer, Log, "Scene changed, TAA history cleared");
 }
 
 float FDeferredRenderer::Halton(uint32 Index, uint32 Base)
