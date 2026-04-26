@@ -543,5 +543,63 @@ bool FDeferredRenderer::WriteUniformBuffer(
     return true;
 }
 
+// ============================================================================
+// TAA (Temporal Anti-Aliasing) Implementation
+// ============================================================================
+
+float FDeferredRenderer::Halton(uint32 Index, uint32 Base)
+{
+    float result = 0.0f;
+    float f = 1.0f;
+    uint32 i = Index;
+    
+    while (i > 0)
+    {
+        f = f / static_cast<float>(Base);
+        result = result + f * static_cast<float>(i % Base);
+        i = i / Base;
+    }
+    
+    return result;
+}
+
+Math::FVector2f FDeferredRenderer::GenerateJitter(uint32 FrameIndex)
+{
+    // Use 8-sample Halton sequence pattern
+    uint32 sampleIndex = FrameIndex % 8;
+    
+    // Generate Halton sequence values (1-based indexing)
+    float halton2 = Halton(sampleIndex + 1, 2);
+    float halton3 = Halton(sampleIndex + 1, 3);
+    
+    // Convert from [0, 1] to [-0.5, 0.5] range
+    Math::FVector2f jitter;
+    jitter.x = halton2 - 0.5f;
+    jitter.y = halton3 - 0.5f;
+    
+    return jitter;
+}
+
+Math::FMatrix44f FDeferredRenderer::ApplyJitter(
+    const Math::FMatrix44f& Proj,
+    const Math::FVector2f& Jitter,
+    uint32 Width,
+    uint32 Height)
+{
+    Math::FMatrix44f jitteredProj = Proj;
+    
+    // Convert pixel offset to NDC offset
+    // NDC range is [-1, 1], so pixel offset needs to be scaled by 2/width
+    float ndcOffsetX = (Jitter.x * 2.0f) / static_cast<float>(Width);
+    float ndcOffsetY = (Jitter.y * 2.0f) / static_cast<float>(Height);
+    
+    // Apply jitter to projection matrix translation component
+    // For row-major matrices: m[row][col]
+    jitteredProj.m[3][0] += ndcOffsetX;
+    jitteredProj.m[3][1] += ndcOffsetY;
+    
+    return jitteredProj;
+}
+
 } // namespace Deferred
 } // namespace MonsterEngine
