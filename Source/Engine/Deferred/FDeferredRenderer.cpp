@@ -568,6 +568,58 @@ bool FDeferredRenderer::WriteUniformBuffer(
 // TAA (Temporal Anti-Aliasing) Implementation
 // ============================================================================
 
+bool FDeferredRenderer::CreateTAAResources()
+{
+    using namespace MonsterRender::RHI;
+
+    // Get current GBuffer dimensions
+    uint32 width = GBuffer.Width;
+    uint32 height = GBuffer.Height;
+
+    // ---- Lighting Target (RGBA8) ----
+    {
+        TextureDesc Desc;
+        Desc.width     = width;
+        Desc.height    = height;
+        Desc.depth     = 1;
+        Desc.mipLevels = 1;
+        Desc.arraySize = 1;
+        Desc.format    = EPixelFormat::R8G8B8A8_UNORM;
+        Desc.usage     = EResourceUsage::RenderTarget | EResourceUsage::ShaderResource;
+        Desc.debugName = "Lighting RT";
+
+        LightingTarget = Device->createTexture(Desc);
+        if (!LightingTarget)
+        {
+            MR_LOG(LogDeferredRenderer, Error, "Failed to create Lighting RT");
+            return false;
+        }
+    }
+
+    // ---- History Target (RGBA8) ----
+    {
+        TextureDesc Desc;
+        Desc.width     = width;
+        Desc.height    = height;
+        Desc.depth     = 1;
+        Desc.mipLevels = 1;
+        Desc.arraySize = 1;
+        Desc.format    = EPixelFormat::R8G8B8A8_UNORM;
+        Desc.usage     = EResourceUsage::RenderTarget | EResourceUsage::ShaderResource;
+        Desc.debugName = "History RT";
+
+        HistoryTarget = Device->createTexture(Desc);
+        if (!HistoryTarget)
+        {
+            MR_LOG(LogDeferredRenderer, Error, "Failed to create History RT");
+            return false;
+        }
+    }
+
+    MR_LOG(LogDeferredRenderer, Log, "TAA resources created: Lighting RT + History RT (%ux%u)", width, height);
+    return true;
+}
+
 float FDeferredRenderer::Halton(uint32 Index, uint32 Base)
 {
     float result = 0.0f;
