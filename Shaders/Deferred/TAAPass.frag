@@ -61,13 +61,13 @@ vec3 sampleCatmullRom(sampler2D tex, vec2 uv, vec2 texelSize) {
 // ============================================================================
 // Variance clipping for history rejection
 // ============================================================================
-vec3 clipHistory(vec3 historyColor, vec3 currentColor, vec2 uv, vec2 texelSize) {
+vec3 clipHistory(vec3 historyColor, vec3 centerColor, vec2 uv, vec2 texelSize) {
     // Sample 3x3 neighborhood
     vec3 c0 = texture(currentColor, uv + vec2(-1, -1) * texelSize).rgb;
     vec3 c1 = texture(currentColor, uv + vec2( 0, -1) * texelSize).rgb;
     vec3 c2 = texture(currentColor, uv + vec2( 1, -1) * texelSize).rgb;
     vec3 c3 = texture(currentColor, uv + vec2(-1,  0) * texelSize).rgb;
-    vec3 c4 = currentColor;
+    vec3 c4 = centerColor;
     vec3 c5 = texture(currentColor, uv + vec2( 1,  0) * texelSize).rgb;
     vec3 c6 = texture(currentColor, uv + vec2(-1,  1) * texelSize).rgb;
     vec3 c7 = texture(currentColor, uv + vec2( 0,  1) * texelSize).rgb;
