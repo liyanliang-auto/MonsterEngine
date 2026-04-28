@@ -25,6 +25,7 @@
 
 #include "Core/Templates/SharedPointer.h"
 #include "Engine/Deferred/DeferredUniformTypes.h"
+#include "Engine/PostProcess/FXAATypes.h"
 #include "Math/MathFwd.h"
 #include "Math/Vector2D.h"
 #include "RHI/RHI.h"
@@ -75,6 +76,21 @@ struct FDeferredGBuffer
 class FDeferredRenderer
 {
 public:
+    // ========================================================================
+    // Configuration Structures
+    // ========================================================================
+    
+    /**
+     * TAA (Temporal Anti-Aliasing) Configuration
+     */
+    struct FTAAConfig
+    {
+        bool EnableTAA = true;           // Enable TAA (default: true)
+        bool EnableSharpening = false;   // Enable unsharp mask sharpening
+        float BlendFactor = 0.1f;        // Temporal blend factor (0.05-0.2 recommended)
+        float Sharpness = 0.3f;          // Sharpening strength (0.2-0.5 recommended)
+    };
+
     FDeferredRenderer();
     ~FDeferredRenderer();
 
@@ -234,6 +250,43 @@ public:
      */
     void OnSceneChanged();
 
+    /**
+     * Get TAA configuration (mutable)
+     * @return Reference to TAA configuration
+     */
+    FTAAConfig& GetTAAConfig() { return TAAConfig; }
+    const FTAAConfig& GetTAAConfig() const { return TAAConfig; }
+
+    // ========================================================================
+    // FXAA (Fast Approximate Anti-Aliasing) Methods
+    // ========================================================================
+
+    /**
+     * Get FXAA configuration (mutable)
+     * NOTE: FXAA is mutually exclusive with TAA. TAA takes priority.
+     * @return Reference to FXAA configuration
+     */
+    PostProcess::FFXAAConfig& GetFXAAConfig() { return FXAAConfig; }
+    const PostProcess::FFXAAConfig& GetFXAAConfig() const { return FXAAConfig; }
+
+    /**
+     * Update FXAA uniform buffer with current parameters
+     * @param Width Viewport width
+     * @param Height Viewport height
+     */
+    void UpdateFXAAUniformBuffer(uint32 Width, uint32 Height);
+
+    /**
+     * Render FXAA pass (spatial anti-aliasing)
+     * NOTE: This should only be called when TAA is disabled.
+     *       Caller is responsible for mutual exclusion.
+     * @param CmdList Command list to record draw commands
+     * @param InputTexture Input color texture (from Lighting Pass)
+     */
+    void RenderFXAAPass(
+        MonsterRender::RHI::IRHICommandList* CmdList,
+        MonsterRender::RHI::IRHITexture* InputTexture);
+
 protected:
     // ========================================================================
     // 内部构建步骤（失败返回 false）
@@ -268,6 +321,27 @@ protected:
         const TSharedPtr<MonsterRender::RHI::IRHIBuffer>& Buffer,
         const void* Data,
         uint32 Size);
+
+    // ========================================================================
+    // FXAA Internal Methods
+    // ========================================================================
+
+    /**
+     * Create FXAA resources (UBO, Sampler, Shaders)
+     * @return true if all resources created successfully
+     */
+    bool CreateFXAAResources();
+
+    /**
+     * Create FXAA pipeline for spatial anti-aliasing
+     * @return true if pipeline created successfully
+     */
+    bool CreateFXAAPipeline();
+
+    /**
+     * Release FXAA resources
+     */
+    void ReleaseFXAAResources();
 
 protected:
     /** RHI 设备（不持有，外部 owner） */
@@ -319,13 +393,27 @@ protected:
     Math::FMatrix44f PreviousViewProj;
 
     /** TAA configuration */
-    struct FTAAConfig
-    {
-        bool EnableTAA = true;
-        bool EnableSharpening = false;
-        float BlendFactor = 0.1f;
-        float Sharpness = 0.3f;
-    } TAAConfig;
+    FTAAConfig TAAConfig;
+
+    // ========================================================================
+    // FXAA (Fast Approximate Anti-Aliasing) Resources
+    // ========================================================================
+
+    /** FXAA uniform buffer */
+    TSharedPtr<MonsterRender::RHI::IRHIBuffer> FXAAUniformBuffer;
+
+    /** FXAA shaders */
+    TSharedPtr<MonsterRender::RHI::IRHIVertexShader> FXAAVS;
+    TSharedPtr<MonsterRender::RHI::IRHIPixelShader>  FXAAPS;
+
+    /** FXAA pipeline */
+    TSharedPtr<MonsterRender::RHI::IRHIPipelineState> FXAAPipeline;
+
+    /** FXAA sampler (Linear + Clamp, required by FXAA algorithm) */
+    TSharedPtr<MonsterRender::RHI::IRHISampler> FXAASampler;
+
+    /** FXAA configuration */
+    PostProcess::FFXAAConfig FXAAConfig;
 };
 
 } // namespace Deferred

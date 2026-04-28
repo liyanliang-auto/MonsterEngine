@@ -3266,38 +3266,107 @@ void CubeSceneApplication::renderWithDeferred(
     );
 
     // ========================================================================
-    // Pass 3: TAA Pass (read Lighting RT + Motion Vector + History, write swapchain)
+    // Pass 3: Anti-Aliasing Pass (TAA or FXAA, mutually exclusive)
     // ========================================================================
-    graphBuilder.addPass(
-        "TAAPass",
-        ERDGPassFlags::Raster,
-        [&](FRDGPassBuilder& builder)
-        {
-            builder.readTexture(lightingRT, ERHIAccess::SRVGraphics);
-            builder.readTexture(motionVectorRT, ERHIAccess::SRVGraphics);
-            // History RT is read directly in shader, not through RDG
-        },
-        [this](RHI::IRHICommandList& rhiCmdList)
-        {
-            MR_LOG(LogCubeSceneApp, Log, "Executing TAA Pass");
+    
+    // Check which anti-aliasing method to use (TAA takes priority)
+    bool useTAA = m_deferredRenderer->GetTAAConfig().EnableTAA;
+    bool useFXAA = m_deferredRenderer->GetFXAAConfig().EnableFXAA;
+    
+    if (useTAA)
+    {
+        // TAA Pass (temporal anti-aliasing)
+        graphBuilder.addPass(
+            "TAAPass",
+            ERDGPassFlags::Raster,
+            [&](FRDGPassBuilder& builder)
+            {
+                builder.readTexture(lightingRT, ERHIAccess::SRVGraphics);
+                builder.readTexture(motionVectorRT, ERHIAccess::SRVGraphics);
+                // History RT is read directly in shader, not through RDG
+            },
+            [this](RHI::IRHICommandList& rhiCmdList)
+            {
+                MR_LOG(LogCubeSceneApp, Log, "Executing TAA Pass");
 
-            // TAA Pass renders directly to swapchain
-            m_deferredRenderer->RenderTAAPass(&rhiCmdList);
+                // TAA Pass renders directly to swapchain
+                m_deferredRenderer->RenderTAAPass(&rhiCmdList);
 
-            MR_LOG(LogCubeSceneApp, Log, "TAA Pass complete");
-        }
-    );
+                MR_LOG(LogCubeSceneApp, Log, "TAA Pass complete");
+            }
+        );
+    }
+    else if (useFXAA)
+    {
+        // FXAA Pass (spatial anti-aliasing)
+        graphBuilder.addPass(
+            "FXAAPass",
+            ERDGPassFlags::Raster,
+            [&](FRDGPassBuilder& builder)
+            {
+                builder.readTexture(lightingRT, ERHIAccess::SRVGraphics);
+                // FXAA only needs the lighting result, no motion vectors
+            },
+            [this](RHI::IRHICommandList& rhiCmdList)
+            {
+                MR_LOG(LogCubeSceneApp, Log, "Executing FXAA Pass");
+
+                // Get swapchain extent for FXAA parameters
+                auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+                auto swapchainExtent = vulkanDevice->getSwapchainExtent();
+
+                // Update FXAA uniform buffer with current viewport size
+                m_deferredRenderer->UpdateFXAAUniformBuffer(
+                    swapchainExtent.width,
+                    swapchainExtent.height
+                );
+
+                // FXAA Pass renders directly to swapchain
+                m_deferredRenderer->RenderFXAAPass(
+                    &rhiCmdList,
+                    m_deferredRenderer->GetLightingTarget().get()
+                );
+
+                MR_LOG(LogCubeSceneApp, Log, "FXAA Pass complete");
+            }
+        );
+    }
+    else
+    {
+        // No anti-aliasing: Simple blit from Lighting RT to swapchain
+        graphBuilder.addPass(
+            "BlitPass",
+            ERDGPassFlags::Raster,
+            [&](FRDGPassBuilder& builder)
+            {
+                builder.readTexture(lightingRT, ERHIAccess::SRVGraphics);
+            },
+            [this](RHI::IRHICommandList& rhiCmdList)
+            {
+                MR_LOG(LogCubeSceneApp, Log, "Executing Blit Pass (no AA)");
+                
+                // TODO: Implement simple blit pass
+                // For now, just log warning
+                MR_LOG(LogCubeSceneApp, Warning, "No anti-aliasing enabled - output may have aliasing artifacts");
+            }
+        );
+    }
 
     // Execute the render graph
-    MR_LOG(LogCubeSceneApp, Log, "Executing Deferred RDG with 3 passes (Geometry + Lighting + TAA)");
+    const char* aaMethod = useTAA ? "TAA" : (useFXAA ? "FXAA" : "NoAA");
+    MR_LOG(LogCubeSceneApp, Log, "Executing Deferred RDG with 3 passes (Geometry + Lighting + %s)", aaMethod);
     graphBuilder.execute(*cmdList);
     MR_LOG(LogCubeSceneApp, Log, "Deferred RDG execution complete");
 
-    // TAA: Copy swapchain to history for next frame
-    m_deferredRenderer->CopyToHistory(cmdList);
+    // TAA-specific post-processing (only when TAA is enabled)
+    if (useTAA)
+    {
+        // Copy swapchain to history for next frame
+        m_deferredRenderer->CopyToHistory(cmdList);
 
-    // TAA: Increment frame index for next frame's jitter pattern (8-sample cycle)
-    m_frameIndex++;
+        // Increment frame index for next frame's jitter pattern (8-sample cycle)
+        m_frameIndex++;
+    }
 }
 
 } // namespace MonsterRender
