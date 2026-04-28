@@ -59,8 +59,11 @@ struct alignas(16) FDeferredTransformUBO
     /** TAA: Previous frame model matrix for motion vector calculation */
     Math::FMatrix44f PreviousModel;             // offset 272, size 64
 
-    /** Alignment padding to maintain std140 layout */
-    Math::FVector4f  Padding;                   // offset 336, size 16
+    /** TAA: Previous frame view matrix for motion vector calculation */
+    Math::FMatrix44f PreviousView;              // offset 336, size 64
+
+    /** TAA: Previous frame projection matrix for motion vector calculation */
+    Math::FMatrix44f PreviousProj;              // offset 400, size 64
 };
 
 // ----- FDeferredTransformUBO 布局静态验证 -----
@@ -69,8 +72,8 @@ static_assert(sizeof(Math::FMatrix44f) == 64,
 static_assert(sizeof(Math::FVector4f) == 16,
     "FVector4f must be exactly 16 bytes (4 floats)!");
 
-static_assert(sizeof(FDeferredTransformUBO) == 352,
-    "FDeferredTransformUBO size mismatch - must be 352 bytes for std140!");
+static_assert(sizeof(FDeferredTransformUBO) == 464,
+    "FDeferredTransformUBO size mismatch - must be 464 bytes for std140!");
 static_assert(offsetof(FDeferredTransformUBO, Model)          == 0,
     "FDeferredTransformUBO::Model offset mismatch!");
 static_assert(offsetof(FDeferredTransformUBO, View)           == 64,
@@ -83,6 +86,10 @@ static_assert(offsetof(FDeferredTransformUBO, CameraPos)      == 256,
     "FDeferredTransformUBO::CameraPos offset mismatch!");
 static_assert(offsetof(FDeferredTransformUBO, PreviousModel)  == 272,
     "FDeferredTransformUBO::PreviousModel offset mismatch!");
+static_assert(offsetof(FDeferredTransformUBO, PreviousView)   == 336,
+    "FDeferredTransformUBO::PreviousView offset mismatch!");
+static_assert(offsetof(FDeferredTransformUBO, PreviousProj)   == 400,
+    "FDeferredTransformUBO::PreviousProj offset mismatch!");
 
 
 // ============================================================================

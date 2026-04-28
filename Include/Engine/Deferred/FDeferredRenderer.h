@@ -26,7 +26,7 @@
 #include "Core/Templates/SharedPointer.h"
 #include "Engine/Deferred/DeferredUniformTypes.h"
 #include "Math/MathFwd.h"
-#include "Math/Vector2.h"
+#include "Math/Vector2D.h"
 #include "RHI/RHI.h"
 
 namespace MonsterEngine

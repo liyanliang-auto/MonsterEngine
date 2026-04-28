@@ -3056,6 +3056,30 @@ void CubeSceneApplication::renderWithDeferred(
         "Lighting_RT", m_deferredRenderer->GetLightingTarget().Get(), ERHIAccess::Unknown);
 
     // ========================================================================
+    // TAA: Generate jitter and apply to projection matrix
+    // ========================================================================
+    Math::FVector2f currentJitter = m_deferredRenderer->GenerateJitter(m_frameIndex);
+    Math::FMatrix44f jitteredProjMatrix44f;
+    
+    // Convert projection matrix to FMatrix44f and apply jitter
+    Math::FMatrix44f projMatrix44f;
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            projMatrix44f.M[i][j] = static_cast<float>(projectionMatrix.M[i][j]);
+        }
+    }
+    
+    jitteredProjMatrix44f = m_deferredRenderer->ApplyJitter(
+        projMatrix44f,
+        currentJitter,
+        gbuffer.Width,
+        gbuffer.Height
+    );
+
+    MR_LOG(LogCubeSceneApp, VeryVerbose, "TAA jitter applied: (%.4f, %.4f) for frame %u", 
+           currentJitter.x, currentJitter.y, m_frameIndex);
+
+    // ========================================================================
     // Pass 1: Geometry Pass (write GBuffer MRT + Motion Vector)
     // ========================================================================
     graphBuilder.addPass(
@@ -3068,7 +3092,7 @@ void CubeSceneApplication::renderWithDeferred(
             builder.writeTexture(motionVectorRT, ERHIAccess::RTV);  // TAA: Motion Vector output
             builder.writeDepth(depthRT, ERHIAccess::DSVWrite);
         },
-        [this, viewMatrix, projectionMatrix, cameraPosition](RHI::IRHICommandList& rhiCmdList)
+        [this, viewMatrix, jitteredProjMatrix44f, cameraPosition](RHI::IRHICommandList& rhiCmdList)
         {
             MR_LOG(LogCubeSceneApp, Log, "Executing Deferred Geometry Pass");
 
@@ -3110,20 +3134,19 @@ void CubeSceneApplication::renderWithDeferred(
                 {
                     // Manual conversion FMatrix to FMatrix44f
                     Math::FMatrix model = cubeActor->GetActorTransform().ToMatrixWithScale();
-                    Math::FMatrix44f modelMatrix44f, viewMatrix44f, projMatrix44f;
+                    Math::FMatrix44f modelMatrix44f, viewMatrix44f;
                     for (int i = 0; i < 4; ++i) {
                         for (int j = 0; j < 4; ++j) {
                             modelMatrix44f.M[i][j] = static_cast<float>(model.M[i][j]);
                             viewMatrix44f.M[i][j] = static_cast<float>(viewMatrix.M[i][j]);
-                            projMatrix44f.M[i][j] = static_cast<float>(projectionMatrix.M[i][j]);
                         }
                     }
 
-                    // Update Transform UBO for this object
+                    // TAA: Update Transform UBO with jittered projection matrix
                     m_deferredRenderer->UpdateTransformUBO(
                         modelMatrix44f,
                         viewMatrix44f,
-                        projMatrix44f,
+                        jitteredProjMatrix44f,
                         Math::FVector4f(cameraPosition.X, cameraPosition.Y, cameraPosition.Z, 1.0f)
                     );
 
@@ -3153,19 +3176,19 @@ void CubeSceneApplication::renderWithDeferred(
                     {
                         // Manual conversion FMatrix to FMatrix44f
                         Math::FMatrix model = m_floorActor->GetActorTransform().ToMatrixWithScale();
-                        Math::FMatrix44f modelMatrix44f, viewMatrix44f, projMatrix44f;
+                        Math::FMatrix44f modelMatrix44f, viewMatrix44f;
                         for (int i = 0; i < 4; ++i) {
                             for (int j = 0; j < 4; ++j) {
                                 modelMatrix44f.M[i][j] = static_cast<float>(model.M[i][j]);
                                 viewMatrix44f.M[i][j] = static_cast<float>(viewMatrix.M[i][j]);
-                                projMatrix44f.M[i][j] = static_cast<float>(projectionMatrix.M[i][j]);
                             }
                         }
 
+                        // TAA: Update Transform UBO with jittered projection matrix
                         m_deferredRenderer->UpdateTransformUBO(
                             modelMatrix44f,
                             viewMatrix44f,
-                            projMatrix44f,
+                            jitteredProjMatrix44f,
                             Math::FVector4f(cameraPosition.X, cameraPosition.Y, cameraPosition.Z, 1.0f)
                         );
 
@@ -3272,6 +3295,9 @@ void CubeSceneApplication::renderWithDeferred(
 
     // TAA: Copy swapchain to history for next frame
     m_deferredRenderer->CopyToHistory(cmdList);
+
+    // TAA: Increment frame index for next frame's jitter pattern (8-sample cycle)
+    m_frameIndex++;
 }
 
 } // namespace MonsterRender

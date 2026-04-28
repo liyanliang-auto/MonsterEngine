@@ -702,6 +702,9 @@ protected:
     /** Deferred renderer (MVP) */
     MonsterEngine::TUniquePtr<MonsterEngine::Deferred::FDeferredRenderer> m_deferredRenderer;
 
+    /** TAA frame index for jitter generation */
+    uint32 m_frameIndex = 0;
+
     // ========================================================================
 
     // Viewport Render Target

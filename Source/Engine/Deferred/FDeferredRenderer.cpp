@@ -197,13 +197,19 @@ void FDeferredRenderer::UpdateTransformUBO(
 
     Data.CameraPos     = CameraPosition;
 
-    // TAA: Use previous model matrix (or current if first frame)
+    // TAA: Store previous frame MVP matrices for motion vector calculation
     static Math::FMatrix44f previousModel = Model;
-    Data.PreviousModel = previousModel;
-    Data.Padding       = Math::FVector4f(0.0f, 0.0f, 0.0f, 0.0f);
+    static Math::FMatrix44f previousView = View;
+    static Math::FMatrix44f previousProj = Proj;
     
-    // Update previous model for next frame
+    Data.PreviousModel = previousModel;
+    Data.PreviousView  = previousView;
+    Data.PreviousProj  = previousProj;
+    
+    // Update previous matrices for next frame
     previousModel = Model;
+    previousView = View;
+    previousProj = Proj;
 
     WriteUniformBuffer(TransformUniformBuffer, &Data, sizeof(Data));
 }
