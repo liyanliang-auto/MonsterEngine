@@ -16,7 +16,8 @@ layout(set = 0, binding = 0) uniform TransformUBO {
     mat4 normalMatrix;          // offset 192  inverse-transpose(model)
     vec4 cameraPos;             // offset 256  xyz=pos, w=1.0
     mat4 previousModel;         // offset 272  TAA: previous frame model matrix
-    vec4 padding;               // offset 336  alignment padding
+    mat4 previousView;          // offset 336  TAA: previous frame view matrix
+    mat4 previousProj;          // offset 400  TAA: previous frame projection matrix
 } ubo;
 
 // -----------------------------------------------------------------------------
@@ -40,8 +41,9 @@ void main() {
     vec4 viewPos  = worldPos * ubo.view;
     vec4 clipPos  = viewPos * ubo.proj;
 
-    // TAA: Calculate motion vector (current position - previous position in NDC space)
-    mat4 previousMVP = ubo.previousModel * ubo.view * ubo.proj;
+    // TAA: Calculate motion vector using complete previous frame MVP
+    // Use previous frame's Model, View, and Proj matrices for correct motion vector
+    mat4 previousMVP = ubo.previousModel * ubo.previousView * ubo.previousProj;
     vec4 previousClipPos = vec4(inPosition, 1.0) * previousMVP;
     
     // Convert to NDC space and compute motion vector
