@@ -49,6 +49,8 @@ namespace
     constexpr const char* kLightingPsPath = "Shaders/Deferred/LightingPass.frag.spv";
     constexpr const char* kTAAVsPath      = "Shaders/Deferred/TAAPass.vert.spv";
     constexpr const char* kTAAPsPath      = "Shaders/Deferred/TAAPass.frag.spv";
+    constexpr const char* kFXAAVsPath     = "Shaders/PostProcess/FXAAPass.vert.spv";
+    constexpr const char* kFXAAPsPath     = "Shaders/PostProcess/FXAAPass.frag.spv";
 
 } // anonymous namespace
 
@@ -113,6 +115,10 @@ bool FDeferredRenderer::Initialize(
     if (!CreateGeometryPipeline()) { Shutdown(); return false; }
     if (!CreateLightingPipeline()) { Shutdown(); return false; }
     if (!CreateGBuffer(InWidth, InHeight)) { Shutdown(); return false; }
+    
+    // Create FXAA resources (optional, for spatial anti-aliasing)
+    if (!CreateFXAAResources())    { Shutdown(); return false; }
+    if (!CreateFXAAPipeline())     { Shutdown(); return false; }
 
     bInitialized = true;
     MR_LOG(LogDeferredRenderer, Log, "Deferred Renderer initialized successfully");
@@ -128,6 +134,9 @@ void FDeferredRenderer::Shutdown()
 
     // Resources released in reverse creation order (TSharedPtr auto-releases)
     ReleaseGBuffer();
+    
+    // Release FXAA resources
+    ReleaseFXAAResources();
 
     LightingPipeline.Reset();
     GeometryPipeline.Reset();
@@ -835,6 +844,175 @@ Math::FMatrix44f FDeferredRenderer::ApplyJitter(
     jitteredProj.m[3][1] += ndcOffsetY;
     
     return jitteredProj;
+}
+
+// ============================================================================
+// FXAA (Fast Approximate Anti-Aliasing) Implementation
+// ============================================================================
+
+bool FDeferredRenderer::CreateFXAAResources()
+{
+    using namespace MonsterRender::RHI;
+    
+    MR_LOG(LogDeferredRenderer, Log, "Creating FXAA resources...");
+    
+    // Create Uniform Buffer
+    BufferDesc uboDesc;
+    uboDesc.size = sizeof(PostProcess::FFXAAUniformBuffer);
+    uboDesc.usage = EResourceUsage::UniformBuffer;
+    uboDesc.cpuAccessible = true;
+    uboDesc.debugName = "FXAA UBO";
+    FXAAUniformBuffer = Device->createBuffer(uboDesc);
+    if (!FXAAUniformBuffer)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to create FXAA UBO");
+        return false;
+    }
+    
+    // Create Sampler (Linear + Clamp, required by FXAA algorithm)
+    SamplerDesc samplerDesc;
+    samplerDesc.minFilter = EFilter::Linear;
+    samplerDesc.magFilter = EFilter::Linear;
+    samplerDesc.addressModeU = EAddressMode::Clamp;
+    samplerDesc.addressModeV = EAddressMode::Clamp;
+    samplerDesc.addressModeW = EAddressMode::Clamp;
+    FXAASampler = Device->createSampler(samplerDesc);
+    if (!FXAASampler)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to create FXAA sampler");
+        return false;
+    }
+    
+    // Load Shaders
+    auto vertCode = LoadShaderBytecode(kFXAAVsPath);
+    auto fragCode = LoadShaderBytecode(kFXAAPsPath);
+    
+    if (vertCode.empty() || fragCode.empty())
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to load FXAA shaders");
+        return false;
+    }
+    
+    FXAAVS = Device->createVertexShader(vertCode);
+    FXAAPS = Device->createPixelShader(fragCode);
+    
+    if (!FXAAVS || !FXAAPS)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to create FXAA shader objects");
+        return false;
+    }
+    
+    MR_LOG(LogDeferredRenderer, Log, "FXAA resources created successfully");
+    return true;
+}
+
+bool FDeferredRenderer::CreateFXAAPipeline()
+{
+    using namespace MonsterRender::RHI;
+    
+    MR_LOG(LogDeferredRenderer, Log, "Creating FXAA pipeline...");
+    
+    PipelineStateDesc psoDesc;
+    psoDesc.vertexShader = FXAAVS;
+    psoDesc.pixelShader = FXAAPS;
+    psoDesc.primitiveTopology = EPrimitiveTopology::TriangleList;
+    
+    // No vertex input (fullscreen triangle generated in VS)
+    psoDesc.vertexInputLayout.clear();
+    
+    // Rasterizer: No culling, front face CCW
+    psoDesc.rasterizerState.cullMode = ECullMode::None;
+    psoDesc.rasterizerState.frontFace = EFrontFace::CounterClockwise;
+    psoDesc.rasterizerState.fillMode = EFillMode::Solid;
+    
+    // Depth/Stencil: Disabled (post-process pass)
+    psoDesc.depthStencilState.depthTestEnable = false;
+    psoDesc.depthStencilState.depthWriteEnable = false;
+    psoDesc.depthStencilState.stencilTestEnable = false;
+    
+    // Blend: Disabled (replace mode)
+    psoDesc.blendState.attachments.resize(1);
+    psoDesc.blendState.attachments[0].blendEnable = false;
+    psoDesc.blendState.attachments[0].colorWriteMask = 
+        EColorComponentFlags::R | EColorComponentFlags::G | 
+        EColorComponentFlags::B | EColorComponentFlags::A;
+    
+    // Render Target: Swapchain format (RGBA8)
+    psoDesc.renderTargetFormats.push_back(EPixelFormat::R8G8B8A8_UNORM);
+    
+    FXAAPipeline = Device->createPipelineState(psoDesc);
+    if (!FXAAPipeline)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to create FXAA pipeline");
+        return false;
+    }
+    
+    MR_LOG(LogDeferredRenderer, Log, "FXAA pipeline created successfully");
+    return true;
+}
+
+void FDeferredRenderer::UpdateFXAAUniformBuffer(uint32 Width, uint32 Height)
+{
+    PostProcess::FFXAAUniformBuffer ubo;
+    ubo.RcpFrame = Math::FVector2D(1.0f / Width, 1.0f / Height);
+    ubo.QualitySubpix = FXAAConfig.QualitySubpix;
+    ubo.QualityEdgeThreshold = FXAAConfig.QualityEdgeThreshold;
+    ubo.QualityEdgeThresholdMin = FXAAConfig.QualityEdgeThresholdMin;
+    ubo.Preset = FXAAConfig.Preset;
+    
+    if (!WriteUniformBuffer(FXAAUniformBuffer, &ubo, sizeof(ubo)))
+    {
+        MR_LOG(LogDeferredRenderer, Error, "Failed to update FXAA UBO");
+    }
+}
+
+void FDeferredRenderer::RenderFXAAPass(
+    MonsterRender::RHI::IRHICommandList* CmdList,
+    MonsterRender::RHI::IRHITexture* InputTexture)
+{
+    using namespace MonsterRender::RHI;
+    
+    if (!FXAAConfig.EnableFXAA)
+    {
+        return;  // FXAA disabled
+    }
+    
+    if (!CmdList || !InputTexture)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "RenderFXAAPass: null command list or input texture");
+        return;
+    }
+    
+    if (!FXAAPipeline || !FXAAUniformBuffer || !FXAASampler)
+    {
+        MR_LOG(LogDeferredRenderer, Error, "RenderFXAAPass: FXAA resources not initialized");
+        return;
+    }
+    
+    // NOTE: This should only be called when TAA is disabled
+    // Caller is responsible for mutual exclusion
+    
+    // Set pipeline
+    CmdList->setPipelineState(FXAAPipeline);
+    
+    // Bind resources
+    CmdList->setUniformBuffer(0, 0, FXAAUniformBuffer);
+    CmdList->setTexture(0, 1, InputTexture);
+    CmdList->setSampler(0, 1, FXAASampler);
+    
+    // Draw fullscreen triangle (3 vertices, no vertex buffer)
+    CmdList->draw(3, 0);
+}
+
+void FDeferredRenderer::ReleaseFXAAResources()
+{
+    FXAAPipeline.Reset();
+    FXAAPS.Reset();
+    FXAAVS.Reset();
+    FXAASampler.Reset();
+    FXAAUniformBuffer.Reset();
+    
+    MR_LOG(LogDeferredRenderer, Log, "FXAA resources released");
 }
 
 } // namespace Deferred
