@@ -10,6 +10,23 @@
 namespace MonsterRender::RHI::Vulkan
 {
 
+    // Helper function to convert EComparisonFunc to VkCompareOp
+    static VkCompareOp convertCompareOp(EComparisonFunc func)
+    {
+        switch (func)
+        {
+            case EComparisonFunc::Never:         return VK_COMPARE_OP_NEVER;
+            case EComparisonFunc::Less:          return VK_COMPARE_OP_LESS;
+            case EComparisonFunc::Equal:         return VK_COMPARE_OP_EQUAL;
+            case EComparisonFunc::LessEqual:     return VK_COMPARE_OP_LESS_OR_EQUAL;
+            case EComparisonFunc::Greater:       return VK_COMPARE_OP_GREATER;
+            case EComparisonFunc::NotEqual:      return VK_COMPARE_OP_NOT_EQUAL;
+            case EComparisonFunc::GreaterEqual:  return VK_COMPARE_OP_GREATER_OR_EQUAL;
+            case EComparisonFunc::Always:        return VK_COMPARE_OP_ALWAYS;
+            default:                             return VK_COMPARE_OP_LESS;
+        }
+    }
+
     VulkanPipelineState::VulkanPipelineState(VulkanDevice *device, const PipelineStateDesc &desc)
         : IRHIPipelineState(desc), m_device(device), m_isValid(false), m_pipeline(VK_NULL_HANDLE), m_pipelineLayout(VK_NULL_HANDLE), m_renderPass(VK_NULL_HANDLE)
     {
@@ -892,7 +909,12 @@ namespace MonsterRender::RHI::Vulkan
                                ? VK_FRONT_FACE_COUNTER_CLOCKWISE 
                                : VK_FRONT_FACE_CLOCKWISE;
         
-        rasterizer.depthBiasEnable = VK_FALSE;
+        // Depth bias (Polygon Offset) support for Z-fighting resolution
+        rasterizer.depthBiasEnable = m_desc.rasterizerState.depthBiasEnable ? VK_TRUE : VK_FALSE;
+        rasterizer.depthBiasConstantFactor = m_desc.rasterizerState.depthBiasConstantFactor;
+        rasterizer.depthBiasSlopeFactor = m_desc.rasterizerState.depthBiasSlopeFactor;
+        rasterizer.depthBiasClamp = m_desc.rasterizerState.depthBiasClamp;
+        
         return rasterizer;
     }
 
@@ -918,7 +940,10 @@ namespace MonsterRender::RHI::Vulkan
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable = m_desc.depthStencilState.depthEnable ? VK_TRUE : VK_FALSE;
         depthStencil.depthWriteEnable = m_desc.depthStencilState.depthWriteEnable ? VK_TRUE : VK_FALSE;
-        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS; // TODO: Convert from EComparisonFunc
+        
+        // Use effective depth function (handles Reversed-Z automatically)
+        depthStencil.depthCompareOp = convertCompareOp(m_desc.depthStencilState.getEffectiveDepthFunc());
+        
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.minDepthBounds = 0.0f;
         depthStencil.maxDepthBounds = 1.0f;

@@ -265,6 +265,8 @@
     <ClCompile Include="Source\Containers\Text.cpp" />
     <ClCompile Include="Source\Tests\ColorAndContainerTest.cpp" />
     <ClCompile Include="Source\Tests\SmartPointerTest.cpp" />
+    <ClCompile Include="Source\Tests\ZFightingTest.cpp" />
+    <ClCompile Include="Source\Tests\ProjectionMatrixTest.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLFunctions.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLContext.cpp" />
     <ClCompile Include="Source\Platform\OpenGL\OpenGLResources.cpp" />
@@ -451,6 +453,7 @@
     <ClInclude Include="Include\Math\Sphere.h" />
     <ClInclude Include="Include\Math\Plane.h" />
     <ClInclude Include="Include\Math\MonsterMath.h" />
+    <ClInclude Include="Include\Math\ProjectionMatrix.h" />
     <ClInclude Include="Include\Core\Templates\TypeTraits.h" />
     <ClInclude Include="Include\Core\Templates\TypeHash.h" />
     <ClInclude Include="Include\Core\Templates\MemoryOps.h" />
@@ -567,6 +570,7 @@
     <ClInclude Include="Include\Tests\TestVulkanParallelRendering.h" />
     <ClInclude Include="Include\Tests\TestMain.h" />
     <ClInclude Include="Include\Tests\BenchmarkParallelRendering.h" />
+    <ClInclude Include="Include\Tests\ZFightingTest.h" />
     <!-- RDG Module Headers -->
     <ClInclude Include="Include\RDG\RDG.h" />
     <ClInclude Include="Include\RDG\RDGFwd.h" />
