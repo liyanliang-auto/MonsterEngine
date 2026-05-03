@@ -160,7 +160,7 @@ vec4 FxaaPixelShader(
     // Step 4: Determine edge direction
     // ========================================================================
     
-    float lumaL = (lumaN + lumaW + lumaE + lumaS) * 0.25;
+    float lumaL = (lumaN + lumaW + lumaNW + lumaSW) * 0.25;
     float rangeL = abs(lumaL - lumaM);
     float blendL = max(0.0, (rangeL / range) - qualitySubpix) / (1.0 - qualitySubpix);
     

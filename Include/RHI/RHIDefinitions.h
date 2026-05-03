@@ -490,6 +490,16 @@ namespace MonsterRender::RHI {
         bool frontCounterClockwise = false;
         bool depthClampEnable = false;
         bool scissorEnable = false;
+
+        /**
+         * Depth bias (Polygon Offset) support
+         * Used to resolve Z-fighting for coplanar geometry (e.g., decals, lane arrows)
+         * Reference: UE5 FRasterizerStateInitializerRHI
+         */
+        bool depthBiasEnable = false;
+        float32 depthBiasConstantFactor = 0.0f;  // Constant depth offset (units)
+        float32 depthBiasSlopeFactor = 0.0f;     // Slope-scaled depth offset (factor)
+        float32 depthBiasClamp = 0.0f;           // Maximum depth bias value
     };
 
     // Depth stencil state
@@ -507,12 +517,71 @@ namespace MonsterRender::RHI {
     // Alias for compatibility
     using ECompareOp = EComparisonFunc;
 
+    /**
+     * Depth buffer range convention
+     * Reference: UE5 uses Reversed-Z by default for better precision
+     */
+    enum class EDepthRange : uint8 {
+        Standard,           // Near=0.0, Far=1.0 (traditional)
+        Reversed,           // Near=1.0, Far=0.0 (modern, recommended)
+        InfiniteReversed    // Near=1.0, Far=0.0 with infinite far plane
+    };
+
+    /**
+     * Get depth clear value based on range convention
+     * Standard: Clear to 1.0 (far plane)
+     * Reversed: Clear to 0.0 (far plane in reversed space)
+     */
+    inline float32 GetDepthClearValue(EDepthRange depthRange) {
+        switch (depthRange) {
+            case EDepthRange::Standard:
+                return 1.0f;  // Clear to far plane
+            case EDepthRange::Reversed:
+            case EDepthRange::InfiniteReversed:
+                return 0.0f;  // Clear to far plane (reversed)
+            default:
+                return 1.0f;
+        }
+    }
+
+    /**
+     * Get reversed depth comparison function for Reversed-Z
+     * Less becomes Greater, LessEqual becomes GreaterEqual, etc.
+     */
+    inline EComparisonFunc GetReversedDepthFunc(EComparisonFunc standardFunc) {
+        switch (standardFunc) {
+            case EComparisonFunc::Less:          return EComparisonFunc::Greater;
+            case EComparisonFunc::LessEqual:     return EComparisonFunc::GreaterEqual;
+            case EComparisonFunc::Greater:       return EComparisonFunc::Less;
+            case EComparisonFunc::GreaterEqual:  return EComparisonFunc::LessEqual;
+            default:                             return standardFunc;
+        }
+    }
+
     struct DepthStencilState {
         bool depthEnable = true;
         bool depthWriteEnable = true;
         EComparisonFunc depthFunc = EComparisonFunc::Less;
         EComparisonFunc depthCompareOp = EComparisonFunc::Less;  // Alias for compatibility
         bool stencilEnable = false;
+
+        /**
+         * Depth range convention (Standard or Reversed-Z)
+         * Affects depth clear value and comparison function
+         */
+        EDepthRange depthRange = EDepthRange::Standard;
+
+        /**
+         * Get the actual depth comparison function based on depth range
+         * Automatically reverses comparison for Reversed-Z
+         */
+        EComparisonFunc getEffectiveDepthFunc() const {
+            if (depthRange == EDepthRange::Reversed || 
+                depthRange == EDepthRange::InfiniteReversed) {
+                return GetReversedDepthFunc(depthFunc);
+            }
+            return depthFunc;
+        }
     };
 
     // Shader stage

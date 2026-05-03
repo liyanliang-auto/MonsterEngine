@@ -139,6 +139,11 @@ private:
         GLenum frontFace = GL_CCW;
         bool depthClamp = false;
         bool scissorEnable = false;
+        
+        // Depth bias (Polygon Offset) support
+        bool depthBiasEnable = false;
+        float32 depthBiasConstantFactor = 0.0f;
+        float32 depthBiasSlopeFactor = 0.0f;
     } m_rasterizerState;
     
     // Depth stencil state cache
@@ -148,6 +153,7 @@ private:
         bool depthWrite = true;
         GLenum depthFunc = GL_LESS;
         bool stencilEnable = false;
+        MonsterRender::RHI::EDepthRange depthRange = MonsterRender::RHI::EDepthRange::Standard;
     } m_depthStencilState;
 };
 

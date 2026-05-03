@@ -62,6 +62,14 @@ void RunSlotConversionTests();
 // Implementation in Source/TestMain.cpp
 int RunAllParallelRenderingTests();
 
+// Z-Fighting Test Forward Declaration
+// Implementation in Source/Tests/ZFightingTest.cpp
+namespace MonsterEngine {
+    namespace ZFightingTest {
+        void RunAllTests();
+    }
+}
+
 // Entry point following UE5's application architecture
 int main(int argc, char** argv) {
     using namespace MonsterRender;
@@ -101,6 +109,7 @@ int main(int argc, char** argv) {
     bool runCubeScene = false;  // Run CubeSceneApplication with lighting
     bool runCubeSceneTest = false;  // Run CubeSceneRendererTest (pipeline integration test)
     bool useDeferredRendering = false;  // Enable deferred rendering in CubeSceneApplication
+    bool runZFightingTests = false;  // Run Z-Fighting test suite
     
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
@@ -147,6 +156,9 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(argv[i], "--deferred") == 0 || strcmp(argv[i], "-def") == 0) {
             useDeferredRendering = true;
+        }
+        else if (strcmp(argv[i], "--test-zfighting") == 0 || strcmp(argv[i], "-tzf") == 0) {
+            runZFightingTests = true;
         }
         else if (strcmp(argv[i], "--imgui-test") == 0 || strcmp(argv[i], "-imgui") == 0) {
             // Run ImGui test application directly
@@ -204,6 +216,13 @@ int main(int argc, char** argv) {
     // Run smart pointer tests
     if (runSmartPointerTests) {
         RunSmartPointerTests();
+        return 0;
+    }
+    
+    // Run Z-Fighting tests
+    if (runZFightingTests) {
+        MonsterEngine::ZFightingTest::RunAllTests();
+        ShutdownLogging();
         return 0;
     }
     

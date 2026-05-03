@@ -104,6 +104,9 @@
 // FMath static utility class
 #include "MathFunctions.h"
 
+// Projection matrix generation (Standard and Reversed-Z)
+#include "ProjectionMatrix.h"
+
 // ============================================================================
 // Convenience Namespace Aliases
 // ============================================================================

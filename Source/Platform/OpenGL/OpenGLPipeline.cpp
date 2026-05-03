@@ -54,11 +54,18 @@ FOpenGLPipelineState::FOpenGLPipelineState(const PipelineStateDesc& desc)
     m_rasterizerState.depthClamp = desc.rasterizerState.depthClampEnable;
     m_rasterizerState.scissorEnable = desc.rasterizerState.scissorEnable;
     
+    // Depth bias (Polygon Offset) support
+    m_rasterizerState.depthBiasEnable = desc.rasterizerState.depthBiasEnable;
+    m_rasterizerState.depthBiasConstantFactor = desc.rasterizerState.depthBiasConstantFactor;
+    m_rasterizerState.depthBiasSlopeFactor = desc.rasterizerState.depthBiasSlopeFactor;
+    
     // Depth stencil state
     m_depthStencilState.depthEnable = desc.depthStencilState.depthEnable;
     m_depthStencilState.depthWrite = desc.depthStencilState.depthWriteEnable;
-    m_depthStencilState.depthFunc = ConvertCompareFunc(desc.depthStencilState.depthFunc);
+    // Use effective depth function (handles Reversed-Z automatically)
+    m_depthStencilState.depthFunc = ConvertCompareFunc(desc.depthStencilState.getEffectiveDepthFunc());
     m_depthStencilState.stencilEnable = desc.depthStencilState.stencilEnable;
+    m_depthStencilState.depthRange = desc.depthStencilState.depthRange;
     
     // Create program and VAO
     if (CreateProgram())
@@ -250,6 +257,19 @@ void FOpenGLPipelineState::ApplyRasterizerState()
     else
     {
         glDisable(GL_SCISSOR_TEST);
+    }
+    
+    // Depth bias (Polygon Offset)
+    if (m_rasterizerState.depthBiasEnable)
+    {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        // OpenGL uses (factor, units) order, same as our RHI
+        glPolygonOffset(m_rasterizerState.depthBiasSlopeFactor, 
+                       m_rasterizerState.depthBiasConstantFactor);
+    }
+    else
+    {
+        glDisable(GL_POLYGON_OFFSET_FILL);
     }
 }
 
