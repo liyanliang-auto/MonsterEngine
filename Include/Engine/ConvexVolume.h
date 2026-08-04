@@ -170,7 +170,7 @@ public:
         for (int32 PlaneIndex = 0; PlaneIndex < Planes.Num(); ++PlaneIndex)
         {
             const FPlane& Plane = Planes[PlaneIndex];
-            float Distance = Plane.X * Point.X + Plane.Y * Point.Y + Plane.Z * Point.Z - Plane.W;
+            double Distance = Plane.X * Point.X + Plane.Y * Point.Y + Plane.Z * Point.Z - Plane.W;
             if (Distance > 0.0f)
             {
                 return false;

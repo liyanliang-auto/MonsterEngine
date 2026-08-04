@@ -135,7 +135,7 @@ TEST(FXAATests, UniformBufferInitialization)
     FFXAAUniformBuffer ubo;
     
     // Initialize with test values
-    ubo.RcpFrame = MonsterEngine::Math::FVector2D(1.0f / 1920.0f, 1.0f / 1080.0f);
+    ubo.RcpFrame = MonsterEngine::Math::FVector2f(1.0f / 1920.0f, 1.0f / 1080.0f);
     ubo.QualitySubpix = 0.75f;
     ubo.QualityEdgeThreshold = 0.166f;
     ubo.QualityEdgeThresholdMin = 0.0833f;
@@ -157,7 +157,7 @@ TEST(FXAATests, RcpFrameCalculation)
     // Test 1080p
     uint32 width = 1920;
     uint32 height = 1080;
-    ubo.RcpFrame = MonsterEngine::Math::FVector2D(
+    ubo.RcpFrame = MonsterEngine::Math::FVector2f(
         1.0f / static_cast<float>(width),
         1.0f / static_cast<float>(height)
     );
@@ -168,7 +168,7 @@ TEST(FXAATests, RcpFrameCalculation)
     // Test 4K
     width = 3840;
     height = 2160;
-    ubo.RcpFrame = MonsterEngine::Math::FVector2D(
+    ubo.RcpFrame = MonsterEngine::Math::FVector2f(
         1.0f / static_cast<float>(width),
         1.0f / static_cast<float>(height)
     );
