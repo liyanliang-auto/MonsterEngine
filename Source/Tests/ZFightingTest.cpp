@@ -412,8 +412,8 @@ void Test_PracticalUsageExample() {
     float32 nearZ = 0.1f;
     float32 farZ = 1000.0f;
     
-    FMatrix4x4 projStandard = PerspectiveStandard(fov, aspect, nearZ, farZ);
-    FMatrix4x4 projReversed = PerspectiveReversedZ(fov, aspect, nearZ, farZ);
+    FMatrix44f projStandard = PerspectiveStandard(fov, aspect, nearZ, farZ);
+    FMatrix44f projReversed = PerspectiveReversedZ(fov, aspect, nearZ, farZ);
     
     MR_LOG_INFO("  Projection matrices created:");
     MR_LOG_INFO("    Standard: Near→0.0, Far→1.0");

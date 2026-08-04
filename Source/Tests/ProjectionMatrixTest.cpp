@@ -26,7 +26,7 @@ static void Test_StandardPerspective() {
     float32 nearZ = 0.1f;
     float32 farZ = 100.0f;
     
-    FMatrix4x4 proj = PerspectiveStandard(fov, aspect, nearZ, farZ);
+    FMatrix44f proj = PerspectiveStandard(fov, aspect, nearZ, farZ);
     
     MR_LOG_INFO("  FOV: 90 degrees");
     MR_LOG_INFO("  Aspect: 16:9");
@@ -47,7 +47,7 @@ static void Test_ReversedZPerspective() {
     float32 nearZ = 0.1f;
     float32 farZ = 100.0f;
     
-    FMatrix4x4 proj = PerspectiveReversedZ(fov, aspect, nearZ, farZ);
+    FMatrix44f proj = PerspectiveReversedZ(fov, aspect, nearZ, farZ);
     
     MR_LOG_INFO("  FOV: 90 degrees");
     MR_LOG_INFO("  Aspect: 16:9");
@@ -67,7 +67,7 @@ static void Test_InfiniteReversedZPerspective() {
     float32 aspect = 16.0f / 9.0f;
     float32 nearZ = 0.1f;
     
-    FMatrix4x4 proj = PerspectiveInfiniteReversedZ(fov, aspect, nearZ);
+    FMatrix44f proj = PerspectiveInfiniteReversedZ(fov, aspect, nearZ);
     
     MR_LOG_INFO("  FOV: 90 degrees");
     MR_LOG_INFO("  Aspect: 16:9");
@@ -91,15 +91,15 @@ static void Test_CreatePerspectiveMatrixHelper() {
     float32 farZ = 100.0f;
     
     // Test Standard
-    FMatrix4x4 standard = CreatePerspectiveMatrix(fov, aspect, nearZ, farZ, EDepthRange::Standard);
+    FMatrix44f standard = CreatePerspectiveMatrix(fov, aspect, nearZ, farZ, EDepthRange::Standard);
     MR_LOG_INFO("  Standard: Created");
     
     // Test Reversed
-    FMatrix4x4 reversed = CreatePerspectiveMatrix(fov, aspect, nearZ, farZ, EDepthRange::Reversed);
+    FMatrix44f reversed = CreatePerspectiveMatrix(fov, aspect, nearZ, farZ, EDepthRange::Reversed);
     MR_LOG_INFO("  Reversed-Z: Created");
     
     // Test Infinite Reversed
-    FMatrix4x4 infinite = CreatePerspectiveMatrix(fov, aspect, nearZ, farZ, EDepthRange::InfiniteReversed);
+    FMatrix44f infinite = CreatePerspectiveMatrix(fov, aspect, nearZ, farZ, EDepthRange::InfiniteReversed);
     MR_LOG_INFO("  Infinite Reversed-Z: Created");
     
     MR_LOG_INFO("  [PASS] CreatePerspectiveMatrix helper validated");

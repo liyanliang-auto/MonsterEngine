@@ -1106,9 +1106,11 @@ inline FString operator+(const TCHAR* Lhs, const FString& Rhs)
 
 // TEXT macro - returns wide string for TCHAR (wchar_t) compatibility
 // Use ANSI_TEXT for narrow strings when working with std::string
-#ifndef TEXT
-    #define TEXT(x) L##x
+// Undef first to avoid conflict with Windows SDK's TEXT macro
+#ifdef TEXT
+    #undef TEXT
 #endif
+#define TEXT(x) L##x
 
 #ifndef ANSI_TEXT
     #define ANSI_TEXT(x) x
