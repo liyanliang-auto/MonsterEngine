@@ -1,4 +1,4 @@
-﻿// Copyright Monster Engine. All Rights Reserved.
+// Copyright Monster Engine. All Rights Reserved.
 
 /**
  * @file CubeSceneApplication.cpp
@@ -3077,7 +3077,7 @@ void CubeSceneApplication::renderWithDeferred(
     );
 
     MR_LOG(LogCubeSceneApp, VeryVerbose, "TAA jitter applied: (%.4f, %.4f) for frame %u", 
-           currentJitter.x, currentJitter.y, m_frameIndex);
+           currentJitter.X, currentJitter.Y, m_frameIndex);
 
     // ========================================================================
     // Pass 1: Geometry Pass (write GBuffer MRT + Motion Vector)
@@ -3324,7 +3324,7 @@ void CubeSceneApplication::renderWithDeferred(
                 // FXAA Pass renders directly to swapchain
                 m_deferredRenderer->RenderFXAAPass(
                     &rhiCmdList,
-                    m_deferredRenderer->GetLightingTarget().get()
+                    m_deferredRenderer->GetLightingTarget()
                 );
 
                 MR_LOG(LogCubeSceneApp, Log, "FXAA Pass complete");

@@ -285,7 +285,7 @@ public:
      */
     void RenderFXAAPass(
         MonsterRender::RHI::IRHICommandList* CmdList,
-        MonsterRender::RHI::IRHITexture* InputTexture);
+        TSharedPtr<MonsterRender::RHI::IRHITexture> InputTexture);
 
 protected:
     // ========================================================================

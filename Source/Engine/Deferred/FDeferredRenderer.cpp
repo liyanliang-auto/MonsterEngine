@@ -249,8 +249,8 @@ void FDeferredRenderer::UpdateSceneUBO(
 
     // TAA parameters
     Data.PreviousViewProj            = PreviousViewProj;
-    Data.JitterOffset                = Math::FVector4f(CurrentJitter.x, CurrentJitter.y, 
-                                                       PreviousJitter.x, PreviousJitter.y);
+    Data.JitterOffset                = Math::FVector4f(CurrentJitter.X, CurrentJitter.Y, 
+                                                       PreviousJitter.X, PreviousJitter.Y);
     Data.TAAParams                   = Math::FVector4f(TAAConfig.BlendFactor, TAAConfig.Sharpness,
                                                        TAAConfig.EnableSharpening ? 1.0f : 0.0f, 0.0f);
 
@@ -335,7 +335,7 @@ bool FDeferredRenderer::CreateGBuffer(uint32 InWidth, uint32 InHeight)
         Desc.depth     = 1;
         Desc.mipLevels = 1;
         Desc.arraySize = 1;
-        Desc.format    = EPixelFormat::R16G16_FLOAT;
+        Desc.format    = EPixelFormat::R32G32_FLOAT;
         Desc.usage     = EResourceUsage::RenderTarget | EResourceUsage::ShaderResource;
         Desc.debugName = "Motion Vector RT";
 
@@ -666,8 +666,8 @@ bool FDeferredRenderer::CreateTAAPipeline()
         return false;
     }
 
-    TAAVS = Device->createVertexShader(SpvTAAVS.data(), SpvTAAVS.size(), "main");
-    TAAPS = Device->createPixelShader(SpvTAAPS.data(), SpvTAAPS.size(), "main");
+    TAAVS = Device->createVertexShader(std::span<const MonsterRender::uint8>(SpvTAAVS.data(), SpvTAAVS.size()));
+    TAAPS = Device->createPixelShader(std::span<const MonsterRender::uint8>(SpvTAAPS.data(), SpvTAAPS.size()));
 
     if (!TAAVS || !TAAPS)
     {
@@ -682,14 +682,14 @@ bool FDeferredRenderer::CreateTAAPipeline()
     Desc.primitiveTopology = EPrimitiveTopology::TriangleList;
 
     // No vertex input (fullscreen triangle generated in shader)
-    Desc.vertexInputLayout.clear();
+    Desc.vertexLayout = {};
 
     // Rasterizer state
     Desc.rasterizerState.cullMode = ECullMode::None;
     Desc.rasterizerState.fillMode = EFillMode::Solid;
 
     // Depth/stencil disabled
-    Desc.depthStencilState.depthTestEnable  = false;
+    Desc.depthStencilState.depthEnable = false;
     Desc.depthStencilState.depthWriteEnable = false;
     Desc.depthStencilState.depthCompareOp   = ECompareOp::Always;
 
@@ -721,16 +721,16 @@ void FDeferredRenderer::RenderTAAPass(MonsterRender::RHI::IRHICommandList* CmdLi
         return;
     }
 
-    CmdList->setPipelineState(TAAPipeline.Get());
+    CmdList->setPipelineState(TAAPipeline);
     
     // Bind textures
-    CmdList->setTexture(0, LightingTarget.Get());
-    CmdList->setTexture(1, MotionVectorTarget.Get());
-    CmdList->setTexture(2, HistoryTarget.Get());
-    CmdList->setUniformBuffer(3, SceneUniformBuffer.Get());
+    CmdList->setShaderResource(0, LightingTarget);
+    CmdList->setShaderResource(1, MotionVectorTarget);
+    CmdList->setShaderResource(2, HistoryTarget);
+    CmdList->setConstantBuffer(3, SceneUniformBuffer);
     
-    // Set render target to swapchain
-    CmdList->setRenderTarget(0, Device->getCurrentBackBuffer());
+    // TODO: Set render target to swapchain backbuffer
+    // CmdList->setRenderTargets(TSpan<TSharedPtr<IRHITexture>>(&backBuffer, 1), nullptr);
     
     // Draw fullscreen triangle
     CmdList->draw(3, 0);
@@ -744,7 +744,8 @@ void FDeferredRenderer::CopyToHistory(MonsterRender::RHI::IRHICommandList* CmdLi
         return;
     }
 
-    CmdList->blitTexture(Device->getCurrentBackBuffer(), HistoryTarget.Get());
+    // TODO: Implement blit from backbuffer to HistoryTarget
+    // CmdList->blitTexture(Device->getCurrentBackBuffer(), HistoryTarget.Get());
 }
 
 void FDeferredRenderer::OnResize(uint32 NewWidth, uint32 NewHeight)
@@ -777,13 +778,14 @@ void FDeferredRenderer::OnSceneChanged()
     // Clear history buffer to avoid ghosting from previous scene
     if (Device && HistoryTarget)
     {
-        MonsterRender::RHI::IRHICommandList* cmdList = Device->createCommandList();
-        if (cmdList)
-        {
-            Math::FVector4f clearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            cmdList->clearRenderTarget(HistoryTarget.Get(), clearColor);
-            Device->submitCommandList(cmdList);
-        }
+        // TODO: Use proper command list creation
+        // MonsterRender::RHI::IRHICommandList* cmdList = FRHICommandListPool::CreateCommandList(...);
+        // if (cmdList)
+        // {
+        //     Math::FVector4f clearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        //     cmdList->clearRenderTarget(HistoryTarget, clearColor);
+        //     FRHICommandListExecutor::SubmitCommandListToRHIThread(cmdList);
+        // }
     }
 
     // Reset frame index
@@ -819,8 +821,8 @@ Math::FVector2f FDeferredRenderer::GenerateJitter(uint32 FrameIndex)
     
     // Convert from [0, 1] to [-0.5, 0.5] range
     Math::FVector2f jitter;
-    jitter.x = halton2 - 0.5f;
-    jitter.y = halton3 - 0.5f;
+    jitter.X = halton2 - 0.5f;
+    jitter.Y = halton3 - 0.5f;
     
     return jitter;
 }
@@ -835,13 +837,13 @@ Math::FMatrix44f FDeferredRenderer::ApplyJitter(
     
     // Convert pixel offset to NDC offset
     // NDC range is [-1, 1], so pixel offset needs to be scaled by 2/width
-    float ndcOffsetX = (Jitter.x * 2.0f) / static_cast<float>(Width);
-    float ndcOffsetY = (Jitter.y * 2.0f) / static_cast<float>(Height);
+    float ndcOffsetX = (Jitter.X * 2.0f) / static_cast<float>(Width);
+    float ndcOffsetY = (Jitter.Y * 2.0f) / static_cast<float>(Height);
     
     // Apply jitter to projection matrix translation component
     // For row-major matrices: m[row][col]
-    jitteredProj.m[3][0] += ndcOffsetX;
-    jitteredProj.m[3][1] += ndcOffsetY;
+    jitteredProj.M[3][0] += ndcOffsetX;
+    jitteredProj.M[3][1] += ndcOffsetY;
     
     return jitteredProj;
 }
@@ -871,11 +873,10 @@ bool FDeferredRenderer::CreateFXAAResources()
     
     // Create Sampler (Linear + Clamp, required by FXAA algorithm)
     SamplerDesc samplerDesc;
-    samplerDesc.minFilter = EFilter::Linear;
-    samplerDesc.magFilter = EFilter::Linear;
-    samplerDesc.addressModeU = EAddressMode::Clamp;
-    samplerDesc.addressModeV = EAddressMode::Clamp;
-    samplerDesc.addressModeW = EAddressMode::Clamp;
+    samplerDesc.filter = ESamplerFilter::Bilinear;
+    samplerDesc.addressU = ESamplerAddressMode::Clamp;
+    samplerDesc.addressV = ESamplerAddressMode::Clamp;
+    samplerDesc.addressW = ESamplerAddressMode::Clamp;
     FXAASampler = Device->createSampler(samplerDesc);
     if (!FXAASampler)
     {
@@ -884,8 +885,8 @@ bool FDeferredRenderer::CreateFXAAResources()
     }
     
     // Load Shaders
-    auto vertCode = LoadShaderBytecode(kFXAAVsPath);
-    auto fragCode = LoadShaderBytecode(kFXAAPsPath);
+    auto vertCode = MonsterRender::ShaderCompiler::readFileBytes(kFXAAVsPath);
+    auto fragCode = MonsterRender::ShaderCompiler::readFileBytes(kFXAAPsPath);
     
     if (vertCode.empty() || fragCode.empty())
     {
@@ -918,24 +919,20 @@ bool FDeferredRenderer::CreateFXAAPipeline()
     psoDesc.primitiveTopology = EPrimitiveTopology::TriangleList;
     
     // No vertex input (fullscreen triangle generated in VS)
-    psoDesc.vertexInputLayout.clear();
+    psoDesc.vertexLayout = {};
     
-    // Rasterizer: No culling, front face CCW
+    // Rasterizer: No culling
     psoDesc.rasterizerState.cullMode = ECullMode::None;
-    psoDesc.rasterizerState.frontFace = EFrontFace::CounterClockwise;
+    psoDesc.rasterizerState.frontCounterClockwise = true;
     psoDesc.rasterizerState.fillMode = EFillMode::Solid;
     
     // Depth/Stencil: Disabled (post-process pass)
-    psoDesc.depthStencilState.depthTestEnable = false;
+    psoDesc.depthStencilState.depthEnable = false;
     psoDesc.depthStencilState.depthWriteEnable = false;
-    psoDesc.depthStencilState.stencilTestEnable = false;
+    psoDesc.depthStencilState.stencilEnable = false;
     
     // Blend: Disabled (replace mode)
-    psoDesc.blendState.attachments.resize(1);
-    psoDesc.blendState.attachments[0].blendEnable = false;
-    psoDesc.blendState.attachments[0].colorWriteMask = 
-        EColorComponentFlags::R | EColorComponentFlags::G | 
-        EColorComponentFlags::B | EColorComponentFlags::A;
+    psoDesc.blendState.blendEnable = false;
     
     // Render Target: Swapchain format (RGBA8)
     psoDesc.renderTargetFormats.push_back(EPixelFormat::R8G8B8A8_UNORM);
@@ -968,7 +965,7 @@ void FDeferredRenderer::UpdateFXAAUniformBuffer(uint32 Width, uint32 Height)
 
 void FDeferredRenderer::RenderFXAAPass(
     MonsterRender::RHI::IRHICommandList* CmdList,
-    MonsterRender::RHI::IRHITexture* InputTexture)
+    TSharedPtr<MonsterRender::RHI::IRHITexture> InputTexture)
 {
     using namespace MonsterRender::RHI;
     
@@ -996,9 +993,9 @@ void FDeferredRenderer::RenderFXAAPass(
     CmdList->setPipelineState(FXAAPipeline);
     
     // Bind resources
-    CmdList->setUniformBuffer(0, 0, FXAAUniformBuffer);
-    CmdList->setTexture(0, 1, InputTexture);
-    CmdList->setSampler(0, 1, FXAASampler);
+    CmdList->setConstantBuffer(0, FXAAUniformBuffer);
+    CmdList->setShaderResource(1, InputTexture);
+    CmdList->setSampler(0, FXAASampler);
     
     // Draw fullscreen triangle (3 vertices, no vertex buffer)
     CmdList->draw(3, 0);
