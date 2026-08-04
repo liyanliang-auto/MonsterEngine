@@ -690,7 +690,7 @@ protected:
     bool m_bShadowsEnabled = false;
 
     /** Whether to use RDG for rendering */
-    bool m_bUseRDG = true;  // Temporarily disabled for debugging
+    bool m_bUseRDG = false;  // Disabled - RDG has null texture issues
 
     /** Whether to use Deferred Rendering */
     bool m_bUseDeferredRendering = false;
