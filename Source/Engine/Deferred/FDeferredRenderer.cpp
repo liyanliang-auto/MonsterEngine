@@ -954,7 +954,7 @@ bool FDeferredRenderer::CreateFXAAPipeline()
 void FDeferredRenderer::UpdateFXAAUniformBuffer(uint32 Width, uint32 Height)
 {
     PostProcess::FFXAAUniformBuffer ubo;
-    ubo.RcpFrame = Math::FVector2D(1.0f / Width, 1.0f / Height);
+    ubo.RcpFrame = Math::FVector2f(1.0f / Width, 1.0f / Height);
     ubo.QualitySubpix = FXAAConfig.QualitySubpix;
     ubo.QualityEdgeThreshold = FXAAConfig.QualityEdgeThreshold;
     ubo.QualityEdgeThresholdMin = FXAAConfig.QualityEdgeThresholdMin;

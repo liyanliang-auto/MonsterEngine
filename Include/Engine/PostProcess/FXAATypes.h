@@ -95,38 +95,38 @@ struct FFXAAUniformBuffer
      * Reciprocal frame size: (1.0 / width, 1.0 / height)
      * Used for texture coordinate offsets in FXAA algorithm
      */
-    alignas(16) FVector2D RcpFrame;
+    alignas(16) FVector2f RcpFrame;
 
     /**
      * Sub-pixel aliasing removal amount (0.0 - 1.0)
      * Copied from FFXAAConfig::QualitySubpix
      */
-    alignas(4) float QualitySubpix;
+    float QualitySubpix;
 
     /**
      * Edge detection threshold
      * Copied from FFXAAConfig::QualityEdgeThreshold
      */
-    alignas(4) float QualityEdgeThreshold;
+    float QualityEdgeThreshold;
 
     /**
      * Minimum edge detection threshold
      * Copied from FFXAAConfig::QualityEdgeThresholdMin
      */
-    alignas(4) float QualityEdgeThresholdMin;
+    float QualityEdgeThresholdMin;
 
     /**
      * Quality preset (0-5)
      * Copied from FFXAAConfig::Preset
      * NOTE: Currently unused in shader (preset is baked at compile time)
      */
-    alignas(4) int32 Preset;
+    int32 Preset;
 
     /**
      * Padding to align struct to 64 bytes
      * Required for std140 uniform buffer layout
      */
-    alignas(8) FVector2D Padding;
+    float Padding[10];
 };
 
 // Compile-time validation of UBO size
