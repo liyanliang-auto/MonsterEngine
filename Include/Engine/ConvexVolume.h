@@ -190,7 +190,7 @@ public:
         for (int32 PlaneIndex = 0; PlaneIndex < Planes.Num(); ++PlaneIndex)
         {
             const FPlane& Plane = Planes[PlaneIndex];
-            float Distance = Plane.X * Origin.X + Plane.Y * Origin.Y + Plane.Z * Origin.Z - Plane.W;
+            double Distance = Plane.X * Origin.X + Plane.Y * Origin.Y + Plane.Z * Origin.Z - Plane.W;
             if (Distance > Radius)
             {
                 return false;
