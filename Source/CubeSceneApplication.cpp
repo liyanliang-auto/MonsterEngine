@@ -87,7 +87,7 @@ CubeSceneApplication::CubeSceneApplication()
     , m_device(nullptr)
     , m_bUseSceneRenderer(true)  // Enable FSceneRenderer for UE5-style rendering
     , m_parallelRenderer(nullptr)  // Initialize parallel renderer to null
-    , m_bEnableParallelRendering(true)  // Enable parallel rendering by default
+    , m_bEnableParallelRendering(false)  // Disabled - command list pool not yet implemented
     , m_numParallelThreads(4)  // Use 4 worker threads
     , m_windowWidth(1280)
     , m_windowHeight(720)
@@ -1893,7 +1893,7 @@ bool CubeSceneApplication::loadWoodTexture()
     int32 width = 0;
     int32 height = 0;
     int32 channels = 0;
-    const char* texturePath = "E:\\MonsterEngine\\resources\\textures\\wood.png";
+    const char* texturePath = "resources/textures/wood.png";
     // Flip texture vertically for OpenGL/Vulkan compatibility
     stbi_set_flip_vertically_on_load(true);
     unsigned char* imageData = stbi_load(texturePath, &width, &height, &channels, STBI_rgb_alpha);

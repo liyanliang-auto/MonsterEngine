@@ -525,9 +525,32 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     FVulkanDescriptorSetKey FVulkanPendingState::buildDescriptorSetKey() const {
-        // NOTE: This method is deprecated and will be removed
-        // Use updateDescriptorSet(set) instead for multi-set architecture
+        // Build key from Set 0 descriptor state for single-set pipelines (non-shadow rendering)
         FVulkanDescriptorSetKey Key;
+        Key.SetIndex = 0;
+        
+        auto& setState = m_descriptorSets[0];
+        
+        // Add buffer bindings (e.g. TransformUBO, LightingUBO)
+        for (const auto& [binding, bufferInfo] : setState.buffers) {
+            FVulkanDescriptorSetKey::FBufferBinding bufferBinding;
+            bufferBinding.Binding = binding;
+            bufferBinding.Buffer = bufferInfo.buffer;
+            bufferBinding.Offset = bufferInfo.offset;
+            bufferBinding.Range = bufferInfo.range;
+            Key.BufferBindings[binding] = bufferBinding;
+        }
+        
+        // Add texture bindings (e.g. texture1, texture2)
+        for (const auto& [binding, textureInfo] : setState.textures) {
+            FVulkanDescriptorSetKey::FImageBinding imageBinding;
+            imageBinding.Binding = binding;
+            imageBinding.ImageView = textureInfo.imageView;
+            imageBinding.Sampler = textureInfo.sampler;
+            imageBinding.ImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            Key.ImageBindings[binding] = imageBinding;
+        }
+        
         return Key;
     }
 
