@@ -46,9 +46,9 @@ message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}
 # Find Dependencies
 # ==============================================================================
 
-# Vulkan SDK (required)
-find_package(Vulkan REQUIRED)
-message(STATUS "Vulkan SDK found: ${Vulkan_INCLUDE_DIRS}")
+# Vulkan (bundled headers and import library - no SDK required)
+set(VULKAN_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rd-party/vulkan")
+message(STATUS "Vulkan: using bundled headers and library at ${VULKAN_LOCAL_DIR}")
 
 # ==============================================================================
 # Source Files
@@ -160,8 +160,9 @@ target_include_directories(MonsterEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd-party/cgltf
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd-party/glfw-3.4.bin.WIN64/Include
     
-    # Vulkan SDK
-    ${Vulkan_INCLUDE_DIRS}
+    # Vulkan (bundled headers)
+    ${VULKAN_LOCAL_DIR}/vulkan
+    ${VULKAN_LOCAL_DIR}/vk_video
 )
 
 # ==============================================================================
@@ -251,8 +252,8 @@ target_link_directories(MonsterEngine PRIVATE
 
 # Link libraries
 target_link_libraries(MonsterEngine PRIVATE
-    # Vulkan
-    Vulkan::Vulkan
+    # Vulkan (bundled import library)
+    "${VULKAN_LOCAL_DIR}/lib/vulkan-1.lib"
     
     # GLFW
     glfw3dll
@@ -326,7 +327,7 @@ message(STATUS "========================================")
 message(STATUS "Build type:        ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ Standard:      C++${CMAKE_CXX_STANDARD}")
 message(STATUS "Compiler:          ${CMAKE_CXX_COMPILER_ID}")
-message(STATUS "Vulkan SDK:        ${Vulkan_INCLUDE_DIRS}")
+message(STATUS "Vulkan:            ${VULKAN_LOCAL_DIR} (bundled)")
 message(STATUS "Output directory:  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 message(STATUS "========================================")
 message(STATUS "")

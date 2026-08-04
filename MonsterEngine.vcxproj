@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -118,7 +118,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;PLATFORM_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Include;$(ProjectDir)3rd-party;$(ProjectDir)3rd-party\imgui;$(VULKAN_SDK)\Include;$(GLFW_DIR)\include;$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Include;$(ProjectDir)3rd-party;$(ProjectDir)3rd-party\imgui;$(ProjectDir)3rd-party\vulkan;$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -132,7 +132,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\lib-vc2022;$(VULKAN_SDK)\Lib;$(GLFW_DIR)\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\lib-vc2022;$(ProjectDir)3rd-party\vulkan\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;glfw3dll.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
@@ -147,7 +147,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;PLATFORM_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Include;$(VULKAN_SDK)\Include;$(GLFW_DIR)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Include;$(ProjectDir)3rd-party;$(ProjectDir)3rd-party\imgui;$(ProjectDir)3rd-party\vulkan;$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -163,7 +163,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\lib-vc2022;$(VULKAN_SDK)\Lib;$(GLFW_DIR)\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)3rd-party\glfw-3.4.bin.WIN64\lib-vc2022;$(ProjectDir)3rd-party\vulkan\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;glfw3dll.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
