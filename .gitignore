@@ -1,0 +1,50 @@
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.vcxproj.filters.user
+*.sln.docstates
+*.suo
+*.userosscache
+*.sln.ide
+
+# Build outputs
+x64/
+Debug/
+Release/
+out/
+build/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.exp
+# *.lib and *.dll NOT ignored — 3rd-party contains required prebuilt libraries
+*.tlog/
+*.lastbuildstate
+*.idb
+*.ipdb
+*.iobj
+*.ipch
+*.pch
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+
+# Logs
+log/
+
+# IDE / tool config
+.windsurf/
+*.code-workspace
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+
+# OS files
+.DS_Store
+Thumbs.db
