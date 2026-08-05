@@ -316,6 +316,12 @@
     <ClCompile Include="Source\Engine\Proxies\CubeSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Proxies\FloorSceneProxy.cpp" />
     <ClCompile Include="Source\CubeSceneApplication.cpp" />
+    <ClCompile Include="Source\SplatSceneApplication.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatPLYLoader.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatPipeline.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatPass.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatSortPass.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatRenderPass.cpp" />
     <ClCompile Include="Source\Engine\Material\Material.cpp" />
     <ClCompile Include="Source\Engine\Material\MaterialInstance.cpp" />
     <ClCompile Include="Source\Engine\Material\MaterialInstanceDynamic.cpp" />
@@ -541,6 +547,14 @@
     <ClInclude Include="Include\Engine\Proxies\CubeSceneProxy.h" />
     <ClInclude Include="Include\Engine\Proxies\FloorSceneProxy.h" />
     <ClInclude Include="Include\CubeSceneApplication.h" />
+    <ClInclude Include="Include\SplatSceneApplication.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatPLYLoader.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatPipeline.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatTypes.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatSortTypes.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatSortPass.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatPass.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatRenderPass.h" />
     <ClInclude Include="Include\Renderer\SceneTypes.h" />
     <ClInclude Include="Include\Renderer\SceneView.h" />
     <ClInclude Include="Include\Renderer\Scene.h" />

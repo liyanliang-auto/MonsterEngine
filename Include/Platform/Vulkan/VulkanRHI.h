@@ -115,6 +115,9 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
         PFN_vkCmdPushConstants vkCmdPushConstants = nullptr;
         
+        // Dispatch operations
+        PFN_vkCmdDispatch vkCmdDispatch = nullptr;
+
         // Transfer operations
         PFN_vkCmdCopyBuffer vkCmdCopyBuffer = nullptr;
         PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage = nullptr;

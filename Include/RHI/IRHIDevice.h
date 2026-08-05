@@ -36,13 +36,13 @@ namespace MonsterRender::RHI {
         uint32 maxVertexInputAttributes = 16;
     };
     
-	//IRHIDevice£¨Éè±¸½Ó¿Ú£©
-	//	©À©¤©¤ ×ÊÔ´´´½¨£ºcreateBuffer / createTexture / createPipelineState / createSampler
-	//	©À©¤©¤ Shader£ºcreateVertexShader / createPixelShader
-	//	©À©¤©¤ ÃèÊö·û£ºcreateDescriptorSetLayout / createPipelineLayout / allocateDescriptorSet
-	//	©À©¤©¤ ÃüÁî£ºgetImmediateCommandList
-	//	©À©¤©¤ Í¬²½£ºwaitForIdle / present / collectGarbage
-	//	©¸©¤©¤ ²éÑ¯£ºgetBackendType / getCapabilities / getSwapChainFormat
+	//IRHIDeviceï¼ˆè®¾å¤‡æŽ¥å£ï¼‰
+	//	â”œâ”€â”€ èµ„æºåˆ›å»ºï¼šcreateBuffer / createTexture / createPipelineState / createSampler
+	//	â”œâ”€â”€ Shaderï¼šcreateVertexShader / createPixelShader
+	//	â”œâ”€â”€ æè¿°ç¬¦ï¼šcreateDescriptorSetLayout / createPipelineLayout / allocateDescriptorSet
+	//	â”œâ”€â”€ å‘½ä»¤ï¼šgetImmediateCommandList
+	//	â”œâ”€â”€ åŒæ­¥ï¼šwaitForIdle / present / collectGarbage
+	//	â””â”€â”€ æŸ¥è¯¢ï¼šgetBackendType / getCapabilities / getSwapChainFormat
 
     /**
      * RHI Device interface
@@ -136,9 +136,19 @@ namespace MonsterRender::RHI {
         virtual TSharedPtr<IRHIPixelShader> createPixelShader(TSpan<const uint8> bytecode) = 0;
         
         /**
+         * Create a compute shader from bytecode
+         */
+        virtual TSharedPtr<IRHIComputeShader> createComputeShader(TSpan<const uint8> bytecode) = 0;
+        
+        /**
          * Create a pipeline state object
          */
         virtual TSharedPtr<IRHIPipelineState> createPipelineState(const PipelineStateDesc& desc) = 0;
+        
+        /**
+         * Create a compute pipeline state object
+         */
+        virtual TSharedPtr<IRHIPipelineState> createComputePipelineState(const ComputePipelineStateDesc& desc) = 0;
         
         /**
          * Create a sampler state

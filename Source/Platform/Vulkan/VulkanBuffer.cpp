@@ -448,6 +448,13 @@ namespace MonsterRender::RHI::Vulkan {
             return m_mappedData;
         }
 
+        // If the memory pool already has a persistent mapping, reuse it
+        // to avoid VUID-vkMapMemory-memory-00678 (double-mapping).
+        if (m_usesMemoryManager && m_allocation.MappedPointer) {
+            m_mappedData = m_allocation.MappedPointer;
+            return m_mappedData;
+        }
+
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getDevice();
         VkDeviceSize offset = m_usesMemoryManager ? m_allocation.Offset : 0;
@@ -463,6 +470,14 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanStagingBuffer::Unmap()
     {
         if (!m_mappedData) {
+            return;
+        }
+
+        // If we used the memory pool's persistent mapping, skip vkUnmapMemory
+        // to avoid VUID-vkUnmapMemory-memory-00689 (unmapping memory that
+        // was never mapped by this staging buffer).
+        if (m_usesMemoryManager && m_allocation.MappedPointer) {
+            m_mappedData = nullptr;
             return;
         }
 

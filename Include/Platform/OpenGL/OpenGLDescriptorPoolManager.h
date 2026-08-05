@@ -42,7 +42,12 @@ public:
     virtual void updateUniformBuffer(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHIBuffer> buffer,
                                     uint32 offset = 0, uint32 range = 0) override;
     
+    virtual void updateStorageBuffer(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHIBuffer> buffer,
+                                    uint32 offset = 0, uint32 range = 0) override;
+    
     virtual void updateTexture(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHITexture> texture) override;
+    
+    virtual void updateStorageImage(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHITexture> texture) override;
     
     virtual void updateSampler(uint32 binding, TSharedPtr<MonsterRender::RHI::IRHISampler> sampler) override;
     

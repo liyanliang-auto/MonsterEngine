@@ -1,0 +1,290 @@
+// Copyright Monster Engine. All Rights Reserved.
+// splat_preprocess.comp - 3DGS Preprocess Compute Shader
+// 
+// Computes per-Gaussian: frustum culling, 3D covariance, 2D projection, 
+// EWA conic, 3-sigma radius, tile bounds, SH color evaluation.
+//
+// Reference: 3dgs-vulkan-cpp/vulkan-3dgs/src/Shaders/preprocess.comp
+//
+// Descriptor Sets:
+//   Set 0 (Input): positions, scales, rotations, opacities, shCoeffs, CameraUBO
+//   Set 1 (Output): radii, depth, rgb, conicOpacity, pointsXY, tilesTouched, bbox
+//   Push Constants: gaussianCount, near, far, culling
+
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#include "splat_common.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// ============================================================================
+// Push Constants (16 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    uint gaussianCount;
+    float near;
+    float far;
+    uint culling;
+} pc;
+
+// ============================================================================
+// Descriptor Set 0: Input Data + Camera
+// ============================================================================
+
+layout(std430, set = 0, binding = 0) readonly buffer GaussianPositions {
+    vec4 positions[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer GaussianScales {
+    vec4 scales[];
+};
+
+layout(std430, set = 0, binding = 2) readonly buffer GaussianRotations {
+    vec4 rotations[];
+};
+
+layout(std430, set = 0, binding = 3) readonly buffer GaussianOpacities {
+    float opacities[];
+};
+
+layout(std430, set = 0, binding = 4) readonly buffer GaussianSH {
+    float shCoefficients[];
+};
+
+layout(std140, set = 0, binding = 5) uniform CameraUniforms {
+    mat4 viewMatrix;
+    mat4 projMatrix;
+    vec4 camPos;
+    float focalX;
+    float focalY;
+    float tanFovX;
+    float tanFovY;
+    int imageWidth;
+    int imageHeight;
+    int shDegree;
+} camera;
+
+// ============================================================================
+// Descriptor Set 1: Output Buffers
+// ============================================================================
+
+layout(std430, set = 1, binding = 0) writeonly buffer OutputRadii {
+    int radii[];
+};
+
+layout(std430, set = 1, binding = 1) writeonly buffer OutputDepth {
+    float depth[];
+};
+
+layout(std430, set = 1, binding = 2) writeonly buffer OutputRGB {
+    vec4 rgb[];
+};
+
+layout(std430, set = 1, binding = 3) writeonly buffer OutputConicOpacity {
+    vec4 conicOpacity[];
+};
+
+layout(std430, set = 1, binding = 4) writeonly buffer OutputPointsXY {
+    vec2 pointsXY[];
+};
+
+layout(std430, set = 1, binding = 5) writeonly buffer OutputTilesTouched {
+    uint tilesTouched[];
+};
+
+layout(std430, set = 1, binding = 6) writeonly buffer OutputBBox {
+    uvec4 bbox[];
+};
+
+// ============================================================================
+// SH Color Evaluation (inlined: needs direct buffer access)
+// Reference: preprocess.comp::computeColorFromSH
+// ============================================================================
+vec3 computeColorFromSH(vec3 pos, vec3 camPos, int shDegree, int shBase) {
+    vec3 dir = normalize(pos - camPos);
+
+    // Degree 0
+    vec3 result = SH_C0 * vec3(
+        shCoefficients[shBase * 3 + 0],
+        shCoefficients[shBase * 3 + 1],
+        shCoefficients[shBase * 3 + 2]
+    );
+
+    if (shDegree > 0) {
+        float x = dir.x, y = dir.y, z = dir.z;
+
+        // Degree 1
+        result = result - SH_C1 * y * vec3(
+            shCoefficients[(shBase + 1) * 3 + 0],
+            shCoefficients[(shBase + 1) * 3 + 1],
+            shCoefficients[(shBase + 1) * 3 + 2]
+        ) + SH_C1 * z * vec3(
+            shCoefficients[(shBase + 2) * 3 + 0],
+            shCoefficients[(shBase + 2) * 3 + 1],
+            shCoefficients[(shBase + 2) * 3 + 2]
+        ) - SH_C1 * x * vec3(
+            shCoefficients[(shBase + 3) * 3 + 0],
+            shCoefficients[(shBase + 3) * 3 + 1],
+            shCoefficients[(shBase + 3) * 3 + 2]
+        );
+
+        if (shDegree > 1) {
+            float xx = x * x, yy = y * y, zz = z * z;
+            float xy = x * y, yz = y * z, xz = x * z;
+
+            // Degree 2
+            result = result +
+                SH_C2[0] * xy * vec3(
+                    shCoefficients[(shBase + 4) * 3 + 0],
+                    shCoefficients[(shBase + 4) * 3 + 1],
+                    shCoefficients[(shBase + 4) * 3 + 2]
+                ) +
+                SH_C2[1] * yz * vec3(
+                    shCoefficients[(shBase + 5) * 3 + 0],
+                    shCoefficients[(shBase + 5) * 3 + 1],
+                    shCoefficients[(shBase + 5) * 3 + 2]
+                ) +
+                SH_C2[2] * (2.0 * zz - xx - yy) * vec3(
+                    shCoefficients[(shBase + 6) * 3 + 0],
+                    shCoefficients[(shBase + 6) * 3 + 1],
+                    shCoefficients[(shBase + 6) * 3 + 2]
+                ) +
+                SH_C2[3] * xz * vec3(
+                    shCoefficients[(shBase + 7) * 3 + 0],
+                    shCoefficients[(shBase + 7) * 3 + 1],
+                    shCoefficients[(shBase + 7) * 3 + 2]
+                ) +
+                SH_C2[4] * (xx - yy) * vec3(
+                    shCoefficients[(shBase + 8) * 3 + 0],
+                    shCoefficients[(shBase + 8) * 3 + 1],
+                    shCoefficients[(shBase + 8) * 3 + 2]
+                );
+
+            if (shDegree > 2) {
+                // Degree 3
+                result = result +
+                    SH_C3[0] * y * (3.0 * xx - yy) * vec3(
+                        shCoefficients[(shBase + 9) * 3 + 0],
+                        shCoefficients[(shBase + 9) * 3 + 1],
+                        shCoefficients[(shBase + 9) * 3 + 2]
+                    ) +
+                    SH_C3[1] * xy * z * vec3(
+                        shCoefficients[(shBase + 10) * 3 + 0],
+                        shCoefficients[(shBase + 10) * 3 + 1],
+                        shCoefficients[(shBase + 10) * 3 + 2]
+                    ) +
+                    SH_C3[2] * y * (4.0 * zz - xx - yy) * vec3(
+                        shCoefficients[(shBase + 11) * 3 + 0],
+                        shCoefficients[(shBase + 11) * 3 + 1],
+                        shCoefficients[(shBase + 11) * 3 + 2]
+                    ) +
+                    SH_C3[3] * z * (2.0 * zz - 3.0 * xx - 3.0 * yy) * vec3(
+                        shCoefficients[(shBase + 12) * 3 + 0],
+                        shCoefficients[(shBase + 12) * 3 + 1],
+                        shCoefficients[(shBase + 12) * 3 + 2]
+                    ) +
+                    SH_C3[4] * x * (4.0 * zz - xx - yy) * vec3(
+                        shCoefficients[(shBase + 13) * 3 + 0],
+                        shCoefficients[(shBase + 13) * 3 + 1],
+                        shCoefficients[(shBase + 13) * 3 + 2]
+                    ) +
+                    SH_C3[5] * z * (xx - yy) * vec3(
+                        shCoefficients[(shBase + 14) * 3 + 0],
+                        shCoefficients[(shBase + 14) * 3 + 1],
+                        shCoefficients[(shBase + 14) * 3 + 2]
+                    ) +
+                    SH_C3[6] * x * (xx - 3.0 * yy) * vec3(
+                        shCoefficients[(shBase + 15) * 3 + 0],
+                        shCoefficients[(shBase + 15) * 3 + 1],
+                        shCoefficients[(shBase + 15) * 3 + 2]
+                    );
+            }
+        }
+    }
+
+    result += 0.5;
+    return max(result, vec3(0.0));
+}
+
+// ============================================================================
+// Main entry point
+// ============================================================================
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    if (idx >= pc.gaussianCount) return;
+
+    int BLOCK_X = 16;
+    int BLOCK_Y = 16;
+    int gridX = (camera.imageWidth  + BLOCK_X - 1) / BLOCK_X;
+    int gridY = (camera.imageHeight + BLOCK_Y - 1) / BLOCK_Y;
+
+    // Initialize outputs
+    radii[idx] = 0;
+    tilesTouched[idx] = 0;
+    depth[idx] = 0;
+
+    // Step 1.4: Frustum culling
+    vec3 pView;
+    bool inFrust = inFrustum(positions[idx].xyz, camera.viewMatrix, camera.projMatrix, pc.near, pc.far, pView);
+    if (pc.culling == 1) {
+        if (!inFrust) return;
+    }
+
+    // Transform to clip space for NDC -> pixel conversion
+    vec4 pOrig = positions[idx];
+    vec4 pHom = camera.projMatrix * camera.viewMatrix * pOrig;
+    float pW = 1.0 / (pHom.w + 0.0000001);
+    vec3 pProj = pHom.xyz * pW;
+
+    // Step 1.3: Compute 3D covariance
+    float cov3D_data[6];
+    computeCov3D(scales[idx].xyz, rotations[idx], 1.0, cov3D_data);
+
+    // Step 1.5: Compute 2D covariance (Jacobian + projection)
+    vec3 cov2D = computeCov2D(pView, cov3D_data, camera.viewMatrix, camera.focalX, camera.focalY, camera.tanFovX, camera.tanFovY);
+
+    // Step 1.6: EWA conic (invert 2D covariance)
+    float det = cov2D.x * cov2D.z - cov2D.y * cov2D.y;
+    if (det == 0.0) return;
+
+    float detInv = 1.0 / det;
+    vec3 conic = vec3(cov2D.z * detInv, -cov2D.y * detInv, cov2D.x * detInv);
+
+    // 3-sigma radius
+    float mid = 0.5 * (cov2D.x + cov2D.z);
+    float lambda1 = mid + sqrt(max(0.1, mid * mid - det));
+    float lambda2 = mid - sqrt(max(0.1, mid * mid - det));
+    float myRadius = ceil(3.0 * sqrt(max(lambda1, lambda2)));
+
+    // Screen-space coordinates (NDC -> pixels)
+    vec2 pointImage = vec2(
+        ndc2Pix(pProj.x, camera.imageWidth),
+        ndc2Pix(pProj.y, camera.imageHeight)
+    );
+
+    // Tile bounding box
+    ivec2 rectMin = ivec2(
+        min(gridX, max(0, int((pointImage.x - myRadius) / BLOCK_X))),
+        min(gridY, max(0, int((pointImage.y - myRadius) / BLOCK_Y)))
+    );
+    ivec2 rectMax = ivec2(
+        min(gridX, max(0, int((pointImage.x + myRadius + BLOCK_X - 1) / BLOCK_X))),
+        min(gridY, max(0, int((pointImage.y + myRadius + BLOCK_Y - 1) / BLOCK_Y)))
+    );
+
+    bbox[idx] = uvec4(rectMin.x, rectMin.y, rectMax.x, rectMax.y);
+
+    if ((rectMax.x - rectMin.x) * (rectMax.y - rectMin.y) == 0) return;
+
+    // Step 1.7: SH color
+    vec3 color = computeColorFromSH(positions[idx].xyz, camera.camPos.xyz, camera.shDegree, int(idx) * 16);
+
+    // Write outputs
+    depth[idx] = -pView.z;
+    radii[idx] = int(myRadius);
+    pointsXY[idx] = pointImage;
+    conicOpacity[idx] = vec4(conic, opacities[idx]);
+    tilesTouched[idx] = uint((rectMax.y - rectMin.y) * (rectMax.x - rectMin.x));
+    rgb[idx].xyz = color;
+}

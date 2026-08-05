@@ -434,13 +434,24 @@ namespace MonsterRender::RHI::Vulkan {
         m_currentBufferIndex = (m_currentBufferIndex + 1) % NUM_FRAMES_IN_FLIGHT;
         m_activeCmdBuffer = m_cmdBuffers[m_currentBufferIndex].get();
         
-        // NOTE: When using external fence (in-flight fence) for frame synchronization,
-        // the command buffer's own fence is NOT used. The frame synchronization is handled
-        // by FVulkanCommandListContext::acquireNextSwapchainImage() which waits on the
-        // in-flight fence before acquiring the next swapchain image.
-        // 
-        // Therefore, we skip waiting on the command buffer's fence here and just reset
-        // the command buffer directly. The in-flight fence ensures GPU work is complete.
+        // If the command buffer was previously submitted, ensure its fence is ready
+        // before resetting. We do NOT vkWaitForFences on the cmd buffer's own fence here,
+        // because submitCommands() signals inFlightFences[...] (not the cmd buffer's fence),
+        // and acquireNextSwapchainImage() already waits on the in-flight fence from
+        // NUM_FRAMES_IN_FLIGHT ago. Waiting on the cmd buffer's own fence would deadlock
+        // once the ring buffer wraps around, since that fence is never actually submitted
+        // to vkQueueSubmit in the normal (non-readback) code path.
+        if (m_activeCmdBuffer->isSubmitted())
+        {
+            const auto& functions = VulkanAPI::getFunctions();
+            VkDevice device = m_device->getLogicalDevice();
+            VkFence fence = m_activeCmdBuffer->getFence();
+
+            // Just reset the fence to unsignaled state — the in-flight fence in
+            // acquireNextSwapchainImage() already guarantees the GPU has finished
+            // with this command buffer.
+            functions.vkResetFences(device, 1, &fence);
+        }
         
         // Reset command buffer for reuse
         const auto& functions = VulkanAPI::getFunctions();

@@ -91,4 +91,19 @@ namespace MonsterRender::RHI::Vulkan {
         EResourceUsage getUsage() const override { return VulkanShader::getUsage(); }
         ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
     };
+    
+    /**
+     * Vulkan compute shader implementation
+     */
+    class VulkanComputeShader : public VulkanShader, public IRHIComputeShader {
+    public:
+        VulkanComputeShader(VulkanDevice* device, TSpan<const uint8> bytecode)
+            : VulkanShader(device, EShaderStage::Compute, bytecode)
+            , IRHIComputeShader() {}
+        
+        // IRHIResource interface
+        uint32 getSize() const override { return VulkanShader::getSize(); }
+        EResourceUsage getUsage() const override { return VulkanShader::getUsage(); }
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
+    };
 }

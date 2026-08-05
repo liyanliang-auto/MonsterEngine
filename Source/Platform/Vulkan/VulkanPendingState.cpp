@@ -297,41 +297,41 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     bool FVulkanPendingState::prepareForDraw() {
-        MR_LOG_INFO("===== prepareForDraw() START =====");
+        MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw() START");
         if (!m_cmdBuffer) {
-            MR_LOG_ERROR("prepareForDraw: No command buffer");
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: No command buffer");
             return false;
         }
 
         VkCommandBuffer cmdBuffer = m_cmdBuffer->getHandle();
         if (cmdBuffer == VK_NULL_HANDLE) {
-            MR_LOG_ERROR("prepareForDraw: Command buffer handle is NULL");
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: Command buffer handle is NULL");
             return false;
         }
 
-        MR_LOG_INFO("  CmdBuffer: " + std::to_string(reinterpret_cast<uint64>(cmdBuffer)));
-        MR_LOG_INFO("  Inside render pass: " + std::string(m_insideRenderPass ? "YES" : "NO"));
+        MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: insideRenderPass=%d, m_pendingPipeline=%p, m_currentPipeline=%p",
+               (int)m_insideRenderPass, (void*)m_pendingPipeline, (void*)m_currentPipeline);
         const auto& functions = VulkanAPI::getFunctions();
         MR_LOG_DEBUG("prepareForDraw: Starting state preparation");
         // Apply pipeline state if changed
         if (m_pendingPipeline && m_pendingPipeline != m_currentPipeline) {
             VkPipeline pipeline = m_pendingPipeline->getPipeline();
             if (pipeline != VK_NULL_HANDLE) {
-                MR_LOG_INFO("prepareForDraw: Binding NEW pipeline (handle: " +
-                            std::to_string(reinterpret_cast<uint64>(pipeline)) + ")");
+                MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: Binding NEW pipeline, handle=0x%llx",
+                       (unsigned long long)pipeline);
                 functions.vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                 m_currentPipeline = m_pendingPipeline;
             } else {
-                MR_LOG_ERROR("prepareForDraw: Pipeline handle is NULL!");
+                MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: Pipeline handle is NULL!");
                 return false; // Cannot draw without valid pipeline
             }
 
         } else if (!m_pendingPipeline && !m_currentPipeline) {
-            MR_LOG_ERROR("prepareForDraw: No pipeline set at all!");
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: No pipeline set at all!");
             return false; // Cannot draw without pipeline
         } else if (m_currentPipeline) {
-            MR_LOG_INFO("prepareForDraw: Using CACHED pipeline (handle: " +
-                       std::to_string(reinterpret_cast<uint64>(m_currentPipeline->getPipeline())) + ")");
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: Using CACHED pipeline, handle=0x%llx",
+                   (unsigned long long)m_currentPipeline->getPipeline());
         }
 
         // CRITICAL: Viewport and Scissor are REQUIRED for drawing
@@ -441,13 +441,20 @@ namespace MonsterRender::RHI::Vulkan {
 
         // Reference: UE5 FVulkanPendingGfxState::PrepareForDraw()
         if (m_descriptorsDirty && m_currentPipeline) {
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: m_descriptorsDirty=true, calling updateAndBindDescriptorSets()");
             VkDescriptorSet descriptorSet = updateAndBindDescriptorSets(cmdBuffer, functions);
             if (descriptorSet != VK_NULL_HANDLE) {
+                MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: Descriptor set bound, handle=0x%llx",
+                       (unsigned long long)descriptorSet);
                 m_currentDescriptorSet = descriptorSet;
+            } else {
+                MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: updateAndBindDescriptorSets returned VK_NULL_HANDLE!");
             }
 
             m_descriptorsDirty = false;
         } else if (m_currentDescriptorSet != VK_NULL_HANDLE && m_currentPipeline) {
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: Re-binding cached descriptor set, m_descriptorsDirty=%d",
+                   (int)m_descriptorsDirty);
             // Re-bind existing descriptor set if pipeline changed but resources didn't
             VkPipelineLayout pipelineLayout = m_currentPipeline->getPipelineLayout();
             if (pipelineLayout != VK_NULL_HANDLE) {
@@ -455,6 +462,10 @@ namespace MonsterRender::RHI::Vulkan {
                     pipelineLayout, 0, 1, &m_currentDescriptorSet, 0, nullptr);
             }
 
+        } else {
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] prepareForDraw: No descriptor set binding! dirty=%d, curPipeline=%p, curDescSet=0x%llx",
+                   (int)m_descriptorsDirty, (void*)m_currentPipeline,
+                   (unsigned long long)(uint64)m_currentDescriptorSet);
         }
 
         MR_LOG_INFO("prepareForDraw: State preparation completed successfully");

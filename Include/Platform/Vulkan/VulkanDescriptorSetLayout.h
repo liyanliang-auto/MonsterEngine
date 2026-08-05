@@ -145,7 +145,12 @@ namespace MonsterRender::RHI::Vulkan {
         void updateUniformBuffer(uint32 binding, TSharedPtr<IRHIBuffer> buffer, 
                                 uint32 offset = 0, uint32 range = 0) override;
         
+        void updateStorageBuffer(uint32 binding, TSharedPtr<IRHIBuffer> buffer,
+                                uint32 offset = 0, uint32 range = 0) override;
+        
         void updateTexture(uint32 binding, TSharedPtr<IRHITexture> texture) override;
+        
+        void updateStorageImage(uint32 binding, TSharedPtr<IRHITexture> texture) override;
         
         void updateSampler(uint32 binding, TSharedPtr<IRHISampler> sampler) override;
         

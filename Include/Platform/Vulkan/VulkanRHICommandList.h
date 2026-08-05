@@ -50,6 +50,10 @@ using MonsterEngine::TMap;
         void end() override;
         void reset() override;
         
+        // Submit the recorded commands and block until the GPU finishes.
+        // Used for one-off readback (3DGS sort-element count) inside the frame.
+        void submitAndWait() override;
+        
         void setPipelineState(TSharedPtr<IRHIPipelineState> pipelineState) override;
         void setVertexBuffers(uint32 startSlot, TSpan<TSharedPtr<IRHIBuffer>> vertexBuffers) override;
         void setIndexBuffer(TSharedPtr<IRHIBuffer> indexBuffer, bool is32Bit = true) override;
@@ -74,6 +78,11 @@ using MonsterEngine::TMap;
         void drawIndexedInstanced(uint32 indexCountPerInstance, uint32 instanceCount,
                                  uint32 startIndexLocation = 0, int32 baseVertexLocation = 0,
                                  uint32 startInstanceLocation = 0) override;
+        
+        void dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) override;
+        
+        void copyBuffer(TSharedPtr<IRHIBuffer> dst, TSharedPtr<IRHIBuffer> src,
+                        uint32 size, uint32 dstOffset = 0, uint32 srcOffset = 0) override;
         
         void clearRenderTarget(TSharedPtr<IRHITexture> renderTarget, 
                              const float32 clearColor[4]) override;
@@ -176,6 +185,7 @@ using MonsterEngine::TMap;
         };
         TMap<uint32, BoundResource> m_boundResources; // slot -> resource
         bool m_descriptorsDirty = true;
+        bool m_bComputePipelineActive = false;  // tracks whether last bound pipeline is compute
     };
 }
 

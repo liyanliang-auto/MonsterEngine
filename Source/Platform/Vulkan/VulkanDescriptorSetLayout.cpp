@@ -1,4 +1,4 @@
-﻿#include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
+#include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanTexture.h"
@@ -261,6 +261,25 @@ namespace MonsterRender::RHI::Vulkan {
         m_boundBuffers[binding] = buffer;
     }
     
+    void VulkanDescriptorSet::updateStorageBuffer(uint32 binding, TSharedPtr<IRHIBuffer> buffer,
+                                                  uint32 offset, uint32 range) {
+        auto vulkanBuffer = dynamic_cast<VulkanBuffer*>(buffer.get());
+        if (!vulkanBuffer) {
+            MR_LOG(LogVulkanRHI, Error, "Invalid storage buffer for descriptor set update");
+            return;
+        }
+        
+        VkDescriptorBufferInfo bufferInfo = {};
+        bufferInfo.buffer = vulkanBuffer->getBuffer();
+        bufferInfo.offset = offset;
+        bufferInfo.range = (range == 0) ? vulkanBuffer->getSize() : range;
+        
+        _writeDescriptor(binding, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfo, nullptr);
+        
+        // Cache the buffer to keep it alive
+        m_boundBuffers[binding] = buffer;
+    }
+    
     void VulkanDescriptorSet::updateTexture(uint32 binding, TSharedPtr<IRHITexture> texture) {
         auto vulkanTexture = dynamic_cast<VulkanTexture*>(texture.get());
         if (!vulkanTexture) {
@@ -274,6 +293,24 @@ namespace MonsterRender::RHI::Vulkan {
         imageInfo.sampler = VK_NULL_HANDLE; // Separate sampler
         
         _writeDescriptor(binding, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, nullptr, &imageInfo);
+        
+        // Cache the texture to keep it alive
+        m_boundTextures[binding] = texture;
+    }
+    
+    void VulkanDescriptorSet::updateStorageImage(uint32 binding, TSharedPtr<IRHITexture> texture) {
+        auto vulkanTexture = dynamic_cast<VulkanTexture*>(texture.get());
+        if (!vulkanTexture) {
+            MR_LOG(LogVulkanRHI, Error, "Invalid texture for storage image descriptor set update");
+            return;
+        }
+        
+        VkDescriptorImageInfo imageInfo = {};
+        imageInfo.imageView = vulkanTexture->getImageView();
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imageInfo.sampler = VK_NULL_HANDLE;
+        
+        _writeDescriptor(binding, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &imageInfo);
         
         // Cache the texture to keep it alive
         m_boundTextures[binding] = texture;

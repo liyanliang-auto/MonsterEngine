@@ -13,6 +13,7 @@
 #include "Platform/Vulkan/VulkanTexture.h"
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanSampler.h"
+#include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Core/Log.h"
 
@@ -128,6 +129,14 @@ void VulkanRHICommandListRecorder::setSampler(uint32 slot, TSharedPtr<IRHISample
     MR_LOG_WARNING("VulkanRHICommandListRecorder::setSampler - Not yet implemented, use descriptor sets");
 }
 
+void VulkanRHICommandListRecorder::bindDescriptorSets(TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+                                                      uint32 firstSet,
+                                                      TSpan<TSharedPtr<IRHIDescriptorSet>> descriptorSets) {
+    MR_LOG(LogVulkanRHIRecorder, Log, "bindDescriptorSets: Recording BindDescriptorSets command (firstSet=%u, count=%zu)",
+           firstSet, descriptorSets.size());
+    RecordCommand<FRHICommandBindDescriptorSets>(pipelineLayout, firstSet, descriptorSets);
+}
+
 // ============================================================================
 // Draw Commands
 // ============================================================================
@@ -186,6 +195,20 @@ void VulkanRHICommandListRecorder::transitionResource(TSharedPtr<IRHIResource> r
 void VulkanRHICommandListRecorder::resourceBarrier() {
     // Resource barriers are implicit in Vulkan through pipeline barriers
     // We'll handle this during replay
+}
+
+void VulkanRHICommandListRecorder::dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) {
+    RecordCommand<FRHICommandDispatch>(groupCountX, groupCountY, groupCountZ);
+}
+
+void VulkanRHICommandListRecorder::transitionResource(TSharedPtr<IRHIResource> resource,
+                                                      MonsterRender::RDG::ERHIAccess stateBefore,
+                                                      MonsterRender::RDG::ERHIAccess stateAfter) {
+    // RDG access transitions are handled during replay through pipeline barriers
+    // For now, log and record as a generic transition
+    (void)resource;
+    (void)stateBefore;
+    (void)stateAfter;
 }
 
 // ============================================================================
@@ -362,6 +385,19 @@ bool VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer(FVulkanCmdBuffer*
                 MR_LOG_DEBUG("  Replayed: BeginEvent (" + cmd->name + ")");
                 break;
             }
+
+            case ERHICommandType::Dispatch: {
+                auto* cmd = static_cast<FRHICommandDispatch*>(command.get());
+                const auto& functions = VulkanAPI::getFunctions();
+                if (functions.vkCmdDispatch) {
+                    functions.vkCmdDispatch(vkCmdBuffer, cmd->groupCountX, cmd->groupCountY, cmd->groupCountZ);
+                }
+                MR_LOG_DEBUG("  Replayed: Dispatch (" + 
+                           std::to_string(cmd->groupCountX) + ", " +
+                           std::to_string(cmd->groupCountY) + ", " +
+                           std::to_string(cmd->groupCountZ) + ")");
+                break;
+            }
             
             case ERHICommandType::EndEvent: {
                 MR_LOG_DEBUG("  Replayed: EndEvent");
@@ -371,6 +407,35 @@ bool VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer(FVulkanCmdBuffer*
             case ERHICommandType::SetMarker: {
                 auto* cmd = static_cast<FRHICommandSetMarker*>(command.get());
                 MR_LOG_DEBUG("  Replayed: SetMarker (" + cmd->name + ")");
+                break;
+            }
+            
+            case ERHICommandType::BindDescriptorSets: {
+                auto* cmd = static_cast<FRHICommandBindDescriptorSets*>(command.get());
+                if (cmd->pipelineLayout && !cmd->descriptorSets.empty()) {
+                    auto* vulkanLayout = static_cast<VulkanPipelineLayout*>(cmd->pipelineLayout.get());
+                    if (vulkanLayout) {
+                        VkPipelineLayout vkLayout = vulkanLayout->getHandle();
+                        MonsterEngine::TArray<VkDescriptorSet> vkDescriptorSets;
+                        for (const auto& set : cmd->descriptorSets) {
+                            if (set) {
+                                auto* vulkanSet = static_cast<VulkanDescriptorSet*>(set.get());
+                                if (vulkanSet) {
+                                    vkDescriptorSets.push_back(vulkanSet->getHandle());
+                                }
+                            }
+                        }
+                        if (!vkDescriptorSets.empty()) {
+                            const auto& functions = VulkanAPI::getFunctions();
+                            functions.vkCmdBindDescriptorSets(vkCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                vkLayout, cmd->firstSet,
+                                static_cast<uint32>(vkDescriptorSets.size()),
+                                vkDescriptorSets.data(), 0, nullptr);
+                            MR_LOG(LogVulkanRHIRecorder, Log, "  Replayed: BindDescriptorSets (firstSet=%u, count=%zu)",
+                                   cmd->firstSet, vkDescriptorSets.size());
+                        }
+                    }
+                }
                 break;
             }
             

@@ -5,15 +5,15 @@
 
 namespace MonsterRender::RHI {
     
-	//IRHIResource£¨»ùÀà£©
+	//IRHIResourceï¼ˆåŸºç±»ï¼‰
 	//	+ getBackendType() : ERHIBackend
-	//	©¦
-	//	©À©¤©¤ IRHIBuffer
-	//	©À©¤©¤ IRHITexture
-	//	©À©¤©¤ IRHIPipelineState
-	//	©À©¤©¤ IRHISampler
-	//	©À©¤©¤ IRHIVertexShader / IRHIPixelShader
-	//	©¸©¤©¤ IRHIDescriptorSet / IRHIDescriptorSetLayout / IRHIPipelineLayout
+	//	â”‚
+	//	â”œâ”€â”€ IRHIBuffer
+	//	â”œâ”€â”€ IRHITexture
+	//	â”œâ”€â”€ IRHIPipelineState
+	//	â”œâ”€â”€ IRHISampler
+	//	â”œâ”€â”€ IRHIVertexShader / IRHIPixelShader
+	//	â””â”€â”€ IRHIDescriptorSet / IRHIDescriptorSetLayout / IRHIPipelineLayout
 
     /**
      * Base class for all RHI resources
@@ -194,6 +194,15 @@ namespace MonsterRender::RHI {
     public:
         IRHIPixelShader() : IRHIShader(EShaderStage::Fragment) {}
         virtual ~IRHIPixelShader() = default;
+    };
+    
+    /**
+     * Compute shader interface
+     */
+    class IRHIComputeShader : public IRHIShader {
+    public:
+        IRHIComputeShader() : IRHIShader(EShaderStage::Compute) {}
+        virtual ~IRHIComputeShader() = default;
     };
     
     /**

@@ -38,37 +38,37 @@ namespace MonsterRender::RHI::Vulkan {
     };
     
     /**
-	VulkanDevice£¨¼Ì³Ğ IRHIDevice£©
-		©À©¤©¤ VkInstance / VkPhysicalDevice / VkDevice
-		©À©¤©¤ VkQueue£¨Graphics / Present£©
-		©À©¤©¤ VkSurface / VkSwapchain
-		©¦
-		©À©¤©¤ VulkanPipelineCache          // ¹ÜÏß×´Ì¬¶ÔÏó»º´æ£¨¹şÏ£²éÕÒ£©
-		©¦     ©¸©¤©¤ TMap<uint64, TSharedPtr<VulkanPipelineState>>
-		©¦
-		©À©¤©¤ FVulkanMemoryManager         // ÏÔ´æ³Ø£¨´ó¿é·ÖÅä + ×Ó·ÖÅä£©
-		©¦     ©À©¤©¤ VkDeviceMemory ´ó¿é£¨256MB / ¿é£©
-		©¦     ©¸©¤©¤ ×Ó·ÖÅäÆ÷£¨°´ÀàĞÍ·Ö³Ø£©
-		©¦
-		©À©¤©¤ FVulkanCommandBufferManager  // ÃüÁî»º³åÇø¹ÜÀí£¨»·ĞÎ¸´ÓÃ£©
-		©¦
-		©À©¤©¤ FVulkanCommandListContext    // Ö¡Í¬²½ÉÏÏÂÎÄ
-		©¦     ©À©¤©¤ imageAvailableSemaphore[MAX_FRAMES_IN_FLIGHT]
-		©¦     ©À©¤©¤ renderFinishedSemaphore[MAX_FRAMES_IN_FLIGHT]
-			©¦     ©¸©¤©¤ inFlightFence[MAX_FRAMES_IN_FLIGHT]
-				©¦
-					©À©¤©¤ FVulkanPendingState          // ÑÓ³Ù°ó¶¨×´Ì¬»ú
-					©¦     ©À©¤©¤ ´ıÌá½» Pipeline / Viewport / Scissor
-					©¦     ©À©¤©¤ ´ıÌá½» VertexBuffer / IndexBuffer
-					©¦     ©¸©¤©¤ ´ıÌá½» DescriptorSet
-					©¦
-					©À©¤©¤ VulkanRenderPassCache        // RenderPass »º´æ£¨¹şÏ£²éÕÒ£©
-					©À©¤©¤ VulkanFramebufferCache       // Framebuffer »º´æ
-					©À©¤©¤ FVulkanDescriptorSetLayoutCache
-					©À©¤©¤ FVulkanDescriptorSetCache
-					©¸©¤©¤ ÑÓ³ÙÏú»Ù¶ÓÁĞ
-					©À©¤©¤ m_deferredBufferDestructions[]
-					©¸©¤©¤ m_deferredImageDestructions[]
+	VulkanDeviceï¼ˆç»§æ‰¿ IRHIDeviceï¼‰
+		â”œâ”€â”€ VkInstance / VkPhysicalDevice / VkDevice
+		â”œâ”€â”€ VkQueueï¼ˆGraphics / Presentï¼‰
+		â”œâ”€â”€ VkSurface / VkSwapchain
+		â”‚
+		â”œâ”€â”€ VulkanPipelineCache          // ç®¡çº¿çŠ¶æ€å¯¹è±¡ç¼“å­˜ï¼ˆå“ˆå¸ŒæŸ¥æ‰¾ï¼‰
+		â”‚     â””â”€â”€ TMap<uint64, TSharedPtr<VulkanPipelineState>>
+		â”‚
+		â”œâ”€â”€ FVulkanMemoryManager         // æ˜¾å­˜æ± ï¼ˆå¤§å—åˆ†é… + å­åˆ†é…ï¼‰
+		â”‚     â”œâ”€â”€ VkDeviceMemory å¤§å—ï¼ˆ256MB / å—ï¼‰
+		â”‚     â””â”€â”€ å­åˆ†é…å™¨ï¼ˆæŒ‰ç±»å‹åˆ†æ± ï¼‰
+		â”‚
+		â”œâ”€â”€ FVulkanCommandBufferManager  // å‘½ä»¤ç¼“å†²åŒºç®¡ç†ï¼ˆç¯å½¢å¤ç”¨ï¼‰
+		â”‚
+		â”œâ”€â”€ FVulkanCommandListContext    // å¸§åŒæ­¥ä¸Šä¸‹æ–‡
+		â”‚     â”œâ”€â”€ imageAvailableSemaphore[MAX_FRAMES_IN_FLIGHT]
+		â”‚     â”œâ”€â”€ renderFinishedSemaphore[MAX_FRAMES_IN_FLIGHT]
+			â”‚     â””â”€â”€ inFlightFence[MAX_FRAMES_IN_FLIGHT]
+				â”‚
+					â”œâ”€â”€ FVulkanPendingState          // å»¶è¿Ÿç»‘å®šçŠ¶æ€æœº
+					â”‚     â”œâ”€â”€ å¾…æäº¤ Pipeline / Viewport / Scissor
+					â”‚     â”œâ”€â”€ å¾…æäº¤ VertexBuffer / IndexBuffer
+					â”‚     â””â”€â”€ å¾…æäº¤ DescriptorSet
+					â”‚
+					â”œâ”€â”€ VulkanRenderPassCache        // RenderPass ç¼“å­˜ï¼ˆå“ˆå¸ŒæŸ¥æ‰¾ï¼‰
+					â”œâ”€â”€ VulkanFramebufferCache       // Framebuffer ç¼“å­˜
+					â”œâ”€â”€ FVulkanDescriptorSetLayoutCache
+					â”œâ”€â”€ FVulkanDescriptorSetCache
+					â””â”€â”€ å»¶è¿Ÿé”€æ¯é˜Ÿåˆ—
+					â”œâ”€â”€ m_deferredBufferDestructions[]
+					â””â”€â”€ m_deferredImageDestructions[]
 
      */
 
@@ -78,6 +78,9 @@ namespace MonsterRender::RHI::Vulkan {
      */
     class VulkanDevice : public IRHIDevice {
     public:
+        // Constants
+        static constexpr uint32 MAX_FRAMES_IN_FLIGHT = 2;
+        
         VulkanDevice();
         virtual ~VulkanDevice();
         
@@ -99,7 +102,9 @@ namespace MonsterRender::RHI::Vulkan {
         TSharedPtr<IRHITexture> createTexture(const TextureDesc& desc) override;
         TSharedPtr<IRHIVertexShader> createVertexShader(TSpan<const uint8> bytecode) override;
         TSharedPtr<IRHIPixelShader> createPixelShader(TSpan<const uint8> bytecode) override;
+        TSharedPtr<IRHIComputeShader> createComputeShader(TSpan<const uint8> bytecode) override;
         TSharedPtr<IRHIPipelineState> createPipelineState(const PipelineStateDesc& desc) override;
+        TSharedPtr<IRHIPipelineState> createComputePipelineState(const ComputePipelineStateDesc& desc) override;
         TSharedPtr<IRHISampler> createSampler(const SamplerDesc& desc) override;
         
         // Descriptor set management (Multi-descriptor set support)
@@ -357,6 +362,7 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Settings
         bool m_validationEnabled = false;
+        bool m_runningUnderRenderDoc = false;   // set in createInstance; gate GPU-AV to avoid RenderDoc conflicts
         bool m_debugMarkersEnabled = true;
         uint32 m_currentFrame = 0;
         uint32 m_currentImageIndex = 0;
@@ -391,7 +397,6 @@ namespace MonsterRender::RHI::Vulkan {
         std::mutex m_deferredDestructionMutex;
         
         // Constants
-        static constexpr uint32 MAX_FRAMES_IN_FLIGHT = 2;
         static constexpr uint32 DEFERRED_DESTRUCTION_FRAMES = 3;  // Wait 3 frames before destruction
     };
 }

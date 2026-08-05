@@ -12,7 +12,8 @@ namespace MonsterRender {
 
     enum class EShaderStageKind : uint32 {
         Vertex,
-        Fragment
+        Fragment,
+        Compute
     };
 
     struct ShaderCompileOptions {

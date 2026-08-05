@@ -159,6 +159,13 @@ namespace MonsterRender::RHI::Vulkan
             auto *vulkanVertexShader = static_cast<VulkanVertexShader *>(m_desc.vertexShader.get());
             VkShaderModule vertexModule = vulkanVertexShader->getShaderModule();
 
+            MR_LOG_INFO("  [DIAG] vertexShader: IRHIVertexShader*=" + 
+                        std::to_string(reinterpret_cast<uintptr_t>(m_desc.vertexShader.get())) +
+                        " VulkanVertexShader*=" + 
+                        std::to_string(reinterpret_cast<uintptr_t>(vulkanVertexShader)) +
+                        " module=" + std::to_string(reinterpret_cast<uintptr_t>(vertexModule)) +
+                        " isValid=" + std::to_string(vulkanVertexShader->isValid() ? 1 : 0));
+
             if (vertexModule != VK_NULL_HANDLE)
             {
                 m_shaderModules.push_back(vertexModule);
@@ -169,6 +176,33 @@ namespace MonsterRender::RHI::Vulkan
                 stageInfo.module = vertexModule;
                 stageInfo.pName = "main";
                 m_shaderStages.push_back(stageInfo);
+            }
+            else
+            {
+                MR_LOG_ERROR("  [DIAG] Vertex shader exists but module is VK_NULL_HANDLE for pipeline: " + m_desc.debugName);
+            }
+        }
+        else
+        {
+            // TSharedPtr copy bug workaround: try the raw module handle
+            if (m_desc.vkVertexShaderModule != 0)
+            {
+                VkShaderModule vertexModule = reinterpret_cast<VkShaderModule>(m_desc.vkVertexShaderModule);
+                MR_LOG_INFO("  [DIAG] No vertexShader TSharedPtr, using vkVertexShaderModule fallback: module=%p",
+                            (void*)vertexModule);
+
+                m_shaderModules.push_back(vertexModule);
+
+                VkPipelineShaderStageCreateInfo stageInfo{};
+                stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+                stageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+                stageInfo.module = vertexModule;
+                stageInfo.pName = "main";
+                m_shaderStages.push_back(stageInfo);
+            }
+            else
+            {
+                MR_LOG_ERROR("  [DIAG] No vertex shader in PipelineStateDesc for pipeline: " + m_desc.debugName);
             }
         }
 
@@ -536,8 +570,12 @@ namespace MonsterRender::RHI::Vulkan
         VkVertexInputBindingDescription bindingDescription = createVertexInputBinding();
         std::vector<VkVertexInputAttributeDescription> attributeDescriptions = createVertexInputAttributes();
 
+        // Determine if we have an actual vertex layout (not using gl_VertexIndex)
+        bool bHasVertexLayout = !m_desc.vertexLayout.attributes.empty() || m_desc.vertexLayout.stride > 0;
+
         MR_LOG_INFO("Vertex input: " + std::to_string(attributeDescriptions.size()) +
-                     " attribute(s), stride = " + std::to_string(bindingDescription.stride));
+                     " attribute(s), stride = " + std::to_string(bindingDescription.stride) +
+                     ", hasVertexLayout=" + std::string(bHasVertexLayout ? "true" : "false"));
         for (const auto& attr : attributeDescriptions) {
             MR_LOG_DEBUG("  Attr loc=" + std::to_string(attr.location) + 
                        ", format=" + std::to_string(attr.format) +
@@ -546,10 +584,21 @@ namespace MonsterRender::RHI::Vulkan
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = 1;
-        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32>(attributeDescriptions.size());
-        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+        if (bHasVertexLayout)
+        {
+            vertexInputInfo.vertexBindingDescriptionCount = 1;
+            vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+            vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32>(attributeDescriptions.size());
+            vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+        }
+        else
+        {
+            // No vertex layout specified — shader uses gl_VertexIndex (fullscreen triangle, etc.)
+            vertexInputInfo.vertexBindingDescriptionCount = 0;
+            vertexInputInfo.pVertexBindingDescriptions = nullptr;
+            vertexInputInfo.vertexAttributeDescriptionCount = 0;
+            vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+        }
 
         // Input assembly state
         VkPipelineInputAssemblyStateCreateInfo inputAssembly = createInputAssemblyState();
@@ -1093,5 +1142,48 @@ namespace MonsterRender::RHI::Vulkan
             m_stats.cacheMisses++;
         }
         m_stats.totalPipelines = static_cast<uint32>(m_pipelineCache.size());
+    }
+
+    // ============================================================================
+    // VulkanComputePipelineState Implementation
+    // ============================================================================
+
+    VulkanComputePipelineState::VulkanComputePipelineState(VulkanDevice* device, const ComputePipelineStateDesc& desc)
+        : IRHIPipelineState(PipelineStateDesc())  // Default-construct base with empty graphics desc
+        , m_device(device)
+    {
+        m_debugName = desc.debugName;
+    }
+
+    VulkanComputePipelineState::~VulkanComputePipelineState()
+    {
+        if (m_device)
+        {
+            VkDevice vkDevice = m_device->getLogicalDevice();
+            if (vkDevice != VK_NULL_HANDLE)
+            {
+                const auto& functions = VulkanAPI::getFunctions();
+                if (m_pipeline != VK_NULL_HANDLE)
+                {
+                    functions.vkDestroyPipeline(vkDevice, m_pipeline, nullptr);
+                    m_pipeline = VK_NULL_HANDLE;
+                }
+            }
+        }
+        m_pipelineLayout = VK_NULL_HANDLE; // Pipeline layout owned by caller, don't destroy
+        m_isValid = false;
+    }
+
+    bool VulkanComputePipelineState::initialize()
+    {
+        // This is a lightweight wrapper - actual vkCreateComputePipelines is called
+        // in VulkanDevice::createComputePipelineState(). This method is kept for
+        // consistency with the graphics pipeline pattern.
+        return m_isValid;
+    }
+
+    uint32 VulkanComputePipelineState::getSize() const
+    {
+        return sizeof(*this);
     }
 }

@@ -454,6 +454,11 @@ void FOpenGLCommandList::drawIndexedInstanced(uint32 indexCountPerInstance, uint
     GL_CHECK("glDrawElementsInstanced");
 }
 
+void FOpenGLCommandList::dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ)
+{
+    MR_LOG(LogOpenGLCommands, Warning, "OpenGL dispatch not implemented");
+}
+
 void FOpenGLCommandList::clearRenderTarget(TSharedPtr<IRHITexture> renderTarget, const float32 clearColor[4])
 {
     // If we have a specific render target, we need to bind it first

@@ -203,7 +203,8 @@ namespace MonsterRender::RHI::Vulkan {
         VkCommandPool m_commandPool;
         
         // Ring buffer of command buffers (UE5: CmdBuffers)
-        static constexpr uint32 NUM_FRAMES_IN_FLIGHT = 3;
+        // Must match VulkanDevice::MAX_FRAMES_IN_FLIGHT for correct fence synchronization
+        static constexpr uint32 NUM_FRAMES_IN_FLIGHT = 2;
         TArray<TUniquePtr<FVulkanCmdBuffer>> m_cmdBuffers;
         
         // Current frame index in the ring buffer
