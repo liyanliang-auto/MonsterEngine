@@ -5,6 +5,7 @@
 #include "Containers/Map.h"
 #include "Containers/Set.h"
 #include "CubeSceneApplication.h"
+#include "SplatSceneApplication.h"
 // CubeSceneRendererTest - now using MonsterEngine::Renderer namespace
 #include "Tests/CubeSceneRendererTest.h"
 #include "Tests/CubeSceneRendererTestApp.h"
@@ -88,7 +89,7 @@ int main(int argc, char** argv) {
     // Set log verbosity to Error only (suppress Log, Verbose, VeryVerbose)
     // Note: This only affects globally declared categories, not static local ones
     // ========================================================================
-    SetGlobalLogVerbosity(ELogVerbosity::Error);
+    SetGlobalLogVerbosity(ELogVerbosity::Log);
 
     MR_LOG(LogInit, Log, "Starting MonsterRender Engine");
     MR_LOG(LogInit, Log, "Command line arguments: %d", argc);
@@ -110,6 +111,8 @@ int main(int argc, char** argv) {
     bool runCubeSceneTest = false;  // Run CubeSceneRendererTest (pipeline integration test)
     bool useDeferredRendering = false;  // Enable deferred rendering in CubeSceneApplication
     bool runZFightingTests = false;  // Run Z-Fighting test suite
+    bool runSplatScene = true;  // Run SplatSceneApplication (3DGS render)
+    String splatModelPath = "resources\\point_cloud\\bonsai_30k.ply";  // PLY model path for splat
     
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
@@ -159,6 +162,12 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(argv[i], "--test-zfighting") == 0 || strcmp(argv[i], "-tzf") == 0) {
             runZFightingTests = true;
+        }
+        else if (strcmp(argv[i], "--splat") == 0 || strcmp(argv[i], "-splat") == 0) {
+            runSplatScene = true;
+            // Optional: next arg is model path
+            if (i + 1 < argc && argv[i + 1][0] != '-')
+                splatModelPath = argv[++i];
         }
         else if (strcmp(argv[i], "--imgui-test") == 0 || strcmp(argv[i], "-imgui") == 0) {
             // Run ImGui test application directly
@@ -384,6 +393,22 @@ int main(int argc, char** argv) {
         return -1;
     }
     
+    // SplatSceneApplication — 3DGS render
+    if (runSplatScene) {
+        MR_LOG(LogInit, Log, "Running SplatSceneApplication with model: %s", splatModelPath.c_str());
+        auto splatApp = MakeUnique<SplatSceneApplication>(splatModelPath);
+        if (splatApp) {
+            int32 exitCode = splatApp->run();
+            splatApp->shutdown();
+            splatApp.reset();
+            ShutdownLogging();
+            return exitCode;
+        }
+        MR_LOG(LogInit, Error, "Failed to create SplatSceneApplication");
+        ShutdownLogging();
+        return -1;
+    }
+
     // Create application instance
     // Default: Run CubeSceneApplication (rotating cube demo)
     TUniquePtr<Application> app;

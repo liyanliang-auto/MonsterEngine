@@ -48,6 +48,9 @@ enum class ERHICommandType : uint8 {
     // Resource transition commands
     TransitionResource,
     ResourceBarrier,
+
+    // Compute commands
+    Dispatch,
     
     // Debug commands
     BeginEvent,
@@ -238,6 +241,34 @@ struct FRHICommandTransitionResource : FRHICommandBase {
         , stateAfter(after) {}
 };
 
+// Compute Dispatch Command
+struct FRHICommandDispatch : FRHICommandBase {
+    uint32 groupCountX;
+    uint32 groupCountY;
+    uint32 groupCountZ;
+    
+    FRHICommandDispatch(uint32 x, uint32 y, uint32 z)
+        : FRHICommandBase(ERHICommandType::Dispatch)
+        , groupCountX(x), groupCountY(y), groupCountZ(z) {}
+};
+
+// Bind Descriptor Sets Command
+struct FRHICommandBindDescriptorSets : FRHICommandBase {
+    TSharedPtr<IRHIPipelineLayout> pipelineLayout;
+    uint32 firstSet;
+    MonsterEngine::TArray<TSharedPtr<IRHIDescriptorSet>> descriptorSets;
+    
+    FRHICommandBindDescriptorSets(TSharedPtr<IRHIPipelineLayout> layout, uint32 first,
+                                   TSpan<TSharedPtr<IRHIDescriptorSet>> sets)
+        : FRHICommandBase(ERHICommandType::BindDescriptorSets)
+        , pipelineLayout(layout)
+        , firstSet(first) {
+        for (const auto& set : sets) {
+            descriptorSets.push_back(set);
+        }
+    }
+};
+
 // Debug Event Commands
 struct FRHICommandBeginEvent : FRHICommandBase {
     String name;
@@ -299,6 +330,9 @@ public:
     void setConstantBuffer(uint32 slot, TSharedPtr<IRHIBuffer> buffer) override;
     void setShaderResource(uint32 slot, TSharedPtr<IRHITexture> texture) override;
     void setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) override;
+    void bindDescriptorSets(TSharedPtr<IRHIPipelineLayout> pipelineLayout,
+                           uint32 firstSet,
+                           TSpan<TSharedPtr<IRHIDescriptorSet>> descriptorSets) override;
     
     void setViewport(const Viewport& viewport) override;
     void setScissorRect(const ScissorRect& scissorRect) override;
@@ -323,6 +357,13 @@ public:
     
     void transitionResource(TSharedPtr<IRHIResource> resource, 
                           EResourceUsage stateBefore, EResourceUsage stateAfter) override;
+    
+    // ERHIAccess version for RDG transitions
+    void transitionResource(TSharedPtr<IRHIResource> resource,
+                          MonsterRender::RDG::ERHIAccess stateBefore,
+                          MonsterRender::RDG::ERHIAccess stateAfter) override;
+    
+    void dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) override;
     void resourceBarrier() override;
     
     void beginEvent(const String& name) override;

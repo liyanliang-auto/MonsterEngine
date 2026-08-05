@@ -72,6 +72,7 @@ namespace MonsterRender::RHI::Vulkan {
         // UE5: VulkanRHI::BeginDrawingViewport() -> GetCommandContext()->Begin()
         MR_LOG_INFO("  Calling context->beginRecording()...");
         m_context->beginRecording();
+        m_bComputePipelineActive = false;  // Reset bind point tracker each frame
         
         MR_LOG_INFO("FVulkanRHICommandListImmediate::begin: Command buffer recording started");
         MR_LOG_INFO("===== FVulkanRHICommandListImmediate::begin() END =====");
@@ -90,6 +91,43 @@ namespace MonsterRender::RHI::Vulkan {
         m_context->endRecording();
         
         MR_LOG_INFO("===== FVulkanRHICommandListImmediate::end() END =====");
+    }
+    
+    void FVulkanRHICommandListImmediate::submitAndWait() {
+        MR_LOG_INFO("===== FVulkanRHICommandListImmediate::submitAndWait() START =====");
+        if (!m_context) {
+            MR_LOG_ERROR("FVulkanRHICommandListImmediate::submitAndWait: No active context");
+            return;
+        }
+        FVulkanCommandBufferManager* mgr = m_context->getCommandBufferManager();
+        if (!mgr) {
+            MR_LOG_ERROR("FVulkanRHICommandListImmediate::submitAndWait: No command buffer manager");
+            return;
+        }
+        FVulkanCmdBuffer* cmdBuffer = mgr->getActiveCmdBuffer();
+        if (!cmdBuffer || !cmdBuffer->hasEnded()) {
+            MR_LOG_ERROR("FVulkanRHICommandListImmediate::submitAndWait: Active command buffer not ended/ready");
+            return;
+        }
+
+        VkDevice device = m_device->getLogicalDevice();
+        const auto& functions = VulkanAPI::getFunctions();
+
+        // Submit using the command buffer's OWN fence so that the subsequent
+        // prepareForNewActiveCommandBuffer() (invoked on the next begin()) can wait
+        // on the same fence. A fresh fence would leave m_fence unsignaled and
+        // deadlock prepareForNewActiveCommandBuffer().
+        VkFence fence = cmdBuffer->getFence();
+        MR_LOG_INFO("  Submitting active command buffer with its own fence for readback...");
+        mgr->submitActiveCmdBufferWithFence(nullptr, 0, nullptr, 0, fence);
+
+        VkResult waitRes = functions.vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+        if (waitRes != VK_SUCCESS) {
+            MR_LOG_ERROR("FVulkanRHICommandListImmediate::submitAndWait: vkWaitForFences failed: " + std::to_string(waitRes));
+        } else {
+            MR_LOG_INFO("  Readback command buffer completed (fence signaled)");
+        }
+        MR_LOG_INFO("===== FVulkanRHICommandListImmediate::submitAndWait() END =====");
     }
     
     void FVulkanRHICommandListImmediate::reset() {
@@ -120,6 +158,38 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        // Try compute pipeline first (3DGS, particle systems, etc.)
+        VulkanComputePipelineState* computePipeline = dynamic_cast<VulkanComputePipelineState*>(pipelineState.get());
+        if (computePipeline)
+        {
+            if (!computePipeline->isValid())
+            {
+                MR_LOG_ERROR("FVulkanRHICommandListImmediate::setPipelineState: Invalid compute pipeline");
+                return;
+            }
+            
+            VkPipeline vkPipeline = computePipeline->getPipeline();
+            if (vkPipeline == VK_NULL_HANDLE)
+            {
+                MR_LOG_ERROR("FVulkanRHICommandListImmediate::setPipelineState: Compute pipeline handle is NULL");
+                return;
+            }
+            
+            FVulkanCmdBuffer* cmdBufferWrapper = m_context->getCmdBuffer();
+            if (!cmdBufferWrapper || cmdBufferWrapper->getHandle() == VK_NULL_HANDLE)
+            {
+                MR_LOG_ERROR("FVulkanRHICommandListImmediate::setPipelineState: No valid command buffer");
+                return;
+            }
+            
+            const auto& functions = VulkanAPI::getFunctions();
+            functions.vkCmdBindPipeline(cmdBufferWrapper->getHandle(),
+                                        VK_PIPELINE_BIND_POINT_COMPUTE, vkPipeline);
+            m_bComputePipelineActive = true;
+            return;
+        }
+        
+        // Fallback: graphics pipeline
         // Cast to Vulkan-specific pipeline state
         // UE5 Pattern: Dynamic cast to platform-specific implementation
         VulkanPipelineState* vulkanPipeline = dynamic_cast<VulkanPipelineState*>(pipelineState.get());
@@ -140,6 +210,7 @@ namespace MonsterRender::RHI::Vulkan {
         // UE5: FVulkanPendingState::SetGraphicsPipeline()
         if (m_context->getPendingState()) {
             m_context->getPendingState()->setGraphicsPipeline(vulkanPipeline);
+            m_bComputePipelineActive = false;
             MR_LOG_INFO("setPipelineState: Set pipeline '" + vulkanPipeline->getDesc().debugName + 
                         "' (handle: " + std::to_string(reinterpret_cast<uint64>(pipeline)) + ")");
         } else {
@@ -464,18 +535,24 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
     
     void FVulkanRHICommandListImmediate::draw(uint32 vertexCount, uint32 startVertexLocation) {
+        fprintf(stderr, "[STDERR_TRACE] FVulkanRHICommandListImmediate::draw(%u, %u) BEGIN\n",
+                vertexCount, startVertexLocation);
+        MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] FVulkanRHICommandListImmediate::draw(%u, %u) BEGIN",
+               vertexCount, startVertexLocation);
         if (!m_context) {
-            MR_LOG_ERROR("FVulkanRHICommandListImmediate::draw: No active context");
+            fprintf(stderr, "[STDERR_TRACE] No context!\n");
+            MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] No context!");
             return;
         }
         
         // Draw non-indexed primitives
         // UE5 Pattern: FVulkanCommandListContext::RHIDrawPrimitive()
         // Prepares pending state and calls vkCmdDraw
+        fprintf(stderr, "[STDERR_TRACE] Calling m_context->draw()...\n");
+        MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] Calling m_context->draw()...");
         m_context->draw(vertexCount, startVertexLocation);
-        
-        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::draw: Drew " + std::to_string(vertexCount) + 
-                    " vertices starting at " + std::to_string(startVertexLocation));
+        fprintf(stderr, "[STDERR_TRACE] m_context->draw() returned\n");
+        MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] m_context->draw() returned");
     }
     
     void FVulkanRHICommandListImmediate::drawIndexed(uint32 indexCount, uint32 startIndexLocation, 
@@ -851,14 +928,34 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
-        // UE5 Pattern: Resource barriers are inserted automatically by the command list
-        // or explicitly via vkCmdPipelineBarrier
-        // Reference: FVulkanCommandListContext::RHISubmitCommandsHint()
+        FVulkanCmdBuffer* cmdBufferWrapper = m_context->getCmdBuffer();
+        if (!cmdBufferWrapper) {
+            MR_LOG_WARNING("FVulkanRHICommandListImmediate::resourceBarrier: No active command buffer");
+            return;
+        }
         
-        // TODO: Insert pipeline barrier if needed
-        // For now, Vulkan synchronization is handled implicitly by render passes
+        VkCommandBuffer cmdBuffer = cmdBufferWrapper->getHandle();
         
-        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::resourceBarrier: Barrier inserted (implicit)");
+        // Insert a compute-to-compute memory barrier to ensure that all
+        // prior compute shader writes are visible to subsequent compute dispatches.
+        // This is critical for the 3DGS splat pipeline where each pass writes
+        // to storage buffers that the next pass reads.
+        VkMemoryBarrier memoryBarrier{};
+        memoryBarrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        
+        vkCmdPipelineBarrier(
+            cmdBuffer,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0,
+            1, &memoryBarrier,
+            0, nullptr,
+            0, nullptr
+        );
+        
+        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::resourceBarrier: Compute barrier inserted");
     }
     
     // ============================================================================
@@ -1185,6 +1282,62 @@ namespace MonsterRender::RHI::Vulkan {
         
         MR_LOG(LogTemp, Verbose, "copyBufferToTexture: mip %u, %ux%ux%u", mipLevel, width, height, depth);
     }
+
+    // ============================================================================
+    // Compute Dispatch (UE5: RHIDispatchComputeShader)
+    // ============================================================================
+
+    void FVulkanRHICommandListImmediate::dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) {
+        if (!m_context) {
+            MR_LOG_ERROR("FVulkanRHICommandListImmediate::dispatch: No active context");
+            return;
+        }
+
+        FVulkanCmdBuffer* cmdBufferWrapper = m_context->getCmdBuffer();
+        if (!cmdBufferWrapper || cmdBufferWrapper->getHandle() == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("FVulkanRHICommandListImmediate::dispatch: No valid command buffer");
+            return;
+        }
+
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdDispatch(cmdBufferWrapper->getHandle(), groupCountX, groupCountY, groupCountZ);
+
+        MR_LOG(LogVulkanRHI, Verbose, "dispatch: (%u, %u, %u)", groupCountX, groupCountY, groupCountZ);
+    }
+    
+    void FVulkanRHICommandListImmediate::copyBuffer(TSharedPtr<IRHIBuffer> dst, TSharedPtr<IRHIBuffer> src,
+                                                     uint32 size, uint32 dstOffset, uint32 srcOffset) {
+        if (!m_context) {
+            MR_LOG_ERROR("copyBuffer: No active context");
+            return;
+        }
+        
+        FVulkanCmdBuffer* cmdBufferWrapper = m_context->getCmdBuffer();
+        if (!cmdBufferWrapper || cmdBufferWrapper->getHandle() == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("copyBuffer: No valid command buffer");
+            return;
+        }
+        
+        auto* dstVk = dynamic_cast<VulkanBuffer*>(dst.get());
+        auto* srcVk = dynamic_cast<VulkanBuffer*>(src.get());
+        if (!dstVk || !srcVk) {
+            MR_LOG_ERROR("copyBuffer: Invalid buffer — must be VulkanBuffer");
+            return;
+        }
+        
+        VkBufferCopy region;
+        region.srcOffset = static_cast<VkDeviceSize>(srcOffset);
+        region.dstOffset = static_cast<VkDeviceSize>(dstOffset);
+        region.size      = static_cast<VkDeviceSize>(size);
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        functions.vkCmdCopyBuffer(cmdBufferWrapper->getHandle(),
+                                  srcVk->getBuffer(), dstVk->getBuffer(),
+                                  1, &region);
+        
+        MR_LOG(LogVulkanRHI, Verbose, "copyBuffer: src=%p dst=%p size=%u srcOff=%u dstOff=%u",
+               srcVk->getBuffer(), dstVk->getBuffer(), size, srcOffset, dstOffset);
+    }
     
     // ============================================================================
     // Multi-descriptor set binding implementation
@@ -1232,11 +1385,14 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
-        // Bind descriptor sets to graphics pipeline
+        // Bind descriptor sets to the correct pipeline bind point
+        VkPipelineBindPoint bindPoint = m_bComputePipelineActive 
+            ? VK_PIPELINE_BIND_POINT_COMPUTE 
+            : VK_PIPELINE_BIND_POINT_GRAPHICS;
         const auto& functions = VulkanAPI::getFunctions();
         functions.vkCmdBindDescriptorSets(
             cmdBuffer->getHandle(),
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            bindPoint,
             vulkanLayout->getHandle(),
             firstSet,
             static_cast<uint32>(vkDescriptorSets.size()),

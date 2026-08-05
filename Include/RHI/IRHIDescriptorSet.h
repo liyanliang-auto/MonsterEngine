@@ -185,11 +185,28 @@ namespace MonsterRender::RHI {
                                         uint32 offset = 0, uint32 range = 0) = 0;
         
         /**
-         * Update texture binding
+         * Update storage buffer binding
+         * @param binding Binding slot number
+         * @param buffer Storage buffer to bind
+         * @param offset Offset in bytes into the buffer
+         * @param range Size in bytes (0 = whole buffer)
+         */
+        virtual void updateStorageBuffer(uint32 binding, TSharedPtr<IRHIBuffer> buffer,
+                                        uint32 offset = 0, uint32 range = 0) = 0;
+        
+        /**
+         * Update texture binding (sampled image)
          * @param binding Binding slot number
          * @param texture Texture to bind
          */
         virtual void updateTexture(uint32 binding, TSharedPtr<IRHITexture> texture) = 0;
+        
+        /**
+         * Update storage image binding
+         * @param binding Binding slot number
+         * @param texture Texture to bind as storage image
+         */
+        virtual void updateStorageImage(uint32 binding, TSharedPtr<IRHITexture> texture) = 0;
         
         /**
          * Update sampler binding

@@ -1,0 +1,92 @@
+// Copyright Monster Engine. All Rights Reserved.
+// splat_assign_keys.comp - Assign Sort Keys for Radix Sort
+//
+// For each Gaussian that survived preprocess, generates one sort entry per
+// tile it touches. Each entry is a 64-bit key (tileID << 32 | depthBits)
+// and a 32-bit payload (Gaussian index). The prefix sum from step 3.1
+// provides the write offset for each Gaussian's batch of entries.
+//
+// Reference: 3dgs-vulkan-cpp idkeys.comp / 3DGS.cpp preprocess_sort.comp
+
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// ============================================================================
+// Descriptor Set 0: Input Buffers
+// ============================================================================
+
+layout(std430, set = 0, binding = 0) readonly buffer PrefixSumBuf {
+    uint prefixSum[];       // Cumulative offset per Gaussian
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer BBoxBuf {
+    uvec4 bbox[];           // uvec4(rectMin.x, rectMin.y, rectMax.x, rectMax.y)
+};
+
+layout(std430, set = 0, binding = 2) readonly buffer DepthBuf {
+    float depth[];          // View-space depth (positive = into screen)
+};
+
+// ============================================================================
+// Descriptor Set 0: Output Buffers
+// ============================================================================
+
+layout(std430, set = 0, binding = 4) writeonly buffer SortKeysBuf {
+    uint64_t sortKeys[];    // (tileIndex << 32) | depthBits
+};
+
+layout(std430, set = 0, binding = 5) writeonly buffer SortValuesBuf {
+    uint sortValues[];      // Gaussian index
+};
+
+// ============================================================================
+// Push Constants (16 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    uint gaussianCount;     // Number of Gaussians to process
+    uint gridX;             // ceil(imageWidth / 16)
+    uint gridY;             // ceil(imageHeight / 16)
+    uint maxDepthBits;      // Reserved (not used, depth uses floatBitsToUint)
+} pc;
+
+// ============================================================================
+// Main
+// ============================================================================
+void main() {
+    uint gaussianIdx = gl_GlobalInvocationID.x;
+
+    if (gaussianIdx >= pc.gaussianCount) {
+        return;
+    }
+
+    // Check if this Gaussian has any tiles (bbox with zero area = skipped)
+    uvec4 tileRect = bbox[gaussianIdx];
+    if (tileRect.x >= tileRect.z || tileRect.y >= tileRect.w) {
+        return;
+    }
+
+    // Clamp to grid bounds
+    tileRect.z = min(tileRect.z, pc.gridX);
+    tileRect.w = min(tileRect.w, pc.gridY);
+
+    // Starting offset into sort buffers
+    uint writeIdx = (gaussianIdx == 0u) ? 0u : prefixSum[gaussianIdx - 1u];
+
+    // Depth bits: use raw float bit representation
+    // Since all depths are positive, floatBitsToUint preserves ordering
+    uint depthBits = floatBitsToUint(depth[gaussianIdx]);
+
+    // Emit one entry per tile touched
+    for (uint tileY = tileRect.y; tileY < tileRect.w; tileY++) {
+        for (uint tileX = tileRect.x; tileX < tileRect.z; tileX++) {
+            uint64_t tileIndex = uint64_t(tileX) + uint64_t(tileY) * uint64_t(pc.gridX);
+            uint64_t key = (tileIndex << 32u) | uint64_t(depthBits);
+
+            sortKeys[writeIdx] = key;
+            sortValues[writeIdx] = gaussianIdx;
+            writeIdx++;
+        }
+    }
+}

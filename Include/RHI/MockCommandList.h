@@ -101,6 +101,10 @@ public:
         MR_LOG_DEBUG("MockCommandList::drawIndexedInstanced - Draw indexed instanced");
     }
     
+    virtual void dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) override {
+        MR_LOG_DEBUG("MockCommandList::dispatch - Dispatch compute shader");
+    }
+    
     // Clear operations
     virtual void clearRenderTarget(TSharedPtr<MonsterRender::RHI::IRHITexture> renderTarget, 
                                    const float32 clearColor[4]) override {

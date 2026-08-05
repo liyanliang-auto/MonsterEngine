@@ -107,6 +107,7 @@ namespace MonsterRender {
         switch (stage) {
             case EShaderStageKind::Vertex:   return "vert";
             case EShaderStageKind::Fragment: return "frag";
+            case EShaderStageKind::Compute:  return "comp";
             default: return "vert";
         }
     }

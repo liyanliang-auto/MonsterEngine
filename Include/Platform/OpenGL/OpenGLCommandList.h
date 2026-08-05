@@ -66,6 +66,8 @@ public:
                                      uint32 startIndexLocation = 0, int32 baseVertexLocation = 0,
                                      uint32 startInstanceLocation = 0) override;
     
+    virtual void dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) override;
+    
     virtual void clearRenderTarget(TSharedPtr<MonsterRender::RHI::IRHITexture> renderTarget, 
                                   const float32 clearColor[4]) override;
     virtual void clearDepthStencil(TSharedPtr<MonsterRender::RHI::IRHITexture> depthStencil, 

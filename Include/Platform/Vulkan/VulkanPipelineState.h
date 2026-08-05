@@ -221,4 +221,49 @@ using MonsterEngine::TMap;
         uint64 calculateDescHash(const PipelineStateDesc& desc) const;
         void updateStats(bool hit) const;
     };
+
+    /**
+     * Vulkan compute pipeline state
+     * Lightweight wrapper for compute-only pipeline (no render pass, no vertex/fragment stages)
+     */
+    class VulkanComputePipelineState : public IRHIPipelineState {
+    public:
+        VulkanComputePipelineState(VulkanDevice* device, const ComputePipelineStateDesc& desc);
+        virtual ~VulkanComputePipelineState();
+
+        // Non-copyable, non-movable
+        VulkanComputePipelineState(const VulkanComputePipelineState&) = delete;
+        VulkanComputePipelineState& operator=(const VulkanComputePipelineState&) = delete;
+
+        // IRHIResource interface
+        ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
+
+        /** Initialize the compute pipeline */
+        bool initialize();
+
+        /** Get the Vulkan pipeline handle */
+        VkPipeline getPipeline() const { return m_pipeline; }
+
+        /** Get the Vulkan pipeline layout */
+        VkPipelineLayout getPipelineLayout() const { return m_pipelineLayout; }
+
+        /** Check validity */
+        bool isValid() const { return m_isValid; }
+
+        /** Initialize with pre-created Vulkan pipeline handles */
+        void initializeWithHandles(VkPipeline pipeline, VkPipelineLayout layout) {
+            m_pipeline = pipeline;
+            m_pipelineLayout = layout;
+            m_isValid = true;
+        }
+
+        uint32 getSize() const override;
+        EResourceUsage getUsage() const override { return EResourceUsage::None; }
+
+    private:
+        VulkanDevice* m_device;
+        VkPipeline m_pipeline = VK_NULL_HANDLE;
+        VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+        bool m_isValid = false;
+    };
 }

@@ -1,0 +1,133 @@
+// Copyright Monster Engine. All Rights Reserved.
+// splat_render.comp - Per-Tile 3DGS Alpha Blend Renderer
+//
+// Each workgroup processes one 16×16 tile. Reads the sorted Gaussian list
+// for the tile (from radix sort + tile boundaries) and performs front-to-back 
+// EWA (Elliptical Weighted Average) alpha blending.
+//
+// Reference: 3dgs-vulkan-cpp render.comp / 3DGS.cpp render.comp
+
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+
+#define TILE_WIDTH  16
+#define TILE_HEIGHT 16
+
+layout(local_size_x = TILE_WIDTH, local_size_y = TILE_HEIGHT, local_size_z = 1) in;
+
+// ============================================================================
+// Descriptor Set 0
+// ============================================================================
+
+// Tile ranges: ranges[tileID] = uvec2(startIndex, endIndexExclusive)
+// Tiles with no Gaussians have (0, 0) — no iteration needed.
+layout(std430, set = 0, binding = 0) readonly buffer TileRangesBuf {
+    uvec2 tileRanges[];         // From tile boundaries pass
+};
+
+// Sorted Gaussian IDs: output of radix sort (values)
+// Each entry corresponds to a sort key; value[i] = Gaussian index
+layout(std430, set = 0, binding = 1) readonly buffer SortedIdsBuf {
+    uint sortedIds[];           // From radix sort values
+};
+
+// Pre-computed Gaussian color (SH evaluation result)
+layout(std430, set = 0, binding = 2) readonly buffer ColorBuf {
+    vec4 colors[];              // From preprocess output: rgb[idx].xyz = color, .w unused
+};
+
+// Pre-computed conic + opacity: conicOpacity[idx] = vec4(conic.xy, conic.z, opacity)
+layout(std430, set = 0, binding = 3) readonly buffer ConicOpacityBuf {
+    vec4 conicOpacity[];        // From preprocess output
+};
+
+// Pre-computed screen-space 2D positions
+layout(std430, set = 0, binding = 4) readonly buffer PointsXYBuf {
+    vec2 pointsXY[];            // From preprocess output
+};
+
+// Output image: writes final blended color
+layout(set = 0, binding = 5, rgba8) uniform writeonly image2D outputImage;
+
+// ============================================================================
+// Push Constants (8 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    uint imageWidth;            // Viewport width in pixels
+    uint imageHeight;           // Viewport height in pixels
+} pc;
+
+// ============================================================================
+// Main
+// ============================================================================
+void main() {
+    uint tileX = gl_WorkGroupID.x;
+    uint tileY = gl_WorkGroupID.y;
+    uint localX = gl_LocalInvocationID.x;
+    uint localY = gl_LocalInvocationID.y;
+
+    // Pixel coordinate for this thread
+    uvec2 pixel = uvec2(tileX * TILE_WIDTH + localX, tileY * TILE_HEIGHT + localY);
+
+    if (pixel.x >= pc.imageWidth || pixel.y >= pc.imageHeight) {
+        return; // Out of bounds
+    }
+
+    // Tile grid dimensions
+    uint tilesPerRow = (pc.imageWidth  + TILE_WIDTH  - 1u) / TILE_WIDTH;
+    uint tileID = tileX + tileY * tilesPerRow;
+
+    // Get sorted range for this tile
+    // Note: tileRanges is indexed by tileID, not by a linear offset
+    uvec2 range = tileRanges[tileID];
+    uint start = range.x;
+    uint end   = range.y;
+
+    if (start >= end) {
+        return;
+    }
+
+    // Alpha blend state
+    float T = 1.0;               // Transmittance (starts fully transparent)
+    vec3  C = vec3(0.0);         // Accumulated color
+
+    // Iterate over sorted Gaussians for this tile (front-to-back by depth)
+    for (uint i = start; i < end; i++) {
+        uint gaussIdx = sortedIds[i];
+
+        // Screen-space distance from pixel to Gaussian center
+        vec2 xy = pointsXY[gaussIdx];
+        vec2 d  = xy - vec2(pixel);
+
+        // EWA conic evaluation: computes exp(-0.5 * d^T Σ^{-1} d)
+        // conicOpacity[gaussIdx] = vec4(conic_xx, conic_xy, conic_yy, opacity)
+        vec4 con_o = conicOpacity[gaussIdx];
+        float power = -0.5 * (con_o.x * d.x * d.x + con_o.z * d.y * d.y)
+                      - con_o.y * d.x * d.y;
+
+        // Skip if pixel is outside the splat's support
+        if (power > 0.0) {
+            continue;
+        }
+
+        // Compute alpha contribution
+        float alpha = min(0.99, con_o.w * exp(power));
+
+        // Skip near-transparent contributions
+        if (alpha < 1.0 / 255.0) {
+            continue;
+        }
+
+        // Early exit: pixel is fully opaque
+        float T_next = T * (1.0 - alpha);
+        if (T_next < 0.0001) {
+            break;
+        }
+
+        // Front-to-back alpha blending
+        C += colors[gaussIdx].rgb * alpha * T;
+        T = T_next;
+    }
+
+    imageStore(outputImage, ivec2(pixel), vec4(C, 1.0 - T));
+}

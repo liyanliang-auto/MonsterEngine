@@ -63,7 +63,22 @@ namespace MonsterRender::RHI::Vulkan {
 
     void FVulkanCommandListContext::prepareForNewFrame() {
         MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() START =====");
-        // Get next command buffer from ring buffer
+        
+        // Step 1: Acquire next swapchain image BEFORE anything else.
+        // This waits on the in-flight fence, ensuring the previous frame's GPU
+        // work is complete before we reuse any resources (command buffers, descriptor pool, etc.)
+        if (m_device) {
+            acquireNextSwapchainImage();
+        }
+
+        // Step 2: Now safe to reset descriptor pool (all descriptor sets from previous
+        // frame are guaranteed completed by GPU thanks to the fence wait above)
+        if (m_descriptorPool) {
+            m_descriptorPool->reset();
+        }
+
+        // Step 3: Get next command buffer from ring buffer.
+        // The fence wait above guarantees the command buffer at this index has completed.
         MR_LOG_INFO("  Calling prepareForNewActiveCommandBuffer()...");
         m_manager->prepareForNewActiveCommandBuffer();
         MR_LOG_INFO("  Getting active cmd buffer...");
@@ -84,17 +99,6 @@ namespace MonsterRender::RHI::Vulkan {
         // Reset pending state
         if (m_pendingState) {
             m_pendingState->reset();
-        }
-
-        // Reset descriptor pool
-        if (m_descriptorPool) {
-            m_descriptorPool->reset();
-        }
-
-        // Acquire next swapchain image BEFORE any rendering begins
-        // This ensures getCurrentFramebuffer() returns the correct framebuffer
-        if (m_device) {
-            acquireNextSwapchainImage();
         }
 
         MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() END =====");
@@ -127,8 +131,10 @@ namespace MonsterRender::RHI::Vulkan {
 
         // Use frame-specific semaphore for synchronization
         uint32 currentFrame = m_device->getCurrentFrame();
-        // Wait for this frame's in-flight fence before reusing its resources
-        // This ensures the previous frame using this slot has completed GPU work
+        // Wait for this frame's in-flight fence before reusing its resources.
+        // Fences are created with VK_FENCE_CREATE_SIGNALED_BIT, so the very first
+        // frame's fence wait returns immediately. Subsequent frames use the fence
+        // from N-2 frames ago (which was submitted and will be signaled when GPU done).
         VkFence inFlightFence = m_device->getInFlightFence(currentFrame);
         if (inFlightFence != VK_NULL_HANDLE) {
             VkResult waitResult = functions.vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
@@ -170,7 +176,7 @@ namespace MonsterRender::RHI::Vulkan {
 
         // Mark this image as being used by the current frame's fence
         m_device->setImageInFlightFence(imageIndex, inFlightFence);
-        // Reset the in-flight fence for this frame's use (after all waits are done)
+        // Reset the in-flight fence (the one we just waited on) for this frame's submit
         if (inFlightFence != VK_NULL_HANDLE) {
             functions.vkResetFences(device, 1, &inFlightFence);
         }
@@ -500,45 +506,36 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     void FVulkanCommandListContext::draw(uint32 vertexCount, uint32 startVertexLocation) {
-        MR_LOG_INFO("===== FVulkanCommandListContext::draw() START =====");
-        MR_LOG_INFO("  vertexCount: " + std::to_string(vertexCount));
-        MR_LOG_INFO("  startVertexLocation: " + std::to_string(startVertexLocation));
+        MR_LOG(LogTemp, Log, "[DRAW_TRACE] draw() called: vertexCount=%u, startVertex=%u",
+               vertexCount, startVertexLocation);
         if (!m_cmdBuffer) {
-            MR_LOG_ERROR("draw: m_cmdBuffer is nullptr!");
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] draw: m_cmdBuffer is nullptr!");
             return;
         }
 
         VkCommandBuffer cmdBufferHandle = m_cmdBuffer->getHandle();
         if (cmdBufferHandle == VK_NULL_HANDLE) {
-            MR_LOG_ERROR("draw: Command buffer handle is VK_NULL_HANDLE!");
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] draw: Command buffer handle is VK_NULL_HANDLE!");
             return;
         }
 
-        MR_LOG_INFO("  CommandBuffer handle: " + std::to_string(reinterpret_cast<uint64>(cmdBufferHandle)));
         if (!m_pendingState) {
-            MR_LOG_ERROR("draw: m_pendingState is nullptr!");
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] draw: m_pendingState is nullptr!");
             return;
         }
 
-        MR_LOG_INFO("  Calling prepareForDraw()...");
+        MR_LOG(LogTemp, Log, "[DRAW_TRACE] draw: About to call prepareForDraw(), insideRenderPass=%d",
+               (int)m_pendingState->isInsideRenderPass());
         if (!m_pendingState->prepareForDraw()) {
-            MR_LOG_ERROR("draw: prepareForDraw() returned false - ABORTING");
+            MR_LOG(LogTemp, Log, "[DRAW_TRACE] draw: prepareForDraw() returned false - ABORTING");
             return;
         }
 
-        MR_LOG_INFO("  prepareForDraw() succeeded");
-        MR_LOG_INFO("  About to call vkCmdDraw...");
+        MR_LOG(LogTemp, Log, "[DRAW_TRACE] draw: prepareForDraw() succeeded, calling vkCmdDraw(%u, 1, %u, 0)",
+               vertexCount, startVertexLocation);
         const auto& functions = VulkanAPI::getFunctions();
-        // Log function pointer
-        MR_LOG_INFO("  vkCmdDraw function pointer: " +
-                   std::to_string(reinterpret_cast<uint64>(functions.vkCmdDraw)));
-        // Call vkCmdDraw
-
-        MR_LOG_INFO("  vkCmdDraw(vertexCount=" + std::to_string(vertexCount) +
-                   ", startVertex=" + std::to_string(startVertexLocation) + ")");
         functions.vkCmdDraw(cmdBufferHandle, vertexCount, 1, startVertexLocation, 0);
-        MR_LOG_INFO("  vkCmdDraw completed");
-        MR_LOG_INFO("===== FVulkanCommandListContext::draw() END =====");
+        MR_LOG(LogTemp, Log, "[DRAW_TRACE] draw: vkCmdDraw completed");
     }
 
     void FVulkanCommandListContext::drawIndexed(uint32 indexCount, uint32 startIndexLocation,

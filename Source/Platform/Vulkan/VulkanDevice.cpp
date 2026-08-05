@@ -23,6 +23,12 @@
 #include <vector>
 #include <unordered_set>
 
+// GPU-Assisted Validation control:
+//   1 = enable GPU-AV (per-instruction shader validation, VERY slow on heavy workloads)
+//   0 = disable GPU-AV (Core Check validation only, fast)
+// Once all validation errors are resolved, set to 1 for targeted debugging.
+#define MONSTER_GPU_AV_ENABLED 0
+
 DEFINE_LOG_CATEGORY_STATIC(LogVulkanRHI, Log, All);
 
 namespace MonsterRender::RHI::Vulkan {
@@ -317,6 +323,16 @@ namespace MonsterRender::RHI::Vulkan {
                 m_memoryManager.reset();
             }
             
+            // Flush deferred destruction queue before destroying the device.
+            // Buffers/images added via deferBufferDestruction() / deferImageDestruction()
+            // use DEFERRED_DESTRUCTION_FRAMES (3) frames before actual vkDestroy*.
+            // Since the frame loop has stopped, the queue won't drain automatically.
+            // Call processDeferredDestructions() enough times to fully drain all entries,
+            // otherwise vkDestroyDevice will report VUID-vkDestroyDevice-device-05137.
+            for (uint32 i = 0; i < DEFERRED_DESTRUCTION_FRAMES + 1; ++i) {
+                processDeferredDestructions();
+            }
+
             // Destroy logical device
             functions.vkDestroyDevice(m_device, nullptr);
         }
@@ -383,6 +399,15 @@ namespace MonsterRender::RHI::Vulkan {
         return vulkanShader;
     }
     
+    TSharedPtr<IRHIComputeShader> VulkanDevice::createComputeShader(TSpan<const uint8> bytecode) {
+        auto vulkanShader = MakeShared<VulkanComputeShader>(this, bytecode);
+        if (!vulkanShader->isValid()) {
+            MR_LOG_ERROR("Failed to create Vulkan compute shader");
+            return nullptr;
+        }
+        return vulkanShader;
+    }
+    
     TSharedPtr<IRHIPipelineState> VulkanDevice::createPipelineState(const PipelineStateDesc& desc) {
         MR_LOG_INFO("Creating Vulkan pipeline state: " + desc.debugName);
         
@@ -399,6 +424,53 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         MR_LOG_INFO("Pipeline state created successfully: " + desc.debugName);
+        return pipelineState;
+    }
+    
+    TSharedPtr<IRHIPipelineState> VulkanDevice::createComputePipelineState(const ComputePipelineStateDesc& desc) {
+        MR_LOG_INFO("Creating Vulkan compute pipeline state: " + desc.debugName);
+        
+        if (!desc.computeShader) {
+            MR_LOG_ERROR("createComputePipelineState: Null compute shader");
+            return nullptr;
+        }
+        
+        auto vulkanShader = dynamic_cast<VulkanComputeShader*>(desc.computeShader.get());
+        if (!vulkanShader || !vulkanShader->isValid()) {
+            MR_LOG_ERROR("createComputePipelineState: Invalid compute shader");
+            return nullptr;
+        }
+        
+        auto vulkanLayout = dynamic_cast<VulkanPipelineLayout*>(desc.pipelineLayout.get());
+        if (!vulkanLayout || !vulkanLayout->isValid()) {
+            MR_LOG_ERROR("createComputePipelineState: Invalid pipeline layout");
+            return nullptr;
+        }
+        
+        const auto& functions = VulkanAPI::getFunctions();
+        VkDevice vkDevice = m_device;
+        
+        // Setup compute pipeline create info
+        VkComputePipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipelineInfo.stage = vulkanShader->getPipelineStageCreateInfo();
+        pipelineInfo.layout = vulkanLayout->getHandle();
+        
+        VkPipeline vkPipeline = VK_NULL_HANDLE;
+        VkResult result = functions.vkCreateComputePipelines(
+            vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vkPipeline);
+        
+        if (result != VK_SUCCESS || vkPipeline == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Failed to create compute pipeline: " + desc.debugName + 
+                        " (VkResult=" + std::to_string(result) + ")");
+            return nullptr;
+        }
+        
+        // Wrap in VulkanComputePipelineState
+        auto pipelineState = MakeShared<VulkanComputePipelineState>(this, desc);
+        pipelineState->initializeWithHandles(vkPipeline, vulkanLayout->getHandle());
+        
+        MR_LOG_INFO("Compute pipeline state created successfully: " + desc.debugName);
         return pipelineState;
     }
     TSharedPtr<IRHISampler> VulkanDevice::createSampler(const SamplerDesc& desc) {
@@ -686,6 +758,11 @@ namespace MonsterRender::RHI::Vulkan {
             runningUnderRenderDoc = true;
             MR_LOG_INFO("RenderDoc detected - using minimal layer configuration");
         }
+        m_runningUnderRenderDoc = runningUnderRenderDoc;
+
+        // Validation layer is only actually loaded when not under RenderDoc.
+        // Gate GPU-Assisted Validation on this same condition (see createDevice).
+        bool useValidation = m_validationEnabled && !runningUnderRenderDoc;
         
         // Disable problematic implicit layers via environment variables
         // These layers can conflict with RenderDoc's capture mechanism
@@ -715,7 +792,7 @@ namespace MonsterRender::RHI::Vulkan {
         appInfo.applicationVersion = createInfo.applicationVersion;
         appInfo.pEngineName = "MonsterRender";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_0;
+        appInfo.apiVersion = VK_API_VERSION_1_2;  // Vulkan 1.2 required for 3DGS shaders (int64, subgroups)
         
         // Instance create info
         VkInstanceCreateInfo instanceCreateInfo{};
@@ -723,19 +800,21 @@ namespace MonsterRender::RHI::Vulkan {
         instanceCreateInfo.pApplicationInfo = &appInfo;
         
         // Get required extensions
-        auto extensions = getRequiredExtensions(m_validationEnabled);
+        auto extensions = getRequiredExtensions(useValidation);
         instanceCreateInfo.enabledExtensionCount = static_cast<uint32>(extensions.size());
         instanceCreateInfo.ppEnabledExtensionNames = extensions.data();
         
         // Set validation layers if enabled
         // When running under RenderDoc, disable validation layer to reduce conflicts
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-        bool useValidation = m_validationEnabled && !runningUnderRenderDoc;
-        
+        // Declared at function scope: it is referenced by instanceCreateInfo.pNext and
+        // must outlive the vkCreateInstance() call below (which is outside this block).
+        VkValidationFeaturesEXT validationFeatures{};
+
         if (useValidation) {
             instanceCreateInfo.enabledLayerCount = g_validationLayerCount;
             instanceCreateInfo.ppEnabledLayerNames = g_validationLayers;
-            
+
             // Setup debug messenger for instance creation/destruction
             debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
             debugCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
@@ -745,8 +824,36 @@ namespace MonsterRender::RHI::Vulkan {
                                         VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
             debugCreateInfo.pfnUserCallback = VulkanUtils::debugCallback;
             debugCreateInfo.pUserData = nullptr;
+
+            // GPU-Assisted Validation (precise OOB buffer + shader line reporting).
+            // Per spec VkValidationFeaturesEXT belongs in VkInstanceCreateInfo.pNext
+            // (NOT VkDeviceCreateInfo.pNext) -> it is configured here at instance
+            // creation and the device inherits it. Configuring it on the device pNext
+            // makes the validation layer reject it as "unexpected"
+            // (VUID-VkDeviceCreateInfo-pNext-pNext), and GPU-AV never activates.
+            //
+            // GPU-AV inserts per-instruction validation into every shader, making
+            // the GPU frame time explode on heavy workloads (e.g. 1.15M Gaussians).
+            // Once all core validation errors are resolved, GPU-AV can be re-enabled
+            // for targeted debugging by setting MONSTER_GPU_AV_ENABLED to 1.
+#if MONSTER_GPU_AV_ENABLED
+            static const VkValidationFeatureEnableEXT kGpuAssistedFeatures[] = {
+                VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
+            };
+            validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+            validationFeatures.pNext = &debugCreateInfo;
+            validationFeatures.enabledValidationFeatureCount = 1;
+            validationFeatures.pEnabledValidationFeatures = kGpuAssistedFeatures;
+            validationFeatures.disabledValidationFeatureCount = 0;
+            validationFeatures.pDisabledValidationFeatures = nullptr;
+
+            instanceCreateInfo.pNext = &validationFeatures;
+            MR_LOG_INFO("Validation layers enabled + GPU-Assisted Validation (instance-level)");
+#else
+            // GPU-AV disabled: retain only Core Check validation (fast path).
             instanceCreateInfo.pNext = &debugCreateInfo;
-            MR_LOG_INFO("Validation layers enabled");
+            MR_LOG_INFO("Validation layers enabled (Core Check only, GPU-AV disabled)");
+#endif
         } else {
             instanceCreateInfo.enabledLayerCount = 0;
             instanceCreateInfo.pNext = nullptr;
@@ -940,6 +1047,8 @@ namespace MonsterRender::RHI::Vulkan {
         deviceFeatures.fillModeNonSolid = m_deviceFeatures.fillModeNonSolid;
         deviceFeatures.geometryShader = m_deviceFeatures.geometryShader;
         deviceFeatures.tessellationShader = m_deviceFeatures.tessellationShader;
+        // 3DGS SplatPipeline requires shaderInt64 (uint64_t in compute shaders)
+        deviceFeatures.shaderInt64 = VK_TRUE;
         
         // ============================================================================
         // Device Extension Handling (RenderDoc-compatible)
@@ -1047,9 +1156,42 @@ namespace MonsterRender::RHI::Vulkan {
         }
         MR_LOG_INFO("Total: " + std::to_string(enabledExtensions.size()) + " extensions");
         
+        // ============================================================================
+        // Vulkan 1.1/1.2 features via pNext chain
+        // Required for 3DGS compute shaders: subgroup ops (1.1), int64 atomics (1.2)
+        // ============================================================================
+        VkPhysicalDeviceVulkan11Features vulkan11Features{};
+        vulkan11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        
+        VkPhysicalDeviceVulkan12Features vulkan12Features{};
+        vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        
+        void* pNextChain = nullptr;
+        if (isVulkan12OrHigher)
+        {
+            // Vulkan 1.2: enable both 1.1 and 1.2 features
+            vulkan12Features.shaderBufferInt64Atomics = VK_TRUE;
+            vulkan12Features.shaderSharedInt64Atomics = VK_TRUE;
+            vulkan12Features.subgroupBroadcastDynamicId = VK_TRUE;
+            // Chain: device → 1.1 → 1.2
+            vulkan11Features.pNext = &vulkan12Features;
+            pNextChain = &vulkan11Features;
+        }
+        else if (isVulkan11OrHigher)
+        {
+            // Vulkan 1.1: enable subgroup support
+            pNextChain = &vulkan11Features;
+        }
+
+        // NOTE: GPU-Assisted Validation (VkValidationFeaturesEXT) is configured at
+        // INSTANCE creation in createInstance(), not here. It is an instance-level
+        // validation feature that the device inherits. Configuring it on the device
+        // pNext triggers VUID-VkDeviceCreateInfo-pNext-pNext ("unexpected struct").
+
         // Create device
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        createInfo.pNext = pNextChain;
         createInfo.queueCreateInfoCount = static_cast<uint32>(queueCreateInfos.size());
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
         createInfo.pEnabledFeatures = &deviceFeatures;
@@ -1675,6 +1817,10 @@ namespace MonsterRender::RHI::Vulkan {
         // Debug extensions
         if (enableValidation) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            // VK_EXT_validation_features is REQUIRED to request GPU-Assisted Validation
+            // (VkValidationFeaturesEXT) at device creation. It is provided by the validation
+            // layer, so we only add it when the validation layer will actually be loaded.
+            extensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
         }
         
         // Log extensions

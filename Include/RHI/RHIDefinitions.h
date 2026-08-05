@@ -694,6 +694,17 @@ namespace MonsterRender::RHI {
         VertexInputLayout vertexLayout;  // Vertex input layout description
         uint32 sampleCount = 0;  // MSAA sample count (0 = use device default)
         String debugName;
+        // Fallback: when TSharedPtr copy fails (e.g. multi-inheritance pointer issue),
+        // Vulkan backend can use this raw module handle directly.
+        uint64 vkVertexShaderModule = 0;
+        uint64 vkPixelShaderModule = 0;
+    };
+
+    // Compute pipeline state description
+    struct ComputePipelineStateDesc {
+        TSharedPtr<class IRHIComputeShader> computeShader;
+        TSharedPtr<class IRHIPipelineLayout> pipelineLayout;
+        String debugName;
     };
 
     // Viewport

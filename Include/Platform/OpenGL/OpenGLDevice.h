@@ -22,13 +22,13 @@ class FOpenGLCommandList;
 
 
 /**
-    FOpenGLDevice£¨¼Ì³Ð IRHIDevice£©
-    ©À©¤©¤ FOpenGLContext            // GLFW + OpenGL 4.6 ÉÏÏÂÎÄ£¨GLAD ¼ÓÔØÀ©Õ¹£©
-    ©À©¤©¤ FOpenGLPipelineCache      // VAO / Program »º´æ
-    ©¦     ©À©¤©¤ TMap<uint64, GLuint> programCache
-    ©¦     ©¸©¤©¤ TMap<uint64, GLuint> vaoCache
-    ©À©¤©¤ FOpenGLCommandList        // ¼´Ê±Ä£Ê½ÃüÁîÁÐ±í£¨Ö±½Óµ÷ÓÃ glDraw*£©
-    ©¸©¤©¤ FOpenGLSwapChain          // glfwSwapBuffers ·â×°
+    FOpenGLDeviceï¿½ï¿½ï¿½Ì³ï¿½ IRHIDeviceï¿½ï¿½
+    ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ FOpenGLContext            // GLFW + OpenGL 4.6 ï¿½ï¿½ï¿½ï¿½ï¿½Ä£ï¿½GLAD ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¹ï¿½ï¿½
+    ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ FOpenGLPipelineCache      // VAO / Program ï¿½ï¿½ï¿½ï¿½
+    ï¿½ï¿½     ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ TMap<uint64, GLuint> programCache
+    ï¿½ï¿½     ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ TMap<uint64, GLuint> vaoCache
+    ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ FOpenGLCommandList        // ï¿½ï¿½Ê±Ä£Ê½ï¿½ï¿½ï¿½ï¿½ï¿½Ð±ï¿½ï¿½ï¿½Ö±ï¿½Óµï¿½ï¿½ï¿½ glDraw*ï¿½ï¿½
+    ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ FOpenGLSwapChain          // glfwSwapBuffers ï¿½ï¿½×°
  */
 
 
@@ -76,8 +76,14 @@ public:
     virtual TSharedPtr<MonsterRender::RHI::IRHIPixelShader> createPixelShader(
         MonsterRender::TSpan<const uint8> bytecode) override;
     
+    virtual TSharedPtr<MonsterRender::RHI::IRHIComputeShader> createComputeShader(
+        MonsterRender::TSpan<const uint8> bytecode) override;
+    
     virtual TSharedPtr<MonsterRender::RHI::IRHIPipelineState> createPipelineState(
         const MonsterRender::RHI::PipelineStateDesc& desc) override;
+    
+    virtual TSharedPtr<MonsterRender::RHI::IRHIPipelineState> createComputePipelineState(
+        const MonsterRender::RHI::ComputePipelineStateDesc& desc) override;
     
     virtual TSharedPtr<MonsterRender::RHI::IRHISampler> createSampler(
         const MonsterRender::RHI::SamplerDesc& desc) override;

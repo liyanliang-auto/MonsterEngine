@@ -195,6 +195,12 @@ TSharedPtr<IRHIPixelShader> FOpenGLDevice::createPixelShader(MonsterRender::TSpa
     return shader;
 }
 
+TSharedPtr<IRHIComputeShader> FOpenGLDevice::createComputeShader(MonsterRender::TSpan<const uint8> bytecode)
+{
+    MR_LOG(LogOpenGLDevice, Warning, "OpenGL createComputeShader not implemented");
+    return nullptr;
+}
+
 TSharedPtr<IRHIPipelineState> FOpenGLDevice::createPipelineState(const PipelineStateDesc& desc)
 {
     auto pipeline = MakeShared<FOpenGLPipelineState>(desc);
@@ -206,6 +212,12 @@ TSharedPtr<IRHIPipelineState> FOpenGLDevice::createPipelineState(const PipelineS
     }
     
     return pipeline;
+}
+
+TSharedPtr<IRHIPipelineState> FOpenGLDevice::createComputePipelineState(const ComputePipelineStateDesc& desc)
+{
+    MR_LOG(LogOpenGLDevice, Warning, "OpenGL createComputePipelineState not implemented");
+    return nullptr;
 }
 
 TSharedPtr<IRHISampler> FOpenGLDevice::createSampler(const SamplerDesc& desc)

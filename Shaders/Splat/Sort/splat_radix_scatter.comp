@@ -1,0 +1,190 @@
+// Copyright Monster Engine. All Rights Reserved.
+// splat_radix_scatter.comp - Radix Sort Scatter Pass
+//
+// Reads the global histogram from the histogram pass, computes per-bin
+// global prefix sums (using subgroup operations), and scatters each
+// key-value pair to its sorted position in the output buffers.
+//
+// Based on VkRadixSort by Mirco Werner (MIT License):
+// https://github.com/MircoWerner/VkRadixSort
+
+#version 450
+#extension GL_KHR_shader_subgroup_basic      : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_ballot     : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+#extension GL_EXT_shader_atomic_int64 : enable
+
+#define WORKGROUP_SIZE 256
+#define RADIX_SORT_BINS 256U
+#define SUBGROUP_SIZE 32U  // NVIDIA: 32, AMD: 64
+
+layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+// ============================================================================
+// Descriptor Set 0
+// ============================================================================
+
+layout(std430, set = 0, binding = 0) readonly buffer KeysIn {
+    uint64_t keys_in[];
+};
+
+layout(std430, set = 0, binding = 1) buffer KeysOut {
+    uint64_t keys_out[];
+};
+
+layout(std430, set = 0, binding = 2) readonly buffer ValuesIn {
+    uint values_in[];
+};
+
+layout(std430, set = 0, binding = 3) buffer ValuesOut {
+    uint values_out[];
+};
+
+layout(std430, set = 0, binding = 4) readonly buffer HistogramBuf {
+    uint histograms[];  // [RADIX_SORT_BINS * g_num_workgroups]
+};
+
+// ============================================================================
+// Push Constants (16 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    uint g_num_elements;
+    uint g_shift;
+    uint g_num_workgroups;
+    uint g_num_blocks_per_workgroup;
+} pc;
+
+// ============================================================================
+// Shared Memory
+// ============================================================================
+shared uint sums[RADIX_SORT_BINS / SUBGROUP_SIZE];       // subgroup reductions
+shared uint global_offsets[RADIX_SORT_BINS];             // global exclusive scan per bin
+
+// Bin flags: one uint64_t per thread for each bin, to track which threads 
+// have written to which bin. Used to compute per-bin intra-workgroup ordering.
+shared uint64_t bin_flags[RADIX_SORT_BINS][WORKGROUP_SIZE / 64u];
+
+void main() {
+    uint gID  = gl_GlobalInvocationID.x;
+    uint lID  = gl_LocalInvocationID.x;
+    uint wID  = gl_WorkGroupID.x;
+    uint sID  = gl_SubgroupID;
+    uint lsID = gl_SubgroupInvocationID;
+
+    // ========================================================================
+    // Phase 1: Compute global prefix sums from histogram
+    // ========================================================================
+
+    uint local_histogram  = 0u;
+    uint prefix_sum       = 0u;
+    uint histogram_count  = 0u;
+
+    if (lID < RADIX_SORT_BINS) {
+        // Sum histogram[lID] across all workgroups
+        uint count = 0u;
+        for (uint j = 0u; j < pc.g_num_workgroups; j++) {
+            uint t = histograms[RADIX_SORT_BINS * j + lID];
+            // Capture this workgroup's local offset
+            local_histogram = (j == wID) ? count : local_histogram;
+            count += t;
+        }
+        histogram_count = count;
+
+        // Subgroup prefix sum across bins
+        uint sum   = subgroupAdd(histogram_count);
+        prefix_sum = subgroupExclusiveAdd(histogram_count);
+
+        if (subgroupElect()) {
+            sums[sID] = sum;
+        }
+    }
+    barrier();
+
+    if (lID < RADIX_SORT_BINS) {
+        // Exclusive prefix sum of the per-subgroup totals.
+        // sums[] is indexed by subgroup ID (0..7) and was filled by each
+        // subgroup's elect thread above. Subgroup ops (subgroupAdd / broadcast /
+        // exclusiveAdd) ONLY span the 32-thread hardware subgroup, so they CANNOT
+        // accumulate across the 8 subgroups that make up the 256-thread workgroup.
+        // The old code (subgroupBroadcast(subgroupExclusiveAdd(sums[sID]), sID))
+        // therefore only produced a correct offset for subgroup 0 (bins 0..31) and
+        // silently dropped the prefix of all other subgroups, misplacing every
+        // higher bin and corrupting the sorted output. A serial scan over the 8
+        // entries is exact and cheap.
+        uint subgroup_prefix = 0u;
+        for (uint k = 0u; k < sID; k++) {
+            subgroup_prefix += sums[k];
+        }
+        uint global_histogram = subgroup_prefix + prefix_sum;
+        global_offsets[lID] = global_histogram + local_histogram;
+    }
+    barrier();
+
+    // ========================================================================
+    // Phase 2: Scatter elements to sorted output
+    // ========================================================================
+
+    uint flags_bin  = lID / 64u;
+    uint64_t flags_bit = 1UL << (lID % 64u);
+
+    for (uint block = 0u; block < pc.g_num_blocks_per_workgroup; block++) {
+        uint elementId = wID * pc.g_num_blocks_per_workgroup * WORKGROUP_SIZE
+                       + block * WORKGROUP_SIZE + lID;
+
+        // Init bin flags
+        if (lID < RADIX_SORT_BINS) {
+            for (int i = 0; i < int(WORKGROUP_SIZE / 64u); i++) {
+                bin_flags[lID][i] = 0UL;
+            }
+        }
+        barrier();
+
+        uint64_t key_in = 0UL;
+        uint value_in    = 0u;
+        uint binID       = 0u;
+        uint binOffset   = 0u;
+
+        if (elementId < pc.g_num_elements) {
+            key_in  = keys_in[elementId];
+            value_in = values_in[elementId];
+
+            binID = uint(key_in >> pc.g_shift) & (RADIX_SORT_BINS - 1u);
+            binOffset = global_offsets[binID];
+
+            // Mark this thread in the bin's flag array
+            atomicAdd(bin_flags[binID][flags_bin], flags_bit);
+        }
+        barrier();
+
+        if (elementId < pc.g_num_elements) {
+            // Compute this element's position within the bin by counting
+            // how many threads before us wrote to the same bin
+            uint prefix = 0u;
+            uint count  = 0u;
+
+            for (uint i = 0u; i < WORKGROUP_SIZE / 64u; i++) {
+                uint64_t bits = bin_flags[binID][i];
+
+                uint full_count    = bitCount(uint(bits)) + bitCount(uint(bits >> 32u));
+                uint64_t partial   = bits & (flags_bit - 1UL);
+                uint partial_count = bitCount(uint(partial)) + bitCount(uint(partial >> 32u));
+
+                prefix += (i < flags_bin) ? full_count : 0u;
+                prefix += (i == flags_bin) ? partial_count : 0u;
+                count  += full_count;
+            }
+
+            keys_out[binOffset + prefix]   = key_in;
+            values_out[binOffset + prefix] = value_in;
+
+            // Last element to arrive updates the offset for next workgroup
+            // (atomic ensures correct accumulation across WGs)
+            if (prefix == count - 1u) {
+                atomicAdd(global_offsets[binID], count);
+            }
+        }
+
+        barrier();
+    }
+}

@@ -35,15 +35,15 @@ namespace MonsterRender::RHI {
         Any              // Any worker thread (for parallel recording)
     };
     
-	//IRHICommandList£¨ÃüÁîÁĞ±í½Ó¿Ú£©
-	//	©À©¤©¤ ÉúÃüÖÜÆÚ£ºbegin / end / reset
-	//	©À©¤©¤ ×´Ì¬°ó¶¨£ºsetPipelineState / setViewport / setScissorRect
-	//	©À©¤©¤ ×ÊÔ´°ó¶¨£ºsetVertexBuffers / setIndexBuffer / setConstantBuffer
-	//	©¦            setShaderResource / setSampler / bindDescriptorSets / pushConstants
-	//	©À©¤©¤ »æÖÆÃüÁî£ºdraw / drawIndexed / drawInstanced / drawIndexedInstanced
-	//	©À©¤©¤ äÖÈ¾Ä¿±ê£ºsetRenderTargets / endRenderPass / clearRenderTarget / clearDepthStencil
-	//	©À©¤©¤ ×ÊÔ´ÆÁÕÏ£ºtransitionResource / resourceBarrier
-	//	©¸©¤©¤ µ÷ÊÔÖ§³Ö£ºbeginEvent / endEvent / setMarker
+	//IRHICommandListï¼ˆå‘½ä»¤åˆ—è¡¨æ¥å£ï¼‰
+	//	â”œâ”€â”€ ç”Ÿå‘½å‘¨æœŸï¼šbegin / end / reset
+	//	â”œâ”€â”€ çŠ¶æ€ç»‘å®šï¼šsetPipelineState / setViewport / setScissorRect
+	//	â”œâ”€â”€ èµ„æºç»‘å®šï¼šsetVertexBuffers / setIndexBuffer / setConstantBuffer
+	//	â”‚            setShaderResource / setSampler / bindDescriptorSets / pushConstants
+	//	â”œâ”€â”€ ç»˜åˆ¶å‘½ä»¤ï¼šdraw / drawIndexed / drawInstanced / drawIndexedInstanced
+	//	â”œâ”€â”€ æ¸²æŸ“ç›®æ ‡ï¼šsetRenderTargets / endRenderPass / clearRenderTarget / clearDepthStencil
+	//	â”œâ”€â”€ èµ„æºå±éšœï¼štransitionResource / resourceBarrier
+	//	â””â”€â”€ è°ƒè¯•æ”¯æŒï¼šbeginEvent / endEvent / setMarker
 
     // Forward declarations
     class IRHIDevice;
@@ -98,6 +98,14 @@ namespace MonsterRender::RHI {
             m_state = ERHICommandListState::Recorded;
         }
         
+        /**
+         * Submit the recorded commands to the GPU and block until they complete.
+         * Used for one-off GPU readback (e.g. 3DGS real sort-element count) where the
+         * normal end-of-frame submit+present flow is not appropriate.
+         * Default no-op; overridden by the Vulkan immediate command list.
+         */
+        virtual void submitAndWait() {}
+
         /**
          * Reset the command list for reuse
          * Clears all recorded commands and resets state
@@ -430,6 +438,31 @@ namespace MonsterRender::RHI {
         virtual void drawIndexedInstanced(uint32 indexCountPerInstance, uint32 instanceCount,
                                         uint32 startIndexLocation = 0, int32 baseVertexLocation = 0,
                                         uint32 startInstanceLocation = 0) = 0;
+        
+        // Compute dispatch commands
+        /**
+         * Dispatch a compute shader
+         * @param groupCountX Number of local workgroups in X dimension
+         * @param groupCountY Number of local workgroups in Y dimension
+         * @param groupCountZ Number of local workgroups in Z dimension
+         */
+        virtual void dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) = 0;
+        
+        // Buffer copy commands
+        /**
+         * Copy data between two buffers on the GPU.
+         * Both buffers must have TransferSrc / TransferDst usage flags as appropriate.
+         * 
+         * @param dst Destination buffer (must have TransferDst usage)
+         * @param src Source buffer (must have TransferSrc usage)
+         * @param size Number of bytes to copy
+         * @param dstOffset Byte offset in destination buffer
+         * @param srcOffset Byte offset in source buffer
+         */
+        virtual void copyBuffer(TSharedPtr<IRHIBuffer> dst, TSharedPtr<IRHIBuffer> src,
+                                uint32 size, uint32 dstOffset = 0, uint32 srcOffset = 0) {
+            (void)dst; (void)src; (void)size; (void)dstOffset; (void)srcOffset;
+        }
         
         // Clear commands
         /**

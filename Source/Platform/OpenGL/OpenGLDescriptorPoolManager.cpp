@@ -34,6 +34,14 @@ void FOpenGLDescriptorSet::updateUniformBuffer(uint32 binding,
     updateBuffer(binding, buffer, offset, range);
 }
 
+void FOpenGLDescriptorSet::updateStorageBuffer(uint32 binding,
+                                              TSharedPtr<MonsterRender::RHI::IRHIBuffer> buffer,
+                                              uint32 offset, uint32 range)
+{
+    MR_LOG(LogOpenGLRHI, Warning, "OpenGL updateStorageBuffer not implemented (binding=%u, set=%u)", binding, m_setIndex);
+    updateBuffer(binding, buffer, offset, range);
+}
+
 void FOpenGLDescriptorSet::updateTexture(uint32 binding, 
                                         TSharedPtr<MonsterRender::RHI::IRHITexture> texture)
 {
@@ -45,6 +53,17 @@ void FOpenGLDescriptorSet::updateTexture(uint32 binding,
     m_dirty = true;
     
     MR_LOG(LogOpenGLRHI, VeryVerbose, "Updated texture binding %u in descriptor set %u", 
+           binding, m_setIndex);
+}
+
+void FOpenGLDescriptorSet::updateStorageImage(uint32 binding,
+                                              TSharedPtr<MonsterRender::RHI::IRHITexture> texture)
+{
+    // OpenGL doesn't have a direct storage image concept like Vulkan,
+    // but we treat it the same as a regular texture for binding purposes.
+    updateTexture(binding, texture);
+    
+    MR_LOG(LogOpenGLRHI, VeryVerbose, "Updated storage image binding %u in descriptor set %u",
            binding, m_setIndex);
 }
 

@@ -1,0 +1,62 @@
+// Copyright Monster Engine. All Rights Reserved.
+// splat_prefix_sum.comp - Blelloch Scan Prefix Sum
+//
+// Computes a cumulative (exclusive-to-inclusive) prefix sum of tilesTouched[]
+// using a ping-pong Blelloch scan. After ceil(log2(N)) iterations, the final
+// buffer contains the cumulative offsets for per-Gaussian sort entry allocation.
+//
+// Reference: 3dgs-vulkan-cpp prefixsum.comp / 3DGS.cpp prefix_sum.comp
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// ============================================================================
+// Descriptor Set 0
+// ============================================================================
+
+layout(std430, set = 0, binding = 0) buffer BufferA {
+    uint buffer_a[];
+};
+
+layout(std430, set = 0, binding = 1) buffer BufferB {
+    uint buffer_b[];
+};
+
+// ============================================================================
+// Push Constants (12 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    uint step;         // Current Blelloch step (0, 1, 2, ...)
+    uint numElements;  // Total element count
+    uint readFromA;    // 1 = read buffer_a → write buffer_b, 0 = read buffer_b → write buffer_a
+} pc;
+
+// ============================================================================
+// Main
+// ============================================================================
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+
+    if (index >= pc.numElements) {
+        return;
+    }
+
+    uint stride = 1u << pc.step;
+
+    if (pc.readFromA == 1) {
+        // Read from A, accumulate, write to B
+        uint value = buffer_a[index];
+        if (index >= stride) {
+            value += buffer_a[index - stride];
+        }
+        buffer_b[index] = value;
+    } else {
+        // Read from B, accumulate, write to A
+        uint value = buffer_b[index];
+        if (index >= stride) {
+            value += buffer_b[index - stride];
+        }
+        buffer_a[index] = value;
+    }
+}

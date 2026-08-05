@@ -1,0 +1,78 @@
+// Copyright Monster Engine. All Rights Reserved.
+// splat_tile_boundaries.comp - Tile Boundary Detection
+//
+// After radix sort, entries are grouped by tile (key >> 32) and sorted
+// by depth within each tile. This shader detects adjacent key transitions
+// to build per-tile [start, end) ranges for the render pass.
+//
+// Reference: 3dgs-vulkan-cpp tile_boundaries.comp / 3DGS.cpp tile_boundary.comp
+
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// ============================================================================
+// Descriptor Set 0
+// ============================================================================
+
+layout(std430, set = 0, binding = 0) readonly buffer SortedKeys {
+    uint64_t keys[];            // Sorted: (tileID << 32) | depthBits
+};
+
+layout(std430, set = 0, binding = 1) buffer TileRanges {
+    uvec2 ranges[];             // [tileID].x = start (inclusive), .y = end (exclusive)
+};
+
+// ============================================================================
+// Push Constants (12 bytes: 3 x uint32)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    uint numRendered;           // Total number of sorted entries
+    uint numTiles;              // Total tile count (gridX * gridY)
+    uint mode;                  // 0 = boundary detection, 1 = clear all tiles to (0,0)
+} pc;
+
+// ============================================================================
+// Main
+// ============================================================================
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= pc.numRendered) {
+        return;
+    }
+
+    // --- Mode 1: per-frame reset of every tile's range to (0,0) ---
+    // The boundary-detection pass below only writes tiles that are actually
+    // touched by gaussians. Tiles that lose their gaussians between frames
+    // would otherwise keep stale (start,end) ranges and re-draw ghost
+    // gaussians. Clearing every tile each frame eliminates that.
+    if (pc.mode == 1u) {
+        if (idx < pc.numTiles) {
+            ranges[idx] = uvec2(0u, 0u);
+        }
+        return;
+    }
+
+    // --- Mode 0: boundary detection (default) ---
+    uint tileID = uint(keys[idx] >> 32u);
+
+    if (idx == 0u) {
+        // First entry: mark start of first tile
+        ranges[tileID].x = 0u;
+        return;
+    }
+
+    uint prevTileID = uint(keys[idx - 1u] >> 32u);
+
+    if (tileID != prevTileID) {
+        // Tile boundary detected
+        ranges[tileID].x     = idx;      // Start of new tile
+        ranges[prevTileID].y = idx;      // End of previous tile (exclusive)
+    }
+
+    // Last entry: mark end of last tile
+    if (idx == pc.numRendered - 1u) {
+        ranges[tileID].y = pc.numRendered;  // End of last tile (exclusive)
+    }
+}
