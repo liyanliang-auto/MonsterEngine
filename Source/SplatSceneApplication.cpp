@@ -56,8 +56,9 @@ SplatSceneApplication::SplatSceneApplication(const String& modelPath)
     , m_windowHeight(720)
 {
     // Default model if none specified
+    // // https://huggingface.co/datasets/dylanebert/3dgs/tree/main/bonsai
     if (m_modelPath.empty())
-        m_modelPath = "resources\\point_cloud\\bonsai_30k.ply";
+        m_modelPath = "resources\\point_cloud\\bonsai_30k.ply"; 
 }
 
 SplatSceneApplication::~SplatSceneApplication()

@@ -37,7 +37,8 @@ namespace MonsterRender
  * SplatSceneApplication — loads a 3DGS .ply file and renders it interactively.
  *
  * Usage: MonsterEngine.exe --splat [path/to/model.ply]
- * Default model: assets/bonsai_7k.ply
+ * Default model: assets/bonsai_30k.ply
+ *  https://huggingface.co/datasets/dylanebert/3dgs/tree/main/bonsai
  *
  * Controls:
  *   WASD      — move camera
