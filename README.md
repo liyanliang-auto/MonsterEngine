@@ -74,7 +74,11 @@ MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说�
 
 实时新视角合成 — 基于 Vulkan Compute Shader 的原生 3DGS Splat Pass 实现，支持 100 万+高斯点的实时渲染：
 
-![3DGS Bonsai 30k](docs/images/samples/vulkan_3DGS_bonsai_30k.gif)
+![3DGS Bonsai 30k](docs/images/samples/vulkan_3DGS_bonsai_30k.png)
+
+交互式漫游演示：
+
+![3DGS Bonsai 30k Demo](docs/images/samples/vulkan_3DGS_bonsai_30k.gif)
 
 > 测试模型下载：[bonsai_30k.ply](https://huggingface.co/datasets/dylanebert/3dgs/tree/main/bonsai) (Hugging Face)
 
