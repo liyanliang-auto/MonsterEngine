@@ -64,6 +64,14 @@ MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说�
 
 ![PBR Cube and Floor Scene](docs/images/samples/vulkan_smile_cube.jpg)
 
+### 3D Gaussian Splatting (3DGS)
+
+实时新视角合成 — 基于 Vulkan Compute Shader 的原生 3DGS Splat Pass 实现，支持 100 万+高斯点的实时渲染：
+
+![3DGS Bonsai 30k](docs/images/samples/vulkan_3DGS_bonsai_30k.gif)
+
+> 测试模型下载：[bonsai_30k.ply](https://huggingface.co/datasets/dylanebert/3dgs/tree/main/bonsai) (Hugging Face)
+
 
 
 ---
@@ -189,12 +197,17 @@ MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说�
   - 默认纹理管理（white, black, normal 等）
 
 - **Descriptor Set Management**
-
   - Per-frame, per-material, per-object descriptor sets
-
   - 高效的 descriptor pooling and caching
-
   - 自动 descriptor 更新
+
+- **3D Gaussian Splatting (3DGS)**
+  - 6-Pass Vulkan Compute Shader 管线（Preprocess / PrefixSum / AssignKeys / RadixSort / TileBoundaries / Render）
+  - 动态 PLY 属性解析（按名称匹配，无需三方依赖）
+  - 自动 SH degree 检测 (0-3)
+  - GPU Radix Sort（4-pass / 8-bit LSD）
+  - 16×16 Tile-based front-to-back alpha blending
+  - RGBA8_UNORM Storage Image 输出
 
 
 
@@ -831,10 +844,9 @@ compile_shaders.bat
     - `GLFW/` - GLFW window system
 
   - `Renderer/` - 高级渲染系统
-
     - `PBR/` - Physically-based rendering
-
     - `Scene/` - Scene management
+    - `Splat/` - 3D Gaussian Splatting (6-pass Compute Pipeline)
 
   - `Engine/` - 引擎级系统
 
@@ -853,16 +865,14 @@ compile_shaders.bat
 - `Source/` - 实现文件（镜像 Include 结构）
 
 - `Shaders/` - Shader 源文件
-
   - `Common/` - Common shader utilities (BRDF, lighting, shadows)
-
   - `PBR/` - PBR shaders
-
   - `Forward/` - Forward rendering passes
-
   - `Material/` - Material shaders
-
   - `Lighting/` - Lighting shaders
+  - `Splat/` - 3DGS compute shaders (preprocess, sort, render)
+    - `Sort/` - Sorting pipeline shaders (prefix sum, assign keys, radix sort)
+    - `Render/` - Tile-based rendering shader
 
 - `3rd-party/` - 第三方库
 
@@ -934,21 +944,32 @@ class TriangleApp : public MonsterRender::Application {
 
 ### PBR 立方体场景
 
-
-
 ```cpp
-
 #include "CubeSceneApplication.h"
 
-
-
 // Run PBR cube scene with lighting and shadows
-
 auto app = MakeUnique<CubeSceneApplication>();
-
 app->run();
-
 ```
+
+### 3D Gaussian Splatting
+
+```cpp
+#include "SplatSceneApplication.h"
+
+// Run 3DGS splat rendering with a .ply model
+auto app = MakeUnique<MonsterRender::SplatSceneApplication>(
+    "assets/bonsai_30k.ply");
+app->run();
+```
+
+命令行运行：
+
+```powershell
+MonsterEngine.exe --splat assets/bonsai_30k.ply
+```
+
+> 支持 WASD + 鼠标 FPS 自由漫游。交互式浏览 3DGS 场景。
 
 
 
