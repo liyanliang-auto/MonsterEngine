@@ -62,6 +62,12 @@ MonsterEngine 目前处于活跃开发阶段。使用引擎请按照 [构建说�
 
 ![Vulkan Triangle](docs/images/samples/vulkan_triangle.jpg)
 
+### PBR 渲染
+
+基于物理的渲染（Physically-Based Rendering），Cook-Torrance BRDF + Metallic-Roughness 工作流，支持 IBL（Image-Based Lighting）、清漆材质、法线贴图与环境光遮蔽：
+
+![PBR Helmet](docs/images/samples/Vulkan_PBR_helmet.jpg)
+
 ![PBR Cube and Floor Scene](docs/images/samples/vulkan_smile_cube.jpg)
 
 ### 3D Gaussian Splatting (3DGS)
