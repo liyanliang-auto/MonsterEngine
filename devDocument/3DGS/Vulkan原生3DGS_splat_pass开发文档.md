@@ -501,7 +501,7 @@ Shaders/Splat/
         └── splat_render.spv
 
 assets/
-└── bonsai_7k.ply               # 测试模型 (274 MB, 1,157,141 gaussians)
+└── bonsai_30k.ply              # 测试模型 (bonsai, ~277 MB)
 ```
 
 ### 6.2 修改文件
@@ -673,7 +673,7 @@ if (arg.find("--splat") != String::npos) {
 
 运行命令：
 ```powershell
-MonsterEngine.exe --splat assets/bonsai_7k.ply
+MonsterEngine.exe --splat resources\point_cloud\bonsai_30k.ply
 ```
 
 ---
@@ -1161,7 +1161,7 @@ void FSplatAssignKeysPass::setInputBuffers(
 
 | 检查项 | 状态 | 说明 |
 |--------|------|------|
-| PLY 加载 | ✅ | 动态属性名称匹配，成功加载 bonsai_7k.ply（1,157,141 gaussians, SH degree 3） |
+| PLY 加载 | ✅ | 动态属性名称匹配，成功加载 bonsai_30k.ply（bonasi, ~277 MB） |
 | 6-Pass Compute Pipeline | ✅ | 全部 6 个 Pass 正确创建、绑定、调度 |
 | Descriptor 类型匹配 | ✅ | STORAGE_IMAGE 类型正确写入 |
 | Command Buffer 录制完整性 | ✅ | 无 `commandBuffer-recording` 无效化 |
@@ -1208,10 +1208,10 @@ void FSplatAssignKeysPass::setInputBuffers(
 
 ```powershell
 # 测试模型下载
-curl -L -o assets/bonsai_7k.ply "https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bonsai_7k/point_cloud.ply"
+curl -L -o resources\point_cloud\bonsai_30k.ply "https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bonsai/point_cloud.ply?download=point_cloud.ply"
 
 # 运行
-MonsterEngine.exe --splat assets/bonsai_7k.ply
+MonsterEngine.exe --splat resources\point_cloud\bonsai_30k.ply
 ```
 
 程序无崩溃，Compute Pipeline 全链路正确执行。渲染输出通过 Present Pass 呈现到 Swapchain。
@@ -1266,7 +1266,7 @@ else                         shDegree = 3;
 
 加载时输出以下诊断信息，用于验证数据正确性：
 
-| 日志项 | 示例值（bonsai_7k.ply） |
+| 日志项 | 示例值（bonsai_30k.ply） |
 |--------|------------------------|
 | 属性数量/vertex count | 62 properties, 1,157,141 vertices |
 | SH degree | Detected SH degree=3 (max non-zero rest=45) |

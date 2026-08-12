@@ -959,14 +959,14 @@ app->run();
 
 // Run 3DGS splat rendering with a .ply model
 auto app = MakeUnique<MonsterRender::SplatSceneApplication>(
-    "assets/bonsai_30k.ply");
+    "resources\\point_cloud\\bonsai_30k.ply");
 app->run();
 ```
 
 命令行运行：
 
 ```powershell
-MonsterEngine.exe --splat assets/bonsai_30k.ply
+MonsterEngine.exe --splat resources\point_cloud\bonsai_30k.ply
 ```
 
 > 支持 WASD + 鼠标 FPS 自由漫游。交互式浏览 3DGS 场景。
