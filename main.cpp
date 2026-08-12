@@ -112,6 +112,7 @@ int main(int argc, char** argv) {
     bool useDeferredRendering = false;  // Enable deferred rendering in CubeSceneApplication
     bool runZFightingTests = false;  // Run Z-Fighting test suite
     bool runSplatScene = true;  // Run SplatSceneApplication (3DGS render)
+    // // https://huggingface.co/datasets/dylanebert/3dgs/tree/main/bonsai
     String splatModelPath = "resources\\point_cloud\\bonsai_30k.ply";  // PLY model path for splat
     
     for (int i = 1; i < argc; ++i) {
