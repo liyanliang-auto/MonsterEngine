@@ -122,6 +122,14 @@ public:
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> getSortValues() const { return m_sortValues; }
 
     uint32 getSortElementCount() const { return m_sortElementCount; }
+
+    /**
+     * Update the sort element count used for the shader bounds guard. Called
+     * by FSplatPipeline when the per-frame readback detects a changed tile
+     * count (camera zoom), so the guard stays in sync with m_realSortElements.
+     */
+    void setSortElementCount(uint32 count) { m_sortElementCount = count; }
+
     bool isInitialized() const { return m_bInitialized; }
 
 private:

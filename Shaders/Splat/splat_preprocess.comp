@@ -257,6 +257,15 @@ void main() {
     float lambda2 = mid - sqrt(max(0.1, mid * mid - det));
     float myRadius = ceil(3.0 * sqrt(max(lambda1, lambda2)));
 
+    // ---- Radius cap (zoom-stability fix) ----
+    // Without this, zooming in shrinks t.z -> cov2D blows up as ~1/t.z^2 ->
+    // radius grows 10x+ -> tilesTouched explodes -> sort buffer overflow /
+    // stale sort-count mismatch -> corrupted splat image ("花").
+    // Cap bounds each gaussian to at most 512px (16x16 tiles), keeping
+    // tilesTouched within the pre-sized sort buffer and within the
+    // per-frame recomputed sort count.
+    myRadius = min(myRadius, 512.0f);
+
     // Screen-space coordinates (NDC -> pixels)
     vec2 pointImage = vec2(
         ndc2Pix(pProj.x, camera.imageWidth),

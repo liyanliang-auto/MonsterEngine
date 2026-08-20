@@ -10,6 +10,7 @@
 #include "Renderer/Splat/SplatPipeline.h"
 #include "Core/Logging/LogMacros.h"
 #include "RHI/RHIDefinitions.h"
+#include <cmath>
 #include <cstdio>
 
 namespace MonsterRender::Splat
@@ -207,7 +208,11 @@ namespace MonsterRender::Splat
     void FSplatPipeline::setCamera(const FCameraUniforms& camera)
     {
         m_preprocess.updateCamera(camera);
-        m_preprocess.setClipPlanes(0.01f, 1000.0f);
+        m_preprocess.setClipPlanes(0.1f, 1000.0f);
+        // Track FOV so execute() knows when to refresh the sort count.
+        // (tanFovY is the canonical zoom signal; focalY is derived from it.)
+        m_prevTanFovY = camera.tanFovY;
+        m_fovInitialized = true;
         m_hasCamera = true;
     }
 
@@ -365,7 +370,255 @@ namespace MonsterRender::Splat
 #if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
         fprintf(stderr, "[STDERR] SplatPipeline::execute: END returning output texture\n");
 #endif
+
+        // ---- Root-cause fix ②: refresh stale sort count ----
+        // The prefix sum for THIS frame just finished recording. Read its tail
+        // back and update m_realSortElements so the NEXT frame's AssignKeys /
+        // RadixSort / TileBoundaries use the correct count. Only needed when the
+        // camera FOV changed (tilesTouched is camera-dependent); a static view
+        // reuses the last count and avoids a per-frame CPU-GPU sync stall.
+        // The first time a real refresh fires (i.e. after a zoom), it also runs
+        // the radius-cap verification diagnostic so the capped state is captured
+        // at a zoomed FOV rather than the default view.
+        refreshSortCountIfNeeded(cmdList);
+
         return m_render.getOutputTexture();
+    }
+
+    // ========================================================================
+    // ROOT-CAUSE FIX ②: refresh the stale sort count on FOV change.
+    //
+    // Why: m_realSortElements was computed ONCE on frame 1 and never updated.
+    // Zoom changes tilesTouched (cov2D ~ 1/t.z^2), so at a different FOV the
+    // real tile count differs from the locked-in first-frame value. AssignKeys
+    // then writes more entries than RadixSort/TileBoundaries process -> render
+    // reads wrong gaussian IDs -> corrupted image ("花").
+    //
+    // How: after Pass 6, copy the prefix-sum tail + last tilesTouched into the
+    // staging buffer, submit+wait, read it back, clamp to maxSort, and store.
+    // Logs old->new so the fix is verifiable from the log, not guesswork.
+    // ========================================================================
+    void FSplatPipeline::refreshSortCountIfNeeded(RHI::IRHICommandList* cmdList)
+    {
+        if (!m_fovInitialized)
+            return;
+
+        // Has the zoom (tanFovY) changed enough to alter tilesTouched?
+        // m_prevTanFovY was set by the most recent setCamera() call this frame.
+        const FSplatPreprocessOutput& preOut = m_preprocess.getOutput();
+        bool changed = fabsf(m_prevTanFovY - m_lastRefreshedTanFov) > kFovChangeEps;
+        if (!changed)
+            return;
+
+        // Copy prefix-sum result tail + last tilesTouched into staging.
+        cmdList->copyBuffer(m_stagingBuffer, m_prefixSum.getResultBuffer(), sizeof(uint32),
+                            0, (m_gaussianCount - 1) * sizeof(uint32));
+        cmdList->copyBuffer(m_stagingBuffer, preOut.tilesTouched, sizeof(uint32),
+                            sizeof(uint32), (m_gaussianCount - 1) * sizeof(uint32));
+        cmdList->resourceBarrier();
+
+        // Submit what we have, wait, then inspect.
+        cmdList->end();
+        cmdList->submitAndWait();
+
+        void* stagingData = m_stagingBuffer->map();
+        if (!stagingData) {
+            MR_LOG(LogTemp, Error, "[SplatPipeline] refreshSortCount: staging map failed");
+            cmdList->begin();
+            return;
+        }
+        uint32 exclusiveSum = reinterpret_cast<uint32*>(stagingData)[0];
+        uint32 lastTiles    = reinterpret_cast<uint32*>(stagingData)[1];
+        m_stagingBuffer->unmap();
+
+        uint32 newCount = exclusiveSum + lastTiles;
+        if (newCount == 0) newCount = 1;
+        uint32 oldCount = m_realSortElements;
+        bool  capped    = false;
+        if (newCount > m_maxSortElements) { newCount = m_maxSortElements; capped = true; }
+        m_realSortElements = newCount;
+        // CRITICAL sync: the AssignKeys shader's bounds guard reads
+        // m_assignKeys.m_sortElementCount as its max write index. If we update
+        // m_realSortElements but NOT this, the guard would clip at the stale
+        // first-frame value while RadixSort processes the new count -> mismatch
+        // -> corrupted image. Keep them identical.
+        m_assignKeys.setSortElementCount(newCount);
+        m_lastRefreshedTanFov = m_prevTanFovY;
+
+        MR_LOG(LogTemp, Log,
+               "[SplatPipeline] RefreshSortCount: tanFovY=%.5f -> totalSortElements %u -> %u%s (max=%u)",
+               m_prevTanFovY, oldCount, newCount, capped ? " [CAPPED]" : "", m_maxSortElements);
+
+        // Re-begin so onRender can keep recording (render output texture needs
+        // GENERAL layout for imageStore, same as ensureSortPassesInitialized).
+        // CRITICAL: diagnoseRadiusStats() records copyBuffer + resourceBarrier
+        // into THIS command list, so it MUST run AFTER begin() — otherwise
+        // vkCmdPipelineBarrier hits a non-recording command buffer and the
+        // NVIDIA driver crashes (0xC0000005 @ nvoglv64, read 0xFFFFFFFFFFFFFFFF).
+        auto outputTex = m_render.getOutputTexture();
+        cmdList->begin();
+        if (outputTex)
+        {
+            cmdList->transitionResource(outputTex,
+                RHI::EResourceUsage::None,
+                RHI::EResourceUsage::UnorderedAccess);
+        }
+
+        // First real refresh == first zoom since launch. Capture the radius
+        // distribution at this (zoomed) FOV to PROVE via log that the cap is
+        // actually being hit (rather than only at the default view). Called
+        // AFTER begin() so the command buffer is in the recording state.
+        if (!m_radiusDiagDone)
+        {
+            m_radiusDiagDone = true;
+            diagnoseRadiusStats(cmdList);
+        }
+        // fix② verification: prove the cov2D ceiling holds as zoom deepens.
+        // Called AFTER begin() (recording state) — same constraint that caused
+        // the earlier nvoglv64 0xC0000005 crash if violated.
+        diagnoseCovCeil(cmdList);
+    }
+
+    // ========================================================================
+    // ROOT-CAUSE FIX ① verification: prove the radius cap is actually hit.
+    // One-time readback of radii[]; logs max radius, count clamped to 512
+    // (cap active), and count == 0 (fully culled). Pure logging, no behavioral
+    // change — all judgment from the log.
+    // ========================================================================
+    void FSplatPipeline::diagnoseRadiusStats(RHI::IRHICommandList* cmdList)
+    {
+        using namespace RHI;
+        if (!m_diagRadii)
+            m_diagRadii = createStagingBuffer(m_device, m_gaussianCount * sizeof(uint32), "Diag_Radii");
+        if (!m_diagRadii) {
+            MR_LOG(LogTemp, Error, "[DIAG] radii staging allocation failed");
+            return;
+        }
+
+        const FSplatPreprocessOutput& out = m_preprocess.getOutput();
+        cmdList->copyBuffer(m_diagRadii, out.radii, m_gaussianCount * sizeof(uint32));
+        cmdList->resourceBarrier();
+        cmdList->end();
+        cmdList->submitAndWait();
+
+        int* r = reinterpret_cast<int*>(m_diagRadii->map());
+        if (!r) {
+            MR_LOG(LogTemp, Error, "[DIAG] radii map failed");
+            cmdList->begin();
+            return;
+        }
+        uint32 maxR = 0, capped = 0, culled = 0, sumR = 0;
+        for (uint32 i = 0; i < m_gaussianCount; ++i) {
+            int v = r[i];
+            if (v > (int)maxR) maxR = (uint32)v;
+            if (v == 512)  capped++;        // hit the cap => fix ① active
+            if (v <= 0)    culled++;        // fully outside frustum
+            sumR += (uint32)(v > 0 ? v : 0);
+        }
+        m_diagRadii->unmap();
+
+        float avgR = (float)sumR / (float)m_gaussianCount;
+        MR_LOG(LogTemp, Log,
+               "[DIAG][Radius] count=%u maxRadius=%u avgRadius=%.2f "
+               "cappedAt512=%u (%.2f%%) culled=0=%u (%.2f%%)  [cap=512 => fix① active]",
+               m_gaussianCount, maxR, avgR, capped,
+               100.0f * (float)capped / (float)m_gaussianCount,
+               culled, 100.0f * (float)culled / (float)m_gaussianCount);
+        fprintf(stderr,
+               "[DIAG][Radius] maxRadius=%u avgRadius=%.2f cappedAt512=%u culled=0=%u\n",
+               maxR, avgR, capped, culled);
+
+        // Re-begin for onRender.
+        auto outputTex = m_render.getOutputTexture();
+        cmdList->begin();
+        if (outputTex)
+        {
+            cmdList->transitionResource(outputTex,
+                RHI::EResourceUsage::None,
+                RHI::EResourceUsage::UnorderedAccess);
+        }
+    }
+
+    // ========================================================================
+    // ROOT-CAUSE FIX ② verification: prove the cov2D ceiling clamp engages.
+    // One readback of conicOpacity[] per FOV refresh. We reconstruct the max
+    // eigenvalue of the ORIGINAL cov2D from its inverse (conic) and check it is
+    // bounded by kCovCeil=800. overCeil800 (lambdaMax > 800) must be 0 for the
+    // clamp to be active; over30000 is the pre-fix reference. Pure logging.
+    // ========================================================================
+    void FSplatPipeline::diagnoseCovCeil(RHI::IRHICommandList* cmdList)
+    {
+        using namespace RHI;
+        if (!m_diagConic)
+            m_diagConic = createStagingBuffer(m_device, m_gaussianCount * 4 * sizeof(float), "Diag_Conic");
+        if (!m_diagConic) {
+            MR_LOG(LogTemp, Error, "[DIAG] conic staging allocation failed");
+            return;
+        }
+
+        const FSplatPreprocessOutput& out = m_preprocess.getOutput();
+        cmdList->copyBuffer(m_diagConic, out.conicOpacity, m_gaussianCount * 4 * sizeof(float));
+        cmdList->resourceBarrier();
+        cmdList->end();
+        cmdList->submitAndWait();
+
+        float* c = reinterpret_cast<float*>(m_diagConic->map());
+        if (!c) {
+            MR_LOG(LogTemp, Error, "[DIAG] conic map failed");
+            cmdList->begin();
+            return;
+        }
+        // conic stored as vec4(conic.x, conic.y, conic.z, opacity) where
+        //   conic.x = covZZ * detInv,  conic.z = covXX * detInv
+        // so the smaller of (conic.x, conic.z) ~ 1 / (larger diagonal cov2D).
+        float  minDiagConic = 1e30f;
+        float  maxLambdaCov = 0.0f;   // max lambdaMax of raw cov2D, reconstructed from conic
+        uint32 overCeil     = 0;      // lambdaMax > kCovCeil(800) => clamp leaked (should be 0)
+        uint32 over30k      = 0;      // lambdaMax > 30000 (pre-fix reference)
+        for (uint32 i = 0; i < m_gaussianCount; ++i) {
+            float cx = c[i * 4 + 0];  // conic.x = covZZ / det
+            float cy = c[i * 4 + 1];  // conic.y = -covXY / det
+            float cz = c[i * 4 + 2];  // conic.z = covXX / det
+            float d  = (cx < cz) ? cx : cz;
+            if (d < minDiagConic) minDiagConic = d;
+            // Reconstruct the max eigenvalue of the ORIGINAL cov2D from its
+            // inverse (conic). inverse = [[cx,cy],[cy,cz]]; its eigenvalues are
+            // 1/λ1 and 1/λ2, so λmax_cov = 1/(smaller inverse eigenvalue)
+            // = 2 / (tr_inv - sqrt(tr_inv² - 4·det_inv)).
+            float trInv   = cx + cz;
+            float detInv  = cx * cz - cy * cy;
+            float discInv = trInv * trInv - 4.0f * detInv;
+            if (discInv > 0.0f) {
+                float denom = trInv - sqrtf(discInv);
+                if (denom > 1e-9f) {
+                    float lambdaMax = 2.0f / denom;
+                    if (lambdaMax > maxLambdaCov) maxLambdaCov = lambdaMax;
+                    if (lambdaMax > 800.0f)       overCeil++;
+                    if (lambdaMax > 30000.0f)     over30k++;
+                }
+            }
+        }
+        m_diagConic->unmap();
+
+        MR_LOG(LogTemp, Log,
+               "[DIAG][CovCeil] tanFovY=%.5f maxLambdaCov=%.1f overCeil800=%u (%.2f%%) "
+               "over30000=%u (%.2f%%) minDiagConic=%.3e  [clamp: overCeil800==0 => fix active]",
+               m_prevTanFovY, maxLambdaCov, overCeil,
+               100.0f * (float)overCeil / (float)m_gaussianCount,
+               over30k, 100.0f * (float)over30k / (float)m_gaussianCount,
+               minDiagConic);
+        fprintf(stderr,
+                "[DIAG][CovCeil] tanFovY=%.5f maxLambdaCov=%.1f overCeil800=%u over30000=%u minDiagConic=%.3e\n",
+                m_prevTanFovY, maxLambdaCov, overCeil, over30k, minDiagConic);
+
+        // Re-begin for onRender (output texture needs GENERAL layout for imageStore).
+        auto outputTex = m_render.getOutputTexture();
+        cmdList->begin();
+        if (outputTex) {
+            cmdList->transitionResource(outputTex,
+                RHI::EResourceUsage::None,
+                RHI::EResourceUsage::UnorderedAccess);
+        }
     }
 
     // ========================================================================

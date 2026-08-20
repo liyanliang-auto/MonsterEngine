@@ -48,7 +48,7 @@ layout(push_constant) uniform PushConstants {
     uint gaussianCount;     // Number of Gaussians to process
     uint gridX;             // ceil(imageWidth / 16)
     uint gridY;             // ceil(imageHeight / 16)
-    uint maxDepthBits;      // Reserved (not used, depth uses floatBitsToUint)
+    uint maxSortElements;   // Sort buffer capacity (total entries) for bounds check
 } pc;
 
 // ============================================================================
@@ -81,6 +81,9 @@ void main() {
     // Emit one entry per tile touched
     for (uint tileY = tileRect.y; tileY < tileRect.w; tileY++) {
         for (uint tileX = tileRect.x; tileX < tileRect.z; tileX++) {
+            // Bounds guard: drop remaining tiles instead of writing out of buffer.
+            if (writeIdx >= pc.maxSortElements) return;
+
             uint64_t tileIndex = uint64_t(tileX) + uint64_t(tileY) * uint64_t(pc.gridX);
             uint64_t key = (tileIndex << 32u) | uint64_t(depthBits);
 

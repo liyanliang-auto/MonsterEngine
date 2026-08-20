@@ -943,7 +943,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkMemoryBarrier memoryBarrier{};
         memoryBarrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT; 
         
         vkCmdPipelineBarrier(
             cmdBuffer,

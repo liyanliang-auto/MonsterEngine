@@ -44,10 +44,10 @@ namespace EPrefixSumBinding
 /** Assign keys push constants (16 bytes) */
 struct alignas(16) FAssignKeysPushConstants
 {
-    uint32 gaussianCount;  // Number of Gaussians to process
-    uint32 gridX;          // Tile grid width = ceil(imageWidth / 16)
-    uint32 gridY;          // Tile grid height = ceil(imageHeight / 16)
-    float32 maxDepth;      // Far plane depth for depth quantization
+    uint32 gaussianCount;   // Number of Gaussians to process
+    uint32 gridX;           // Tile grid width = ceil(imageWidth / 16)
+    uint32 gridY;           // Tile grid height = ceil(imageHeight / 16)
+    uint32 maxSortElements; // Sort buffer capacity (total entries) for bounds check
 };
 
 static_assert(sizeof(FAssignKeysPushConstants) == 16, "FAssignKeysPushConstants must be 16 bytes");

@@ -532,7 +532,7 @@ bool SplatSceneApplication::initCamera()
     viewInfo.AspectRatio = static_cast<float>(swapchainExtent.width) /
                            static_cast<float>(swapchainExtent.height);
     viewInfo.ProjectionMode = ECameraProjectionMode::Perspective;
-    viewInfo.PerspectiveNearClipPlane = 0.01f;
+    viewInfo.PerspectiveNearClipPlane = 0.1f;
 
     m_cameraManager->SetCameraCachePOV(viewInfo);
     m_cameraManager->SetViewTargetPOV(viewInfo);
@@ -766,7 +766,7 @@ void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUnifo
         float fovYRad  = viewInfo.FOV * MR_PI / 180.0f;
         float aspect   = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
         float tanHalf  = FMath::Tan(fovYRad * 0.5f);
-        float nearVal  = 0.01f;   // Match preprocess near plane
+        float nearVal  = 0.1f;    // Match preprocess near plane
         float farVal   = 1000.0f;  // Match preprocess far plane
         float sx = 1.0f / (aspect * tanHalf);
         float sy = 1.0f / tanHalf;
@@ -838,11 +838,16 @@ void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUnifo
             FVector front  = hasFPS ? m_fpsCamera->GetFront()    : FVector(0);
             float yaw      = hasFPS ? m_fpsCamera->GetYaw()      : 0.0f;
             float pitch    = hasFPS ? m_fpsCamera->GetPitch()    : 0.0f;
+            float fov      = hasFPS ? m_fpsCamera->GetFOV()      : 0.0f;
+            float nearPlane = 0.1f;  // 与投影矩阵 nearVal、preprocess setClipPlanes 保持一致
             MR_LOG(LogSplatScene, Log, "[DIAG] buildCam frame=%d hasFPS=%d "
-                   "pos=(%.2f,%.2f,%.2f) front=(%.3f,%.3f,%.3f) yaw=%.1f pitch=%.1f",
+                   "pos=(%.2f,%.2f,%.2f) front=(%.3f,%.3f,%.3f) yaw=%.1f pitch=%.1f "
+                   "fov=%.2f near=%.2f focalX=%.1f focalY=%.1f tanFovX=%.4f tanFovY=%.4f",
                    buildFrameCount, hasFPS ? 1 : 0,
                    pos.X, pos.Y, pos.Z,
-                   front.X, front.Y, front.Z, yaw, pitch);
+                   front.X, front.Y, front.Z, yaw, pitch,
+                   fov, nearPlane, outUniforms.focalX, outUniforms.focalY,
+                   outUniforms.tanFovX, outUniforms.tanFovY);
         }
     }
 }

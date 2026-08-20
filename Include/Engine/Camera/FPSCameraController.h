@@ -63,7 +63,7 @@ struct FFPSCameraSettings
     float ScrollSensitivity = 2.0f;
     
     /** Minimum FOV (max zoom in) */
-    float MinFOV = 1.0f;
+    float MinFOV = 10.0f;
     
     /** Maximum FOV (max zoom out) */
     float MaxFOV = 90.0f;
