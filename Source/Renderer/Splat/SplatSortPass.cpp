@@ -357,7 +357,7 @@ void FSplatAssignKeysPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     pc.gaussianCount = gaussianCount;
     pc.gridX = gridX;
     pc.gridY = gridY;
-    pc.maxDepth = 0.0f; // Unused; shader uses floatBitsToUint
+    pc.maxSortElements = m_sortElementCount;
 
     uint32 numGroups = (gaussianCount + 255u) / 256u;
 
