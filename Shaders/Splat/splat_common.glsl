@@ -130,50 +130,14 @@ vec3 computeCov2D(vec3 pView, float cov3D_data[6], mat4 viewMatrix, float focalX
 
     mat3 cov = transpose(T) * Vrk * T;
 
-    // Low-pass anti-aliasing floor (standard EWA): keep a minimum covariance so
-    // tiny/distant splats never collapse to a point and alias away. For normal
-    // splats (cov2D > 0.3) this is behaviorally identical to the original
-    // `cov[0][0] += 0.3` floor.
-    const float kCovFloor = 0.3;
-    cov[0][0] = max(cov[0][0], kCovFloor);
-    cov[1][1] = max(cov[1][1], kCovFloor);
-
-    // Zoom-stability ceiling. At extreme zoom t.z -> 0 makes cov2D blow up as
-    // ~1/t.z^2. The largest eigenvalue (lambda_max) drives the splat footprint
-    // and its inverse (conic, used by the render shader) drives the EWA falloff.
-    // We bound lambda_max to kCovCeil by scaling the WHOLE covariance matrix
-    // uniformly. This stops conic from collapsing toward 0, which would render
-    // each near-camera splat as a flat-topped disk -> the "花" (blocky /
-    // stretched) artifacts at extreme zoom.
-    //
-    // kCovCeil = 800  (rolled back from 250). 250 was too aggressive: at the
-    // default view it already clamped 0.31% of splats (3870 of 1.24M) to
-    // 3-sigma ~47px, turning normal large splats into a fine "grainy" mess
-    // (long streaks everywhere at default view). 800 is the safe value: it
-    // leaves the default view untouched (normal splats have lambda_max << 800)
-    // and only engages at extreme zoom where near-camera splats would otherwise
-    // blow up into flat-topped disks. The remaining "花" at zoom-in is NOT a
-    // cov-ceiling problem anymore -- it is per-splat count * anisotropy, which
-    // needs a different fix (anisotropy ratio cap or render-shader alpha
-    // threshold cull), not a smaller ceiling.
-    //
-    // Uniform scaling preserves the matrix's positive-definiteness and the
-    // splat's shape/orientation (no det<0 glitch that an independent diagonal
-    // clamp could introduce).
-    const float kCovCeil = 800.0;
-    float a = cov[0][0];
-    float b = cov[0][1];   // symmetric: cov[0][1] == cov[1][0]
-    float c = cov[1][1];
-    float mid  = 0.5 * (a + c);
-    float disc = sqrt(max(0.0, mid * mid - (a * c - b * b)));
-    float lambdaMax = mid + disc;
-    if (lambdaMax > kCovCeil) {
-        float s = kCovCeil / lambdaMax;
-        cov[0][0] *= s;
-        cov[0][1] *= s;
-        cov[1][0] *= s;
-        cov[1][1] *= s;
-    }
+    // Low-pass filter (standard EWA anti-aliasing). Matches the reference
+    // 3dgs-vulkan-cpp / official 3DGS exactly: add a 0.3 pixel floor so tiny /
+    // distant splats never collapse to a point and alias away. No covariance
+    // ceiling here -- the reference has none, and our zoom range now matches it
+    // (MinFOV raised to ~17 deg vertical), so cov2D no longer needs a ceiling
+    // to stay bounded.
+    cov[0][0] += 0.3;
+    cov[1][1] += 0.3;
 
     return vec3(cov[0][0], cov[0][1], cov[1][1]);
 }

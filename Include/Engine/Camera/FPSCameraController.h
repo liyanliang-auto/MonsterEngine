@@ -62,8 +62,9 @@ struct FFPSCameraSettings
     /** Scroll sensitivity for zoom */
     float ScrollSensitivity = 2.0f;
     
-    /** Minimum FOV (max zoom in) */
-    float MinFOV = 10.0f;
+    /** Minimum FOV (max zoom in). 17 deg vertical ~= 30 deg horizontal, matching
+     *  the reference 3dgs-vulkan-cpp min FOV so deep zoom can't blow up cov2D. */
+    float MinFOV = 17.0f;
     
     /** Maximum FOV (max zoom out) */
     float MaxFOV = 90.0f;

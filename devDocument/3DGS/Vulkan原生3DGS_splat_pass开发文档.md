@@ -24,6 +24,7 @@
 12. [PLY 加载器动态属性解析](#12-ply-加载器动态属性解析)
 13. [渲染调试与视角优化](#13-渲染调试与视角优化)
 14. [日志系统架构](#14-日志系统架构)
+15. [相机缩放（zoom-in）糊屏问题排查与对齐参考实现](#15-相机缩放zoom-in糊屏问题排查与对齐参考实现)
 
 ---
 
@@ -1374,6 +1375,102 @@ LogTemp.SetVerbosity(ELogVerbosity::Verbose);
 // SplatPipeline.cpp / SplatPass.cpp / SplatRenderPass.cpp / SplatSceneApplication.cpp
 // 将所有 #if 0 改为 #if 1
 ```
+
+## 15. 相机缩放（zoom-in）糊屏问题排查与对齐参考实现
+
+### 15.1 现象
+
+- 相机**拉近**（zoom-in，FOV 缩小）时画面「花」/糊：细长拉丝、块状伪影、平顶色块、FPS 明显下降（60 → 16~19）。
+- 相机**拉远**、默认视角均正常。
+- 全程无崩溃、无 validation 错误、无 device-lost。
+
+### 15.2 根因分析（三层递进）
+
+#### 第一层：排序计数陈旧锁定 + 半径爆炸（结构性 bug）
+
+`cov2D ∝ focal²/t.z²`。zoom-in 时相机贴近高斯（`t.z→0`），cov2D 暴涨 → `radius = 3·√λmax` 暴涨 → `tilesTouched` 爆炸 → 超过预分配的 sort buffer → 排序计数 readback 陈旧锁定（跨 FOV 恒定不变）→ AssignKeys 写越界 → 画面花。
+
+- 日志铁证：`RadixSort` 元素数在 FOV 44°→10° 全程恒为 `3504546`（陈旧锁定签名）。
+- 修复：radius cap + per-frame 排序计数刷新（见下 15.4 已回退，最终方案改为对齐参考）。
+
+#### 第二层：EWA conic 塌缩（平顶）
+
+cov2D 暴涨 → `conic = Σ⁻¹ → 0` → render 里 `power = -0.5·conic·d² ≈ 0` → `alpha ≈ 1`（整片不透明）→ 每个 splat 变「平顶圆盘」→ 成千上万平顶重叠 → front-to-back 合成 6~10 层即饱和 → 糊。
+
+#### 第三层（最终根因）：zoom 范围过深（非算法 bug）
+
+与参考实现 [3dgs-vulkan-cpp](https://github.com/taowang2373/3dgs-vulkan-cpp) 逐行对比后确认：**shader 算法完全一致**（frustum clamp、EWA、alpha 阈值剪枝、早停、scale exp、sigmoid、排序 key 编码全都有）。唯一实质差异是 **zoom 范围**：
+
+- 本引擎：`MinFOV = 10°`（垂直，曾 1°）
+- 参考：FOV 范围 `30°~120°`（**水平**，最小垂直 ≈ 17°）
+
+`focal = H/(2·tan(FOV/2))`，FOV 越小 focal 越大，`cov2D ∝ focal²` 物理性暴涨。参考靠「保守 FOV 范围 + 不贴脸」天然避免，**根本不需要任何 cov 天花板**；本引擎 zoom 过深，之前只能靠硬加 `kCovCeil` 擦屁股（800 仍拉丝、250 伤默认视角，证明方向错）。
+
+### 15.3 排查时间线
+
+| 阶段 | 尝试 | 结果 |
+|---|---|---|
+| ① | radius cap 512 + per-frame 排序计数刷新 | 治本「陈旧计数」，但仍有平顶糊 |
+| ② | `kCovCeil=30000` | 默认正常，zoom 仍平顶糊 |
+| ③ | `kCovCeil=800` | 默认正常，zoom 改善但仍有拉丝 |
+| ④ | `kCovCeil=250` | 默认视角也拉丝（伤正常大 splat）→ 不可行 |
+| ⑤ | 对比参考 → 对齐 | `MinFOV=17°` + 移除 kCovCeil + 移除 radius cap |
+
+### 15.4 最终解决方案（对齐参考 3dgs-vulkan-cpp）
+
+共三处改动，使 shader 算法与参考**完全一致**：
+
+**① `Include/Engine/Camera/FPSCameraController.h`** —— 限制 zoom 深度：
+
+```cpp
+/** Minimum FOV (max zoom in). 17 deg vertical ~= 30 deg horizontal, matching
+ *  the reference 3dgs-vulkan-cpp min FOV so deep zoom can't blow up cov2D. */
+float MinFOV = 17.0f;
+```
+
+**② `Shaders/Splat/splat_common.glsl` `computeCov2D`** —— 移除 cov 天花板，回到标准低通：
+
+```glsl
+mat3 cov = transpose(T) * Vrk * T;
+
+// Low-pass filter (standard EWA anti-aliasing). Matches the reference exactly.
+cov[0][0] += 0.3;
+cov[1][1] += 0.3;
+
+return vec3(cov[0][0], cov[0][1], cov[1][1]);
+```
+
+**③ `Shaders/Splat/splat_preprocess.comp`** —— 移除 radius cap：
+
+```glsl
+// 3-sigma radius
+float mid = 0.5 * (cov2D.x + cov2D.z);
+float lambda1 = mid + sqrt(max(0.1, mid * mid - det));
+float lambda2 = mid - sqrt(max(0.1, mid * mid - det));
+float myRadius = ceil(3.0 * sqrt(max(lambda1, lambda2)));   // 无任何 cap
+```
+
+### 15.5 与参考实现的完整对齐清单
+
+| 项 | 本引擎 | 参考 | 状态 |
+|---|---|---|---|
+| scale `exp` + opacity `sigmoid` | SplatPLYLoader.cpp | PLYLoader.cpp | ✅ |
+| computeCov3D（quaternion、S·R、MᵀM） | splat_common.glsl | preprocess.comp | ✅ |
+| computeCov2D（frustum clamp + `+=0.3`） | splat_common.glsl | preprocess.comp | ✅ |
+| inFrustum（near/far/frustum） | splat_common.glsl | preprocess.comp | ✅ |
+| bbox / depth / tilesTouched / conic | splat_preprocess.comp | preprocess.comp | ✅ |
+| EWA render（power、阈值、早停、合成） | splat_render.comp | render.comp | ✅ |
+| 排序 key `tileIndex<<32 \| floatBitsToUint(depth)` | splat_assign_keys.comp | idkeys.comp | ✅ |
+| focal 计算 | SplatSceneApplication.cpp | Camera.cpp | ✅（数学等价） |
+| radius cap | **无**（已移除） | 无 | ✅ |
+
+保留的安全网（非算法，不影响一致性）：`×256` sort buffer（参考 `×10`）、`refreshSortCountIfNeeded`、AssignKeys bounds guard、诊断日志。
+
+### 15.6 最终状态与结论
+
+- **相机拉近仍有一定糊，拉远正常**。这是 3DGS 的固有特性：`cov2D ∝ focal²/t.z²` 在极端 zoom 下物理性暴涨，即使与参考实现完全对齐也无法彻底消除（参考同范围也不保证完全清晰）。
+- 已与 `3dgs-vulkan-cpp` 逐行对齐，算法层面无差异，故**不再深究**该问题。
+- 遗留：`diagnoseRadiusStats` 中 `cappedAt512` 日志标签现恒为 0（radius 不再有 512 上限），语义过时、无害，可后续清理。
 
 ---
 
