@@ -77,38 +77,12 @@ void ShutdownLogging()
 
 void SetGlobalLogVerbosity(ELogVerbosity::Type Verbosity)
 {
-    // Set verbosity for all built-in log categories
-    LogTemp.SetVerbosity(Verbosity);
-    LogCore.SetVerbosity(Verbosity);
-    LogInit.SetVerbosity(Verbosity);
-    LogExit.SetVerbosity(Verbosity);
-    LogMemory.SetVerbosity(Verbosity);
-    LogRenderer.SetVerbosity(Verbosity);
-    LogRHI.SetVerbosity(Verbosity);
-    LogVulkan.SetVerbosity(Verbosity);
-    LogShaders.SetVerbosity(Verbosity);
-    LogTextures.SetVerbosity(Verbosity);
-    LogPlatform.SetVerbosity(Verbosity);
-    LogWindow.SetVerbosity(Verbosity);
-    LogInput.SetVerbosity(Verbosity);
-    
-    // Scene and rendering system categories
-    LogScene.SetVerbosity(Verbosity);
-    LogSceneRenderer.SetVerbosity(Verbosity);
-    LogSceneView.SetVerbosity(Verbosity);
-    LogPrimitiveSceneProxy.SetVerbosity(Verbosity);
-    LogCubeSceneProxy.SetVerbosity(Verbosity);
-    
-    // Application categories
-    LogCubeSceneApp.SetVerbosity(Verbosity);
-    LogCubeActor.SetVerbosity(Verbosity);
-    
-    // Camera categories
-    LogCameraManager.SetVerbosity(Verbosity);
-    LogCameraTypes.SetVerbosity(Verbosity);
-    
-    // RDG categories
-    LogRDG.SetVerbosity(Verbosity);
+    // Iterate the global category registry (covers global AND file-local static
+    // categories such as LogSplatScene / LogVulkanRHI). A single switch now
+    // controls every category in the engine.
+    ForEachLogCategory([&](FLogCategoryBase* Cat) {
+        Cat->SetVerbosity(Verbosity);
+    });
 }
 
 } // namespace MonsterRender

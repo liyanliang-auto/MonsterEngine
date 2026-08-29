@@ -10,8 +10,13 @@
 #include "Core/CoreTypes.h"
 #include "Core/Logging/LogVerbosity.h"
 #include <atomic>
+#include <mutex>
 
 namespace MonsterRender {
+
+// Forward declarations so the base-class constructor can self-register.
+class FLogCategoryBase;
+void RegisterLogCategory(FLogCategoryBase* Cat);
 
 /**
  * Base class for all log categories.
@@ -19,6 +24,11 @@ namespace MonsterRender {
  */
 class FLogCategoryBase {
 public:
+    // Registry walkers are free functions that touch m_registryNext; declare
+    // them friends so they can traverse the intrusive list without exposing it.
+    friend void RegisterLogCategory(FLogCategoryBase*);
+    template <typename FunctorType> friend void ForEachLogCategory(FunctorType&&);
+
     /**
      * Constructor - registers the category with the log system
      * @param InCategoryName - Name of the category (e.g., "LogRenderer")
@@ -34,7 +44,11 @@ public:
         , m_defaultVerbosity(InDefaultVerbosity)
         , m_compileTimeVerbosity(InCompileTimeVerbosity)
         , m_debugBreakOnLog(false)
+        , m_registryNext(nullptr)
     {
+        // Self-register into the global category registry so that
+        // SetGlobalLogVerbosity can reach BOTH global and static-local categories.
+        RegisterLogCategory(this);
     }
 
     /**
@@ -85,6 +99,7 @@ private:
     const uint8 m_defaultVerbosity;
     const ELogVerbosity::Type m_compileTimeVerbosity;
     bool m_debugBreakOnLog;
+    FLogCategoryBase* m_registryNext;   // intrusive link in the global registry
 };
 
 /**
@@ -112,6 +127,46 @@ public:
     {
     }
 };
+
+} // namespace MonsterRender
+
+// ============================================================================
+// Global Category Registry (UE5-style self-registration)
+// ============================================================================
+// Every FLogCategoryBase instance (whether declared via DEFINE_LOG_CATEGORY or
+// DEFINE_LOG_CATEGORY_STATIC) registers itself in its constructor. This lets
+// SetGlobalLogVerbosity iterate ALL categories instead of a hand-maintained
+// list that unavoidably misses file-local static categories.
+//
+// Meyers singletons are used for the head pointer and the mutex so the registry
+// is safe under the Static Initialization Order Fiasco (a category in another TU
+// may be constructed before/after this header's statics).
+
+namespace MonsterRender {
+namespace Private {
+    inline FLogCategoryBase*& RegistryHead() {
+        static FLogCategoryBase* head = nullptr;
+        return head;
+    }
+    inline std::mutex& RegistryMutex() {
+        static std::mutex m;
+        return m;
+    }
+}
+
+inline void RegisterLogCategory(FLogCategoryBase* Cat) {
+    std::lock_guard<std::mutex> lock(Private::RegistryMutex());
+    Cat->m_registryNext = Private::RegistryHead();
+    Private::RegistryHead() = Cat;
+}
+
+/** Iterate every registered log category (global AND static-local). */
+template <typename FunctorType>
+inline void ForEachLogCategory(FunctorType&& Fn) {
+    std::lock_guard<std::mutex> lock(Private::RegistryMutex());
+    for (FLogCategoryBase* c = Private::RegistryHead(); c != nullptr; c = c->m_registryNext)
+        Fn(c);
+}
 
 } // namespace MonsterRender
 

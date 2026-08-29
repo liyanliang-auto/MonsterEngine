@@ -86,10 +86,12 @@ int main(int argc, char** argv) {
     );
     
     // ========================================================================
-    // Set log verbosity to Error only (suppress Log, Verbose, VeryVerbose)
-    // Note: This only affects globally declared categories, not static local ones
+    // Set log verbosity to Error only (suppress Warning, Display, Log, Verbose,
+    // VeryVerbose). Thanks to the global category registry, this now reaches BOTH
+    // globally declared categories and file-local static categories
+    // (e.g. LogSplatScene, LogVulkanRHI).
     // ========================================================================
-    SetGlobalLogVerbosity(ELogVerbosity::Log);
+    SetGlobalLogVerbosity(ELogVerbosity::Error);
 
     MR_LOG(LogInit, Log, "Starting MonsterRender Engine");
     MR_LOG(LogInit, Log, "Command line arguments: %d", argc);
