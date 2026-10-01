@@ -12,6 +12,7 @@
 #include "RHI/RHIDefinitions.h"
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 namespace MonsterRender::Splat
 {
@@ -65,6 +66,11 @@ namespace MonsterRender::Splat
         m_gridY         = (imageHeight + 15u) / 16u;
         m_numTiles      = m_gridX * m_gridY;
         m_maxSortElements = gaussianCount * maxTilesPerGaussian;
+        char* diagEnv = nullptr;
+        size_t diagEnvLength = 0;
+        _dupenv_s(&diagEnv, &diagEnvLength, "MONSTER_SPLAT_DIAG");
+        m_enableCulledBoundsDiag = diagEnv != nullptr;
+        std::free(diagEnv);
 
         // Staging buffer for prefix sum readback (8 bytes: exclusiveSum + lastTilesTouched)
         m_stagingBuffer = createStagingBuffer(device, sizeof(uint32) * 2, "SplatPipeline_Staging");
@@ -477,6 +483,71 @@ namespace MonsterRender::Splat
         // Called AFTER begin() (recording state) — same constraint that caused
         // the earlier nvoglv64 0xC0000005 crash if violated.
         diagnoseCovCeil(cmdList);
+        if (m_enableCulledBoundsDiag && !m_culledBoundsDiagDone && m_prevTanFovY <= 0.15f)
+        {
+            m_culledBoundsDiagDone = true;
+            diagnoseCulledBounds(cmdList);
+        }
+    }
+
+    void FSplatPipeline::diagnoseCulledBounds(RHI::IRHICommandList* cmdList)
+    {
+        auto tiles = createStagingBuffer(m_device, m_gaussianCount * sizeof(uint32), "Diag_TilesTouched");
+        auto bounds = createStagingBuffer(m_device, m_gaussianCount * 4u * sizeof(uint32), "Diag_BBox");
+        auto ranges = createStagingBuffer(m_device, m_numTiles * 2u * sizeof(uint32), "Diag_ZoomTileRanges");
+        if (!tiles || !bounds || !ranges) {
+            MR_LOG(LogTemp, Error, "[DIAG][CulledBounds] staging allocation failed");
+            return;
+        }
+        const FSplatPreprocessOutput& out = m_preprocess.getOutput();
+        cmdList->copyBuffer(tiles, out.tilesTouched, m_gaussianCount * sizeof(uint32));
+        cmdList->copyBuffer(bounds, out.bbox, m_gaussianCount * 4u * sizeof(uint32));
+        cmdList->copyBuffer(ranges, m_tileBoundaries.getTileRanges(), m_numTiles * 2u * sizeof(uint32));
+        cmdList->resourceBarrier();
+        cmdList->end();
+        cmdList->submitAndWait();
+
+        auto* tileData = static_cast<uint32*>(tiles->map());
+        auto* boundData = static_cast<uint32*>(bounds->map());
+        auto* rangeData = static_cast<uint32*>(ranges->map());
+        uint32 zeroTilesWithBounds = 0, nonzeroMismatch = 0, zeroTiles = 0;
+        uint32 emptyRenderTiles = 0;
+        if (!tileData || !boundData || !rangeData) {
+            MR_LOG(LogTemp, Error, "[DIAG][CulledBounds] staging map failed");
+        }
+        if (tileData && boundData) {
+            for (uint32 i = 0; i < m_gaussianCount; ++i) {
+                const uint32* b = boundData + 4u * i;
+                const uint32 area = (b[2] > b[0] && b[3] > b[1])
+                    ? (b[2] - b[0]) * (b[3] - b[1]) : 0u;
+                if (tileData[i] == 0u) {
+                    ++zeroTiles;
+                    if (area) ++zeroTilesWithBounds;
+                } else if (area != tileData[i]) {
+                    ++nonzeroMismatch;
+                }
+            }
+        }
+        if (rangeData) {
+            for (uint32 i = 0; i < m_numTiles; ++i) {
+                if (rangeData[i * 2u] >= rangeData[i * 2u + 1u]) ++emptyRenderTiles;
+            }
+        }
+        if (tileData && boundData && rangeData) {
+            MR_LOG(LogTemp, Log,
+                   "[DIAG][CulledBounds] tanFovY=%.5f zeroTiles=%u zeroTilesWithBounds=%u nonzeroMismatch=%u emptyRenderTiles=%u/%u",
+                   m_prevTanFovY, zeroTiles, zeroTilesWithBounds, nonzeroMismatch, emptyRenderTiles, m_numTiles);
+        }
+        if (tileData) tiles->unmap();
+        if (boundData) bounds->unmap();
+        if (rangeData) ranges->unmap();
+
+        cmdList->begin();
+        auto outputTex = m_render.getOutputTexture();
+        if (outputTex) {
+            cmdList->transitionResource(outputTex,
+                RHI::EResourceUsage::None, RHI::EResourceUsage::UnorderedAccess);
+        }
     }
 
     // ========================================================================
