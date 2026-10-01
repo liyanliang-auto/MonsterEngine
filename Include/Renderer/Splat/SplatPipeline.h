@@ -138,6 +138,7 @@ namespace MonsterRender::Splat
         // stay >= ~3.3e-5 and hugeCovTop -> 0. Called on every FOV refresh so the
         // log shows the ceiling holding as zoom deepens. Log-driven proof only.
         void diagnoseCovCeil(RHI::IRHICommandList* cmdList);
+        void diagnoseCulledBounds(RHI::IRHICommandList* cmdList);
 
         // ================================================================
         // Sub-passes (in execution order)
@@ -198,6 +199,8 @@ namespace MonsterRender::Splat
 
         // Radius-cap verification diagnostic (log-driven, one-time)
         bool m_radiusDiagDone       = false;
+        bool m_culledBoundsDiagDone = false;
+        bool m_enableCulledBoundsDiag = false;
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_diagRadii; // full radii[] (uint[])
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_diagTR;      // tileRanges (uvec2[])
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_diagSorted;  // first N sortedIds (uint[])

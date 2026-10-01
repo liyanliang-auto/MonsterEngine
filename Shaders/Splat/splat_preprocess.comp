@@ -223,6 +223,9 @@ void main() {
     radii[idx] = 0;
     tilesTouched[idx] = 0;
     depth[idx] = 0;
+    // Culled Gaussians must not retain last frame's tile rectangle. AssignKeys
+    // uses bbox to decide whether to emit entries, even when tilesTouched is 0.
+    bbox[idx] = uvec4(0u);
 
     // Step 1.4: Frustum culling
     vec3 pView;

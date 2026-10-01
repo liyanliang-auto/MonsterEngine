@@ -6,6 +6,7 @@
 #include "Containers/Set.h"
 #include "CubeSceneApplication.h"
 #include "SplatSceneApplication.h"
+#include <cstdlib>
 // CubeSceneRendererTest - now using MonsterEngine::Renderer namespace
 #include "Tests/CubeSceneRendererTest.h"
 #include "Tests/CubeSceneRendererTestApp.h"
@@ -86,12 +87,15 @@ int main(int argc, char** argv) {
     );
     
     // ========================================================================
-    // Set log verbosity to Error only (suppress Warning, Display, Log, Verbose,
-    // VeryVerbose). Thanks to the global category registry, this now reaches BOTH
-    // globally declared categories and file-local static categories
-    // (e.g. LogSplatScene, LogVulkanRHI).
+    // Keep normal runs at Error; opt in to camera and pipeline diagnostics with
+    // MONSTER_SPLAT_DIAG=1 when reproducing a splat rendering problem.
     // ========================================================================
-    SetGlobalLogVerbosity(ELogVerbosity::Error);
+    // Opt in to the splat diagnostics while reproducing camera-dependent issues.
+    char* splatDiag = nullptr;
+    size_t splatDiagLength = 0;
+    _dupenv_s(&splatDiag, &splatDiagLength, "MONSTER_SPLAT_DIAG");
+    SetGlobalLogVerbosity(splatDiag ? ELogVerbosity::Log : ELogVerbosity::Error);
+    std::free(splatDiag);
 
     MR_LOG(LogInit, Log, "Starting MonsterRender Engine");
     MR_LOG(LogInit, Log, "Command line arguments: %d", argc);
