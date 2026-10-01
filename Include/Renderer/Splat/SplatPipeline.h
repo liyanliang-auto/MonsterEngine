@@ -116,27 +116,15 @@ namespace MonsterRender::Splat
         bool ensureSortPassesInitialized(RHI::IRHICommandList* cmdList);
 
         /**
-         * Re-read the real sort element count from the GPU after the prefix sum.
-         * Called at end of execute() only when the camera FOV changed since the
-         * last refresh (so tilesTouched can differ). Updates m_realSortElements
-         * for the NEXT frame. Logs old->new so the effect is verifiable from the
-         * log, not guesswork. On the FIRST real refresh it also fires the
-         * radius-cap diagnostic (capturing a zoomed FOV).
+         * Read this frame's prefix-sum tail before sorting when the camera view
+         * or projection changed. Both can change tilesTouched.
          */
-        void refreshSortCountIfNeeded(RHI::IRHICommandList* cmdList);
+        bool refreshSortCountIfNeeded(RHI::IRHICommandList* cmdList);
 
-        /**
-         * One-time diagnostic (fired on first zoom): read back the radii[] buffer,
-         * compute the max radius and how many gaussians hit the cap / were culled.
-         * Proves via log that the radius cap is actually taking effect.
-         */
+        /** Optional radius/depth readback for diagnosing large projected splats. */
         void diagnoseRadiusStats(RHI::IRHICommandList* cmdList);
 
-        // Covariance-ceiling verification: read back conicOpacity[] and log the
-        // minimum diagonal conic + count of "huge" gaussians (raw cov2D > 1e5).
-        // After the cov2D ceiling clamp (splat_common.glsl), minDiagConic must
-        // stay >= ~3.3e-5 and hugeCovTop -> 0. Called on every FOV refresh so the
-        // log shows the ceiling holding as zoom deepens. Log-driven proof only.
+        // Legacy conic readback, retained for targeted diagnostics.
         void diagnoseCovCeil(RHI::IRHICommandList* cmdList);
         void diagnoseCulledBounds(RHI::IRHICommandList* cmdList);
 
@@ -176,13 +164,11 @@ namespace MonsterRender::Splat
         // Real sort elements (read back from GPU after first prefix sum)
         uint32 m_realSortElements   = 0;
 
-        // FOV-change tracking for per-frame sort-count refresh.
-        // tilesTouched only depends on camera (focal/tanFov), so we only
-        // re-readback the sort count when tanFovY changes beyond this epsilon.
+        // Camera state for detecting changes to tile coverage.
         float  m_prevTanFovY        = 0.0f;
-        float  m_lastRefreshedTanFov = 0.0f;  // tanFovY at last successful refresh
-        bool   m_fovInitialized     = false;
-        static constexpr float kFovChangeEps = 1e-4f;
+        FCameraUniforms m_currentCamera{};
+        FCameraUniforms m_lastCountCamera{};
+        bool m_hasCountCamera = false;
 
         // Staging buffer for GPU readback (8 bytes: prefix sum last + tilesTouched last)
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_stagingBuffer;
@@ -197,11 +183,11 @@ namespace MonsterRender::Splat
         bool m_diagDone             = false;
         bool m_diagBuffersAllocated = false;
 
-        // Radius-cap verification diagnostic (log-driven, one-time)
-        bool m_radiusDiagDone       = false;
+        // Optional GPU diagnostics.
         bool m_culledBoundsDiagDone = false;
         bool m_enableCulledBoundsDiag = false;
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_diagRadii; // full radii[] (uint[])
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_diagDepth; // full depth[] (float[])
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_diagTR;      // tileRanges (uvec2[])
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_diagSorted;  // first N sortedIds (uint[])
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_diagSortedKeys; // first N sorted keys (uint64)
