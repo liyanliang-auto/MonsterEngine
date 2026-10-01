@@ -90,8 +90,9 @@ bool inFrustum(vec3 posWorld, mat4 viewMatrix, mat4 projMatrix, float nearPlane,
     if (pView.z >= -nearPlane) return false;
     if (pView.z < -farPlane)   return false;
 
-    vec4 pClip = projMatrix * vec4(pView, 1.0);
-    return abs(pClip.x) <= pClip.w && abs(pClip.y) <= pClip.w;
+    // Culling by the center alone drops ellipses that still overlap the
+    // viewport. The projected bbox below performs the screen-space test.
+    return true;
 }
 
 // ============================================================================
@@ -130,12 +131,8 @@ vec3 computeCov2D(vec3 pView, float cov3D_data[6], mat4 viewMatrix, float focalX
 
     mat3 cov = transpose(T) * Vrk * T;
 
-    // Low-pass filter (standard EWA anti-aliasing). Matches the reference
-    // 3dgs-vulkan-cpp / official 3DGS exactly: add a 0.3 pixel floor so tiny /
-    // distant splats never collapse to a point and alias away. No covariance
-    // ceiling here -- the reference has none, and our zoom range now matches it
-    // (MinFOV raised to ~17 deg vertical), so cov2D no longer needs a ceiling
-    // to stay bounded.
+    // Low-pass filter (standard EWA anti-aliasing). This preserves the
+    // trained covariance; arbitrary screen-space caps created visible holes.
     cov[0][0] += 0.3;
     cov[1][1] += 0.3;
 

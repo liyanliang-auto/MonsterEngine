@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace MonsterRender::Splat
 {
@@ -43,6 +44,7 @@ namespace MonsterRender::Splat
 
     FSplatPipeline::~FSplatPipeline()
     {
+        m_diagDepth.Reset();
         m_stagingBuffer.Reset();
     }
 
@@ -195,6 +197,9 @@ namespace MonsterRender::Splat
         m_realSortElements = exclusiveSum + lastTiles;
         if (m_realSortElements == 0) m_realSortElements = 1;
         if (m_realSortElements > m_maxSortElements) m_realSortElements = m_maxSortElements;
+        m_assignKeys.setSortElementCount(m_realSortElements);
+        m_lastCountCamera = m_currentCamera;
+        m_hasCountCamera = true;
 
         MR_LOG(LogTemp, Log, "[SplatPipeline] Readback: exclusiveSum=%u lastTiles=%u -> totalSortElements=%u (max=%u)",
                exclusiveSum, lastTiles, m_realSortElements, m_maxSortElements);
@@ -215,10 +220,8 @@ namespace MonsterRender::Splat
     {
         m_preprocess.updateCamera(camera);
         m_preprocess.setClipPlanes(0.1f, 1000.0f);
-        // Track FOV so execute() knows when to refresh the sort count.
-        // (tanFovY is the canonical zoom signal; focalY is derived from it.)
+        m_currentCamera = camera;
         m_prevTanFovY = camera.tanFovY;
-        m_fovInitialized = true;
         m_hasCamera = true;
     }
 
@@ -270,7 +273,6 @@ namespace MonsterRender::Splat
                m_realSortElements, m_gaussianCount);
 
         const FSplatPreprocessOutput& preOut = m_preprocess.getOutput();
-        uint32 totalSortElements = m_realSortElements;
 
         // ---- Pass 1/6: Preprocess ----
 #if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
@@ -301,6 +303,12 @@ namespace MonsterRender::Splat
             fprintf(stderr, "[STDERR] SplatPipeline: Pass 2/6 PrefixSum done\n");
 #endif
         }
+
+        // The prefix sum above belongs to this camera. Read its count before
+        // AssignKeys and RadixSort so neither pass uses the previous view's size.
+        if (!refreshSortCountIfNeeded(cmdList))
+            return nullptr;
+        const uint32 totalSortElements = m_realSortElements;
 
         // ---- Pass 3/6: Assign Keys ----
 #if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
@@ -359,6 +367,11 @@ namespace MonsterRender::Splat
         m_render.setConicOpacity(preOut.conicOpacity);
         m_render.setPointsXY(preOut.pointsXY);
         m_render.execute(cmdList);
+        if (m_enableCulledBoundsDiag && !m_culledBoundsDiagDone && m_prevTanFovY <= 0.15f)
+        {
+            m_culledBoundsDiagDone = true;
+            diagnoseCulledBounds(cmdList);
+        }
 #if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
         fprintf(stderr, "[STDERR] SplatPipeline: Pass 6/6 Render done\n");
 #endif
@@ -377,44 +390,33 @@ namespace MonsterRender::Splat
         fprintf(stderr, "[STDERR] SplatPipeline::execute: END returning output texture\n");
 #endif
 
-        // ---- Root-cause fix ②: refresh stale sort count ----
-        // The prefix sum for THIS frame just finished recording. Read its tail
-        // back and update m_realSortElements so the NEXT frame's AssignKeys /
-        // RadixSort / TileBoundaries use the correct count. Only needed when the
-        // camera FOV changed (tilesTouched is camera-dependent); a static view
-        // reuses the last count and avoids a per-frame CPU-GPU sync stall.
-        // The first time a real refresh fires (i.e. after a zoom), it also runs
-        // the radius-cap verification diagnostic so the capped state is captured
-        // at a zoomed FOV rather than the default view.
-        refreshSortCountIfNeeded(cmdList);
-
         return m_render.getOutputTexture();
     }
 
     // ========================================================================
-    // ROOT-CAUSE FIX ②: refresh the stale sort count on FOV change.
-    //
-    // Why: m_realSortElements was computed ONCE on frame 1 and never updated.
-    // Zoom changes tilesTouched (cov2D ~ 1/t.z^2), so at a different FOV the
-    // real tile count differs from the locked-in first-frame value. AssignKeys
-    // then writes more entries than RadixSort/TileBoundaries process -> render
-    // reads wrong gaussian IDs -> corrupted image ("花").
-    //
-    // How: after Pass 6, copy the prefix-sum tail + last tilesTouched into the
-    // staging buffer, submit+wait, read it back, clamp to maxSort, and store.
-    // Logs old->new so the fix is verifiable from the log, not guesswork.
+    // Read the count produced for the current view before generating sort keys.
+    // Translation and rotation change tile coverage even when FOV is constant.
     // ========================================================================
-    void FSplatPipeline::refreshSortCountIfNeeded(RHI::IRHICommandList* cmdList)
+    bool FSplatPipeline::refreshSortCountIfNeeded(RHI::IRHICommandList* cmdList)
     {
-        if (!m_fovInitialized)
-            return;
-
-        // Has the zoom (tanFovY) changed enough to alter tilesTouched?
-        // m_prevTanFovY was set by the most recent setCamera() call this frame.
+        const bool changed = !m_hasCountCamera ||
+            std::memcmp(m_currentCamera.viewMatrix, m_lastCountCamera.viewMatrix,
+                        sizeof(m_currentCamera.viewMatrix)) != 0 ||
+            std::memcmp(m_currentCamera.projMatrix, m_lastCountCamera.projMatrix,
+                        sizeof(m_currentCamera.projMatrix)) != 0 ||
+            m_currentCamera.focalX != m_lastCountCamera.focalX ||
+            m_currentCamera.focalY != m_lastCountCamera.focalY ||
+            m_currentCamera.tanFovX != m_lastCountCamera.tanFovX ||
+            m_currentCamera.tanFovY != m_lastCountCamera.tanFovY ||
+            m_currentCamera.imageWidth != m_lastCountCamera.imageWidth ||
+            m_currentCamera.imageHeight != m_lastCountCamera.imageHeight;
+        const bool fovChanged = !m_hasCountCamera ||
+            m_currentCamera.tanFovY != m_lastCountCamera.tanFovY;
         const FSplatPreprocessOutput& preOut = m_preprocess.getOutput();
-        bool changed = fabsf(m_prevTanFovY - m_lastRefreshedTanFov) > kFovChangeEps;
-        if (!changed)
-            return;
+        static uint32 diagFrame = 0;
+        const bool sample = m_enableCulledBoundsDiag && (++diagFrame % 60u == 0u);
+        if (!changed && !sample)
+            return true;
 
         // Copy prefix-sum result tail + last tilesTouched into staging.
         cmdList->copyBuffer(m_stagingBuffer, m_prefixSum.getResultBuffer(), sizeof(uint32),
@@ -431,7 +433,7 @@ namespace MonsterRender::Splat
         if (!stagingData) {
             MR_LOG(LogTemp, Error, "[SplatPipeline] refreshSortCount: staging map failed");
             cmdList->begin();
-            return;
+            return false;
         }
         uint32 exclusiveSum = reinterpret_cast<uint32*>(stagingData)[0];
         uint32 lastTiles    = reinterpret_cast<uint32*>(stagingData)[1];
@@ -440,6 +442,19 @@ namespace MonsterRender::Splat
         uint32 newCount = exclusiveSum + lastTiles;
         if (newCount == 0) newCount = 1;
         uint32 oldCount = m_realSortElements;
+        if (!changed) {
+            MR_LOG(LogTemp, Log,
+                   "[DIAG][SortCount] pan/sample tanFovY=%.5f used=%u actual=%u delta=%lld",
+                   m_prevTanFovY, oldCount, newCount,
+                   static_cast<long long>(newCount) - static_cast<long long>(oldCount));
+            cmdList->begin();
+            auto outputTex = m_render.getOutputTexture();
+            if (outputTex) {
+                cmdList->transitionResource(outputTex,
+                    RHI::EResourceUsage::None, RHI::EResourceUsage::UnorderedAccess);
+            }
+            return true;
+        }
         bool  capped    = false;
         if (newCount > m_maxSortElements) { newCount = m_maxSortElements; capped = true; }
         m_realSortElements = newCount;
@@ -449,11 +464,14 @@ namespace MonsterRender::Splat
         // first-frame value while RadixSort processes the new count -> mismatch
         // -> corrupted image. Keep them identical.
         m_assignKeys.setSortElementCount(newCount);
-        m_lastRefreshedTanFov = m_prevTanFovY;
+        m_lastCountCamera = m_currentCamera;
+        m_hasCountCamera = true;
 
         MR_LOG(LogTemp, Log,
-               "[SplatPipeline] RefreshSortCount: tanFovY=%.5f -> totalSortElements %u -> %u%s (max=%u)",
-               m_prevTanFovY, oldCount, newCount, capped ? " [CAPPED]" : "", m_maxSortElements);
+               "[SplatPipeline] RefreshSortCount: viewChanged=1 fovChanged=%d pos=(%.2f,%.2f,%.2f) tanFovY=%.5f used=%u actual=%u%s (max=%u)",
+               fovChanged ? 1 : 0, m_currentCamera.camPos[0], m_currentCamera.camPos[1],
+               m_currentCamera.camPos[2], m_prevTanFovY, oldCount, newCount,
+               capped ? " [CAPPED]" : "", m_maxSortElements);
 
         // Re-begin so onRender can keep recording (render output texture needs
         // GENERAL layout for imageStore, same as ensureSortPassesInitialized).
@@ -470,24 +488,12 @@ namespace MonsterRender::Splat
                 RHI::EResourceUsage::UnorderedAccess);
         }
 
-        // First real refresh == first zoom since launch. Capture the radius
-        // distribution at this (zoomed) FOV to PROVE via log that the cap is
-        // actually being hit (rather than only at the default view). Called
-        // AFTER begin() so the command buffer is in the recording state.
-        if (!m_radiusDiagDone)
+        // Optional readback to correlate large projected splats with depth.
+        if (m_enableCulledBoundsDiag && (fovChanged || sample))
         {
-            m_radiusDiagDone = true;
             diagnoseRadiusStats(cmdList);
         }
-        // fix② verification: prove the cov2D ceiling holds as zoom deepens.
-        // Called AFTER begin() (recording state) — same constraint that caused
-        // the earlier nvoglv64 0xC0000005 crash if violated.
-        diagnoseCovCeil(cmdList);
-        if (m_enableCulledBoundsDiag && !m_culledBoundsDiagDone && m_prevTanFovY <= 0.15f)
-        {
-            m_culledBoundsDiagDone = true;
-            diagnoseCulledBounds(cmdList);
-        }
+        return true;
     }
 
     void FSplatPipeline::diagnoseCulledBounds(RHI::IRHICommandList* cmdList)
@@ -551,53 +557,65 @@ namespace MonsterRender::Splat
     }
 
     // ========================================================================
-    // ROOT-CAUSE FIX ① verification: prove the radius cap is actually hit.
-    // One-time readback of radii[]; logs max radius, count clamped to 512
-    // (cap active), and count == 0 (fully culled). Pure logging, no behavioral
-    // change — all judgment from the log.
+    // Optional GPU readback of radius/depth distribution.
     // ========================================================================
     void FSplatPipeline::diagnoseRadiusStats(RHI::IRHICommandList* cmdList)
     {
         using namespace RHI;
         if (!m_diagRadii)
             m_diagRadii = createStagingBuffer(m_device, m_gaussianCount * sizeof(uint32), "Diag_Radii");
-        if (!m_diagRadii) {
+        if (!m_diagDepth)
+            m_diagDepth = createStagingBuffer(m_device, m_gaussianCount * sizeof(float), "Diag_Depth");
+        if (!m_diagRadii || !m_diagDepth) {
             MR_LOG(LogTemp, Error, "[DIAG] radii staging allocation failed");
             return;
         }
 
         const FSplatPreprocessOutput& out = m_preprocess.getOutput();
         cmdList->copyBuffer(m_diagRadii, out.radii, m_gaussianCount * sizeof(uint32));
+        cmdList->copyBuffer(m_diagDepth, out.depth, m_gaussianCount * sizeof(float));
         cmdList->resourceBarrier();
         cmdList->end();
         cmdList->submitAndWait();
 
         int* r = reinterpret_cast<int*>(m_diagRadii->map());
-        if (!r) {
+        float* z = reinterpret_cast<float*>(m_diagDepth->map());
+        if (!r || !z) {
             MR_LOG(LogTemp, Error, "[DIAG] radii map failed");
+            if (r) m_diagRadii->unmap();
+            if (z) m_diagDepth->unmap();
             cmdList->begin();
             return;
         }
-        uint32 maxR = 0, capped = 0, culled = 0, sumR = 0;
+        uint32 maxR = 0, culled = 0;
+        uint64_t sumR = 0;
+        uint32 wideByDepth[5] = {}, activeByDepth[5] = {};
+        float depthAtMax = 0.0f;
         for (uint32 i = 0; i < m_gaussianCount; ++i) {
             int v = r[i];
-            if (v > (int)maxR) maxR = (uint32)v;
-            if (v == 512)  capped++;        // hit the cap => fix ① active
+            if (v > (int)maxR) { maxR = (uint32)v; depthAtMax = z[i]; }
             if (v <= 0)    culled++;        // fully outside frustum
             sumR += (uint32)(v > 0 ? v : 0);
+            if (v > 0) {
+                int bucket = z[i] < 0.25f ? 0 : z[i] < 0.5f ? 1 : z[i] < 1.0f ? 2 : z[i] < 2.0f ? 3 : 4;
+                ++activeByDepth[bucket];
+                if (v >= 30) ++wideByDepth[bucket];
+            }
         }
         m_diagRadii->unmap();
+        m_diagDepth->unmap();
 
         float avgR = (float)sumR / (float)m_gaussianCount;
         MR_LOG(LogTemp, Log,
-               "[DIAG][Radius] count=%u maxRadius=%u avgRadius=%.2f "
-               "cappedAt512=%u (%.2f%%) culled=0=%u (%.2f%%)  [cap=512 => fix① active]",
-               m_gaussianCount, maxR, avgR, capped,
-               100.0f * (float)capped / (float)m_gaussianCount,
-               culled, 100.0f * (float)culled / (float)m_gaussianCount);
+               "[DIAG][RadiusDepth] count=%u maxRadius=%u depthAtMax=%.3f avgRadius=%.2f culled=%u "
+               "activeDepth=[%u,%u,%u,%u,%u] wide30Depth=[%u,%u,%u,%u,%u]",
+               m_gaussianCount, maxR, depthAtMax, avgR, culled,
+               activeByDepth[0], activeByDepth[1], activeByDepth[2], activeByDepth[3], activeByDepth[4],
+               wideByDepth[0], wideByDepth[1], wideByDepth[2], wideByDepth[3], wideByDepth[4]);
         fprintf(stderr,
-               "[DIAG][Radius] maxRadius=%u avgRadius=%.2f cappedAt512=%u culled=0=%u\n",
-               maxR, avgR, capped, culled);
+               "[DIAG][RadiusDepth] maxRadius=%u depthAtMax=%.3f active=[%u,%u,%u,%u,%u] wide30=[%u,%u,%u,%u,%u]\n",
+               maxR, depthAtMax, activeByDepth[0], activeByDepth[1], activeByDepth[2], activeByDepth[3], activeByDepth[4],
+               wideByDepth[0], wideByDepth[1], wideByDepth[2], wideByDepth[3], wideByDepth[4]);
 
         // Re-begin for onRender.
         auto outputTex = m_render.getOutputTexture();

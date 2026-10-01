@@ -84,6 +84,7 @@ void main() {
     uint end   = range.y;
 
     if (start >= end) {
+        imageStore(outputImage, ivec2(pixel), vec4(0.0));
         return;
     }
 
@@ -120,13 +121,12 @@ void main() {
 
         // Early exit: pixel is fully opaque
         float T_next = T * (1.0 - alpha);
-        if (T_next < 0.0001) {
-            break;
-        }
-
         // Front-to-back alpha blending
         C += colors[gaussIdx].rgb * alpha * T;
         T = T_next;
+        if (T < 0.0001) {
+            break;
+        }
     }
 
     imageStore(outputImage, ivec2(pixel), vec4(C, 1.0 - T));

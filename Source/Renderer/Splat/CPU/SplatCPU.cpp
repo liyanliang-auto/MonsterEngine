@@ -365,13 +365,9 @@ bool SplatCPU::inFrustum(const GaussianPointRaw& raw, const SplatCamera& cam,
     if (viewPos[2] >= -nearPlane) return false;
     if (viewPos[2] <  -farPlane)  return false;
 
-    // Clip-space culling
-    const float32* P = cam.projMatrix;
-    float32 cx = P[0] * viewPos[0] + P[4] * viewPos[1] + P[8]  * viewPos[2] + P[12];
-    float32 cy = P[1] * viewPos[0] + P[5] * viewPos[1] + P[9]  * viewPos[2] + P[13];
-    float32 cw = P[3] * viewPos[0] + P[7] * viewPos[1] + P[11] * viewPos[2] + P[15];
-
-    return (std::abs(cx) <= cw) && (std::abs(cy) <= cw);
+    // The projected ellipse can overlap the viewport even when its center is
+    // outside it. computeCov2D applies the final screen-space bbox test.
+    return true;
 }
 
 // ============================================================================
