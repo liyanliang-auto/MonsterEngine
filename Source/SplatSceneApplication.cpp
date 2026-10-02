@@ -737,20 +737,20 @@ void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUnifo
 
     // ---- Write view matrix: OpenGL/Vulkan column-major, M*v convention ----
     // GLSL expects objects in front of the camera to have NEGATIVE view-space Z.
-    // col0 = right, col1 = up, col2 = -forward (so front objects map to -Z),
-    // col3 = translation (-dot(right,eye), -dot(up,eye), dot(forward,eye))
+    // World-to-view rotation has rows right, up, -forward. Store those rows
+    // in column-major order; translation uses the same basis.
     {
         float32* v = outUniforms.viewMatrix;
         v[0]  = static_cast<float32>(right.X);
-        v[1]  = static_cast<float32>(right.Y);
-        v[2]  = static_cast<float32>(right.Z);
+        v[1]  = static_cast<float32>(up.X);
+        v[2]  = static_cast<float32>(-forward.X);
         v[3]  = 0.0f;
-        v[4]  = static_cast<float32>(up.X);
+        v[4]  = static_cast<float32>(right.Y);
         v[5]  = static_cast<float32>(up.Y);
-        v[6]  = static_cast<float32>(up.Z);
+        v[6]  = static_cast<float32>(-forward.Y);
         v[7]  = 0.0f;
-        v[8]  = static_cast<float32>(-forward.X);
-        v[9]  = static_cast<float32>(-forward.Y);
+        v[8]  = static_cast<float32>(right.Z);
+        v[9]  = static_cast<float32>(up.Z);
         v[10] = static_cast<float32>(-forward.Z);
         v[11] = 0.0f;
         v[12] = -static_cast<float32>(FVector::DotProduct(right, camPos));
@@ -839,7 +839,7 @@ void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUnifo
             float yaw      = hasFPS ? m_fpsCamera->GetYaw()      : 0.0f;
             float pitch    = hasFPS ? m_fpsCamera->GetPitch()    : 0.0f;
             float fov      = hasFPS ? m_fpsCamera->GetFOV()      : 0.0f;
-            float nearPlane = 0.1f;  // 与投影矩阵 nearVal、preprocess setClipPlanes 保持一致
+            float nearPlane = 0.1f;  // Matches projection and preprocess clip plane.
             MR_LOG(LogSplatScene, Log, "[DIAG] buildCam frame=%d hasFPS=%d "
                    "pos=(%.2f,%.2f,%.2f) front=(%.3f,%.3f,%.3f) yaw=%.1f pitch=%.1f "
                    "fov=%.2f near=%.2f focalX=%.1f focalY=%.1f tanFovX=%.4f tanFovY=%.4f",
