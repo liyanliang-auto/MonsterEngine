@@ -1474,4 +1474,130 @@ float myRadius = ceil(3.0 * sqrt(max(lambda1, lambda2)));   // 无任何 cap
 
 ---
 
-*文档结束 — 本文档为 MonsterEngine Vulkan 原生 3DGS Splat Pass 的完整实现记录，涵盖架构设计、RHI 基础设施、全部 6 个 Compute Pass、PLY 动态加载器、相机系统集成、渲染调试、日志策略及全部运行时问题修复全过程。*
+## 16. Codex 修复记录：缩放、平移后的糊屏与边缘拉丝
+
+> 本章记录本次会话由 **Codex** 完成的排查和修复。第 15 章保留了当时的排查过程；其中“仅由 zoom 范围引起”“不再深究”的判断已被后续日志和代码检查修正。这里将**已修复的管线错误**与**仍存在的近景模型模糊**分开说明。
+
+### 16.1 背景与诊断方法
+
+测试场景为 `resources/point_cloud/bonsai_30k.ply`（约 124 万个 Gaussian），管线顺序为 `Preprocess → PrefixSum → AssignKeys → RadixSort → TileBoundaries → Render`。初始视角可正常显示；反复缩放、平移或转动后，钢琴和视口边缘出现糊块、拉丝、残影。仅限制最小 FOV 和增加 AssignKeys 越界保护，不能消除这些现象。
+
+Codex 在 `FSplatPipeline::refreshSortCountIfNeeded` 中增加/使用 `[DIAG][SortCount]` 日志，并读回本帧 PrefixSum 尾项和最后一个 `tilesTouched`，比较排序实际需要的条目数与当前使用值。固定 FOV 但改变相机姿态时，曾观察到 `used=2896898, actual=3589583`（少 692685 条）和 `used=1899320, actual=1541708`（多 357612 条）。因此，**FOV 不变并不意味着排序条目数不变**。同时检查 Preprocess 的 bbox、Render 输出以及近景 Gaussian 半径/深度统计，逐项定位下面的问题。
+
+### 16.2 被剔除的 Gaussian 留下上一帧 bbox
+
+**现象与原因：**相机移动后，有些 Gaussian 本帧已被 near/far 剔除，但 `bbox[idx]` 仍保留上一帧的 tile 范围。`AssignKeys` 根据 bbox 是否有面积决定是否发出 key，并不会先检查 `tilesTouched[idx]`；它可能把旧范围写进本帧排序数组，导致块状伪影和边缘拉丝。
+
+**修复：**`Shaders/Splat/splat_preprocess.comp` 在每个 Gaussian 开始处理时清零所有与剔除相关的输出，包括 bbox；后续通过剔除的 Gaussian 才重建 bbox。
+
+```glsl
+radii[idx] = 0;
+tilesTouched[idx] = 0;
+depth[idx] = 0;
+bbox[idx] = uvec4(0u);  // 本帧被剔除时不再沿用旧 tile 范围
+```
+
+`Shaders/Splat/Sort/splat_assign_keys.comp` 中原有的零面积判断因此能可靠跳过被剔除点：
+
+```glsl
+uvec4 tileRect = bbox[gaussianIdx];
+if (tileRect.x >= tileRect.z || tileRect.y >= tileRect.w) return;
+```
+
+### 16.3 排序条目数随相机姿态变化，却沿用旧值
+
+**现象与原因：**平移或转动会改变可见 Gaussian 及其投影覆盖的 tile 数量，即使 FOV 完全不变，`PrefixSum` 的末值也会变化。旧逻辑只在初始化或 FOV 改变时刷新 `m_realSortElements`，并可能在本帧 AssignKeys/Sort 之后才得到新计数。计数偏小时丢失条目，偏大时排序未写入的条目；两者都能破坏画面。
+
+**修复：**`Source/Renderer/Splat/SplatPipeline.cpp` 将相机 `viewMatrix`、`projMatrix`、焦距、FOV 正切和视口尺寸都纳入变化判断；在**本帧 PrefixSum 完成后、AssignKeys 和 RadixSort 执行前**读回真实条目数，并同时更新管线计数与 AssignKeys 的写入上界。实际条目数为 exclusive prefix sum 的末值加最后一个 Gaussian 的 `tilesTouched`。
+
+```cpp
+// PrefixSum 之后、AssignKeys 之前
+cmdList->resourceBarrier();
+if (!refreshSortCountIfNeeded(cmdList)) return nullptr;
+const uint32 totalSortElements = m_realSortElements;
+
+// refreshSortCountIfNeeded() 的核心逻辑（摘录）
+const bool changed = !m_hasCountCamera ||
+    std::memcmp(m_currentCamera.viewMatrix, m_lastCountCamera.viewMatrix,
+                sizeof(m_currentCamera.viewMatrix)) != 0 ||
+    std::memcmp(m_currentCamera.projMatrix, m_lastCountCamera.projMatrix,
+                sizeof(m_currentCamera.projMatrix)) != 0 ||
+    m_currentCamera.focalX != m_lastCountCamera.focalX ||
+    m_currentCamera.focalY != m_lastCountCamera.focalY ||
+    m_currentCamera.tanFovX != m_lastCountCamera.tanFovX ||
+    m_currentCamera.tanFovY != m_lastCountCamera.tanFovY ||
+    m_currentCamera.imageWidth != m_lastCountCamera.imageWidth ||
+    m_currentCamera.imageHeight != m_lastCountCamera.imageHeight;
+
+uint32 newCount = exclusiveSum + lastTiles;
+if (newCount == 0) newCount = 1;
+if (newCount > m_maxSortElements) newCount = m_maxSortElements;
+m_realSortElements = newCount;
+m_assignKeys.setSortElementCount(newCount);
+m_lastCountCamera = m_currentCamera;
+```
+
+读回时需要提交并等待当前命令列表，取得 staging 数据后重新 `begin()`，才能继续记录后续的资源转换和诊断命令。修复后抽样的 `used`/`actual` 差值为 0；AssignKeys 的边界值与 Sort 处理的条目数保持一致。该同步读回会增加相机变化帧的等待成本，后续如优化性能，必须保持同帧计数一致。
+
+### 16.4 空 tile 残影与 alpha 早停遗漏
+
+**现象与原因：**`Shaders/Splat/Render/splat_render.comp` 遇到 `start >= end` 的 tile 时直接返回，输出纹理上的旧像素未清除，缩放/平移后看起来像拖影。另一个合成问题是先按 `T_next < 0.0001` 早停、再累计当前 Gaussian 颜色；最后一层高不透明度贡献被漏掉，会产生偏暗或颜色不连续的区域。
+
+**修复：**空 tile 显式写透明像素；有效 splat 先合成颜色并更新透射率，再判断是否早停。
+
+```glsl
+if (start >= end) {
+    imageStore(outputImage, ivec2(pixel), vec4(0.0));
+    return;
+}
+
+float T_next = T * (1.0 - alpha);
+C += colors[gaussIdx].rgb * alpha * T;
+T = T_next;
+if (T < 0.0001) break;
+```
+
+### 16.5 仅按 Gaussian 中心做视锥 XY 裁剪
+
+**现象与原因：**Gaussian 的中心可以在视口外，但其投影椭圆仍覆盖视口边缘。按中心位置提前做 XY 裁剪，会漏掉这些边缘 splat，形成缺口或拉丝。
+
+**修复：**`Shaders/Splat/splat_common.glsl` 的 `inFrustum` 只进行 near/far 裁剪；`Shaders/Splat/splat_preprocess.comp` 在算出投影半径后，用投影 bbox 与 tile 网格的交集决定是否可见。CPU 诊断路径 `Source/Renderer/Splat/CPU/SplatCPU.cpp` 同步采用相同原则。
+
+```glsl
+pView = mat3(viewMatrix) * posWorld + viewMatrix[3].xyz;
+if (pView.z >= -nearPlane) return false;
+if (pView.z < -farPlane)   return false;
+return true;  // XY 可见性留给投影椭圆的 bbox 判定
+
+// splat_preprocess.comp：计算 rectMin/rectMax 后
+bbox[idx] = uvec4(rectMin.x, rectMin.y, rectMax.x, rectMax.y);
+if ((rectMax.x - rectMin.x) * (rectMax.y - rectMin.y) == 0) return;
+```
+
+### 16.6 View 矩阵的行列约定修正
+
+`Source/SplatSceneApplication.cpp::buildCameraUniforms` 原来把相机基向量按列写入数组，与 GLSL 列主序矩阵乘列向量时所需的 world-to-view 旋转不符。Codex 改为将 `right`、`up`、`-forward` 作为**矩阵的行**写入列主序内存，并用相同基向量计算平移；这样 `pView.z`、视锥裁剪及投影在相机转动时使用同一约定。
+
+```cpp
+v[0] = right.X;    v[1] = up.X;    v[2]  = -forward.X;
+v[4] = right.Y;    v[5] = up.Y;    v[6]  = -forward.Y;
+v[8] = right.Z;    v[9] = up.Z;    v[10] = -forward.Z;
+v[12] = -FVector::DotProduct(right, camPos);
+v[13] = -FVector::DotProduct(up, camPos);
+v[14] =  FVector::DotProduct(forward, camPos);
+```
+
+这是一项相机数学正确性修复；默认角度下视觉变化较小，**不能单独解释或消除钢琴近景模糊**。
+
+### 16.7 验证结果、未解决项与实验边界
+
+- 修复后的日志检查确认：相机变化时排序条目数会刷新，抽样的 `used` 与 `actual` 一致；此前固定 FOV 下数十万条的偏差消失。反复缩放/平移后的旧 bbox、空 tile 残影及中心裁剪缺口已有对应修复。
+- 对钢琴近景继续取样：约 32824 个 Gaussian 中心落在键盘 ROI，其中 2513 个半径至少 80 px，11790 个投影长宽比大于 25；`invalidConic=0`。最大投影半径约 14078 px，发生在深度约 0.168 处。此时排序计数已匹配，说明剩余糊感不能再归因于旧计数。
+- 对比 `bonsai_7k.ply` 与 `bonsai_30k.ply` 的相同近景，7k 版本更糊。硬限制协方差特征值/长宽比、剔除或淡化大半径 splat 的试验会制造明显空洞或未提升清晰度，**这些试验已回退，非最终实现**。当前保留原有 `computeCov2D` 低通项 `cov[0][0] += 0.3`、`cov[1][1] += 0.3`，没有额外的半径上限。
+- 钢琴特定近景仍存在模糊。现有训练相机元数据约 292 个视角，垂直 FOV 约 35.74°；测试时的 FOV 20° 和更近的相机位置超出这些视角的常见覆盖，属于**有日志和对比支持、但尚非训练数据级证实**的模型采样/尺度问题。仅修改渲染器不能凭空恢复 PLY 中缺失的钢琴细节；进一步验证和改善需要原始训练图像、相机参数或更高质量的 PLY。参见 [bonsai 相机元数据](https://huggingface.co/datasets/dylanebert/3dgs/raw/main/bonsai/cameras.json) 与 [Mip-Splatting 论文](https://openaccess.thecvf.com/content/CVPR2024/papers/Yu_Mip-Splatting_Alias-free_3D_Gaussian_Splatting_CVPR_2024_paper.pdf)。
+
+**结论：**本次 Codex 修复了会随缩放/平移累积的管线错误和相机矩阵约定错误；钢琴在极近视角下的剩余模糊仍需结合模型训练数据继续处理。第 15.6 节关于“算法无差异、无需再查”的结论不再作为当前状态依据。
+
+---
+
+*文档结束 — 本文档为 MonsterEngine Vulkan 原生 3DGS Splat Pass 的实现、排查与修复记录。*
