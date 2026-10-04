@@ -97,6 +97,7 @@ namespace MonsterRender::RHI::Vulkan {
             }
             // Also invalidate current descriptor set since pipeline changed
             m_currentDescriptorSet = VK_NULL_HANDLE;
+            m_descriptorsDirty = true;
 
             MR_LOG_DEBUG("FVulkanPendingState::setGraphicsPipeline: Set pipeline (handle: " +
                         std::to_string(reinterpret_cast<uint64>(vkPipeline)) + "), cleared all bindings");
@@ -167,6 +168,7 @@ namespace MonsterRender::RHI::Vulkan {
             bufferBinding.offset = offset;
             bufferBinding.range = range;
             setState.dirty = true;
+            m_descriptorsDirty = true;
             
             MR_LOG_DEBUG("FVulkanPendingState::setUniformBuffer: set=" + 
                         std::to_string(set) + ", binding=" + std::to_string(binding));
@@ -195,6 +197,7 @@ namespace MonsterRender::RHI::Vulkan {
             textureBinding.mipLevels = mipLevels;
             textureBinding.arrayLayers = arrayLayers;
             setState.dirty = true;
+            m_descriptorsDirty = true;
             
             MR_LOG_DEBUG("FVulkanPendingState::setTexture: set=" + 
                         std::to_string(set) + ", binding=" + std::to_string(binding));

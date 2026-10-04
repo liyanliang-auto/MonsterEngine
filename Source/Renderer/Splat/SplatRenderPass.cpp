@@ -106,7 +106,8 @@ namespace MonsterRender::Splat
         desc.mipLevels = 1;
         desc.arraySize = 1;
         desc.format   = EPixelFormat::R8G8B8A8_UNORM;
-        desc.usage    = EResourceUsage::UnorderedAccess | EResourceUsage::ShaderResource;
+        desc.usage    = EResourceUsage::UnorderedAccess | EResourceUsage::ShaderResource |
+                        EResourceUsage::TransferSrc;
         desc.debugName = "SplatRender_Output";
 
         m_outputTexture = device->createTexture(desc);
@@ -257,6 +258,7 @@ namespace MonsterRender::Splat
         FRenderPushConstants pc;
         pc.imageWidth  = m_imageWidth;
         pc.imageHeight = m_imageHeight;
+        pc.wireframe = m_wireframe ? 1u : 0u;
 
         // Dispatch groups: one 16x16 workgroup per tile
         uint32 tilesX = (m_imageWidth  + 15u) / 16u;

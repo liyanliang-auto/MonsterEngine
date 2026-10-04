@@ -16,12 +16,16 @@
 #include "Renderer/Splat/SplatPipeline.h"
 #include "Renderer/Splat/SplatPLYLoader.h"
 #include "Renderer/Splat/SplatTypes.h"
+#include "Renderer/Splat/SplatControlState.h"
+#include "Renderer/Splat/SplatCameraSequence.h"
+#include "Renderer/Splat/SplatVideoExporter.h"
 
 // Forward declarations
 namespace MonsterEngine
 {
     class FFPSCameraController;
     class FCameraManager;
+    namespace Editor { class FImGuiContext; class FImGuiRenderer; class FImGuiInputHandler; }
 }
 
 namespace MonsterRender::Splat
@@ -49,7 +53,16 @@ namespace MonsterRender
 class SplatSceneApplication : public Application
 {
 public:
-    SplatSceneApplication(const String& modelPath = "");
+    struct FStartupExportOptions
+    {
+        String sequencePath;
+        String videoPath;
+        String ffmpegPath = "ffmpeg";
+        uint32 fps = 30;
+    };
+
+    SplatSceneApplication(const String& modelPath = "",
+                          const FStartupExportOptions& exportOptions = {});
     virtual ~SplatSceneApplication();
 
     // Application interface
@@ -61,10 +74,17 @@ public:
 
     // Input events
     void onKeyPressed(EKey key) override;
+    void onKeyReleased(EKey key) override;
     void onMouseButtonPressed(EKey button, const MousePosition& position) override;
     void onMouseButtonReleased(EKey button, const MousePosition& position) override;
     void onMouseMoved(const MousePosition& position) override;
     void onMouseScrolled(float64 xOffset, float64 yOffset) override;
+    bool HasStartupExportFailed() const { return m_startupExportFailed; }
+
+    // The 3DGS scene keeps rendering while the control overlay is hidden.
+    // Enabled by default. F1 calls this setter at runtime.
+    void SetControlUIVisible(bool visible);
+    bool IsControlUIVisible() const { return m_controlUIVisible; }
 
 private:
     // ================================================================
@@ -74,6 +94,9 @@ private:
     bool initSplatPipeline();
     bool initCamera();
     bool initPresentPass();
+    bool initImGui();
+    void drawControlPanels();
+    void applyControlState();
 
     // ================================================================
     // Camera helpers
@@ -93,6 +116,30 @@ private:
     // Camera
     MonsterEngine::TUniquePtr<MonsterEngine::FCameraManager>       m_cameraManager;
     MonsterEngine::TUniquePtr<MonsterEngine::FFPSCameraController>  m_fpsCamera;
+    MonsterEngine::TUniquePtr<MonsterEngine::Editor::FImGuiContext> m_imguiContext;
+    MonsterEngine::TUniquePtr<MonsterEngine::Editor::FImGuiRenderer> m_imguiRenderer;
+    MonsterEngine::TUniquePtr<MonsterEngine::Editor::FImGuiInputHandler> m_imguiInput;
+    MonsterRender::Splat::FSplatControlState m_controls;
+    MonsterRender::Splat::FSplatCameraSequence m_sequence;
+    MonsterRender::Splat::FSplatVideoExporter m_videoExporter;
+    MonsterRender::Splat::FSplatControlState m_preExportControls;
+    bool m_restoreExportState = false;
+    bool m_sequenceMode = false;
+    bool m_controlUIVisible = true;
+    int m_selectedKeyframe = -1;
+    double m_newKeyframeTime = 0.0;
+    char m_sequencePath[260] = "3dgs_sequence.json";
+    char m_videoPath[260] = "3dgs_animation.mp4";
+    char m_ffmpegPath[260] = "ffmpeg";
+    int m_exportFps = 30;
+    FStartupExportOptions m_startupExport;
+    bool m_autoExitAfterExport = false;
+    bool m_startupExportFailed = false;
+    String m_uiMessage;
+    float m_smoothedFrameMs = 16.67f;
+    float m_memoryPollSeconds = 0.0f;
+    uint64 m_gpuUsedBytes = 0;
+    uint64 m_gpuAvailableBytes = 0;
 
     // Present pass (fullscreen triangle → swapchain)
     struct FPresentPass
@@ -118,6 +165,9 @@ private:
     // ================================================================
     uint32 m_windowWidth  = 1280;
     uint32 m_windowHeight = 720;
+    uint32 m_renderWidth = 1280;
+    uint32 m_renderHeight = 720;
+    float m_uiScale = 1.2f;
 
     bool   m_mouseLookActive  = false;
     bool   m_firstMouseInput  = true;

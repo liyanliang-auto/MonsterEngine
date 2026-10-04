@@ -850,6 +850,8 @@ namespace MonsterRender::RHI::Vulkan
             return VK_FORMAT_R32G32B32_UINT;
         case EVertexFormat::UInt4:
             return VK_FORMAT_R32G32B32A32_UINT;
+        case EVertexFormat::UByte4Norm:
+            return VK_FORMAT_R8G8B8A8_UNORM;
         default:
             return VK_FORMAT_R32G32B32_SFLOAT;
         }
@@ -1022,6 +1024,33 @@ namespace MonsterRender::RHI::Vulkan
 
     std::vector<VkPipelineColorBlendAttachmentState> VulkanPipelineState::createColorBlendAttachments() const
     {
+        const auto toVkBlendFactor = [](EBlendFactor factor) {
+            switch (factor)
+            {
+            case EBlendFactor::Zero: return VK_BLEND_FACTOR_ZERO;
+            case EBlendFactor::One: return VK_BLEND_FACTOR_ONE;
+            case EBlendFactor::SrcColor: return VK_BLEND_FACTOR_SRC_COLOR;
+            case EBlendFactor::InvSrcColor: return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+            case EBlendFactor::SrcAlpha: return VK_BLEND_FACTOR_SRC_ALPHA;
+            case EBlendFactor::InvSrcAlpha: return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            case EBlendFactor::DestColor: return VK_BLEND_FACTOR_DST_COLOR;
+            case EBlendFactor::InvDestColor: return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+            case EBlendFactor::DestAlpha: return VK_BLEND_FACTOR_DST_ALPHA;
+            case EBlendFactor::InvDestAlpha: return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+            default: return VK_BLEND_FACTOR_ONE;
+            }
+        };
+        const auto toVkBlendOp = [](EBlendOp op) {
+            switch (op)
+            {
+            case EBlendOp::Add: return VK_BLEND_OP_ADD;
+            case EBlendOp::Subtract: return VK_BLEND_OP_SUBTRACT;
+            case EBlendOp::ReverseSubtract: return VK_BLEND_OP_REVERSE_SUBTRACT;
+            case EBlendOp::Min: return VK_BLEND_OP_MIN;
+            case EBlendOp::Max: return VK_BLEND_OP_MAX;
+            default: return VK_BLEND_OP_ADD;
+            }
+        };
         std::vector<VkPipelineColorBlendAttachmentState> attachments;
 
         // Color blend attachments must match the number of color attachments in RenderPass
@@ -1039,12 +1068,12 @@ namespace MonsterRender::RHI::Vulkan
             attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
             attachment.blendEnable = m_desc.blendState.blendEnable ? VK_TRUE : VK_FALSE;
-            attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-            attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-            attachment.colorBlendOp = VK_BLEND_OP_ADD;
-            attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-            attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-            attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+            attachment.srcColorBlendFactor = toVkBlendFactor(m_desc.blendState.srcColorBlend);
+            attachment.dstColorBlendFactor = toVkBlendFactor(m_desc.blendState.destColorBlend);
+            attachment.colorBlendOp = toVkBlendOp(m_desc.blendState.colorBlendOp);
+            attachment.srcAlphaBlendFactor = toVkBlendFactor(m_desc.blendState.srcAlphaBlend);
+            attachment.dstAlphaBlendFactor = toVkBlendFactor(m_desc.blendState.destAlphaBlend);
+            attachment.alphaBlendOp = toVkBlendOp(m_desc.blendState.alphaBlendOp);
             attachments.push_back(attachment);
             
             MR_LOG_INFO("  Attachment[" + std::to_string(i) + "]: colorWriteMask=0x" + 

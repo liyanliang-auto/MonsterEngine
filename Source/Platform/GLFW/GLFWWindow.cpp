@@ -284,6 +284,7 @@ namespace MonsterRender::Platform::GLFW {
             case GLFW_KEY_ENTER: return EKey::Enter;
             case GLFW_KEY_TAB: return EKey::Tab;
             case GLFW_KEY_BACKSPACE: return EKey::Backspace;
+            case GLFW_KEY_F1: return EKey::F1;
             
             case GLFW_KEY_LEFT: return EKey::Left;
             case GLFW_KEY_RIGHT: return EKey::Right;
@@ -366,6 +367,7 @@ namespace MonsterRender::Platform::GLFW {
         }
         glfwWindowHint(GLFW_RESIZABLE, properties.resizable ? GLFW_TRUE : GLFW_FALSE);
         glfwWindowHint(GLFW_DECORATED, properties.decorated ? GLFW_TRUE : GLFW_FALSE);
+        glfwWindowHint(GLFW_MAXIMIZED, properties.maximized ? GLFW_TRUE : GLFW_FALSE);
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); // Start hidden, show after setup
         glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);  // Request focus when shown
         

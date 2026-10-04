@@ -11,7 +11,8 @@ namespace MonsterRender::RHI::Vulkan {
         MR_ASSERT(desc.size > 0);
         MR_LOG_DEBUG("Creating Vulkan buffer: " + desc.debugName +
                      " (size: " + std::to_string(desc.size) + " bytes)");
-        if (!initialize()) {
+        m_initialized = initialize();
+        if (!m_initialized) {
             MR_LOG_ERROR("Failed to create Vulkan buffer: " + desc.debugName);
         }
 
@@ -100,6 +101,7 @@ namespace MonsterRender::RHI::Vulkan {
                     MR_LOG_ERROR("Failed to bind buffer memory: " + std::to_string(result));
                     memoryManager->Free(m_allocation);
                     m_usesMemoryManager = false;
+                    m_deviceMemory = VK_NULL_HANDLE;
                     return false;
                 }
 
@@ -284,7 +286,7 @@ namespace MonsterRender::RHI::Vulkan {
             return true;  // Nothing to upload
         }
 
-        if (!isValid()) {
+        if (m_buffer == VK_NULL_HANDLE || m_deviceMemory == VK_NULL_HANDLE) {
             MR_LOG_ERROR("Cannot upload data to invalid buffer: " + m_desc.debugName);
             return false;
         }

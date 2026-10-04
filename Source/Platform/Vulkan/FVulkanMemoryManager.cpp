@@ -5,7 +5,6 @@
 
 #include "Platform/Vulkan/FVulkanMemoryManager.h"
 #include "Platform/Vulkan/VulkanRHI.h"
-#include "Core/HAL/FMemory.h"
 #include "Core/Log.h"
 #include <algorithm>
 
@@ -53,8 +52,8 @@ FVulkanMemoryPool::FVulkanMemoryPool(VkDevice InDevice, VkDeviceSize InPoolSize,
         }
     }
     
-    // Initialize Free-List: entire pool as one large free block using FMemory
-    FreeList = FMemory::New<FMemoryBlock>(0, PoolSize, true);
+    // Pool nodes live with the Vulkan pool, independent of engine shutdown order.
+    FreeList = new FMemoryBlock(0, PoolSize, true);
     
     MR_LOG_INFO("FVulkanMemoryPool: Created " + std::to_string(PoolSize / (1024 * 1024)) + 
                 "MB pool (Type Index: " + std::to_string(MemoryTypeIndex) + 
@@ -63,18 +62,12 @@ FVulkanMemoryPool::FVulkanMemoryPool(VkDevice InDevice, VkDeviceSize InPoolSize,
 
 FVulkanMemoryPool::~FVulkanMemoryPool()
 {
-    // CRITICAL: Do NOT call FMemory::Delete() in destructor!
-    // The global memory allocator (FMallocBinned2) may already be destroyed.
-    // Memory blocks will be leaked, but this is acceptable during shutdown.
-    // Proper cleanup should be done via explicit Shutdown() before destruction.
-    
     const auto& functions = VulkanAPI::getFunctions();
-    
-    // WARNING: Intentionally NOT freeing FMemoryBlock nodes here
-    // They were allocated with FMemory::New() but we cannot safely call FMemory::Delete()
-    // during static destruction. This is a known limitation.
-    // The OS will reclaim all process memory anyway.
-    FreeList = nullptr;
+    while (FreeList) {
+        FMemoryBlock* next = FreeList->Next;
+        delete FreeList;
+        FreeList = next;
+    }
     
     // Unmap memory (safe - just a Vulkan call)
     if (PersistentMappedPtr) {
@@ -111,7 +104,7 @@ VkDeviceSize alignedOffset = (current->Offset + Alignment - 1) & ~(Alignment - 1
                 
                 // Step 1: Create padding block if needed
                 if (padding > 0) {
-                    FMemoryBlock* paddingBlock = FMemory::New<FMemoryBlock>(current->Offset, padding, true);
+                    FMemoryBlock* paddingBlock = new FMemoryBlock(current->Offset, padding, true);
                     paddingBlock->Next = current;
                     paddingBlock->Prev = prev;
                     
@@ -123,12 +116,13 @@ VkDeviceSize alignedOffset = (current->Offset + Alignment - 1) & ~(Alignment - 1
                     
                     current->Offset += padding;
                     current->Size -= padding;
+                    current->Prev = paddingBlock;
                     prev = paddingBlock;
                 }
                 
                 // Step 2: Split remainder block if allocated size is smaller than free block
                 if (current->Size > Size) {
-                    FMemoryBlock* remainder = FMemory::New<FMemoryBlock>(
+                    FMemoryBlock* remainder = new FMemoryBlock(
                         current->Offset + Size,
                         current->Size - Size,
                         true
@@ -281,7 +275,7 @@ void FVulkanMemoryPool::MergeFreeBlocks()
                 next->Next->Prev = current;
             }
             
-            FMemory::Delete(next);
+            delete next;
             // Continue from current block (don't advance)
         } else {
             current = current->Next;

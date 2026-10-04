@@ -38,7 +38,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkDeviceSize getOffset() const { return m_offset; }
         
         // Validation and debugging
-        bool isValid() const { return m_buffer != VK_NULL_HANDLE; }
+        bool isValid() const { return m_initialized; }
         
     private:
         bool initialize();
@@ -60,6 +60,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkDeviceSize m_offset = 0;
         void* m_mappedData = nullptr;
         bool m_persistentMapped = false;
+        bool m_initialized = false;
         
         // Memory manager allocation (UE5-style)
         FVulkanAllocation m_allocation{};

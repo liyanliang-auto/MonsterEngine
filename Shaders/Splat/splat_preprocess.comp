@@ -9,7 +9,7 @@
 // Descriptor Sets:
 //   Set 0 (Input): positions, scales, rotations, opacities, shCoeffs, CameraUBO
 //   Set 1 (Output): radii, depth, rgb, conicOpacity, pointsXY, tilesTouched, bbox
-//   Push Constants: gaussianCount, near, far, culling
+//   Push Constants: gaussianCount, near, far, culling, gaussianScale
 
 #version 450
 #extension GL_GOOGLE_include_directive : enable
@@ -18,13 +18,14 @@
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 // ============================================================================
-// Push Constants (16 bytes)
+// Push Constants (20 bytes of fields; CPU range padded to 32 bytes)
 // ============================================================================
 layout(push_constant) uniform PushConstants {
     uint gaussianCount;
     float near;
     float far;
     uint culling;
+    float gaussianScale;
 } pc;
 
 // ============================================================================
@@ -230,9 +231,10 @@ void main() {
     // Step 1.4: Frustum culling
     vec3 pView;
     bool inFrust = inFrustum(positions[idx].xyz, camera.viewMatrix, camera.projMatrix, pc.near, pc.far, pView);
-    if (pc.culling == 1) {
-        if (!inFrust) return;
-    }
+    if (pc.culling != 0u && !inFrust) return;
+    // Even with distance culling disabled, projection cannot cross the eye
+    // plane or the Jacobian denominator becomes undefined.
+    if (pView.z >= -0.0001) return;
 
     // Transform to clip space for NDC -> pixel conversion
     vec4 pOrig = positions[idx];
@@ -242,7 +244,7 @@ void main() {
 
     // Step 1.3: Compute 3D covariance
     float cov3D_data[6];
-    computeCov3D(scales[idx].xyz, rotations[idx], 1.0, cov3D_data);
+    computeCov3D(scales[idx].xyz, rotations[idx], pc.gaussianScale, cov3D_data);
 
     // Step 1.5: Compute 2D covariance (Jacobian + projection)
     vec3 cov2D = computeCov2D(pView, cov3D_data, camera.viewMatrix, camera.focalX, camera.focalY, camera.tanFovX, camera.tanFovY);

@@ -41,6 +41,7 @@ FFPSCameraController::FFPSCameraController()
     , m_worldUp(FVector(0.0, 1.0, 0.0))
     , m_yaw(DEFAULT_YAW)
     , m_pitch(DEFAULT_PITCH)
+    , m_roll(0.0f)
     , m_fov(DEFAULT_FOV)
     , m_settings()
     , m_cameraManager(nullptr)
@@ -69,6 +70,7 @@ FFPSCameraController::FFPSCameraController(
     , m_worldUp(InWorldUp)
     , m_yaw(InYaw)
     , m_pitch(InPitch)
+    , m_roll(0.0f)
     , m_fov(DEFAULT_FOV)
     , m_settings()
     , m_cameraManager(nullptr)
@@ -116,6 +118,7 @@ void FFPSCameraController::Reset()
     m_position = FVector::ZeroVector;
     m_yaw = DEFAULT_YAW;
     m_pitch = DEFAULT_PITCH;
+    m_roll = 0.0f;
     m_fov = DEFAULT_FOV;
     m_bFirstMouse = true;
     
@@ -162,11 +165,11 @@ void FFPSCameraController::ProcessKeyboard(ECameraMovement Direction, float Delt
             break;
             
         case ECameraMovement::Up:
-            m_position = m_position + m_worldUp * velocity;
+            m_position = m_position + (m_settings.bLocalVerticalMovement ? m_up : m_worldUp) * velocity;
             break;
             
         case ECameraMovement::Down:
-            m_position = m_position - m_worldUp * velocity;
+            m_position = m_position - (m_settings.bLocalVerticalMovement ? m_up : m_worldUp) * velocity;
             break;
     }
 }
@@ -216,6 +219,16 @@ void FFPSCameraController::ProcessMouseScroll(float YOffset)
     // Adjust FOV (zoom)
     m_fov -= YOffset * m_settings.ScrollSensitivity;
     m_fov = FMath::Clamp(m_fov, m_settings.MinFOV, m_settings.MaxFOV);
+}
+
+void FFPSCameraController::ProcessRoll(float DegreesPerSecond, float DeltaTime)
+{
+    if (!m_bEnabled)
+    {
+        return;
+    }
+
+    SetRoll(m_roll + DegreesPerSecond * DeltaTime);
 }
 
 // ============================================================================
@@ -270,6 +283,18 @@ void FFPSCameraController::SetRotation(float InYaw, float InPitch)
     }
     
     // Update camera vectors
+    _updateCameraVectors();
+}
+
+void FFPSCameraController::SetRotation(float InYaw, float InPitch, float InRoll)
+{
+    m_roll = InRoll;
+    SetRotation(InYaw, InPitch);
+}
+
+void FFPSCameraController::SetRoll(float InRoll)
+{
+    m_roll = InRoll;
     _updateCameraVectors();
 }
 
@@ -331,10 +356,18 @@ void FFPSCameraController::_updateCameraVectors()
     
     // Re-calculate right and up vectors
     // Right = normalize(cross(Front, WorldUp))
-    m_right = FVector::CrossProduct(m_front, m_worldUp).GetSafeNormal();
+    const FVector unrolledRight = FVector::CrossProduct(m_front, m_worldUp).GetSafeNormal();
     
     // Up = normalize(cross(Right, Front))
-    m_up = FVector::CrossProduct(m_right, m_front).GetSafeNormal();
+    const FVector unrolledUp = FVector::CrossProduct(unrolledRight, m_front).GetSafeNormal();
+
+    // Rotate the orthonormal view basis around the front vector. A zero roll
+    // preserves the previous FPS camera behavior exactly.
+    const float rollRad = FMath::DegreesToRadians(m_roll);
+    const float cosine = FMath::Cos(rollRad);
+    const float sine = FMath::Sin(rollRad);
+    m_right = unrolledRight * cosine - unrolledUp * sine;
+    m_up = unrolledUp * cosine + unrolledRight * sine;
 }
 
 void FFPSCameraController::_applyCameraState()
@@ -355,7 +388,7 @@ void FFPSCameraController::_applyCameraState()
     FRotator rotation;
     rotation.Pitch = m_pitch;
     rotation.Yaw = m_yaw;
-    rotation.Roll = 0.0f;
+    rotation.Roll = m_roll;
     viewInfo.Rotation = rotation;
     
     // Update FOV

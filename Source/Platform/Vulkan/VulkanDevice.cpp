@@ -295,6 +295,10 @@ namespace MonsterRender::RHI::Vulkan {
                 functions.vkDestroyRenderPass(m_device, m_renderPass, nullptr);
                 m_renderPass = VK_NULL_HANDLE;
             }
+            if (m_rttRenderPass != VK_NULL_HANDLE) {
+                functions.vkDestroyRenderPass(m_device, m_rttRenderPass, nullptr);
+                m_rttRenderPass = VK_NULL_HANDLE;
+            }
             
             // Destroy swapchain
             if (m_swapchain != VK_NULL_HANDLE) {
@@ -695,9 +699,15 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void VulkanDevice::getMemoryStats(uint64& usedBytes, uint64& availableBytes) {
-        // TODO: Implement proper memory tracking
         usedBytes = 0;
         availableBytes = 0;
+        if (m_memoryManager) {
+            FVulkanMemoryManager::FMemoryStats stats;
+            m_memoryManager->GetMemoryStats(stats);
+            usedBytes = static_cast<uint64>(stats.TotalAllocated);
+            availableBytes = stats.TotalReserved > stats.TotalAllocated
+                ? static_cast<uint64>(stats.TotalReserved - stats.TotalAllocated) : 0;
+        }
     }
     
     void VulkanDevice::collectGarbage() {

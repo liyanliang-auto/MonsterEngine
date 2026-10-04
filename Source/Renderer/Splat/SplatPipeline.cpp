@@ -10,6 +10,7 @@
 #include "Renderer/Splat/SplatPipeline.h"
 #include "Core/Logging/LogMacros.h"
 #include "RHI/RHIDefinitions.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -102,6 +103,8 @@ namespace MonsterRender::Splat
             MR_LOG(LogTemp, Error, "[SplatPipeline] Render init failed");
             return false;
         }
+
+        setRenderSettings(m_renderSettings);
 
         m_bInitialized = true;
         MR_LOG(LogTemp, Log, "[SplatPipeline] Initialized: %u GS, %ux%u, %u tiles (%ux%u), "
@@ -199,6 +202,7 @@ namespace MonsterRender::Splat
         if (m_realSortElements > m_maxSortElements) m_realSortElements = m_maxSortElements;
         m_assignKeys.setSortElementCount(m_realSortElements);
         m_lastCountCamera = m_currentCamera;
+        m_lastCountSettings = m_renderSettings;
         m_hasCountCamera = true;
 
         MR_LOG(LogTemp, Log, "[SplatPipeline] Readback: exclusiveSum=%u lastTiles=%u -> totalSortElements=%u (max=%u)",
@@ -219,10 +223,28 @@ namespace MonsterRender::Splat
     void FSplatPipeline::setCamera(const FCameraUniforms& camera)
     {
         m_preprocess.updateCamera(camera);
-        m_preprocess.setClipPlanes(0.1f, 1000.0f);
         m_currentCamera = camera;
         m_prevTanFovY = camera.tanFovY;
         m_hasCamera = true;
+    }
+
+    void FSplatPipeline::setRenderSettings(const FSplatRenderSettings& settings)
+    {
+        // UI and sequence loaders should validate their inputs as well. Keep
+        // the GPU path safe if a caller supplies malformed or non-finite data.
+        FSplatRenderSettings safe = settings;
+        if (!std::isfinite(safe.nearPlane) || safe.nearPlane <= 0.0f || safe.nearPlane > 1.0e6f)
+            safe.nearPlane = 0.1f;
+        if (!std::isfinite(safe.farPlane) || safe.farPlane <= safe.nearPlane || safe.farPlane > 1.0e9f)
+            safe.farPlane = std::max(1000.0f, safe.nearPlane + 1.0f);
+        if (!std::isfinite(safe.gaussianScale) || safe.gaussianScale <= 0.0f)
+            safe.gaussianScale = 1.0f;
+        safe.gaussianScale = std::clamp(safe.gaussianScale, 0.01f, 10.0f);
+        m_renderSettings = safe;
+        m_preprocess.setClipPlanes(safe.nearPlane, safe.farPlane);
+        m_preprocess.setDistanceCulling(safe.distanceCulling);
+        m_preprocess.setGaussianScale(safe.gaussianScale);
+        m_render.setWireframe(safe.wireframe);
     }
 
     MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICommandList* cmdList)
@@ -409,7 +431,11 @@ namespace MonsterRender::Splat
             m_currentCamera.tanFovX != m_lastCountCamera.tanFovX ||
             m_currentCamera.tanFovY != m_lastCountCamera.tanFovY ||
             m_currentCamera.imageWidth != m_lastCountCamera.imageWidth ||
-            m_currentCamera.imageHeight != m_lastCountCamera.imageHeight;
+            m_currentCamera.imageHeight != m_lastCountCamera.imageHeight ||
+            m_renderSettings.nearPlane != m_lastCountSettings.nearPlane ||
+            m_renderSettings.farPlane != m_lastCountSettings.farPlane ||
+            m_renderSettings.distanceCulling != m_lastCountSettings.distanceCulling ||
+            m_renderSettings.gaussianScale != m_lastCountSettings.gaussianScale;
         const bool fovChanged = !m_hasCountCamera ||
             m_currentCamera.tanFovY != m_lastCountCamera.tanFovY;
         const FSplatPreprocessOutput& preOut = m_preprocess.getOutput();
@@ -465,6 +491,7 @@ namespace MonsterRender::Splat
         // -> corrupted image. Keep them identical.
         m_assignKeys.setSortElementCount(newCount);
         m_lastCountCamera = m_currentCamera;
+        m_lastCountSettings = m_renderSettings;
         m_hasCountCamera = true;
 
         MR_LOG(LogTemp, Log,

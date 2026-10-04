@@ -17,6 +17,7 @@ namespace MonsterRender {
         bool resizable = true;
         bool vsync = true;
         bool decorated = true; // Window decorations (title bar, etc)
+        bool maximized = false;
         RHI::ERHIBackend rhiBackend = RHI::ERHIBackend::None;  // RHI backend for window creation
         
         WindowProperties() = default;

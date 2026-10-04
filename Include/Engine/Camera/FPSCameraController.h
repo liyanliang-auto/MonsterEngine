@@ -83,6 +83,9 @@ struct FFPSCameraSettings
     
     /** Sprint speed multiplier */
     float SprintMultiplier = 2.0f;
+
+    /** Move up/down along the camera's rolled up axis instead of world up. */
+    bool bLocalVerticalMovement = false;
     
     /** Default constructor */
     FFPSCameraSettings() = default;
@@ -176,6 +179,9 @@ public:
      * @param YOffset Scroll offset (positive = zoom in)
      */
     void ProcessMouseScroll(float YOffset);
+
+    /** Rotate about the current view direction. Speed is in degrees per second. */
+    void ProcessRoll(float DegreesPerSecond, float DeltaTime);
     
     // ========================================================================
     // Update
@@ -222,6 +228,9 @@ public:
     
     /** Get pitch angle in degrees */
     float GetPitch() const { return m_pitch; }
+
+    /** Get roll angle in degrees. */
+    float GetRoll() const { return m_roll; }
     
     /** Get current FOV */
     float GetFOV() const { return m_fov; }
@@ -248,6 +257,12 @@ public:
      * @param InPitch New pitch angle in degrees
      */
     void SetRotation(float InYaw, float InPitch);
+
+    /** Set all three view angles in degrees. */
+    void SetRotation(float InYaw, float InPitch, float InRoll);
+
+    /** Set roll around the view direction in degrees. */
+    void SetRoll(float InRoll);
     
     /**
      * Set FOV
@@ -334,6 +349,9 @@ protected:
     
     /** Pitch angle in degrees (rotation around X axis) */
     float m_pitch;
+
+    /** Roll angle in degrees (rotation around the view direction). */
+    float m_roll;
     
     // ========================================================================
     // Camera Options

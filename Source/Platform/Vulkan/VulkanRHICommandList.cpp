@@ -535,23 +535,18 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
     
     void FVulkanRHICommandListImmediate::draw(uint32 vertexCount, uint32 startVertexLocation) {
-        fprintf(stderr, "[STDERR_TRACE] FVulkanRHICommandListImmediate::draw(%u, %u) BEGIN\n",
-                vertexCount, startVertexLocation);
         MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] FVulkanRHICommandListImmediate::draw(%u, %u) BEGIN",
                vertexCount, startVertexLocation);
         if (!m_context) {
-            fprintf(stderr, "[STDERR_TRACE] No context!\n");
-            MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] No context!");
+            MR_LOG(LogTemp, Error, "FVulkanRHICommandListImmediate::draw: No context");
             return;
         }
         
         // Draw non-indexed primitives
         // UE5 Pattern: FVulkanCommandListContext::RHIDrawPrimitive()
         // Prepares pending state and calls vkCmdDraw
-        fprintf(stderr, "[STDERR_TRACE] Calling m_context->draw()...\n");
         MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] Calling m_context->draw()...");
         m_context->draw(vertexCount, startVertexLocation);
-        fprintf(stderr, "[STDERR_TRACE] m_context->draw() returned\n");
         MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] m_context->draw() returned");
     }
     

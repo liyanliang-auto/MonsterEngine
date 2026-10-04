@@ -270,6 +270,7 @@ void FImGuiRenderer::RenderDrawData(MonsterRender::RHI::IRHICommandList* CmdList
                         CmdList->setShaderResource(1, FontTexture);
                     }
                 }
+                CmdList->setSampler(1, FontSampler);
 
                 // Draw indexed
                 CmdList->drawIndexed(
@@ -598,12 +599,8 @@ void FImGuiRenderer::SetupRenderState(MonsterRender::RHI::IRHICommandList* CmdLi
     ubo.ProjectionMatrix[13] = (T + B) / (B - T);
     ubo.ProjectionMatrix[15] = 1.0f;
 
-    // Adjust for Vulkan's flipped Y
-    if (RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan)
-    {
-        ubo.ProjectionMatrix[5] = 2.0f / (B - T);
-        ubo.ProjectionMatrix[13] = (T + B) / (T - B);
-    }
+    // VulkanPendingState already uses a negative-height viewport to flip Y.
+    // Keep ImGui's top-left projection here so the transform is applied once.
 
     // Upload uniform buffer
     void* mappedData = UniformBuffer->map();
@@ -618,6 +615,7 @@ void FImGuiRenderer::SetupRenderState(MonsterRender::RHI::IRHICommandList* CmdLi
 
     // Bind uniform buffer
     CmdList->setConstantBuffer(0, UniformBuffer);
+    CmdList->setSampler(1, FontSampler);
 
     // Bind vertex buffer
     TArray<TSharedPtr<MonsterRender::RHI::IRHIBuffer>> vertexBuffers;

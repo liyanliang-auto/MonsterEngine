@@ -1,4 +1,7 @@
-// Copyright Monster Engine. All Rights Reserved.
+﻿// Copyright Monster Engine. All Rights Reserved.
+#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
 
 /**
  * @file SplatSceneApplication.cpp
@@ -24,7 +27,14 @@
 #include "RHI/IRHIDevice.h"
 #include "Core/Input.h"
 #include "Math/MonsterMath.h"
+#include "Editor/ImGui/ImGuiContext.h"
+#include "Editor/ImGui/ImGuiRenderer.h"
+#include "Editor/ImGui/ImGuiInputHandler.h"
+#include "imgui.h"
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 
 namespace MonsterRender
 {
@@ -32,6 +42,19 @@ namespace MonsterRender
 using namespace MonsterEngine;
 
 DEFINE_LOG_CATEGORY_STATIC(LogSplatScene, Log, All);
+
+static int GetSplatBenchmarkSeconds()
+{
+    static const int seconds = []() {
+        char* value = nullptr;
+        size_t length = 0;
+        _dupenv_s(&value, &length, "MONSTER_SPLAT_BENCH_SECONDS");
+        const int requested = value ? std::atoi(value) : 0;
+        std::free(value);
+        return requested > 0 ? requested : 0;
+    }();
+    return seconds;
+}
 
 // ============================================================================
 // Construction / Destruction
@@ -44,16 +67,21 @@ static ApplicationConfig CreateSplatSceneConfig()
     config.preferredBackend = RHI::ERHIBackend::Vulkan;
     config.windowProperties.width  = 1920;
     config.windowProperties.height = 1080;
-    config.enableValidation = true;
+    // Start at a 1:1 viewport size for readable UI and comparable FPS results.
+    // Users can still maximize the window when they need more screen space.
+    config.windowProperties.maximized = false;
+    config.enableValidation = GetSplatBenchmarkSeconds() == 0;
     return config;
 }
 
-SplatSceneApplication::SplatSceneApplication(const String& modelPath)
+SplatSceneApplication::SplatSceneApplication(const String& modelPath,
+                                             const FStartupExportOptions& exportOptions)
     : Application(CreateSplatSceneConfig())
     , m_device(nullptr)
     , m_modelPath(modelPath)
     , m_windowWidth(1280)
     , m_windowHeight(720)
+    , m_startupExport(exportOptions)
 {
     // Default model if none specified
     // // https://huggingface.co/datasets/dylanebert/3dgs/tree/main/bonsai
@@ -64,6 +92,21 @@ SplatSceneApplication::SplatSceneApplication(const String& modelPath)
 SplatSceneApplication::~SplatSceneApplication()
 {
     shutdown();
+}
+
+void SplatSceneApplication::SetControlUIVisible(bool visible)
+{
+    if (m_controlUIVisible == visible) return;
+    m_controlUIVisible = visible;
+    m_mouseLookActive = false;
+    m_firstMouseInput = true;
+    if (m_imguiContext)
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        io.ClearEventsQueue();
+        io.ClearInputKeys();
+        io.ClearInputMouse();
+    }
 }
 
 // ============================================================================
@@ -80,12 +123,21 @@ void SplatSceneApplication::onInitialize()
         m_windowWidth  = getWindow()->getWidth();
         m_windowHeight = getWindow()->getHeight();
     }
+    const bool largeWindow = m_windowWidth > 2560 || m_windowHeight > 1440;
+    const float maxRenderWidth = largeWindow ? 1600.0f : 1920.0f;
+    const float maxRenderHeight = largeWindow ? 900.0f : 1080.0f;
+    const float renderScale = std::min({1.0f, maxRenderWidth / m_windowWidth, maxRenderHeight / m_windowHeight});
+    m_renderWidth = std::max(2u, (static_cast<uint32>(m_windowWidth * renderScale) & ~1u));
+    m_renderHeight = std::max(2u, (static_cast<uint32>(m_windowHeight * renderScale) & ~1u));
+    m_uiScale = std::clamp(1.2f * m_windowWidth / 1920.0f, 1.2f, 2.0f);
 
     // Get device
     m_device = getEngine() ? getEngine()->getRHIDevice() : nullptr;
     if (!m_device)
     {
         MR_LOG(LogSplatScene, Error, "Failed to get RHI device");
+        m_startupExportFailed = !m_startupExport.videoPath.empty();
+        requestExit();
         return;
     }
 
@@ -96,6 +148,8 @@ void SplatSceneApplication::onInitialize()
     if (!loadModel())
     {
         MR_LOG(LogSplatScene, Error, "Failed to load model: %s", m_modelPath.c_str());
+        m_startupExportFailed = !m_startupExport.videoPath.empty();
+        requestExit();
         return;
     }
 
@@ -103,6 +157,8 @@ void SplatSceneApplication::onInitialize()
     if (!initSplatPipeline())
     {
         MR_LOG(LogSplatScene, Error, "Failed to initialize SplatPipeline");
+        m_startupExportFailed = !m_startupExport.videoPath.empty();
+        requestExit();
         return;
     }
 
@@ -110,6 +166,8 @@ void SplatSceneApplication::onInitialize()
     if (!initCamera())
     {
         MR_LOG(LogSplatScene, Error, "Failed to initialize camera");
+        m_startupExportFailed = !m_startupExport.videoPath.empty();
+        requestExit();
         return;
     }
 
@@ -117,8 +175,13 @@ void SplatSceneApplication::onInitialize()
     if (!initPresentPass())
     {
         MR_LOG(LogSplatScene, Error, "Failed to initialize present pass");
+        m_startupExportFailed = !m_startupExport.videoPath.empty();
+        requestExit();
         return;
     }
+
+    if (!initImGui())
+        MR_LOG(LogSplatScene, Warning, "3DGS controls unavailable: ImGui initialization failed");
 
     // Adjust window to swapchain size
     if (getWindow() && m_device->getRHIBackend() == RHI::ERHIBackend::Vulkan)
@@ -135,11 +198,76 @@ void SplatSceneApplication::onInitialize()
 
     MR_LOG(LogSplatScene, Log, "SplatSceneApplication initialized — %u gaussians, SH degree %d",
            m_splatPipeline->getGaussianCount(), m_shDegree);
+
+    if (!m_startupExport.sequencePath.empty() && !m_startupExport.videoPath.empty())
+    {
+        std::string error;
+        if (!m_sequence.LoadJson(m_startupExport.sequencePath, &error) ||
+            m_sequence.GetKeyframes().size() < 2)
+        {
+            MR_LOG(LogSplatScene, Error, "Startup sequence load failed: %s", error.c_str());
+            m_startupExportFailed = true;
+            requestExit();
+            return;
+        }
+        m_sequenceMode = true;
+        m_preExportControls = m_controls;
+        m_autoExitAfterExport = true;
+        if (!m_videoExporter.start(m_device, m_startupExport.videoPath,
+                                   m_renderWidth, m_renderHeight,
+                                   m_startupExport.fps, m_sequence.GetDuration(),
+                                   m_startupExport.ffmpegPath))
+        {
+            MR_LOG(LogSplatScene, Error, "Startup export failed: %s",
+                   m_videoExporter.getLastError().c_str());
+            m_startupExportFailed = true;
+            requestExit();
+        }
+    }
 }
 
 void SplatSceneApplication::onUpdate(float32 deltaTime)
 {
     m_deltaTime = deltaTime;
+
+    if (m_restoreExportState)
+    {
+        m_controls = m_preExportControls;
+        m_restoreExportState = false;
+        applyControlState();
+    }
+    if (m_fpsCamera && !m_sequence.IsPlaying() && !m_videoExporter.isActive())
+    {
+        const FVector& p = m_fpsCamera->GetPosition();
+        m_controls.PositionX = static_cast<float>(p.X);
+        m_controls.PositionY = static_cast<float>(p.Y);
+        m_controls.PositionZ = static_cast<float>(p.Z);
+        m_controls.Yaw = m_fpsCamera->GetYaw();
+        m_controls.Pitch = m_fpsCamera->GetPitch();
+        m_controls.Roll = m_fpsCamera->GetRoll();
+        m_controls.FOV = m_fpsCamera->GetFOV();
+    }
+    m_smoothedFrameMs = m_smoothedFrameMs * 0.9f + FMath::Max(deltaTime * 1000.0f, 0.01f) * 0.1f;
+    m_memoryPollSeconds += deltaTime;
+    if (m_memoryPollSeconds >= 1.0f && m_device)
+    {
+        m_device->getMemoryStats(m_gpuUsedBytes, m_gpuAvailableBytes);
+        m_memoryPollSeconds = 0.0f;
+    }
+    if (m_controlUIVisible && m_imguiContext && m_imguiRenderer)
+    {
+        m_imguiContext->BeginFrame(deltaTime, m_windowWidth, m_windowHeight);
+        drawControlPanels();
+        m_imguiContext->EndFrame();
+    }
+    const bool wasPlaying = m_sequence.IsPlaying();
+    if (!m_videoExporter.isActive()) m_sequence.Tick(deltaTime);
+    if (m_videoExporter.isActive())
+        m_controls = m_sequence.Sample(m_videoExporter.getSampleTime());
+    else if (wasPlaying)
+        m_controls = m_sequence.Sample(m_sequence.GetPlaybackTime());
+    m_controls.ClampToValid();
+    applyControlState();
 
     // ---- Diagnostic: confirm onUpdate is called and input system is alive ----
     {
@@ -178,18 +306,23 @@ void SplatSceneApplication::onUpdate(float32 deltaTime)
             bool bSprinting = inputManager->isKeyDown(EKey::LeftShift) ||
                               inputManager->isKeyDown(EKey::RightShift);
 
-            if (inputManager->isKeyDown(EKey::W))
+            const bool bCaptureKeyboard = m_videoExporter.isActive() || (m_controlUIVisible && m_imguiContext && m_imguiContext->WantsCaptureKeyboard());
+            if (!bCaptureKeyboard && !m_sequence.IsPlaying() && inputManager->isKeyDown(EKey::W))
                 m_fpsCamera->ProcessKeyboard(ECameraMovement::Forward, deltaTime, bSprinting);
-            if (inputManager->isKeyDown(EKey::S))
+            if (!bCaptureKeyboard && !m_sequence.IsPlaying() && inputManager->isKeyDown(EKey::S))
                 m_fpsCamera->ProcessKeyboard(ECameraMovement::Backward, deltaTime, bSprinting);
-            if (inputManager->isKeyDown(EKey::A))
+            if (!bCaptureKeyboard && !m_sequence.IsPlaying() && inputManager->isKeyDown(EKey::A))
                 m_fpsCamera->ProcessKeyboard(ECameraMovement::Left, deltaTime, bSprinting);
-            if (inputManager->isKeyDown(EKey::D))
+            if (!bCaptureKeyboard && !m_sequence.IsPlaying() && inputManager->isKeyDown(EKey::D))
                 m_fpsCamera->ProcessKeyboard(ECameraMovement::Right, deltaTime, bSprinting);
-            if (inputManager->isKeyDown(EKey::E) || inputManager->isKeyDown(EKey::Space))
+            if (!bCaptureKeyboard && !m_sequence.IsPlaying() && inputManager->isKeyDown(EKey::C))
                 m_fpsCamera->ProcessKeyboard(ECameraMovement::Up, deltaTime, bSprinting);
-            if (inputManager->isKeyDown(EKey::Q) || inputManager->isKeyDown(EKey::LeftControl))
+            if (!bCaptureKeyboard && !m_sequence.IsPlaying() && inputManager->isKeyDown(EKey::Space))
                 m_fpsCamera->ProcessKeyboard(ECameraMovement::Down, deltaTime, bSprinting);
+            if (!bCaptureKeyboard && !m_sequence.IsPlaying() && inputManager->isKeyDown(EKey::Q))
+                m_fpsCamera->ProcessRoll(-90.0f, deltaTime);
+            if (!bCaptureKeyboard && !m_sequence.IsPlaying() && inputManager->isKeyDown(EKey::E))
+                m_fpsCamera->ProcessRoll(90.0f, deltaTime);
         }
 
         // Apply all accumulated camera state to the camera manager
@@ -235,6 +368,13 @@ void SplatSceneApplication::onRender()
     Splat::FCameraUniforms camera;
     buildCameraUniforms(camera);
     m_splatPipeline->setCamera(camera);
+    Splat::FSplatRenderSettings renderSettings;
+    renderSettings.nearPlane = m_controls.NearPlane;
+    renderSettings.farPlane = m_controls.FarPlane;
+    renderSettings.distanceCulling = m_controls.bDistanceCulling;
+    renderSettings.wireframe = m_controls.bWireframe;
+    renderSettings.gaussianScale = m_controls.GaussianScale;
+    m_splatPipeline->setRenderSettings(renderSettings);
 
     cmdList->begin();
     MR_LOG(LogSplatScene, Verbose, "onRender: Command buffer recorded, executing splat pipeline...");
@@ -260,9 +400,17 @@ void SplatSceneApplication::onRender()
     if (!splatOutput)
     {
         MR_LOG(LogSplatScene, Error, "onRender: SplatPipeline execute returned null texture");
+        if (m_autoExitAfterExport) { m_startupExportFailed = true; requestExit(); }
         cmdList->end();
         m_device->present();
         return;
+    }
+    if (m_videoExporter.isActive() && !m_videoExporter.captureFrame(cmdList, splatOutput))
+    {
+        m_uiMessage = m_videoExporter.getLastError();
+        m_videoExporter.cancel();
+        m_restoreExportState = true;
+        if (m_autoExitAfterExport) { m_startupExportFailed = true; requestExit(); }
     }
     MR_LOG(LogSplatScene, Verbose, "onRender: SplatPipeline executed, output texture=%s (%ux%u)",
            splatOutput->getDebugName().c_str(), splatOutput->getWidth(), splatOutput->getHeight());
@@ -350,18 +498,93 @@ void SplatSceneApplication::onRender()
     cmdList->draw(3, 0);
     MR_LOG(LogSplatScene, Verbose, "onRender: draw(3, 0) completed");
 
+    if (m_controlUIVisible && m_imguiRenderer && m_imguiContext)
+        m_imguiRenderer->RenderDrawData(cmdList, ImGui::GetDrawData());
+
     // ---- Step 4: Finish & present ----
     cmdList->endRenderPass();
     cmdList->end();
     m_device->present();
+    if (m_videoExporter.isActive())
+    {
+        if (!m_videoExporter.finishFrame())
+        {
+            m_uiMessage = m_videoExporter.getLastError();
+            m_videoExporter.cancel();
+            m_restoreExportState = true;
+            if (m_autoExitAfterExport) { m_startupExportFailed = true; requestExit(); }
+        }
+        else if (m_videoExporter.getFrameIndex() >= m_videoExporter.getFrameCount())
+        {
+            const bool success = m_videoExporter.finish();
+            m_uiMessage = success ? "视频导出完成" : m_videoExporter.getLastError();
+            if (!success && m_autoExitAfterExport) m_startupExportFailed = true;
+            m_restoreExportState = true;
+            if (m_autoExitAfterExport) requestExit();
+        }
+    }
 
     MR_LOG(LogSplatScene, Verbose, "onRender: Frame %u presented", vulkanDevice->getCurrentFrame());
     m_firstFrame = false;
+
+    // Opt-in, fixed-camera benchmark. Count completed presents with a monotonic
+    // clock, independent of Application's clamped float delta time and FPS title.
+    const int benchmarkSeconds = GetSplatBenchmarkSeconds();
+    if (benchmarkSeconds > 0)
+    {
+        using Clock = std::chrono::steady_clock;
+        static const auto firstPresent = Clock::now();
+        static Clock::time_point sampleStart;
+        static Clock::time_point bucketStart;
+        static uint64 sampleFrames = 0;
+        static uint64 bucketFrames = 0;
+        static bool firstBucket = true;
+        const auto now = Clock::now();
+        if (std::chrono::duration<double>(now - firstPresent).count() >= 5.0)
+        {
+            if (sampleFrames == 0)
+            {
+                sampleStart = now;
+                bucketStart = now;
+            }
+            ++sampleFrames;
+            ++bucketFrames;
+            const double elapsed = std::chrono::duration<double>(now - sampleStart).count();
+            const double bucketElapsed = std::chrono::duration<double>(now - bucketStart).count();
+            if (bucketElapsed >= 5.0)
+            {
+                std::printf("[SPLAT_BENCH_BUCKET] t=%.1fs frames=%llu fps=%.3f\n",
+                            elapsed, static_cast<unsigned long long>(bucketFrames - (firstBucket ? 1 : 0)),
+                            static_cast<double>(bucketFrames - (firstBucket ? 1 : 0)) / bucketElapsed);
+                std::fflush(stdout);
+                bucketStart = now;
+                bucketFrames = 0;
+                firstBucket = false;
+            }
+            if (elapsed >= benchmarkSeconds)
+            {
+                std::printf("[SPLAT_BENCH] warmup=5s frames=%llu seconds=%.3f average_fps=%.3f\n",
+                            static_cast<unsigned long long>(sampleFrames), elapsed,
+                            static_cast<double>(sampleFrames - 1) / elapsed);
+                std::fflush(stdout);
+                requestExit();
+            }
+        }
+    }
 }
 
 void SplatSceneApplication::onShutdown()
 {
     MR_LOG(LogSplatScene, Log, "Shutting down SplatSceneApplication...");
+
+    // The last presented frame can still reference splat and present resources.
+    if (m_device)
+        m_device->waitForIdle();
+    m_videoExporter.cancel();
+
+    m_imguiInput.Reset();
+    if (m_imguiRenderer) { m_imguiRenderer->Shutdown(); m_imguiRenderer.Reset(); }
+    if (m_imguiContext) { m_imguiContext->Shutdown(); m_imguiContext.Reset(); }
 
     // Release splat resources in reverse order
     m_gpuData.release();
@@ -403,6 +626,15 @@ void SplatSceneApplication::onWindowResize(uint32 width, uint32 height)
         m_windowWidth  = swapchainExtent.width;
         m_windowHeight = swapchainExtent.height;
     }
+    if (m_imguiRenderer)
+        m_imguiRenderer->OnWindowResize(m_windowWidth, m_windowHeight);
+    const float newUiScale = std::clamp(1.2f * m_windowWidth / 1920.0f, 1.2f, 2.0f);
+    if (m_imguiContext && newUiScale != m_uiScale)
+    {
+        ImGui::GetStyle().ScaleAllSizes(newUiScale / m_uiScale);
+        ImGui::GetIO().FontGlobalScale = newUiScale;
+    }
+    m_uiScale = newUiScale;
 }
 
 // ============================================================================
@@ -411,6 +643,12 @@ void SplatSceneApplication::onWindowResize(uint32 width, uint32 height)
 
 void SplatSceneApplication::onKeyPressed(EKey key)
 {
+    if (key == EKey::F1)
+    {
+        SetControlUIVisible(!m_controlUIVisible);
+        return;
+    }
+    if (m_controlUIVisible && m_imguiInput) m_imguiInput->OnKeyEvent(key, EInputAction::Pressed);
     if (key == EKey::Escape)
     {
         requestExit();
@@ -425,8 +663,15 @@ void SplatSceneApplication::onKeyPressed(EKey key)
     }
 }
 
+void SplatSceneApplication::onKeyReleased(EKey key)
+{
+    if (m_controlUIVisible && key != EKey::F1 && m_imguiInput) m_imguiInput->OnKeyEvent(key, EInputAction::Released);
+}
+
 void SplatSceneApplication::onMouseButtonPressed(EKey button, const MousePosition& position)
 {
+    if (m_controlUIVisible && m_imguiInput) m_imguiInput->OnMouseButton(button, true);
+    if (m_controlUIVisible && m_imguiContext && m_imguiContext->WantsCaptureMouse()) return;
     if (button == EKey::MouseRight)
     {
         m_mouseLookActive = true;
@@ -438,6 +683,7 @@ void SplatSceneApplication::onMouseButtonPressed(EKey button, const MousePositio
 
 void SplatSceneApplication::onMouseButtonReleased(EKey button, const MousePosition& position)
 {
+    if (m_controlUIVisible && m_imguiInput) m_imguiInput->OnMouseButton(button, false);
     (void)position;
     if (button == EKey::MouseRight)
     {
@@ -447,6 +693,8 @@ void SplatSceneApplication::onMouseButtonReleased(EKey button, const MousePositi
 
 void SplatSceneApplication::onMouseMoved(const MousePosition& position)
 {
+    if (m_controlUIVisible && m_imguiInput) m_imguiInput->OnMouseMove(static_cast<float>(position.x), static_cast<float>(position.y));
+    if (m_sequence.IsPlaying() || m_videoExporter.isActive() || (m_controlUIVisible && m_imguiContext && m_imguiContext->WantsCaptureMouse())) return;
     if (!m_mouseLookActive || !m_fpsCamera)
         return;
 
@@ -471,7 +719,8 @@ void SplatSceneApplication::onMouseMoved(const MousePosition& position)
 
 void SplatSceneApplication::onMouseScrolled(float64 xOffset, float64 yOffset)
 {
-    (void)xOffset;
+    if (m_controlUIVisible && m_imguiInput) m_imguiInput->OnMouseScroll(static_cast<float>(xOffset), static_cast<float>(yOffset));
+    if (m_sequence.IsPlaying() || m_videoExporter.isActive() || (m_controlUIVisible && m_imguiContext && m_imguiContext->WantsCaptureMouse())) return;
     if (m_fpsCamera)
     {
         m_fpsCamera->ProcessMouseScroll(static_cast<float>(yOffset));
@@ -481,6 +730,225 @@ void SplatSceneApplication::onMouseScrolled(float64 xOffset, float64 yOffset)
 // ============================================================================
 // Initialization Helpers
 // ============================================================================
+
+bool SplatSceneApplication::initImGui()
+{
+    m_imguiContext = MakeUnique<Editor::FImGuiContext>();
+    if (!m_imguiContext->Initialize()) { m_imguiContext.Reset(); return false; }
+    ImGui::GetIO().FontGlobalScale = m_uiScale;
+    ImGui::GetStyle().ScaleAllSizes(m_uiScale);
+    m_imguiRenderer = MakeUnique<Editor::FImGuiRenderer>();
+    if (!m_imguiRenderer->Initialize(m_device))
+    {
+        m_imguiRenderer.Reset();
+        m_imguiContext->Shutdown();
+        m_imguiContext.Reset();
+        return false;
+    }
+    m_imguiInput = MakeUnique<Editor::FImGuiInputHandler>(m_imguiContext.Get());
+    m_imguiRenderer->OnWindowResize(m_windowWidth, m_windowHeight);
+    return true;
+}
+
+void SplatSceneApplication::applyControlState()
+{
+    if (m_fpsCamera)
+    {
+        m_fpsCamera->SetPosition(FVector(m_controls.PositionX, m_controls.PositionY, m_controls.PositionZ));
+        m_fpsCamera->SetRotation(m_controls.Yaw, m_controls.Pitch, m_controls.Roll);
+        auto settings = m_fpsCamera->GetSettings();
+        settings.MouseSensitivity = m_controls.MouseSensitivity;
+        settings.MovementSpeed = m_controls.MovementSpeed;
+        settings.MinFOV = 30.0f;
+        settings.MaxFOV = 120.0f;
+        settings.bLocalVerticalMovement = true;
+        m_fpsCamera->SetSettings(settings);
+        m_fpsCamera->SetFOV(m_controls.FOV);
+    }
+}
+
+void SplatSceneApplication::drawControlPanels()
+{
+    const float ui = m_uiScale / 1.2f;
+    ImGui::SetNextWindowPos(ImVec2(12 * ui, 12 * ui), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(390 * ui, 190 * ui), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("性能 / Performance"))
+    {
+        ImGui::Text("3DGS 画面 FPS: %u", m_fps);
+        ImGui::Text("整帧间隔（平滑）: %.2f ms", m_smoothedFrameMs);
+        ImGui::TextDisabled("含 UI 与呈现；GPU pass 耗时需单独测量");
+        if (m_gpuUsedBytes || m_gpuAvailableBytes)
+            ImGui::Text("GPU 资源池分配: %.1f / %.1f MiB", m_gpuUsedBytes / 1048576.0,
+                        (m_gpuUsedBytes + m_gpuAvailableBytes) / 1048576.0);
+        else
+            ImGui::TextDisabled("GPU 内存统计不可用");
+        ImGui::Text("窗口 %u x %u | 渲染 %u x %u | 高斯 %u",
+                    m_windowWidth, m_windowHeight, m_renderWidth, m_renderHeight,
+                    m_splatPipeline ? m_splatPipeline->getGaussianCount() : 0u);
+    }
+    ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(12 * ui, 215 * ui), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(390 * ui, 315 * ui), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("相机 / Camera"))
+    {
+        const bool locked = m_sequence.IsPlaying();
+        ImGui::BeginDisabled(locked);
+        float p[3] = {m_controls.PositionX, m_controls.PositionY, m_controls.PositionZ};
+        if (ImGui::DragFloat3("位置 XYZ", p, 0.05f))
+        { m_controls.PositionX = p[0]; m_controls.PositionY = p[1]; m_controls.PositionZ = p[2]; }
+        float rot[3] = {m_controls.Yaw, m_controls.Pitch, m_controls.Roll};
+        if (ImGui::DragFloat3("Yaw / Pitch / Roll", rot, 0.25f))
+        { m_controls.Yaw = rot[0]; m_controls.Pitch = rot[1]; m_controls.Roll = rot[2]; }
+        ImGui::SliderFloat("FOV", &m_controls.FOV, 30.0f, 120.0f, "%.1f°");
+        ImGui::SliderFloat("鼠标灵敏度", &m_controls.MouseSensitivity, 0.01f, 0.4f, "%.2f");
+        ImGui::SliderFloat("移动速度", &m_controls.MovementSpeed, 1.0f, 10.0f, "%.1f");
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("WASD 移动 | C/空格 升降 | Q/E 翻滚");
+        ImGui::TextDisabled("右键拖动 环顾 | 滚轮 调整视野");
+    }
+    ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(12 * ui, 545 * ui), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(390 * ui, 285 * ui), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("渲染 / Rendering"))
+    {
+        ImGui::BeginDisabled(m_sequence.IsPlaying());
+        ImGui::Checkbox("距离裁剪", &m_controls.bDistanceCulling);
+        ImGui::DragFloat("近裁剪面", &m_controls.NearPlane, 0.01f, 0.01f, 5000.0f);
+        ImGui::DragFloat("远裁剪面", &m_controls.FarPlane, 0.1f, 0.02f, 100000.0f);
+        ImGui::Checkbox("高斯线框", &m_controls.bWireframe);
+        ImGui::SliderFloat("高斯缩放", &m_controls.GaussianScale, 0.01f, 10.0f, "%.2f");
+        ImGui::EndDisabled();
+        if (m_controls.bWireframe)
+            ImGui::TextDisabled("线框预览采样率: 1/256");
+        ImGui::TextDisabled("图块大小: 16 x 16（固定）");
+    }
+    ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(static_cast<float>(m_windowWidth) - 462.0f * ui, 12.0f * ui), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(450 * ui, 650 * ui), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("摄像机序列 / Sequence"))
+    {
+        if (ImGui::Button(m_sequenceMode ? "退出序列" : "进入序列"))
+        {
+            m_sequenceMode = !m_sequenceMode;
+            if (!m_sequenceMode && m_sequence.IsPlaying()) m_sequence.Stop();
+        }
+        if (m_sequenceMode)
+        {
+            ImGui::SameLine();
+            if (ImGui::Button("添加关键帧"))
+            {
+                Splat::FSplatCameraKeyframe key;
+                key.TimeSeconds = m_newKeyframeTime;
+                key.State = m_controls;
+                std::string error;
+                if (!m_sequence.AddOrReplace(key, &error)) m_uiMessage = error;
+                else { m_uiMessage = "已添加关键帧"; m_newKeyframeTime += 1.0; }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("载入示例"))
+            {
+                std::string error;
+                m_uiMessage = m_sequence.LoadJson("resources/3dgs_sequences/bonsai_demo.json", &error)
+                    ? "示例已载入：4 个关键帧，时长 6 秒" : error;
+                m_selectedKeyframe = -1;
+                m_newKeyframeTime = m_sequence.GetDuration() + 1.0;
+            }
+            float current = static_cast<float>(m_sequence.GetPlaybackTime());
+            float duration = static_cast<float>(m_sequence.GetDuration());
+            if (ImGui::SliderFloat("时间轴", &current, 0.0f, FMath::Max(duration, 0.01f), "%.2f s"))
+            { m_sequence.Seek(current); m_controls = m_sequence.Sample(current); }
+            if (ImGui::Button(m_sequence.IsPlaying() ? "暂停" : "播放"))
+            {
+                if (m_sequence.IsPlaying()) m_sequence.Pause();
+                else if (!m_sequence.Play()) m_uiMessage = "至少需要两个关键帧";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("停止")) { m_sequence.Stop(); m_controls = m_sequence.Sample(0.0); }
+            bool looping = m_sequence.IsLooping();
+            if (ImGui::Checkbox("循环", &looping)) m_sequence.SetLooping(looping);
+            float nextTime = static_cast<float>(m_newKeyframeTime);
+            if (ImGui::DragFloat("新关键帧时间", &nextTime, 0.1f, 0.0f, 36000.0f))
+                m_newKeyframeTime = nextTime;
+            ImGui::Separator();
+            const auto& keys = m_sequence.GetKeyframes();
+            for (size_t i = 0; i < keys.size(); ++i)
+            {
+                ImGui::PushID(static_cast<int>(i));
+                char label[80];
+                std::snprintf(label, sizeof(label), "关键帧 %u  @ %.2f s", static_cast<unsigned>(i), keys[i].TimeSeconds);
+                if (ImGui::Selectable(label, m_selectedKeyframe == static_cast<int>(i)))
+                    m_selectedKeyframe = static_cast<int>(i);
+                ImGui::PopID();
+            }
+            if (m_selectedKeyframe >= 0 && static_cast<size_t>(m_selectedKeyframe) < keys.size())
+            {
+                auto selected = keys[m_selectedKeyframe];
+                float t = static_cast<float>(selected.TimeSeconds);
+                if (ImGui::DragFloat("选中时间", &t, 0.1f, 0.0f, 36000.0f))
+                {
+                    std::string error;
+                    if (!m_sequence.SetKeyframeTime(m_selectedKeyframe, t, &error)) m_uiMessage = error;
+                    else
+                    {
+                        selected.TimeSeconds = t;
+                        const auto& reordered = m_sequence.GetKeyframes();
+                        for (size_t i = 0; i < reordered.size(); ++i)
+                            if (reordered[i].TimeSeconds == t) { m_selectedKeyframe = static_cast<int>(i); break; }
+                    }
+                }
+                if (ImGui::Button("预览选中"))
+                { m_sequence.Seek(selected.TimeSeconds); m_controls = m_sequence.Sample(selected.TimeSeconds); }
+                ImGui::SameLine();
+                if (ImGui::Button("覆盖选中"))
+                { Splat::FSplatCameraKeyframe key{selected.TimeSeconds, m_controls}; std::string error; if (!m_sequence.AddOrReplace(key, &error)) m_uiMessage = error; }
+                ImGui::SameLine();
+                if (ImGui::Button("删除选中"))
+                { m_sequence.Remove(m_selectedKeyframe); m_selectedKeyframe = -1; }
+            }
+            ImGui::InputText("序列文件", m_sequencePath, sizeof(m_sequencePath));
+            if (ImGui::Button("保存 JSON"))
+            { std::string error; m_uiMessage = m_sequence.SaveJson(m_sequencePath, &error) ? "保存成功" : error; }
+            ImGui::SameLine();
+            if (ImGui::Button("导入 JSON"))
+            { std::string error; m_uiMessage = m_sequence.LoadJson(m_sequencePath, &error) ? "导入成功" : error; m_selectedKeyframe = -1; }
+            ImGui::Separator();
+            ImGui::InputText("视频文件", m_videoPath, sizeof(m_videoPath));
+            ImGui::InputText("FFmpeg 程序", m_ffmpegPath, sizeof(m_ffmpegPath));
+            ImGui::SliderInt("导出 FPS", &m_exportFps, 24, 60);
+            if (!m_videoExporter.isActive())
+            {
+                if (ImGui::Button("导出 MP4"))
+                {
+                    if (m_sequence.GetKeyframes().size() < 2)
+                        m_uiMessage = "至少需要两个关键帧";
+                    else
+                    {
+                        m_sequence.Pause();
+                        m_preExportControls = m_controls;
+                        if (!m_videoExporter.start(m_device, m_videoPath, m_renderWidth, m_renderHeight,
+                                                   static_cast<uint32>(m_exportFps), m_sequence.GetDuration(),
+                                                   m_ffmpegPath))
+                            m_uiMessage = m_videoExporter.getLastError();
+                        else
+                            m_uiMessage = "正在导出视频";
+                    }
+                }
+            }
+            else
+            {
+                ImGui::Text("导出进度: %llu / %llu", static_cast<unsigned long long>(m_videoExporter.getFrameIndex()),
+                            static_cast<unsigned long long>(m_videoExporter.getFrameCount()));
+                if (ImGui::Button("取消导出"))
+                { m_videoExporter.cancel(); m_restoreExportState = true; m_uiMessage = "已取消导出"; }
+            }
+            if (!m_uiMessage.empty()) ImGui::TextWrapped("%s", m_uiMessage.c_str());
+        }
+    }
+    ImGui::End();
+}
 
 bool SplatSceneApplication::loadModel()
 {
@@ -506,7 +974,7 @@ bool SplatSceneApplication::initSplatPipeline()
 
     m_splatPipeline = MakeUnique<Splat::FSplatPipeline>();
     if (!m_splatPipeline->initialize(m_device, m_gpuData.gaussianCount,
-                                     m_windowWidth, m_windowHeight))
+                                     m_renderWidth, m_renderHeight))
     {
         MR_LOG(LogSplatScene, Error, "SplatPipeline::initialize failed");
         return false;
@@ -527,10 +995,8 @@ bool SplatSceneApplication::initCamera()
     viewInfo.Rotation = FRotator(0.0, -180.0, 0.0);  // look towards -Z
     viewInfo.FOV = 60.0f;
 
-    auto* vulkanDevice = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
-    auto swapchainExtent = vulkanDevice->getSwapchainExtent();
-    viewInfo.AspectRatio = static_cast<float>(swapchainExtent.width) /
-                           static_cast<float>(swapchainExtent.height);
+    viewInfo.AspectRatio = static_cast<float>(m_renderWidth) /
+                           static_cast<float>(m_renderHeight);
     viewInfo.ProjectionMode = ECameraProjectionMode::Perspective;
     viewInfo.PerspectiveNearClipPlane = 0.1f;
 
@@ -547,6 +1013,12 @@ bool SplatSceneApplication::initCamera()
 
     m_fpsCamera->Initialize(m_cameraManager.Get());
     m_fpsCamera->SetFOV(60.0f);
+    m_controls.FOV = 60.0f;
+    m_controls.PositionX = static_cast<float>(m_fpsCamera->GetPosition().X);
+    m_controls.PositionY = static_cast<float>(m_fpsCamera->GetPosition().Y);
+    m_controls.PositionZ = static_cast<float>(m_fpsCamera->GetPosition().Z);
+    m_controls.Yaw = m_fpsCamera->GetYaw();
+    m_controls.Pitch = m_fpsCamera->GetPitch();
 
     return true;
 }
@@ -722,8 +1194,8 @@ void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUnifo
     {
         camPos  = m_fpsCamera->GetPosition();
         forward = m_fpsCamera->GetFront();
-        right   = FVector::CrossProduct(m_fpsCamera->GetWorldUp(), forward).GetSafeNormal();
-        up      = FVector::CrossProduct(forward, right);
+        right   = m_fpsCamera->GetRight();
+        up      = m_fpsCamera->GetUp();
     }
     else
     {
@@ -764,10 +1236,10 @@ void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUnifo
     // in view space produce positive w for correct frustum clipping.
     {
         float fovYRad  = viewInfo.FOV * MR_PI / 180.0f;
-        float aspect   = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
+        float aspect   = static_cast<float>(m_renderWidth) / static_cast<float>(m_renderHeight);
         float tanHalf  = FMath::Tan(fovYRad * 0.5f);
-        float nearVal  = 0.1f;    // Match preprocess near plane
-        float farVal   = 1000.0f;  // Match preprocess far plane
+        float nearVal  = m_controls.NearPlane;
+        float farVal   = m_controls.FarPlane;
         float sx = 1.0f / (aspect * tanHalf);
         float sy = 1.0f / tanHalf;
         float A  = farVal / (nearVal - farVal);  // Vulkan [0,1] depth: A = far/(near-far)
@@ -787,19 +1259,19 @@ void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUnifo
 
     // ---- Focal & FOV ----
     float fovY  = viewInfo.FOV * MR_PI / 180.0f;
-    float aspect = static_cast<float>(m_windowWidth) /
-                   static_cast<float>(m_windowHeight);
+    float aspect = static_cast<float>(m_renderWidth) /
+                   static_cast<float>(m_renderHeight);
     float tanFovY = FMath::Tan(fovY * 0.5f);
     float tanFovX = tanFovY * aspect;
 
-    outUniforms.focalX = static_cast<float>(m_windowWidth)  / (2.0f * tanFovX);
-    outUniforms.focalY = static_cast<float>(m_windowHeight) / (2.0f * tanFovY);
+    outUniforms.focalX = static_cast<float>(m_renderWidth)  / (2.0f * tanFovX);
+    outUniforms.focalY = static_cast<float>(m_renderHeight) / (2.0f * tanFovY);
     outUniforms.tanFovX = tanFovX;
     outUniforms.tanFovY = tanFovY;
 
     // ---- Image dimensions & SH degree ----
-    outUniforms.imageWidth  = static_cast<int32>(m_windowWidth);
-    outUniforms.imageHeight = static_cast<int32>(m_windowHeight);
+    outUniforms.imageWidth  = static_cast<int32>(m_renderWidth);
+    outUniforms.imageHeight = static_cast<int32>(m_renderHeight);
     outUniforms.shDegree = m_shDegree;
     outUniforms.pad0 = 0;
 

@@ -17,6 +17,16 @@
 namespace MonsterRender {
 namespace Splat {
 
+/** Controls applied to both preprocess and blend passes each frame. */
+struct FSplatRenderSettings
+{
+    float32 nearPlane = 0.1f;
+    float32 farPlane = 1000.0f;
+    bool distanceCulling = true;
+    bool wireframe = false;
+    float32 gaussianScale = 1.0f;
+};
+
 // ============================================================================
 // Camera Uniform Buffer (matches splat_preprocess.comp Set 0, Binding 5)
 // std140 layout, 176 bytes
@@ -41,7 +51,7 @@ static_assert(alignof(FCameraUniforms) == 16, "FCameraUniforms must be 16-byte a
 
 // ============================================================================
 // Preprocess Push Constants (matches splat_preprocess.comp)
-// 16 bytes total
+// 32 bytes total (20 bytes of fields, padded to 16-byte alignment)
 // ============================================================================
 struct alignas(16) FPreprocessPushConstants
 {
@@ -49,9 +59,11 @@ struct alignas(16) FPreprocessPushConstants
     float32 nearPlane;        // Near clip distance
     float32 farPlane;         // Far clip distance
     uint32 culling;           // 0 = disabled, 1 = enabled
+
+    float32 gaussianScale;    // Multiplier for 3D covariance scale
 };
 
-static_assert(sizeof(FPreprocessPushConstants) == 16, "FPreprocessPushConstants must be 16 bytes");
+static_assert(sizeof(FPreprocessPushConstants) == 32, "FPreprocessPushConstants must be 32 bytes");
 
 // ============================================================================
 // Binding point definitions for descriptor sets

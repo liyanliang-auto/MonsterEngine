@@ -365,7 +365,8 @@ void FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     pc.gaussianCount = gaussianCount;
     pc.nearPlane = m_nearPlane;
     pc.farPlane = m_farPlane;
-    pc.culling = 1; // Enable frustum culling
+    pc.culling = m_distanceCulling ? 1u : 0u;
+    pc.gaussianScale = m_gaussianScale;
 
     // Dispatch
     uint32 groupCountX = (gaussianCount + 255) / 256;

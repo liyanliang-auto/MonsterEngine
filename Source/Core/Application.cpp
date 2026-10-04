@@ -77,9 +77,7 @@ namespace MonsterRender {
         }
         
         // Initialize timing
-        auto now = std::chrono::high_resolution_clock::now();
-        auto duration = now.time_since_epoch();
-        m_lastFrameTime = std::chrono::duration<float32>(duration).count();
+        m_lastFrameTime = std::chrono::steady_clock::now();
         
         // Call derived class initialization
         onInitialize();
@@ -186,12 +184,9 @@ namespace MonsterRender {
     }
     
     void Application::calculateDeltaTime() {
-        auto now = std::chrono::high_resolution_clock::now();
-        auto duration = now.time_since_epoch();
-        float32 currentTime = std::chrono::duration<float32>(duration).count();
-        
-        m_deltaTime = currentTime - m_lastFrameTime;
-        m_lastFrameTime = currentTime;
+        const auto now = std::chrono::steady_clock::now();
+        m_deltaTime = std::chrono::duration<float32>(now - m_lastFrameTime).count();
+        m_lastFrameTime = now;
         
         // Clamp delta time to reasonable values
         const float32 maxDeltaTime = 1.0f / 10.0f; // 10 FPS minimum

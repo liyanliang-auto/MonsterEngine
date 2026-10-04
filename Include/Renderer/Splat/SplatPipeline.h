@@ -59,7 +59,7 @@ namespace MonsterRender::Splat
          */
         bool initialize(RHI::IRHIDevice* device, uint32 gaussianCount,
                         uint32 imageWidth, uint32 imageHeight,
-                        uint32 maxTilesPerGaussian = 256);
+                        uint32 maxTilesPerGaussian = 64);
 
         /**
          * Set the Gaussian input data (from PLY loader).
@@ -72,6 +72,9 @@ namespace MonsterRender::Splat
          * Must be called before execute(), can change every frame.
          */
         void setCamera(const FCameraUniforms& camera);
+
+        /** Set distance culling, clipping, Gaussian scale, and contour mode. */
+        void setRenderSettings(const FSplatRenderSettings& settings);
 
         /**
          * Execute the full 6-pass pipeline.
@@ -169,6 +172,8 @@ namespace MonsterRender::Splat
         FCameraUniforms m_currentCamera{};
         FCameraUniforms m_lastCountCamera{};
         bool m_hasCountCamera = false;
+        FSplatRenderSettings m_renderSettings{};
+        FSplatRenderSettings m_lastCountSettings{};
 
         // Staging buffer for GPU readback (8 bytes: prefix sum last + tilesTouched last)
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_stagingBuffer;

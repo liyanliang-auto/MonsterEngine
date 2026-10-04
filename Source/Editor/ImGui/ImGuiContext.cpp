@@ -372,8 +372,13 @@ void FImGuiContext::LoadFonts()
     fontConfig.OversampleV = 2;
     fontConfig.PixelSnapH = true;
 
-    // Try to load custom font, fall back to default
-    DefaultFont = io.Fonts->AddFontDefault(&fontConfig);
+    // 3DGS controls use Chinese labels. Use a system CJK font on Windows and
+    // retain the built-in font as a fallback for other platforms.
+    DefaultFont = io.Fonts->AddFontFromFileTTF(
+        "C:/Windows/Fonts/msyh.ttc", 16.0f, &fontConfig,
+        io.Fonts->GetGlyphRangesChineseFull());
+    if (!DefaultFont)
+        DefaultFont = io.Fonts->AddFontDefault(&fontConfig);
 
     // Build font atlas
     io.Fonts->Build();

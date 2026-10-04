@@ -4,6 +4,7 @@
 #include "Core/Window.h"
 #include "Engine.h"
 #include "RHI/IRHISwapChain.h"  // For ERHIBackend
+#include <chrono>
 
 namespace MonsterRender {
     
@@ -103,7 +104,7 @@ namespace MonsterRender {
         
         // Timing
         float32 m_deltaTime = 0.0f;
-        float32 m_lastFrameTime = 0.0f;
+        std::chrono::steady_clock::time_point m_lastFrameTime{};
         
         // Statistics
         uint64 m_frameCount = 0;

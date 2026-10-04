@@ -91,6 +91,9 @@ public:
      */
     void setClipPlanes(float32 nearPlane, float32 farPlane);
 
+    void setDistanceCulling(bool enabled) { m_distanceCulling = enabled; }
+    void setGaussianScale(float32 scale) { m_gaussianScale = scale; }
+
     /**
      * Execute the compute dispatch.
      * 
@@ -127,6 +130,8 @@ private:
     // Clip planes for frustum culling
     float32 m_nearPlane = 0.01f;
     float32 m_farPlane  = 1000.0f;
+    bool m_distanceCulling = true;
+    float32 m_gaussianScale = 1.0f;
 
     // Output buffers
     FSplatPreprocessOutput m_output;

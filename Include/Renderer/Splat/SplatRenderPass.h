@@ -35,7 +35,9 @@ namespace MonsterRender::Splat
     {
         uint32 imageWidth;
         uint32 imageHeight;
+        uint32 wireframe;
     };
+    static_assert(sizeof(FRenderPushConstants) == 12, "Render push constants must match GLSL");
 
     /**
      * FSplatRenderPass
@@ -70,6 +72,7 @@ namespace MonsterRender::Splat
         void setColors(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setConicOpacity(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setPointsXY(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
+        void setWireframe(bool enabled) { m_wireframe = enabled; }
 
         /**
          * Execute the render dispatch.
@@ -93,6 +96,7 @@ namespace MonsterRender::Splat
         bool m_bInitialized = false;
         uint32 m_imageWidth  = 0;
         uint32 m_imageHeight = 0;
+        bool m_wireframe = false;
 
         // Output storage image
         MonsterEngine::TSharedPtr<RHI::IRHITexture> m_outputTexture;

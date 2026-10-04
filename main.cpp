@@ -73,6 +73,7 @@ namespace MonsterEngine {
 }
 
 // Entry point following UE5's application architecture
+int RunSplatCameraSequenceTests();
 int main(int argc, char** argv) {
     using namespace MonsterRender;
     
@@ -120,6 +121,8 @@ int main(int argc, char** argv) {
     bool runSplatScene = true;  // Run SplatSceneApplication (3DGS render)
     // // https://huggingface.co/datasets/dylanebert/3dgs/tree/main/bonsai
     String splatModelPath = "resources\\point_cloud\\bonsai_30k.ply";  // PLY model path for splat
+    SplatSceneApplication::FStartupExportOptions splatExport;
+    bool splatControlUIVisible = true;
     
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
@@ -175,6 +178,27 @@ int main(int argc, char** argv) {
             // Optional: next arg is model path
             if (i + 1 < argc && argv[i + 1][0] != '-')
                 splatModelPath = argv[++i];
+        }
+        else if (strcmp(argv[i], "--test-splat-controls") == 0) {
+            const int result = RunSplatCameraSequenceTests();
+            ShutdownLogging();
+            return result;
+        }
+        else if (strcmp(argv[i], "--splat-no-ui") == 0) {
+            splatControlUIVisible = false;
+        }
+        else if (strcmp(argv[i], "--splat-sequence") == 0 && i + 1 < argc) {
+            splatExport.sequencePath = argv[++i];
+        }
+        else if (strcmp(argv[i], "--splat-export") == 0 && i + 1 < argc) {
+            splatExport.videoPath = argv[++i];
+        }
+        else if (strcmp(argv[i], "--splat-ffmpeg") == 0 && i + 1 < argc) {
+            splatExport.ffmpegPath = argv[++i];
+        }
+        else if (strcmp(argv[i], "--splat-export-fps") == 0 && i + 1 < argc) {
+            const int fps = atoi(argv[++i]);
+            splatExport.fps = fps > 0 ? static_cast<uint32>(fps) : 0;
         }
         else if (strcmp(argv[i], "--imgui-test") == 0 || strcmp(argv[i], "-imgui") == 0) {
             // Run ImGui test application directly
@@ -403,9 +427,11 @@ int main(int argc, char** argv) {
     // SplatSceneApplication — 3DGS render
     if (runSplatScene) {
         MR_LOG(LogInit, Log, "Running SplatSceneApplication with model: %s", splatModelPath.c_str());
-        auto splatApp = MakeUnique<SplatSceneApplication>(splatModelPath);
+        auto splatApp = MakeUnique<SplatSceneApplication>(splatModelPath, splatExport);
         if (splatApp) {
+            splatApp->SetControlUIVisible(splatControlUIVisible);
             int32 exitCode = splatApp->run();
+            if (splatApp->HasStartupExportFailed()) exitCode = 1;
             splatApp->shutdown();
             splatApp.reset();
             ShutdownLogging();

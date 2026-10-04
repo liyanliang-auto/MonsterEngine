@@ -319,9 +319,12 @@
     <ClCompile Include="Source\SplatSceneApplication.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatPLYLoader.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatPipeline.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatCameraSequence.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatVideoExporter.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatPass.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatSortPass.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatRenderPass.cpp" />
+    <ClCompile Include="Source\Tests\3DGSControl\SplatCameraSequenceTests.cpp" />
     <ClCompile Include="Source\Engine\Material\Material.cpp" />
     <ClCompile Include="Source\Engine\Material\MaterialInstance.cpp" />
     <ClCompile Include="Source\Engine\Material\MaterialInstanceDynamic.cpp" />
