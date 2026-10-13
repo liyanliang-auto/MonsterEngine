@@ -41,6 +41,8 @@ layout(std430, set = 0, binding = 5) writeonly buffer SortValuesBuf {
     uint sortValues[];      // Gaussian index
 };
 
+layout(std430, set = 0, binding = 6) readonly buffer DispatchState { uint state[]; };
+
 // ============================================================================
 // Push Constants (16 bytes)
 // ============================================================================
@@ -55,9 +57,11 @@ layout(push_constant) uniform PushConstants {
 // Main
 // ============================================================================
 void main() {
-    uint gaussianIdx = gl_GlobalInvocationID.x;
+    uint gaussianIdx = (gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x) * 256u + gl_LocalInvocationID.x;
 
-    if (gaussianIdx >= pc.gaussianCount) {
+    bool gpuCount = pc.gaussianCount == 0xffffffffu;
+    uint activeCount = gpuCount ? state[2] : pc.gaussianCount;
+    if ((gpuCount && state[1] != 0u) || gaussianIdx >= activeCount) {
         return;
     }
 

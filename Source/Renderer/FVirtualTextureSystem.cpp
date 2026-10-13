@@ -133,6 +133,12 @@ void FVirtualTextureSystem::Shutdown() {
     if (!bInitialized) return;
     
     MR_LOG_INFO("Shutting down FVirtualTextureSystem...");
+
+    // Requests contain raw texture pointers and must not survive scene teardown.
+    {
+        std::scoped_lock lock(RequestMutex);
+        PendingRequests.clear();
+    }
     
     // Clear all virtual textures
     VirtualTextures.clear();

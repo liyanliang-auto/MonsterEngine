@@ -1,0 +1,69 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=32) in;
+#include "split_fusion_common.glsl"
+// One queued group per WG. Greedy pair and accumulation orders match scalar.
+// Shared identities/indexes replace private K/Term arrays; no extra SSBO ABI.
+shared K src[4],cur[4],merged,bestMerged;
+shared vec3 sourceInverse[4],currentInverse[4],mergedInverse;
+shared uint sourceOrder[4],trialMap[4],trialOrder[4];
+shared Term reference[15],trial[7];
+shared vec4 contributions[225],ownContributions[49];
+shared vec4 signal,bestDifference,finalDifference;
+shared uint id,first,ns,n,nt,valid,evaluate,bestI,bestJ,tree,admitted;
+shared float bestError,finalError;
+shared bool owner;
+shared vec2 origin;
+shared uvec4 boxes[4];shared int sizes[4];
+bool fitCached(K first,K second,vec3 ia,vec3 ib,out K result){
+ if(second.z<first.z){K swapK=first;first=second;second=swapK;vec3 swapInv=ia;ia=ib;ib=swapInv;}
+ vec3 A=ia+ib;vec2 ha=mul(ia,first.p),hb=mul(ib,second.p),h=ha+hb;float d=A.x*A.z-A.y*A.y;
+ vec3 c=vec3(A.z,-A.y,A.x)/d;vec2 p=mul(c,h);float peak=first.alpha*second.alpha*exp(min(0.0,-.5*(dot(first.p,ha)+dot(second.p,hb)-dot(p,h))));
+ float ma=TAU*sqrt(first.det)*first.alpha,mb=TAU*sqrt(second.det)*second.alpha,mab=TAU*sqrt(1/d)*peak,mass=ma+mb-mab;
+ vec2 mean=ma*first.p+mb*second.p-mab*p;
+ vec3 moment=ma*(first.cov+vec3(first.p.x*first.p.x,first.p.x*first.p.y,first.p.y*first.p.y))+mb*(second.cov+vec3(second.p.x*second.p.x,second.p.x*second.p.y,second.p.y*second.p.y))-mab*(c+vec3(p.x*p.x,p.x*p.y,p.y*p.y));
+ vec3 color=ma*first.color+(mb-mab)*second.color;if(!(mass>0)||!finite1(mass))return false;
+ result.p=mean/mass;p=result.p;result.cov=moment/mass-vec3(p.x*p.x,p.x*p.y,p.y*p.y);result.det=result.cov.x*result.cov.z-result.cov.y*result.cov.y;
+ float intrinsic=(result.cov.x-.3)*(result.cov.z-.3)-result.cov.y*result.cov.y;if(!(result.cov.x>.3&&result.cov.z>.3&&intrinsic>0&&result.det>0)||!finite1(result.det))return false;
+ result.alpha=min(.99,mass/(TAU*sqrt(result.det)));result.color=max(vec3(0),color/mass);result.z=clamp((ma*first.z+mb*second.z-mab*second.z)/mass,min(first.z,second.z),max(first.z,second.z));result.members=first.members|second.members;return validK(result);
+}
+
+K trialKernel(uint index){uint entry=trialMap[index];return entry==4u?merged:cur[entry];}
+vec3 trialInverse(uint index){uint entry=trialMap[index];return entry==4u?mergedInverse:currentInverse[entry];}
+Term makeTerm(uint mask,bool source){
+ vec3 A=vec3(0);vec2 h=vec2(0);float q=0,w=1;uint count=source?ns:nt,cnt=0,last=0;
+ for(uint rank=0;rank<count;++rank)if((mask&(1u<<rank))!=0u){uint index=source?sourceOrder[rank]:trialOrder[rank];K k=source?src[index]:trialKernel(index);vec3 inv=source?sourceInverse[index]:trialInverse(index);vec2 ap=mul(inv,k.p);A+=inv;h+=ap;q+=dot(k.p,ap);w*=k.alpha;++cnt;last=index;}
+ Term t;float d=A.x*A.z-A.y*A.y;t.k.cov=vec3(A.z,-A.y,A.x)/d;t.k.det=1/d;t.k.p=mul(t.k.cov,h);w*=exp(min(0.0,-.5*(q-dot(t.k.p,h))));if((cnt&1u)==0u)w=-w;t.coeff=w*vec4(source?src[last].color:trialKernel(last).color,1);return t;
+}
+void main(){
+ uint index=gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x;if(index>=min(counters[4],pc.queueCapacity))return;uint lane=gl_LocalInvocationID.x;
+ if(lane==0u){uint item=freshQueue[index];id=item&0x7fffffffu;owner=(item&0x80000000u)!=0u;uvec2 g=interval(id);first=g.x;ns=n=g.y;origin=xy[first];valid=1u;tree=0u;finalError=0;finalDifference=vec4(0);}
+ barrier();if(lane<ns){K k=readSource(first+lane,lane,origin);src[lane]=cur[lane]=k;if(!live(first+lane)||!validK(k))atomicExchange(valid,0u);sourceInverse[lane]=currentInverse[lane]=inverseCov(k);}
+ barrier();if(valid==0u){if(lane==0u)invalidate(id,owner);return;}
+ if(lane==0u){for(uint i=0;i<ns;++i)sourceOrder[i]=i;for(uint i=1;i<ns;++i)for(uint j=i;j>0u&&src[sourceOrder[j]].z<src[sourceOrder[j-1u]].z;--j){uint a=sourceOrder[j];sourceOrder[j]=sourceOrder[j-1u];sourceOrder[j-1u]=a;}}
+ barrier();uint nr=(1u<<ns)-1u;if(lane<nr)reference[lane]=makeTerm(lane+1u,true);barrier();
+ for(uint p=lane;p<nr*nr;p+=32u){uint i=p/nr,j=p%nr;if(i==j)contributions[p]=reference[i].coeff*reference[i].coeff*(.5*TAU*sqrt(reference[i].k.det));else if(i<j)contributions[p]=2*reference[i].coeff*reference[j].coeff*integral(reference[i].k,reference[j].k);}
+ barrier();if(lane==0u){signal=vec4(0);for(uint i=0;i<nr;++i){signal+=contributions[i*nr+i];for(uint j=i+1u;j<nr;++j)signal+=contributions[i*nr+j];}valid=finite4(signal)&&all(greaterThan(signal,vec4(0)))?1u:0u;}
+ barrier();if(valid==0u){if(lane==0u)invalidate(id,owner);return;}
+ for(uint step=0;step<3u&&n>1u;++step){
+  if(lane==0u){bestError=1.0/0.0;bestI=4u;bestJ=0u;}barrier();
+  for(uint i=0;i<n;++i)for(uint j=i+1u;j<n;++j){
+   if(lane==0u){evaluate=fitCached(cur[i],cur[j],currentInverse[i],currentInverse[j],merged)?1u:0u;if(evaluate!=0u){nt=0u;for(uint k=0;k<n;++k)if(k!=i&&k!=j)trialMap[nt++]=k;trialMap[nt++]=4u;mergedInverse=inverseCov(merged);for(uint k=0;k<nt;++k)trialOrder[k]=k;for(uint k=1;k<nt;++k)for(uint r=k;r>0u&&trialKernel(trialOrder[r]).z<trialKernel(trialOrder[r-1u]).z;--r){uint a=trialOrder[r];trialOrder[r]=trialOrder[r-1u];trialOrder[r-1u]=a;}}}
+   barrier();if(evaluate!=0u){
+    uint terms=(1u<<nt)-1u;if(lane<terms)trial[lane]=makeTerm(lane+1u,false);barrier();
+    for(uint p=lane;p<terms*terms;p+=32u){uint a=p/terms,b=p%terms;if(a==b)ownContributions[p]=trial[a].coeff*trial[a].coeff*(.5*TAU*sqrt(trial[a].k.det));else if(a<b)ownContributions[p]=2*trial[a].coeff*trial[b].coeff*integral(trial[a].k,trial[b].k);}
+    for(uint p=lane;p<nr*terms;p+=32u){uint a=p/terms,b=p%terms;contributions[p]=reference[a].coeff*trial[b].coeff*integral(reference[a].k,trial[b].k);}
+    barrier();if(lane==0u){vec4 own=vec4(0),cross=vec4(0);for(uint a=0;a<terms;++a){own+=ownContributions[a*terms+a];for(uint b=a+1u;b<terms;++b)own+=ownContributions[a*terms+b];}for(uint a=0;a<nr;++a)for(uint b=0;b<terms;++b)cross+=contributions[a*terms+b];vec4 difference=sqrt(max(vec4(0),signal+own-2*cross));float error=relative(difference,sqrt(signal));if(finite4(own)&&finite4(cross)&&finite1(error)&&error<=pc.maxError&&error<bestError){bestError=error;bestI=i;bestJ=j;bestMerged=merged;bestDifference=difference;}}
+   }
+   barrier();
+  }
+  if(lane==0u&&bestI!=4u){tree|=(cur[bestI].members|(cur[bestJ].members<<4u))<<(step*8u);uint count=0;for(uint k=0;k<n;++k)if(k!=bestI&&k!=bestJ){cur[count]=cur[k];currentInverse[count]=currentInverse[k];++count;}cur[count]=bestMerged;currentInverse[count]=inverseCov(bestMerged);n=count+1u;finalDifference=bestDifference;finalError=bestError;}
+  barrier();if(bestI==4u)break;
+ }
+ if(lane==0u)admitted=1u;barrier();
+ if(lane<n&&bitCount(cur[lane].members)>1&&!bounds(cur[lane],origin,boxes[lane],sizes[lane]))atomicExchange(admitted,0u);
+ barrier();if(admitted==0u){if(lane==0u)invalidate(id,owner);return;}
+ if(lane<n&&bitCount(cur[lane].members)>1){K k=cur[lane];uint member=uint(findLSB(k.members)),outputIndex=first+member;for(uint j=0;j<ns;++j)if(j!=member&&(k.members&(1u<<j))!=0u){radii[first+j]=0;tiles[first+j]=0u;bbox[first+j]=uvec4(0);}radii[outputIndex]=sizes[lane];depth[outputIndex]=k.z;xy[outputIndex]=k.p+origin;rgb[outputIndex]=vec4(k.color,0);conic[outputIndex]=vec4(inverseCov(k),k.alpha);bbox[outputIndex]=boxes[lane];tiles[outputIndex]=(boxes[lane].z-boxes[lane].x)*(boxes[lane].w-boxes[lane].y);}
+ if(owner){uint address=base(id);if(lane<ns)saveK(address+3u+lane*3u,src[lane]);if(lane<n)saveK(address+15u+lane*3u,cur[lane]);if(lane==0u){checkpoint[address+1u]=floatBitsToUint(sqrt(signal));checkpoint[address+2u]=floatBitsToUint(finalDifference);checkpoint[address].y=tree;checkpoint[address].z=pc.frame;}}
+ memoryBarrierBuffer();barrier();if(lane==0u){if(owner)checkpoint[base(id)].x=groups[id].y+1u;uint fused=0;for(uint i=0;i<n;++i)fused+=bitCount(cur[i].members)>1?1u:0u;atomicAdd(counters[0],0u-(ns-n));atomicAdd(counters[1],fused);atomicMax(counters[3],floatBitsToUint(finalError));release(id,owner);}
+}

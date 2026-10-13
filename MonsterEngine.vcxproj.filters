@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="源文件">
@@ -462,5 +462,36 @@
     <Filter Include="源文件\RDG">
       <UniqueIdentifier>{D6E7F8A9-B0C1-2345-9012-456789012345}</UniqueIdentifier>
     </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Source\RHI\SplatGPUPrimitives.cpp"><Filter>SplatLODStreaming</Filter></ClCompile>
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODBenchmark.cpp"><Filter>SplatLODStreaming</Filter></ClCompile>
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODBuilder.cpp"><Filter>SplatLODStreaming</Filter></ClCompile>
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODSelector.cpp"><Filter>SplatLODStreaming</Filter></ClCompile>
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatSceneFormat.cpp"><Filter>SplatLODStreaming</Filter></ClCompile>
+    <ClCompile Include="Source\Renderer\Splat\Streaming\SplatGPUPagePool.cpp"><Filter>SplatLODStreaming</Filter></ClCompile>
+    <ClCompile Include="Source\Renderer\Splat\Streaming\SplatPageStreamer.cpp"><Filter>SplatLODStreaming</Filter></ClCompile>
+    <ClInclude Include="Include\RHI\MockCommandList.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\RHI\SplatGPUPrimitives.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\FTexture.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatLODBenchmark.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatLODBuilder.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatLODSelector.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatLODTypes.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatSceneFormat.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\SplatCameraSequence.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\SplatControlState.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\SplatVideoExporter.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\Streaming\SplatGPUPagePool.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\Streaming\SplatPageStreamer.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <ClInclude Include="Include\Renderer\Splat\Streaming\SplatStreamingTypes.h"><Filter>SplatLODStreaming</Filter></ClInclude>
+    <None Include="Tools\SplatLODBuilder\main.cpp"><Filter>SplatLODStreaming</Filter></None>
+    <None Include="Tools\SplatLODBuilder\default-config.json"><Filter>SplatLODStreaming</Filter></None>
+    <None Include="cmake\SplatLODStreaming.cmake"><Filter>SplatLODStreaming</Filter></None>
+  </ItemGroup>
+  <ItemGroup><Filter Include="SplatLODStreaming"><UniqueIdentifier>{43A6BE52-EE44-469B-A17D-CDE2462B9CCD}</UniqueIdentifier></Filter></ItemGroup>
+<ItemGroup>
+    <ClCompile Include="Source\Renderer\Splat\SplatSplitFusionPass.cpp"><Filter>SplatLODStreaming</Filter></ClCompile>
+    <ClInclude Include="Include\Renderer\Splat\SplatSplitFusionPass.h"><Filter>SplatLODStreaming</Filter></ClInclude>
   </ItemGroup>
 </Project>

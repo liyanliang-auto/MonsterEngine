@@ -113,6 +113,9 @@ public:
     virtual MonsterRender::RHI::IRHICommandList* getImmediateCommandList() override;
     
     virtual void waitForIdle() override;
+    bool supportsDispatchIndirect() const override;
+    bool supportsSubmissionCompletion() const override { return false; }
+    bool supportsGPUTimestamps() const override { return false; }
     virtual void present() override;
     
     virtual void getMemoryStats(uint64& usedBytes, uint64& availableBytes) override;

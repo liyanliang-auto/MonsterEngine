@@ -1,0 +1,9 @@
+Date: 2026-10-13 (Asia/Shanghai)
+Source: isolated export of the staged repository; no local datasets, generated scenes or old test Shader binaries
+Release build: MonsterEngine, SplatLODBuilder, CPU/GPU/Integration suites succeeded
+CTest: 3/3 suites passed; CPU 47/47, GPU 33/33, Integration 14/14
+Legacy --test-all: exit 0
+Legacy --test-splat-controls: exit 0
+Staged code matches the independently built source: PASS
+Verified staged code manifest SHA256: 5347d0b9dfe83b1b8b897b28bd9c8f4050c501385e18f285b98a0db0a88abef0
+Viewer executable SHA256: 0f9dcd55a778409a8f0aa622934e42b5263c17c0b4c799804ae801c47ca0b596

@@ -1,0 +1,34 @@
+PASS T09 real completion tokens reject zero future recording
+PASS T11 actual GPU inclusive scan tail N=1
+PASS T11 actual GPU inclusive scan tail N=2
+PASS T11 actual GPU inclusive scan tail N=255
+PASS T11 actual GPU inclusive scan tail N=256
+PASS T11 actual GPU inclusive scan tail N=257
+PASS T11 actual GPU inclusive scan tail N=1025
+PASS T12 stable radix sort bits=48 N=0
+PASS T12 stable radix sort bits=48 N=1
+PASS T12 stable radix sort bits=48 N=255
+PASS T12 stable radix sort bits=48 N=257
+PASS T12 stable radix sort bits=48 N=8193
+PASS T12 stable radix sort bits=48 N=1048579
+PASS T12 stable radix sort bits=64 N=0
+PASS T12 stable radix sort bits=64 N=1
+PASS T12 stable radix sort bits=64 N=255
+PASS T12 stable radix sort bits=64 N=257
+PASS T12 stable radix sort bits=64 N=8193
+PASS T12 stable radix sort bits=64 N=1048579
+PASS T10 compact source indexing and source SH stride
+PASS T13 physical pipeline budget rejects impossible explicit capacities
+PASS T10 T13 overflow retains prior image and zero active clears
+PASS T09 real pool physical caps readiness lease and stale generation
+PASS T12 generic 64bit sort retains nonzero top bytes and stable ties
+PASS T09 partial staging retains payload lease until all rows copied
+PASS T09 discarded submission replays retained staging with real new token
+PASS T08 T09 GPU-pending duplicate is rejected safely and counter remains explicit
+PASS R2 T09 original source tiny physical budgets reject before any allocation
+PASS R1 T06 actual GPU scale and distance clipping match accepted selector controls
+PASS R5 T09 mixed pooled dedicated allocation retains honest pooled slack
+PASS R4 T08 T09 GPU pending dedup avoids reread after payload destruction
+PASS R4 T09 obsolete unallocated pool payload closes its genuine consumer lease
+PASS R6 T09 real incomplete multipage use prevents eviction then reuses new generations
+SUMMARY total=33 passed=33 failed=0

@@ -70,6 +70,16 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Platform)'=='x64'">
+    <OutDir>$(ProjectDir)TestFile\3DGSLODStreaming\build\vs\bin\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)TestFile\3DGSLODStreaming\build\vs\obj\$(Configuration)\</IntDir>
+    <SplatGeneratedShaderDir>$(ProjectDir)TestFile\3DGSLODStreaming\build\shaders</SplatGeneratedShaderDir>
+    <SplatGeneratedShaderDirCpp>$([System.String]::Copy('$(SplatGeneratedShaderDir)').Replace('\','/'))</SplatGeneratedShaderDirCpp>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerEnvironment>MONSTER_SPLAT_SHADER_DIR=$(SplatGeneratedShaderDir)&#xA;$(LocalDebuggerEnvironment)</LocalDebuggerEnvironment>
+    <SplatCMakeExe Condition="'$(SplatCMakeExe)'==''">$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</SplatCMakeExe>
+    <SplatBuilderBuildDir>$(ProjectDir)TestFile\3DGSLODStreaming\build\native-builder</SplatBuilderBuildDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
@@ -319,6 +329,7 @@
     <ClCompile Include="Source\SplatSceneApplication.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatPLYLoader.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatPipeline.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatSplitFusionPass.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatCameraSequence.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatVideoExporter.cpp" />
     <ClCompile Include="Source\Renderer\Splat\SplatPass.cpp" />
@@ -553,6 +564,7 @@
     <ClInclude Include="Include\SplatSceneApplication.h" />
     <ClInclude Include="Include\Renderer\Splat\SplatPLYLoader.h" />
     <ClInclude Include="Include\Renderer\Splat\SplatPipeline.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatSplitFusionPass.h" />
     <ClInclude Include="Include\Renderer\Splat\SplatTypes.h" />
     <ClInclude Include="Include\Renderer\Splat\SplatSortTypes.h" />
     <ClInclude Include="Include\Renderer\Splat\SplatSortPass.h" />
@@ -596,9 +608,50 @@
     <ClInclude Include="Include\RDG\RDGPass.h" />
     <ClInclude Include="Include\RDG\RDGBuilder.h" />
   </ItemGroup>
+  <ItemGroup Label="SplatLODStreaming">
+    <ClCompile Include="Source\RHI\SplatGPUPrimitives.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODBenchmark.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODBuilder.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODSelector.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatSceneFormat.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\Streaming\SplatGPUPagePool.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\Streaming\SplatPageStreamer.cpp" />
+    <ClInclude Include="Include\RHI\MockCommandList.h" />
+    <ClInclude Include="Include\RHI\SplatGPUPrimitives.h" />
+    <ClInclude Include="Include\Renderer\FTexture.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatLODBenchmark.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatLODBuilder.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatLODSelector.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatLODTypes.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatSceneFormat.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatCameraSequence.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatControlState.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatVideoExporter.h" />
+    <ClInclude Include="Include\Renderer\Splat\Streaming\SplatGPUPagePool.h" />
+    <ClInclude Include="Include\Renderer\Splat\Streaming\SplatPageStreamer.h" />
+    <ClInclude Include="Include\Renderer\Splat\Streaming\SplatStreamingTypes.h" />
+    <None Include="Tools\SplatLODBuilder\main.cpp" />
+    <None Include="Tools\SplatLODBuilder\default-config.json" />
+    <None Include="cmake\SplatLODStreaming.cmake" />
+    <SplatShaderInput Include="Shaders\Splat\**\*.comp;Shaders\Splat\*.glsl;Shaders\Splat\*.vert;Shaders\Splat\*.frag;Shaders\Splat\compile_splat.bat" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX20_U8PATH_DEPRECATION_WARNING;MONSTER_SPLAT_DEFAULT_SHADER_DIR=&quot;$(SplatGeneratedShaderDirCpp)&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <Target Name="CompileSplatShaders" BeforeTargets="ClCompile" Condition="'$(Platform)'=='x64'"
+          Inputs="@(SplatShaderInput)" Outputs="$(SplatGeneratedShaderDir)\splat_preprocess.spv;$(SplatGeneratedShaderDir)\splat_prefix_sum.spv;$(SplatGeneratedShaderDir)\splat_prepare_dispatch.spv;$(SplatGeneratedShaderDir)\splat_assign_keys.spv;$(SplatGeneratedShaderDir)\splat_radix_histogram.spv;$(SplatGeneratedShaderDir)\splat_radix_offsets.spv;$(SplatGeneratedShaderDir)\splat_radix_scatter.spv;$(SplatGeneratedShaderDir)\splat_tile_boundaries.spv;$(SplatGeneratedShaderDir)\splat_render.spv;$(SplatGeneratedShaderDir)\splat_present.vert.spv;$(SplatGeneratedShaderDir)\splat_present.frag.spv">
+    <Exec Command="call &quot;$(ProjectDir)Shaders\Splat\compile_splat.bat&quot; &quot;$(SplatGeneratedShaderDir)&quot;" />
+  </Target>
+  <Target Name="BuildSplatLODBuilder" AfterTargets="Build" Condition="'$(Platform)'=='x64' and '$(SplatSkipBuilder)'!='true'">
+    <Error Condition="!Exists('$(SplatCMakeExe)')" Text="CMake is required for SplatLODBuilder; set SplatCMakeExe to cmake.exe" />
+    <Exec Command="&quot;$(SplatCMakeExe)&quot; -S &quot;$(ProjectDir).&quot; -B &quot;$(SplatBuilderBuildDir)&quot; -G &quot;Visual Studio 16 2019&quot; -A x64 -DMONSTER_BUILD_ENGINE=OFF" />
+    <Exec Command="&quot;$(SplatCMakeExe)&quot; --build &quot;$(SplatBuilderBuildDir)&quot; --config $(Configuration) --target SplatLODBuilder" />
+  </Target>
 </Project>
 
 

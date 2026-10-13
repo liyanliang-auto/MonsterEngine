@@ -10,26 +10,6 @@
 
 namespace MonsterRender {
 
-// Placeholder FTexture class (will be implemented with RHI system)
-class FTexture {
-public:
-    uint32 Width = 0;
-    uint32 Height = 0;
-    uint32 TotalMipLevels = 0;
-    uint32 ResidentMips = 0;
-    SIZE_T SizePerMip[16] = {};  // Size of each mip level
-    void* MipData[16] = {};      // Mip data pointers
-    String FilePath;
-    
-    SIZE_T GetTotalSize() const {
-        SIZE_T total = 0;
-        for (uint32 i = 0; i < ResidentMips; ++i) {
-            total += SizePerMip[i];
-        }
-        return total;
-    }
-};
-
 // ===== FTextureStreamingManager Implementation =====
 
 FTextureStreamingManager& FTextureStreamingManager::Get() {
@@ -430,4 +410,3 @@ SIZE_T FTextureStreamingManager::CalculateMipSize(FTexture* Texture, uint32 Star
 }
 
 } // namespace MonsterRender
-

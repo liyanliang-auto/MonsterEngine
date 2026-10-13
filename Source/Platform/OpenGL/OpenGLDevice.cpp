@@ -36,6 +36,10 @@ static std::string FStringToStdString(const FString& str)
 // FOpenGLDevice Implementation
 // ============================================================================
 
+bool FOpenGLDevice::supportsDispatchIndirect() const {
+    return m_initialized && glDispatchComputeIndirect != nullptr;
+}
+
 FOpenGLDevice::FOpenGLDevice()
 {
 }

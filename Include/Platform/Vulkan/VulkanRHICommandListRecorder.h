@@ -51,6 +51,9 @@ enum class ERHICommandType : uint8 {
 
     // Compute commands
     Dispatch,
+    DispatchIndirect,
+    GPUTimestamp,
+    CopyBuffer,
     
     // Debug commands
     BeginEvent,
@@ -73,6 +76,41 @@ struct FRHICommandBase {
  * Specific RHI Command Structures
  * Each command type has its own parameter structure
  */
+
+struct FRHICommandDispatchIndirect : FRHICommandBase {
+    IRHIBuffer* arguments; // Caller pins the resource until owning submission completes.
+    uint64_t offset;
+    FRHICommandDispatchIndirect(IRHIBuffer* buffer, uint64_t byteOffset)
+        : FRHICommandBase(ERHICommandType::DispatchIndirect), arguments(buffer), offset(byteOffset) {}
+};
+struct FRHICommandGPUTimestamp : FRHICommandBase {
+    uint64_t frame;
+    std::string label;
+    bool begin;
+    FRHICommandGPUTimestamp(uint64_t f, const std::string& l, bool b)
+        : FRHICommandBase(ERHICommandType::GPUTimestamp), frame(f), label(l), begin(b) {}
+};
+struct FRHICommandCopyBuffer : FRHICommandBase {
+    TSharedPtr<IRHIBuffer> destination, source;
+    uint32_t size, destinationOffset, sourceOffset;
+    FRHICommandCopyBuffer(TSharedPtr<IRHIBuffer> d, TSharedPtr<IRHIBuffer> s,
+                          uint32_t bytes, uint32_t dst, uint32_t src)
+        : FRHICommandBase(ERHICommandType::CopyBuffer), destination(d), source(s),
+          size(bytes), destinationOffset(dst), sourceOffset(src) {}
+};
+struct FRHICommandPushConstants : FRHICommandBase {
+    TSharedPtr<IRHIPipelineLayout> layout;
+    EShaderStage stages;
+    uint32_t offset;
+    std::vector<uint8_t> bytes;
+    FRHICommandPushConstants(TSharedPtr<IRHIPipelineLayout> l, EShaderStage s,
+                             uint32_t o, uint32_t size, const void* data)
+        : FRHICommandBase(ERHICommandType::PushConstants), layout(l), stages(s), offset(o),
+          bytes(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size) {}
+};
+struct FRHICommandResourceBarrier : FRHICommandBase {
+    FRHICommandResourceBarrier() : FRHICommandBase(ERHICommandType::ResourceBarrier) {}
+};
 
 // Pipeline State Command
 struct FRHICommandSetPipelineState : FRHICommandBase {
@@ -364,7 +402,13 @@ public:
                           MonsterRender::RDG::ERHIAccess stateAfter) override;
     
     void dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) override;
+    void dispatchIndirect(IRHIBuffer* arguments, uint64_t byteOffset) override;
+    void writeGPUTimestamp(uint64_t frame, const std::string& label, bool begin) override;
+    void copyBuffer(TSharedPtr<IRHIBuffer> dst, TSharedPtr<IRHIBuffer> src,
+                    uint32 size, uint32 dstOffset = 0, uint32 srcOffset = 0) override;
     void resourceBarrier() override;
+    void pushConstants(TSharedPtr<IRHIPipelineLayout> layout, EShaderStage stages,
+                        uint32 offset, uint32 size, const void* data) override;
     
     void beginEvent(const String& name) override;
     void endEvent() override;

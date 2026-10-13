@@ -17,6 +17,8 @@
 #include "RHI/IRHIResource.h"
 
 #include <vector>
+#include <functional>
+#include "Renderer/Splat/LOD/SplatLODTypes.h"
 
 namespace MonsterRender {
 namespace Splat {
@@ -60,6 +62,9 @@ struct FSplatGPUData
 class FSplatPLYLoader
 {
 public:
+    /** CPU-only strict PLY ingestion. Outputs are published only on success. */
+    static bool LoadCPU(const std::string& path, std::vector<FSplatGaussian>& out,
+                        uint32_t& shDegree, std::string& error);
     FSplatPLYLoader() = default;
     ~FSplatPLYLoader() = default;
 
@@ -71,19 +76,16 @@ public:
      * @param outData Output: populated GPU buffer data
      * @return true on success
      */
-    bool loadAndUpload(RHI::IRHIDevice* device, const String& filePath, FSplatGPUData& outData);
+    bool loadAndUpload(RHI::IRHIDevice* device, const String& filePath, FSplatGPUData& outData,
+                       uint64_t sourceBudgetBytes = UINT64_MAX, uint64_t stagingBudgetBytes = 32ull << 20);
+    uint64_t GetStagingBackingBytes() const { return m_stagingBackingBytes; }
 
 private:
-    bool parseHeader(std::ifstream& file, int32& outVertexCount,
-                     std::vector<String>& outPropertyNames);
-    bool uploadBuffers(RHI::IRHIDevice* device, 
-                       const MonsterEngine::TArray<float32>& posData,
-                       const MonsterEngine::TArray<float32>& scaleData,
-                       const MonsterEngine::TArray<float32>& rotData,
-                       const MonsterEngine::TArray<float32>& opacityData,
-                       const MonsterEngine::TArray<float32>& shData,
-                       uint32 count,
-                       FSplatGPUData& outData);
+    static bool LoadCPUWithAdmission(const std::string&, std::vector<FSplatGaussian>&,
+        uint32_t&, std::string&, const std::function<bool(uint64_t,uint32_t,std::string&)>&);
+    bool uploadBuffers(RHI::IRHIDevice*, const std::vector<FSplatGaussian>&,
+                       uint32_t degree, uint32_t stagingBytes, FSplatGPUData&);
+    uint64_t m_stagingBackingBytes = 0;
 };
 
 } // namespace Splat

@@ -141,6 +141,11 @@ namespace MonsterRender {
         // Update timing
         calculateDeltaTime();
         
+        // Clear the previous frame's edges/delta BEFORE callbacks write this
+        // frame's events, so onUpdate can consume presses and mouse movement.
+        if (auto* inputManager = m_window->getInputManager()) {
+            inputManager->resetFrameState();
+        }
         // Process window events
         m_window->pollEvents();
         
@@ -149,11 +154,6 @@ namespace MonsterRender {
             // Sleep a bit to avoid busy waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
             return;
-        }
-        
-        // Reset input frame state
-        if (auto* inputManager = m_window->getInputManager()) {
-            inputManager->resetFrameState();
         }
         
         // Update application

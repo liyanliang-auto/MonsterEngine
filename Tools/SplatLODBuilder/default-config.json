@@ -1,0 +1,10 @@
+{
+  "maxLeafGaussians": 8192,
+  "maxDepth": 16,
+  "maxPageGaussians": 8192,
+  "supportSigma": 3.0,
+  "proxyReduction": 0.25,
+  "geometricErrorScale": 1.0,
+  "appearanceWeight": 1.0,
+  "maxAppearanceError": 0.1
+}

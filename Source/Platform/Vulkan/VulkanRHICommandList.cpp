@@ -119,7 +119,10 @@ namespace MonsterRender::RHI::Vulkan {
         // deadlock prepareForNewActiveCommandBuffer().
         VkFence fence = cmdBuffer->getFence();
         MR_LOG_INFO("  Submitting active command buffer with its own fence for readback...");
-        mgr->submitActiveCmdBufferWithFence(nullptr, 0, nullptr, 0, fence);
+        if (!mgr->submitActiveCmdBufferWithFence(nullptr, 0, nullptr, 0, fence)) {
+            MR_LOG_ERROR("submitAndWait: submission failed; no wait performed");
+            return;
+        }
 
         VkResult waitRes = functions.vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
         if (waitRes != VK_SUCCESS) {
@@ -131,16 +134,15 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::reset() {
-        // In UE5, reset doesn't do much for immediate command lists
-        // The context handles the per-frame recycling automatically
-        // UE5: FVulkanCommandListContext handles reset internally during frame begin
-        
-        if (m_context) {
-            // Optional: Reset pending state if needed
-            // m_context->getPendingState()->reset();
-        }
-        
-        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::reset: Command list reset (no-op for immediate)");
+        // Teardown callers must prove device completion before resetting bindings.
+        // Ordinary frame recycling continues to use begin()/the context lifecycle.
+        m_boundResources.Empty();
+        m_descriptorsDirty = true;
+        m_bComputePipelineActive = false;
+        if (m_context && m_context->getPendingState())
+            m_context->getPendingState()->reset();
+        IRHICommandList::reset();
+        MR_LOG_DEBUG("FVulkanRHICommandListImmediate::reset: Released completed bindings");
     }
     
     // ============================================================================
@@ -937,13 +939,14 @@ namespace MonsterRender::RHI::Vulkan {
         // to storage buffers that the next pass reads.
         VkMemoryBarrier memoryBarrier{};
         memoryBarrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT; 
+        memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                                      VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
         
         vkCmdPipelineBarrier(
             cmdBuffer,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
             0,
             1, &memoryBarrier,
             0, nullptr,
@@ -1300,6 +1303,25 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG(LogVulkanRHI, Verbose, "dispatch: (%u, %u, %u)", groupCountX, groupCountY, groupCountZ);
     }
     
+    void FVulkanRHICommandListImmediate::dispatchIndirect(IRHIBuffer* arguments, uint64_t byteOffset) {
+        auto* buffer = dynamic_cast<VulkanBuffer*>(arguments);
+        auto* command = m_context ? m_context->getCmdBuffer() : nullptr;
+        if (!buffer || !command || !command->hasBegun() || !m_bComputePipelineActive ||
+            m_context->getPendingState()->isInsideRenderPass() ||
+            (buffer->getUsage() & EResourceUsage::IndirectArgs) == EResourceUsage::None ||
+            !IsValidDispatchIndirectRange(buffer->getSize(), byteOffset)) {
+            MR_LOG_ERROR("dispatchIndirect: invalid buffer, range, usage or command state");
+            return;
+        }
+        vkCmdDispatchIndirect(command->getHandle(), buffer->getBuffer(), byteOffset);
+    }
+
+    void FVulkanRHICommandListImmediate::writeGPUTimestamp(uint64_t frame, const std::string& label, bool begin) {
+        auto* command = m_context ? m_context->getCmdBuffer() : nullptr;
+        if (!command || !command->hasBegun() || m_context->getPendingState()->isInsideRenderPass()) return;
+        m_device->recordGPUTimestamp(command->getHandle(), frame, label, begin);
+    }
+
     void FVulkanRHICommandListImmediate::copyBuffer(TSharedPtr<IRHIBuffer> dst, TSharedPtr<IRHIBuffer> src,
                                                      uint32 size, uint32 dstOffset, uint32 srcOffset) {
         if (!m_context) {
@@ -1320,6 +1342,13 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        if (size == 0 || dstOffset > dst->getSize() || size > dst->getSize() - dstOffset ||
+            srcOffset > src->getSize() || size > src->getSize() - srcOffset ||
+            (src->getUsage() & EResourceUsage::TransferSrc) == EResourceUsage::None ||
+            (dst->getUsage() & EResourceUsage::TransferDst) == EResourceUsage::None) {
+            MR_LOG_ERROR("copyBuffer: invalid range or transfer usage");
+            return;
+        }
         VkBufferCopy region;
         region.srcOffset = static_cast<VkDeviceSize>(srcOffset);
         region.dstOffset = static_cast<VkDeviceSize>(dstOffset);

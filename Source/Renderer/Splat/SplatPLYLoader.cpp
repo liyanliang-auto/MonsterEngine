@@ -1,495 +1,137 @@
 // Copyright Monster Engine. All Rights Reserved.
-
 #include "Renderer/Splat/SplatPLYLoader.h"
-
 #include "Core/Logging/LogMacros.h"
-#include "RHI/RHIDefinitions.h"
-
-#include <fstream>
-#include <sstream>
-#include <chrono>
-#include <cmath>
 #include <algorithm>
-#include <vector>
+#include <cmath>
+#include <cstring>
+#include <fstream>
+#include <limits>
+#include <map>
+#include <sstream>
+#include <stdexcept>
+#ifndef SPLAT_CPU_ONLY
+#include "RHI/IRHICommandList.h"
+#include "Platform/Vulkan/VulkanDevice.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
+#endif
 
-namespace MonsterRender {
-namespace Splat {
-
-// ============================================================================
-// Parse PLY header: extract vertex count, format, and property name order.
-//
-// Compared with:
-//  - 3dgs-vulkan-cpp (PLYLoader.cpp): hardcoded binary-read order, no name match.
-//  - vk3dGaussianSplatting (ResourceManager.cpp): happly lib, matches by name.
-// MonsterEngine now does dynamic name-based offset mapping (same robustness as happly,
-// no third-party dependency).
-// ============================================================================
-bool FSplatPLYLoader::parseHeader(std::ifstream& plyFile, int32& outVertexCount,
-                                  std::vector<String>& outPropertyNames)
-{
-    std::string line;
-    bool headerEnd = false;
-    bool inVertexElement = false;
-
-    while (std::getline(plyFile, line))
-    {
-        if (!line.empty() && line.back() == '\r')
-            line.pop_back();
-
-        std::istringstream iss(line);
-        std::string token;
-        iss >> token;
-
-        if (token == "format")
-        {
-            std::string fmt;
-            iss >> fmt;
-            if (fmt != "binary_little_endian")
-            {
-                MR_LOG(LogTemp, Warning, "[SplatPLYLoader] PLY format is '%s', expected 'binary_little_endian'",
-                       fmt.c_str());
-            }
-        }
-        else if (token == "element")
-        {
-            std::string elemType;
-            int32 count;
-            iss >> elemType >> count;
-            if (elemType == "vertex")
-            {
-                outVertexCount = count;
-                inVertexElement  = true;
-            }
-            else
-            {
-                inVertexElement = false;
-            }
-        }
-        else if (token == "property" && inVertexElement)
-        {
-            // Collect property name in declaration order.
-            // The binary vertex record is a flat concatenation of property values
-            // in this exact order — each is a 4-byte float for standard 3DGS PLY.
-            std::string propType, propName;
-            iss >> propType;  // "float" (always for 3DGS)
-            iss >> propName;  // e.g. "x", "scale_0", "rot_3"
-            outPropertyNames.push_back(String(propName.c_str()));
-        }
-        else if (token == "end_header")
-        {
-            headerEnd = true;
-            break;
-        }
-    }
-
-    if (!headerEnd)
-    {
-        MR_LOG(LogTemp, Error, "[SplatPLYLoader] Could not find 'end_header'");
-        return false;
-    }
-    if (outVertexCount <= 0)
-    {
-        MR_LOG(LogTemp, Error, "[SplatPLYLoader] No vertices in PLY file");
-        return false;
-    }
-
-    const int32 propertyCount = static_cast<int32>(outPropertyNames.size());
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] Header: %d vertices, %d properties", outVertexCount, propertyCount);
-    for (int32 i = 0; i < std::min(propertyCount, 10); ++i)
-    {
-        MR_LOG(LogTemp, Log, "  property[%d] = '%s'", i, outPropertyNames[i].c_str());
-    }
-    if (propertyCount > 10)
-    {
-        MR_LOG(LogTemp, Log, "  ... (%d total properties)", propertyCount);
-    }
-
-    return true;
+namespace MonsterRender::Splat {
+namespace {
+struct PLYProperty { std::string name; uint32_t size; bool floating; bool signedValue; };
+PLYProperty Property(const std::string& type,const std::string& name) {
+    if(type=="float"||type=="float32")return {name,4,true,true};
+    if(type=="double"||type=="float64")return {name,8,true,true};
+    if(type=="char"||type=="int8")return {name,1,false,true};
+    if(type=="uchar"||type=="uint8")return {name,1,false,false};
+    if(type=="short"||type=="int16")return {name,2,false,true};
+    if(type=="ushort"||type=="uint16")return {name,2,false,false};
+    if(type=="int"||type=="int32")return {name,4,false,true};
+    if(type=="uint"||type=="uint32")return {name,4,false,false};
+    throw std::runtime_error("Unsupported PLY scalar type: "+type);
 }
-
-// ============================================================================
-// Helper: find the index of a property name in the header list.
-// Returns -1 if not found.
-// ============================================================================
-static int32 findPropertyIndex(const std::vector<String>& propNames,
-                               const char* name)
-{
-    for (size_t i = 0; i < propNames.size(); ++i)
-    {
-        if (propNames[i] == name)
-            return static_cast<int32>(i);
-    }
-    return -1;
+double Scalar(std::istream& f,const PLYProperty& p,bool ascii,bool bigEndian) {
+    double x=0;
+    if(ascii){std::string token;if(!(f>>token)||token.size()>128)throw std::runtime_error("Truncated ASCII PLY");size_t used=0;x=std::stod(token,&used);if(used!=token.size())throw std::runtime_error("Invalid ASCII scalar");if(!p.floating){const double lo=p.signedValue?-std::ldexp(1.0,p.size*8-1):0;const double hi=p.signedValue?std::ldexp(1.0,p.size*8-1)-1:std::ldexp(1.0,p.size*8)-1;if(std::floor(x)!=x||x<lo||x>hi)throw std::runtime_error("ASCII integer out of range");}}
+    else{uint8_t bytes[8]{};if(!f.read(reinterpret_cast<char*>(bytes),p.size))throw std::runtime_error("Truncated binary PLY");uint64_t bits=0;for(uint32_t i=0;i<p.size;++i)bits|=uint64_t(bytes[i])<<(8*(bigEndian?p.size-1-i:i));if(p.floating){if(p.size==4){uint32_t u=uint32_t(bits);float v;std::memcpy(&v,&u,4);x=v;}else std::memcpy(&x,&bits,8);}else if(p.signedValue){int64_t v=int64_t(bits);if(p.size<8&&(bits&(uint64_t(1)<<(p.size*8-1))))v-=int64_t(uint64_t(1)<<(p.size*8));x=double(v);}else x=double(bits);}
+    if(!std::isfinite(x)||std::abs(x)>std::numeric_limits<float>::max())throw std::runtime_error("Nonfinite/out-of-range PLY attribute");return x;
 }
-
-// ============================================================================
-// Main entry: load PLY into CPU arrays, then upload to GPU buffers.
-//
-// Comparison with reference implementations:
-//   - 3dgs-vulkan-cpp (PLYLoader.cpp):   hardcoded binary-read order, same
-//     activation functions (exp for scales, sigmoid for opacity, normalize
-//     quaternion). No property-name matching.
-//   - vk3dGaussianSplatting (ResourceManager.cpp): uses happly library for
-//     name-based matching, additionally flips X/Y coords and reorders
-//     quaternion as (-rot_2, -rot_3, rot_0, -rot_1).
-//
-// MonsterEngine follows the 3dgs-vulkan-cpp convention (primary reference,
-// star repo) for activation and quaternion layout. The quaternion is NOT
-// reordered; the shader expects (r, x, y, z) = (rot_0, rot_1, rot_2, rot_3).
-// ============================================================================
-bool FSplatPLYLoader::loadAndUpload(RHI::IRHIDevice* device, const String& filePath, FSplatGPUData& outData)
-{
-    if (!device)
-    {
-        MR_LOG(LogTemp, Error, "[SplatPLYLoader] Null RHI device");
-        return false;
-    }
-
-    auto startTime = std::chrono::high_resolution_clock::now();
-
-    std::ifstream plyFile(filePath, std::ios::binary);
-    if (!plyFile.is_open())
-    {
-        MR_LOG(LogTemp, Error, "[SplatPLYLoader] Cannot open file: %s", filePath.c_str());
-        return false;
-    }
-
-    // ---- Parse header: vertex count + property name order ----
-    int32 vertexCount = 0;
-    std::vector<String> propNames;
-    if (!parseHeader(plyFile, vertexCount, propNames))
-        return false;
-
-    const int32 numProps = static_cast<int32>(propNames.size());
-
-    // Verify standard 3DGS PLY by checking for mandatory property names.
-    // Standard INRIA 3DGS .ply has 62 float properties:
-    //   x,y,z(3) nx,ny,nz(3) f_dc_0..2(3) f_rest_0..44(45)
-    //   opacity(1) scale_0..2(3) rot_0..3(4)  = 62
-    {
-        const bool hasX = findPropertyIndex(propNames, "x") >= 0;
-        const bool hasScale0 = findPropertyIndex(propNames, "scale_0") >= 0;
-        const bool hasRot0 = findPropertyIndex(propNames, "rot_0") >= 0;
-        MR_LOG(LogTemp, Log, "[SplatPLYLoader] Property validation: has x=%d has scale_0=%d has rot_0=%d",
-               hasX ? 1 : 0, hasScale0 ? 1 : 0, hasRot0 ? 1 : 0);
-    }
-
-    // Build name → index lookup for key properties
-    const int32 idxX  = findPropertyIndex(propNames, "x");
-    const int32 idxY  = findPropertyIndex(propNames, "y");
-    const int32 idxZ  = findPropertyIndex(propNames, "z");
-    const int32 idxDC0 = findPropertyIndex(propNames, "f_dc_0");
-    const int32 idxDC1 = findPropertyIndex(propNames, "f_dc_1");
-    const int32 idxDC2 = findPropertyIndex(propNames, "f_dc_2");
-    const int32 idxOpa = findPropertyIndex(propNames, "opacity");
-    const int32 idxS0  = findPropertyIndex(propNames, "scale_0");
-    const int32 idxS1  = findPropertyIndex(propNames, "scale_1");
-    const int32 idxS2  = findPropertyIndex(propNames, "scale_2");
-    const int32 idxR0  = findPropertyIndex(propNames, "rot_0");
-    const int32 idxR1  = findPropertyIndex(propNames, "rot_1");
-    const int32 idxR2  = findPropertyIndex(propNames, "rot_2");
-    const int32 idxR3  = findPropertyIndex(propNames, "rot_3");
-
-    // f_rest_0 .. f_rest_{maxIndex} indices — scan only the actual range from header
-    int32 maxRestPropIndex = -1;
-    for (const auto& name : propNames)
-    {
-        if (name.find("f_rest_") == 0)
-        {
-            int32 idx = std::stoi(name.substr(7));
-            maxRestPropIndex = std::max(maxRestPropIndex, idx);
-        }
-    }
-    const int32 numRestProps = maxRestPropIndex >= 0 ? (maxRestPropIndex + 1) : 0;
-    std::vector<int32> restIndices(numRestProps, -1);
-    for (int32 i = 0; i < numRestProps; ++i)
-    {
-        restIndices[i] = findPropertyIndex(propNames,
-            (String("f_rest_") + std::to_string(i)).c_str());
-    }
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] f_rest properties: %d total (max index %d)", numRestProps, maxRestPropIndex);
-
-    // ---- SH degree detection: read first vertex ----
-    int32 shDegree = 0;
-    {
-        std::vector<float> firstVertex(numProps);
-        plyFile.read(reinterpret_cast<char*>(firstVertex.data()),
-                     numProps * sizeof(float32));
-        plyFile.seekg(-static_cast<std::ifstream::off_type>(numProps * sizeof(float32)),
-                      std::ios::cur);  // rewind
-
-        int32 maxRestNeeded = 0;
-        for (int32 i = 0; i < numRestProps; ++i)
-        {
-            const int32 ri = restIndices[i];
-            if (ri >= 0 && std::abs(firstVertex[ri]) > 1e-10f)
-                maxRestNeeded = i + 1;
-        }
-
-        if (maxRestNeeded <= 0)       shDegree = 0;
-        else if (maxRestNeeded <= 8)  shDegree = 1;
-        else if (maxRestNeeded <= 24) shDegree = 2;
-        else                          shDegree = 3;
-
-        MR_LOG(LogTemp, Log, "[SplatPLYLoader] Detected SH degree=%d (max non-zero rest index=%d)",
-               shDegree, maxRestNeeded);
-    }
-
-    const int32 shCoeffCount = (shDegree == 0 ? 1 : (shDegree == 1 ? 4 : (shDegree == 2 ? 9 : 16)));
-    const int32 numRestPerChannel = shCoeffCount - 1;  // rest coefficients per RGB channel
-
-    // ---- Pre-allocate CPU arrays ----
-    MonsterEngine::TArray<float32> posData;
-    MonsterEngine::TArray<float32> scaleData;
-    MonsterEngine::TArray<float32> rotData;
-    MonsterEngine::TArray<float32> opacityData;
-    MonsterEngine::TArray<float32> shData;
-
-    posData.Reserve(static_cast<int64>(vertexCount) * 4);
-    scaleData.Reserve(static_cast<int64>(vertexCount) * 4);
-    rotData.Reserve(static_cast<int64>(vertexCount) * 4);
-    opacityData.Reserve(vertexCount);
-    shData.Reserve(static_cast<int64>(vertexCount) * shCoeffCount * 3);
-
-    // ---- Bbox tracking ----
-    float32 bboxMin[3] = { 0.0f, 0.0f, 0.0f };
-    float32 bboxMax[3] = { 0.0f, 0.0f, 0.0f };
-    bool bBboxInit = false;
-
-    // ---- Diagnostic min/max for scales & rotations ----
-    float32 scaleMinRaw[3] = { 1e30f, 1e30f, 1e30f };
-    float32 scaleMaxRaw[3] = { -1e30f, -1e30f, -1e30f };
-    float32 scaleMinAct[3] = { 1e30f, 1e30f, 1e30f };
-    float32 scaleMaxAct[3] = { -1e30f, -1e30f, -1e30f };
-    float32 rotMin[4] = { 1e30f, 1e30f, 1e30f, 1e30f };
-    float32 rotMax[4] = { -1e30f, -1e30f, -1e30f, -1e30f };
-    float32 opaMinRaw = 1e30f, opaMaxRaw = -1e30f;
-    float32 opaMinAct = 1e30f, opaMaxAct = -1e30f;
-
-    // ---- Read all vertices ----
-    std::vector<float32> rawVertex(numProps);
-    for (int32 i = 0; i < vertexCount; ++i)
-    {
-        plyFile.read(reinterpret_cast<char*>(rawVertex.data()),
-                     numProps * sizeof(float32));
-
-        // --- Bbox ---
-        const float32 px = (idxX >= 0) ? rawVertex[idxX] : 0.0f;
-        const float32 py = (idxY >= 0) ? rawVertex[idxY] : 0.0f;
-        const float32 pz = (idxZ >= 0) ? rawVertex[idxZ] : 0.0f;
-
-        if (!bBboxInit)
-        {
-            bboxMin[0] = bboxMax[0] = px;
-            bboxMin[1] = bboxMax[1] = py;
-            bboxMin[2] = bboxMax[2] = pz;
-            bBboxInit = true;
-        }
-        else
-        {
-            bboxMin[0] = std::min(bboxMin[0], px);
-            bboxMax[0] = std::max(bboxMax[0], px);
-            bboxMin[1] = std::min(bboxMin[1], py);
-            bboxMax[1] = std::max(bboxMax[1], py);
-            bboxMin[2] = std::min(bboxMin[2], pz);
-            bboxMax[2] = std::max(bboxMax[2], pz);
-        }
-
-        // Position: vec4 (w = 1.0)
-        posData.Add(px);
-        posData.Add(py);
-        posData.Add(pz);
-        posData.Add(1.0f);
-
-        // --- Scales: exp activate ---
-        const float32 rs0 = (idxS0 >= 0) ? rawVertex[idxS0] : 0.0f;
-        const float32 rs1 = (idxS1 >= 0) ? rawVertex[idxS1] : 0.0f;
-        const float32 rs2 = (idxS2 >= 0) ? rawVertex[idxS2] : 0.0f;
-
-        scaleMinRaw[0] = std::min(scaleMinRaw[0], rs0);
-        scaleMinRaw[1] = std::min(scaleMinRaw[1], rs1);
-        scaleMinRaw[2] = std::min(scaleMinRaw[2], rs2);
-        scaleMaxRaw[0] = std::max(scaleMaxRaw[0], rs0);
-        scaleMaxRaw[1] = std::max(scaleMaxRaw[1], rs1);
-        scaleMaxRaw[2] = std::max(scaleMaxRaw[2], rs2);
-
-        const float32 as0 = std::exp(rs0);
-        const float32 as1 = std::exp(rs1);
-        const float32 as2 = std::exp(rs2);
-
-        scaleMinAct[0] = std::min(scaleMinAct[0], as0);
-        scaleMinAct[1] = std::min(scaleMinAct[1], as1);
-        scaleMinAct[2] = std::min(scaleMinAct[2], as2);
-        scaleMaxAct[0] = std::max(scaleMaxAct[0], as0);
-        scaleMaxAct[1] = std::max(scaleMaxAct[1], as1);
-        scaleMaxAct[2] = std::max(scaleMaxAct[2], as2);
-
-        scaleData.Add(as0);
-        scaleData.Add(as1);
-        scaleData.Add(as2);
-        scaleData.Add(0.0f);  // w unused
-
-        // --- Rotation: normalize quaternion ---
-        const float32 rr0 = (idxR0 >= 0) ? rawVertex[idxR0] : 0.0f;
-        const float32 rr1 = (idxR1 >= 0) ? rawVertex[idxR1] : 0.0f;
-        const float32 rr2 = (idxR2 >= 0) ? rawVertex[idxR2] : 0.0f;
-        const float32 rr3 = (idxR3 >= 0) ? rawVertex[idxR3] : 0.0f;
-
-        rotMin[0] = std::min(rotMin[0], rr0);
-        rotMin[1] = std::min(rotMin[1], rr1);
-        rotMin[2] = std::min(rotMin[2], rr2);
-        rotMin[3] = std::min(rotMin[3], rr3);
-        rotMax[0] = std::max(rotMax[0], rr0);
-        rotMax[1] = std::max(rotMax[1], rr1);
-        rotMax[2] = std::max(rotMax[2], rr2);
-        rotMax[3] = std::max(rotMax[3], rr3);
-
-        float32 qlen = std::sqrt(rr0 * rr0 + rr1 * rr1 + rr2 * rr2 + rr3 * rr3);
-        if (qlen > 1e-10f)
-        {
-            rotData.Add(rr0 / qlen);
-            rotData.Add(rr1 / qlen);
-            rotData.Add(rr2 / qlen);
-            rotData.Add(rr3 / qlen);
-        }
-        else
-        {
-            rotData.Add(1.0f); rotData.Add(0.0f); rotData.Add(0.0f); rotData.Add(0.0f);
-        }
-
-        // --- Opacity: sigmoid activate ---
-        const float32 rawOpa = (idxOpa >= 0) ? rawVertex[idxOpa] : 0.0f;
-        opaMinRaw = std::min(opaMinRaw, rawOpa);
-        opaMaxRaw = std::max(opaMaxRaw, rawOpa);
-        const float32 actOpa = 1.0f / (1.0f + std::exp(-rawOpa));
-        opaMinAct = std::min(opaMinAct, actOpa);
-        opaMaxAct = std::max(opaMaxAct, actOpa);
-        opacityData.Add(actOpa);
-
-        // --- SH coefficients: reorder from PLY layout to interleaved (r,g,b) per coeff ---
-        // PLY layout: [dc_r, dc_g, dc_b, rest_r[0..N], rest_g[0..N], rest_b[0..N]]
-        //   where N = numRestPerChannel - 1 (e.g. 14 for degree 3, 7 for degree 2)
-        // Output layout: [dc_r, dc_g, dc_b, coeff1_r, coeff1_g, coeff1_b, ...]
-        shData.Add((idxDC0 >= 0) ? rawVertex[idxDC0] : 0.0f);
-        shData.Add((idxDC1 >= 0) ? rawVertex[idxDC1] : 0.0f);
-        shData.Add((idxDC2 >= 0) ? rawVertex[idxDC2] : 0.0f);
-
-        for (int32 j = 1; j < shCoeffCount; ++j)
-        {
-            // INRIA 3DGS PLY layout: f_rest = [r_0..r_N, g_0..g_N, b_0..b_N]
-            // Reorder to interleaved (r, g, b) per coefficient index.
-            const int32 k  = j - 1;                        // zero-based rest index
-            const int32 riR = restIndices[k];                          // R channel: f_rest_{k}
-            const int32 riG = restIndices[k + numRestPerChannel];      // G channel: f_rest_{k+N}
-            const int32 riB = restIndices[k + numRestPerChannel * 2];  // B channel: f_rest_{k+2N}
-            shData.Add((riR >= 0) ? rawVertex[riR] : 0.0f);
-            shData.Add((riG >= 0) ? rawVertex[riG] : 0.0f);
-            shData.Add((riB >= 0) ? rawVertex[riB] : 0.0f);
-        }
-    }
-
-    // ---- Diagnostic logs ----
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] Model bbox min=(%.3f, %.3f, %.3f) max=(%.3f, %.3f, %.3f) "
-           "center=(%.3f, %.3f, %.3f) extent=(%.3f, %.3f, %.3f)",
-           bboxMin[0], bboxMin[1], bboxMin[2],
-           bboxMax[0], bboxMax[1], bboxMax[2],
-           (bboxMin[0] + bboxMax[0]) * 0.5f, (bboxMin[1] + bboxMax[1]) * 0.5f, (bboxMin[2] + bboxMax[2]) * 0.5f,
-           bboxMax[0] - bboxMin[0], bboxMax[1] - bboxMin[1], bboxMax[2] - bboxMin[2]);
-
-    // SH buffer layout diagnostic
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] SH layout: degree=%d, coeffsPerChannel=%d, numRestPerChannel=%d, "
-           "total shData floats=%lld (expected %lld)",
-           shDegree, shCoeffCount, numRestPerChannel,
-           static_cast<int64>(shData.Num()),
-           static_cast<int64>(vertexCount) * shCoeffCount * 3);
-
-    // Scale ranges: raw (log-scale) and activated (exp)
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] Scale (raw / log): min=(%.4f, %.4f, %.4f) max=(%.4f, %.4f, %.4f)",
-           scaleMinRaw[0], scaleMinRaw[1], scaleMinRaw[2],
-           scaleMaxRaw[0], scaleMaxRaw[1], scaleMaxRaw[2]);
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] Scale (activated / exp): min=(%.6f, %.6f, %.6f) max=(%.6f, %.6f, %.6f)",
-           scaleMinAct[0], scaleMinAct[1], scaleMinAct[2],
-           scaleMaxAct[0], scaleMaxAct[1], scaleMaxAct[2]);
-
-    // Rotation ranges: raw quaternion (before normalize)
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] Rotation (raw quaternion): "
-           "min=(%.4f, %.4f, %.4f, %.4f) max=(%.4f, %.4f, %.4f, %.4f)",
-           rotMin[0], rotMin[1], rotMin[2], rotMin[3],
-           rotMax[0], rotMax[1], rotMax[2], rotMax[3]);
-
-    // Opacity ranges
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] Opacity (raw): min=%.4f max=%.4f  (activated / sigmoid): min=%.4f max=%.4f",
-           opaMinRaw, opaMaxRaw, opaMinAct, opaMaxAct);
-
-    // ---- Upload to GPU buffers ----
-    if (!uploadBuffers(device, posData, scaleData, rotData, opacityData, shData,
-                       static_cast<uint32>(vertexCount), outData))
-    {
-        return false;
-    }
-
-    outData.gaussianCount = static_cast<uint32>(vertexCount);
-    outData.shDegree = shDegree;
-
-    auto endTime = std::chrono::high_resolution_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-    MR_LOG(LogTemp, Log, "[SplatPLYLoader] Loaded %d Gaussians (SH degree %d) in %lldms",
-           vertexCount, shDegree, ms);
-
-    return true;
 }
-
-// ============================================================================
-// uploadBuffers — unchanged from original (storage buffer creation + upload)
-// ============================================================================
-bool FSplatPLYLoader::uploadBuffers(RHI::IRHIDevice* device,
-                                     const MonsterEngine::TArray<float32>& posData,
-                                     const MonsterEngine::TArray<float32>& scaleData,
-                                     const MonsterEngine::TArray<float32>& rotData,
-                                     const MonsterEngine::TArray<float32>& opacityData,
-                                     const MonsterEngine::TArray<float32>& shData,
-                                     uint32 count,
-                                     FSplatGPUData& outData)
-{
-    using namespace RHI;
-
-    auto createStorageBuf = [device](const MonsterEngine::TArray<float32>& data,
-                                     uint32 size, const char* debugName) -> MonsterEngine::TSharedPtr<IRHIBuffer>
-    {
-        BufferDesc desc;
-        desc.size = size;
-        desc.usage = EResourceUsage::StorageBuffer | EResourceUsage::TransferDst;
-        desc.memoryUsage = EMemoryUsage::Default;
-        desc.initialData = data.GetData();
-        desc.initialDataSize = size;
-        desc.debugName = debugName;
-        return device->createBuffer(desc);
+bool FSplatPLYLoader::LoadCPU(const std::string& path,std::vector<FSplatGaussian>& out,uint32_t& shDegree,std::string& error) {
+    return LoadCPUWithAdmission(path,out,shDegree,error,{});
+}
+bool FSplatPLYLoader::LoadCPUWithAdmission(const std::string& path,std::vector<FSplatGaussian>& out,uint32_t& shDegree,std::string& error,
+    const std::function<bool(uint64_t,uint32_t,std::string&)>& admission) {
+    try {
+        std::ifstream f(path,std::ios::binary);if(!f)throw std::runtime_error("Cannot open PLY: "+path);
+        std::string line;auto readLine=[&](){line.clear();char c;while(f.get(c)){if(c=='\n')break;if(line.size()>=65536)throw std::runtime_error("PLY header line limit");line+=c;}if(!f&&line.empty())throw std::runtime_error("Truncated PLY header");if(!line.empty()&&line.back()=='\r')line.pop_back();};
+        readLine();if(line!="ply")throw std::runtime_error("Missing PLY magic");
+        bool format=false,ascii=false,big=false,vertex=false,inVertex=false,ended=false;uint64_t count=0,headerBytes=4;std::vector<PLYProperty> properties;std::map<std::string,size_t> index;
+        while(!ended){readLine();headerBytes+=line.size()+1;if(headerBytes>(1u<<20))throw std::runtime_error("PLY header size limit");std::istringstream s(line);std::string t;s>>t;if(t=="comment"||t=="obj_info"||t.empty())continue;
+            if(t=="format"){std::string v,version,extra;s>>v>>version;if(format||version!="1.0"||(s>>extra))throw std::runtime_error("Invalid PLY format declaration");format=true;if(v=="ascii")ascii=true;else if(v=="binary_big_endian")big=true;else if(v!="binary_little_endian")throw std::runtime_error("Unsupported PLY format");}
+            else if(t=="element"){std::string name,n,extra;s>>name>>n;if(name.empty()||n.empty()||(s>>extra)||n.find_first_not_of("0123456789")!=std::string::npos)throw std::runtime_error("Invalid PLY element");auto amount=std::stoull(n);inVertex=name=="vertex";if(inVertex){if(vertex)throw std::runtime_error("Duplicate vertex element");vertex=true;count=amount;if(count>100000000)throw std::runtime_error("PLY vertex limit exceeded");}else if(!vertex&&amount)throw std::runtime_error("Vertex must be first nonempty PLY element");}
+            else if(t=="property"&&inVertex){std::string type,name,extra;s>>type>>name;if(name.empty()||type=="list"||(s>>extra)||properties.size()>=1024)throw std::runtime_error("Invalid vertex property");if(!index.emplace(name,properties.size()).second)throw std::runtime_error("Duplicate PLY property");properties.push_back(Property(type,name));}
+            else if(t=="property")continue;
+            else if(t=="end_header"){std::string extra;if(s>>extra)throw std::runtime_error("Malformed end_header");ended=true;}
+            else throw std::runtime_error("Unknown PLY header declaration");
+        }
+        if(!format||!vertex)throw std::runtime_error("Missing PLY format/vertex");
+        const char* required[]={"x","y","z","f_dc_0","f_dc_1","f_dc_2","opacity","scale_0","scale_1","scale_2","rot_0","rot_1","rot_2","rot_3"};for(auto name:required)if(!index.count(name))throw std::runtime_error(std::string("Missing Gaussian property: ")+name);
+        uint32_t rest=0;for(const auto& p:properties)if(p.name.rfind("f_rest_",0)==0){auto n=p.name.substr(7);if(n.empty()||n.find_first_not_of("0123456789")!=std::string::npos||n.size()>2)throw std::runtime_error("Invalid SH property");auto i=std::stoul(n);if(i>=45||n!=std::to_string(i))throw std::runtime_error("Invalid SH index");++rest;}
+        uint32_t degree=rest==0?0:rest==9?1:rest==24?2:rest==45?3:4;if(degree>3)throw std::runtime_error("Incomplete SH degree layout");for(uint32_t i=0;i<rest;++i)if(!index.count("f_rest_"+std::to_string(i)))throw std::runtime_error("Noncontiguous SH properties");
+        uint64_t stride=0;for(const auto& p:properties)stride+=p.size;
+        auto begin=f.tellg();f.seekg(0,std::ios::end);auto end=f.tellg();if(begin<0||end<begin)throw std::runtime_error("Cannot query PLY data range");f.seekg(begin);if(!ascii&&count*stride>uint64_t(end-begin))throw std::runtime_error("Truncated PLY vertex payload");if(ascii&&count&&count>uint64_t(end-begin)/(properties.size()*2-1))throw std::runtime_error("Truncated ASCII payload");
+        // Admission uses only validated header metadata: no vertex payload read,
+        // CPU expansion, GPU memory allocation or initial upload has happened.
+        if(admission&&!admission(count,degree,error))throw std::runtime_error(error);
+        std::vector<FSplatGaussian> gs;gs.reserve(static_cast<size_t>(count));std::vector<double> row(properties.size());uint32_t coeff=(degree+1)*(degree+1),per=coeff-1;
+        for(uint64_t i=0;i<count;++i){for(size_t p=0;p<row.size();++p)row[p]=Scalar(f,properties[p],ascii,big);auto value=[&](const std::string& n){return row[index.at(n)];};FSplatGaussian g;g.originalId=i;g.position[0]=float(value("x"));g.position[1]=float(value("y"));g.position[2]=float(value("z"));for(int a=0;a<3;++a){g.scale[a]=float(std::exp(value("scale_"+std::to_string(a))));if(!std::isfinite(g.scale[a])||g.scale[a]<=0)throw std::runtime_error("Invalid activated Gaussian scale");}
+            double q[4],norm=0;for(int a=0;a<4;++a){q[a]=value("rot_"+std::to_string(a));norm+=q[a]*q[a];}if(norm<=1e-30)throw std::runtime_error("Zero Gaussian quaternion");norm=std::sqrt(norm);for(int a=0;a<4;++a)g.rotation[a]=float(q[a]/norm);
+            double opacity=value("opacity");g.opacity=float(opacity>=0?1/(1+std::exp(-opacity)):std::exp(opacity)/(1+std::exp(opacity)));
+            for(int c=0;c<3;++c){g.sh[c]=float(value("f_dc_"+std::to_string(c)));for(uint32_t k=0;k<per;++k)g.sh[3*(k+1)+c]=float(value("f_rest_"+std::to_string(c*per+k)));}gs.push_back(g);
+        }
+        out=std::move(gs);shDegree=degree;error.clear();return true;
+    }catch(const std::exception& e){error=e.what();return false;}
+}
+#ifndef SPLAT_CPU_ONLY
+bool FSplatPLYLoader::loadAndUpload(RHI::IRHIDevice* device,const String& path,FSplatGPUData& outData,
+    uint64_t sourceBudget,uint64_t stagingBudget) {
+    if(!device)return false;
+    std::vector<FSplatGaussian> gs;uint32_t degree=0,stagingBytes=0;std::string error;
+    auto admission=[&](uint64_t count,uint32_t shDegree,std::string& failure){
+        if(!count)return true;
+        uint64_t total=0;
+        for(uint32_t width:{16u,16u,16u,4u,12u*(shDegree+1)*(shDegree+1)}){
+            if(count>UINT32_MAX/width){failure="Source exceeds RHI buffer size limit";return false;}
+            RHI::BufferDesc d;d.size=uint32_t(count*width);d.usage=RHI::EResourceUsage::StorageBuffer|RHI::EResourceUsage::TransferDst;d.dedicatedAllocation=true;
+            uint64_t physical=0,alignment=0;
+            if(!device->getBufferAllocationRequirements(d,physical,alignment)||physical<d.size||!alignment){failure="Exact source allocation requirements unavailable";return false;}
+            if(physical>sourceBudget||total>sourceBudget-physical){failure="Original source backing exceeds scene budget before allocation";return false;}
+            total+=physical;
+        }
+        const uint32_t stride=52+12*(shDegree+1)*(shDegree+1);
+        uint64_t lo=0,hi=std::min<uint64_t>({stagingBudget,UINT32_MAX,count*stride})/stride;
+        while(lo<hi){uint64_t mid=lo+(hi-lo+1)/2;RHI::BufferDesc d;d.size=uint32_t(mid*stride);d.usage=RHI::EResourceUsage::TransferSrc;d.memoryUsage=RHI::EMemoryUsage::Upload;d.cpuAccessible=true;d.dedicatedAllocation=true;uint64_t required=0,alignment=0;
+            if(!device->getBufferAllocationRequirements(d,required,alignment)||required<d.size||!alignment){failure="Exact staging requirements unavailable";return false;}
+            if(required<=stagingBudget)lo=mid;else hi=mid-1;
+        }
+        if(!lo){failure="Original upload staging budget cannot hold one Gaussian";return false;}
+        stagingBytes=uint32_t(lo*stride);return true;
     };
-
-    uint32 posSize = count * 4 * sizeof(float32);
-    outData.positions = createStorageBuf(posData, posSize, "Splat_Positions");
-
-    uint32 scaleSize = count * 4 * sizeof(float32);
-    outData.scales = createStorageBuf(scaleData, scaleSize, "Splat_Scales");
-
-    uint32 rotSize = count * 4 * sizeof(float32);
-    outData.rotations = createStorageBuf(rotData, rotSize, "Splat_Rotations");
-
-    uint32 opacitySize = count * sizeof(float32);
-    outData.opacities = createStorageBuf(opacityData, opacitySize, "Splat_Opacities");
-
-    uint32 shSize = static_cast<uint32>(shData.Num() * sizeof(float32));
-    outData.shCoefficients = createStorageBuf(shData, shSize, "Splat_SH");
-
-    if (!outData.positions || !outData.scales || !outData.rotations ||
-        !outData.opacities || !outData.shCoefficients)
-    {
-        MR_LOG(LogTemp, Error, "[SplatPLYLoader] Failed to create one or more GPU buffers");
-        return false;
+    if(!LoadCPUWithAdmission(path,gs,degree,error,admission)){MR_LOG(LogTemp,Error,"[SplatPLYLoader] %s",error.c_str());return false;}
+    if(gs.empty()){outData.release();outData.shDegree=int32(degree);return true;}
+    FSplatGPUData result;
+    if(!uploadBuffers(device,gs,degree,stagingBytes,result))return false;
+    result.gaussianCount=uint32(gs.size());result.shDegree=int32(degree);outData=std::move(result);return true;
+}
+bool FSplatPLYLoader::uploadBuffers(RHI::IRHIDevice* device,const std::vector<FSplatGaussian>& gs,
+    uint32_t degree,uint32_t stagingBytes,FSplatGPUData& outData) {
+    using namespace RHI;
+    auto* vk=dynamic_cast<Vulkan::VulkanDevice*>(device);
+    if(!vk||!vk->getCommandListContext()||!device->supportsSubmissionCompletion())return false;
+    auto create=[&](uint32_t bytes,bool upload,const char* name){BufferDesc d;d.size=bytes;d.usage=upload?EResourceUsage::TransferSrc:EResourceUsage::StorageBuffer|EResourceUsage::TransferDst;d.memoryUsage=upload?EMemoryUsage::Upload:EMemoryUsage::Default;d.cpuAccessible=upload;d.dedicatedAllocation=true;d.debugName=name;
+        uint64_t expected=0,alignment=0;if(!device->getBufferAllocationRequirements(d,expected,alignment))return MonsterEngine::TSharedPtr<IRHIBuffer>{};
+        auto b=device->createBuffer(d);FBufferAllocationInfo info{};
+        if(!b||!b->getAllocationInfo(info)||info.reservationBytes!=expected||info.backingBytes!=expected)return MonsterEngine::TSharedPtr<IRHIBuffer>{};return b;};
+    const uint32_t widths[5]={16,16,16,4,12*(degree+1)*(degree+1)};
+    MonsterEngine::TSharedPtr<IRHIBuffer>* dest[5]={&outData.positions,&outData.scales,&outData.rotations,&outData.opacities,&outData.shCoefficients};
+    for(int k=0;k<5;++k){*dest[k]=create(uint32_t(gs.size()*widths[k]),false,"Splat_OriginalSource");if(!*dest[k])return false;}
+    auto staging=create(stagingBytes,true,"Splat_OriginalUpload");if(!staging)return false;
+    FBufferAllocationInfo stagingInfo{};staging->getAllocationInfo(stagingInfo);m_stagingBackingBytes=stagingInfo.backingBytes;
+    const uint32_t stride=52+widths[4],rowsPerChunk=stagingBytes/stride;
+    auto* cmd=device->getImmediateCommandList();if(!cmd)return false;
+    for(size_t start=0;start<gs.size();start+=rowsPerChunk){const uint32_t rows=uint32_t(std::min<size_t>(rowsPerChunk,gs.size()-start));
+        auto* mapped=static_cast<uint8_t*>(staging->map());if(!mapped)return false;
+        uint32_t offsets[5]{},offset=0;
+        for(int k=0;k<5;++k){offsets[k]=offset;for(uint32_t row=0;row<rows;++row){const auto& g=gs[start+row];const void* fields[5]={g.position,g.scale,g.rotation,&g.opacity,g.sh};std::memcpy(mapped+offset+row*widths[k],fields[k],widths[k]);}offset+=rows*widths[k];}
+        staging->unmap();vk->getCommandListContext()->refreshCommandBuffer();cmd->begin();
+        for(int k=0;k<5;++k)cmd->copyBuffer(*dest[k],staging,uint64_t(rows)*widths[k],uint64_t(start)*widths[k],offsets[k]);
+        cmd->resourceBarrier();const auto before=device->getLastSubmissionToken();cmd->end();cmd->submitAndWait();const auto submitted=device->getLastSubmissionToken();
+        if(!submitted.value||submitted.value==before.value||!device->isSubmissionComplete(submitted))return false;
     }
-
-    return true;
+    // Initialization only: explicit chunk completion permits staging destruction.
+    // No backend initialData uploader (and no hidden shared staging slab) is used.
+    staging.Reset();cmd->reset();return vk->DrainCompletedDestructions();
 }
 
-} // namespace Splat
-} // namespace MonsterRender
+#endif
+} // namespace MonsterRender::Splat

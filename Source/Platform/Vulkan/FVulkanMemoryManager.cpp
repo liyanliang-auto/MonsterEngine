@@ -527,13 +527,15 @@ void FVulkanMemoryManager::GetMemoryStats(FMemoryStats& OutStats)
     OutStats.AllocationCount = TotalAllocationCount.load();
     OutStats.DedicatedAllocationCount = DedicatedAllocationCount.load();
     OutStats.TotalAllocated = TotalAllocatedMemory.load();
+    OutStats.DedicatedCommitted = DedicatedCommittedMemory.load();
     
     // Calculate pool statistics
     for (uint32 i = 0; i < VK_MAX_MEMORY_TYPES; ++i) {
         std::lock_guard<std::mutex> lock(PoolsMutex[i]);
         
         for (const auto& pool : Pools[i]) {
-            OutStats.TotalReserved += pool->GetPoolSize();
+            OutStats.PooledReserved += pool->GetPoolSize();
+            OutStats.PooledUsed += pool->GetUsedSize();
             OutStats.PoolCount++;
             
             VkDeviceSize freeSize = pool->GetFreeSize();
@@ -550,6 +552,8 @@ void FVulkanMemoryManager::GetMemoryStats(FMemoryStats& OutStats)
         }
     }
     
+    OutStats.TotalReserved = OutStats.PooledReserved + OutStats.DedicatedCommitted;
+    OutStats.TotalAllocated = OutStats.PooledUsed + OutStats.DedicatedCommitted;
     MR_LOG_DEBUG("===== FVulkanMemoryManager Stats =====");
     MR_LOG_DEBUG("  Total allocated: " + std::to_string(OutStats.TotalAllocated / (1024 * 1024)) + "MB");
     MR_LOG_DEBUG("  Total reserved: " + std::to_string(OutStats.TotalReserved / (1024 * 1024)) + "MB");
@@ -659,6 +663,7 @@ bool FVulkanMemoryManager::AllocateDedicated(const FAllocationRequest& Request, 
     OutAllocation.AllocationHandle = nullptr;
     
     DedicatedAllocationCount.fetch_add(1);
+    DedicatedCommittedMemory.fetch_add(Request.Size);
     
     MR_LOG_INFO("FVulkanMemoryManager: Dedicated allocation " + 
                 std::to_string(Request.Size / (1024 * 1024)) + "MB");
@@ -675,6 +680,7 @@ void FVulkanMemoryManager::FreeDedicated(FVulkanAllocation& Allocation)
     }
     
     functions.vkFreeMemory(Device, Allocation.DeviceMemory, nullptr);
+    DedicatedCommittedMemory.fetch_sub(Allocation.Size);
     
     MR_LOG_DEBUG("FVulkanMemoryManager: Freed dedicated allocation (" + 
                  std::to_string(Allocation.Size / (1024 * 1024)) + "MB)");

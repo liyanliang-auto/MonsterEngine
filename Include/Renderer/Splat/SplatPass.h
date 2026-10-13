@@ -25,6 +25,7 @@
 #include "RHI/IRHIDescriptorSet.h"
 #include "Renderer/Splat/SplatTypes.h"
 #include "Renderer/Splat/SplatPLYLoader.h"
+#include <vector>
 
 namespace MonsterRender {
 namespace Splat {
@@ -93,6 +94,8 @@ public:
 
     void setDistanceCulling(bool enabled) { m_distanceCulling = enabled; }
     void setGaussianScale(float32 scale) { m_gaussianScale = scale; }
+    /** Upload compact indices into the next frame's independent dynamic buffer. */
+    bool setActiveIndices(const std::vector<uint32_t>& indices, bool enabled);
 
     /**
      * Execute the compute dispatch.
@@ -100,7 +103,11 @@ public:
      * @param cmdList Command list to record dispatch into
      * @param gaussianCount Number of gaussians (must be initialized count)
      */
-    void execute(RHI::IRHICommandList* cmdList, uint32 gaussianCount);
+    bool execute(RHI::IRHICommandList* cmdList, uint32 gaussianCount);
+    /** Select a slot only after its real submission has completed. */
+    void SelectFrameSlot(uint32 slot) { m_currentDsIndex = (slot + 1u) % kMaxFramesInFlight; }
+    /** Enumerate owned buffers for physical temporary memory accounting. */
+    std::vector<MonsterEngine::TSharedPtr<RHI::IRHIBuffer>> GetOwnedBuffers() const;
 
     /** Access output buffers */
     const FSplatPreprocessOutput& getOutput() const { return m_output; }
@@ -126,6 +133,11 @@ private:
 
     // Camera UBO
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_cameraBuffer;
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_cameraBuffers[2];
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_activeBuffers[2];
+    FCameraUniforms m_camera{};
+    std::vector<uint32_t> m_activeIndices;
+    bool m_useActiveIndices = false;
 
     // Clip planes for frustum culling
     float32 m_nearPlane = 0.01f;

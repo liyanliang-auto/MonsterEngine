@@ -152,7 +152,8 @@ namespace MonsterRender::RHI {
         RenderTarget = 1 << 6,
         DepthStencil = 1 << 7,
         ShaderResource = 1 << 8,
-        UnorderedAccess = 1 << 9
+        UnorderedAccess = 1 << 9,
+        IndirectArgs = 1 << 10
     };
 
     // Enable bitwise operations for EResourceUsage
@@ -322,6 +323,8 @@ namespace MonsterRender::RHI {
         EResourceUsage usage = EResourceUsage::None;
         EMemoryUsage memoryUsage = EMemoryUsage::Default;
         bool cpuAccessible = false;
+        /** Keep backing allocation attributable to this resource for hard budgets. */
+        bool dedicatedAllocation = false;
         String debugName;
 
         /** Stride for structured/vertex buffers */
@@ -394,6 +397,8 @@ namespace MonsterRender::RHI {
         uint32 arraySize = 1;
         EPixelFormat format = EPixelFormat::R8G8B8A8_UNORM;
         EResourceUsage usage = EResourceUsage::ShaderResource;
+        /** Keep physical image backing attributable to this resource for hard budgets. */
+        bool dedicatedAllocation = false;
         String debugName;
         // Initial data for texture upload (optional)
         // If provided, texture will be initialized with this data

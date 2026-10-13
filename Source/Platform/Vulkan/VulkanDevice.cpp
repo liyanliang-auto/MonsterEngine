@@ -240,8 +240,16 @@ namespace MonsterRender::RHI::Vulkan {
     void VulkanDevice::shutdown() {
         if (m_device != VK_NULL_HANDLE) {
             const auto& functions = VulkanAPI::getFunctions();
-            functions.vkDeviceWaitIdle(m_device);
+            const VkResult idleResult = functions.vkDeviceWaitIdle(m_device);
+            if (idleResult != VK_SUCCESS) {
+                MR_LOG_ERROR("Device idle failed: " + std::to_string(idleResult));
+            } else {
+                std::lock_guard<std::mutex> lock(m_submissionMutex);
+                m_completedSubmission = m_lastSubmission;
+                m_submissions.clear();
+            }
             
+            destroyGPUTimestampResources();
             // Destroy synchronization objects
             // Destroy per-frame sync objects
             for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -367,6 +375,41 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     // Resource creation methods - stub implementations for now
+    bool VulkanDevice::getBufferAllocationRequirements(const BufferDesc& desc, uint64& bytes, uint64& alignment) const {
+        if (m_device == VK_NULL_HANDLE || !desc.size) return false;
+        const auto& functions = VulkanAPI::getFunctions();
+        VkBufferCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        createInfo.size = desc.size;
+        createInfo.usage = VulkanUtils::getBufferUsageFlags(desc.usage);
+        if ((desc.usage & EResourceUsage::IndirectArgs) != EResourceUsage::None)
+            createInfo.usage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+        createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VkBuffer buffer = VK_NULL_HANDLE;
+        if (functions.vkCreateBuffer(m_device, &createInfo, nullptr, &buffer) != VK_SUCCESS) return false;
+        VkMemoryRequirements requirements{};
+        functions.vkGetBufferMemoryRequirements(m_device, buffer, &requirements);
+        functions.vkDestroyBuffer(m_device, buffer, nullptr);
+        bytes = requirements.size;
+        alignment = requirements.alignment;
+        return bytes >= desc.size && alignment != 0;
+    }
+
+    bool VulkanDevice::getTextureAllocationRequirements(const TextureDesc& desc, uint64& bytes, uint64& alignment) const {
+        if(m_device==VK_NULL_HANDLE||!desc.width||!desc.height||!desc.depth||!desc.mipLevels||!desc.arraySize)return false;
+        const auto& functions=VulkanAPI::getFunctions();
+        VkImageCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        info.imageType=desc.depth>1?VK_IMAGE_TYPE_3D:(desc.height==1?VK_IMAGE_TYPE_1D:VK_IMAGE_TYPE_2D);
+        info.format=VulkanUtils::getRHIFormatToVulkan(desc.format);info.extent={desc.width,desc.height,desc.depth};
+        info.mipLevels=desc.mipLevels;info.arrayLayers=desc.arraySize;info.samples=VK_SAMPLE_COUNT_1_BIT;
+        info.tiling=VK_IMAGE_TILING_OPTIMAL;info.usage=VulkanUtils::getImageUsageFlags(desc.usage);
+        info.sharingMode=VK_SHARING_MODE_EXCLUSIVE;info.initialLayout=VK_IMAGE_LAYOUT_UNDEFINED;
+        VkImage image=VK_NULL_HANDLE;if(functions.vkCreateImage(m_device,&info,nullptr,&image)!=VK_SUCCESS)return false;
+        VkMemoryRequirements requirements{};functions.vkGetImageMemoryRequirements(m_device,image,&requirements);
+        functions.vkDestroyImage(m_device,image,nullptr);bytes=requirements.size;alignment=requirements.alignment;
+        return bytes!=0&&alignment!=0;
+    }
+
     TSharedPtr<IRHIBuffer> VulkanDevice::createBuffer(const BufferDesc& desc) {
         auto vulkanBuffer = MakeShared<VulkanBuffer>(this, desc);
         if (!vulkanBuffer->isValid()) {
@@ -615,10 +658,172 @@ namespace MonsterRender::RHI::Vulkan {
         return m_immediateCommandList.get();
     }
     
+    FGPUCompletionToken VulkanDevice::getLastSubmissionToken() const {
+        std::lock_guard<std::mutex> lock(m_submissionMutex);
+        return {m_lastSubmission};
+    }
+
+    void VulkanDevice::refreshSubmissionCompletionLocked() const {
+        // All tracked submissions belong to the same graphics queue. A later
+        // signaled fence proves completion of every earlier queue submission.
+        for (const auto& submission : m_submissions) {
+            const VkResult result = vkGetFenceStatus(m_device, submission.fence);
+            if (result == VK_SUCCESS)
+                m_completedSubmission = std::max(m_completedSubmission, submission.value);
+            else if (result != VK_NOT_READY)
+                MR_LOG_ERROR("Submission completion query failed: " + std::to_string(result));
+        }
+        m_submissions.erase(std::remove_if(m_submissions.begin(), m_submissions.end(),
+            [this](const SubmissionRecord& record) { return record.value <= m_completedSubmission; }),
+            m_submissions.end());
+    }
+
+    bool VulkanDevice::isSubmissionComplete(FGPUCompletionToken token) const {
+        std::lock_guard<std::mutex> lock(m_submissionMutex);
+        if (!m_device || token.value == 0 || token.value > m_lastSubmission) return false;
+        refreshSubmissionCompletionLocked();
+        return token.value <= m_completedSubmission;
+    }
+
+    bool VulkanDevice::prepareSubmissionFenceReset(VkFence fence) {
+        std::lock_guard<std::mutex> lock(m_submissionMutex);
+        refreshSubmissionCompletionLocked();
+        for (const auto& submission : m_submissions) {
+            if (submission.fence == fence) {
+                MR_LOG_ERROR("Attempt to reset a fence with an incomplete submission");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void VulkanDevice::trackSubmission(VkCommandBuffer commandBuffer, VkFence fence) {
+        std::lock_guard<std::mutex> lock(m_submissionMutex);
+        if (fence == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Completion tracking requires a real submission fence");
+            return;
+        }
+        const uint64_t value = ++m_lastSubmission;
+        m_submissions.push_back({value, fence});
+        for (auto& record : m_timestampRecords) {
+            if (record.commandBuffer == commandBuffer && record.submission == 0)
+                record.submission = value;
+        }
+    }
+
+    bool VulkanDevice::supportsGPUTimestamps() const {
+        return m_device != VK_NULL_HANDLE && m_timestampValidBits > 0 &&
+               (m_graphicsQueueFamily.flags & VK_QUEUE_COMPUTE_BIT) != 0 &&
+               m_deviceProperties.limits.timestampPeriod > 0;
+    }
+
+    void VulkanDevice::recordGPUTimestamp(VkCommandBuffer commandBuffer, uint64_t frame,
+                                          const std::string& label, bool begin) {
+        if (!supportsGPUTimestamps() || commandBuffer == VK_NULL_HANDLE) return;
+        std::lock_guard<std::mutex> lock(m_submissionMutex);
+        if (!begin) {
+            for (auto it = m_timestampRecords.rbegin(); it != m_timestampRecords.rend(); ++it) {
+                if (it->commandBuffer == commandBuffer && it->submission == 0 &&
+                    it->frame == frame && it->label == label && !it->ended) {
+                    vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, it->pool, 1);
+                    it->ended = true;
+                    return;
+                }
+            }
+            MR_LOG_WARNING("Unmatched GPU timestamp end: " + label);
+            return;
+        }
+        // Bounded even if consumers stop polling. Exhaustion means unavailable
+        // measurements, not a fabricated CPU fallback or unbounded allocation.
+        if (m_timestampRecords.size() >= 4096) {
+            MR_LOG_WARNING("GPU timestamp capacity exhausted");
+            return;
+        }
+        VkQueryPool pool = VK_NULL_HANDLE;
+        if (!m_availableTimestampPools.empty()) {
+            pool = m_availableTimestampPools.back();
+            m_availableTimestampPools.pop_back();
+        } else {
+            VkQueryPoolCreateInfo info{};
+            info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            info.queryCount = 2;
+            const VkResult result = vkCreateQueryPool(m_device, &info, nullptr, &pool);
+            if (result != VK_SUCCESS) {
+                MR_LOG_ERROR("GPU timestamp query pool allocation failed: " + std::to_string(result));
+                return;
+            }
+        }
+        m_timestampRecords.push_back({commandBuffer, pool, frame, label, 0, false});
+        vkCmdResetQueryPool(commandBuffer, pool, 0, 2);
+        vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, pool, 0);
+    }
+
+    std::vector<FRHIGPUTimestampSample> VulkanDevice::pollGPUTimestamps() {
+        std::vector<FRHIGPUTimestampSample> samples;
+        if (!supportsGPUTimestamps()) return samples;
+        std::lock_guard<std::mutex> lock(m_submissionMutex);
+        refreshSubmissionCompletionLocked();
+        for (auto it = m_timestampRecords.begin(); it != m_timestampRecords.end();) {
+            if (it->submission == 0 || it->submission > m_completedSubmission) { ++it; continue; }
+            // An unmatched begin is unavailable. Its query commands have finished,
+            // so the pool may now be recycled safely.
+            if (it->ended) {
+                struct Result { uint64_t ticks; uint64_t available; } results[2]{};
+                const VkResult result = vkGetQueryPoolResults(m_device, it->pool, 0, 2,
+                    sizeof(results), results, sizeof(Result),
+                    VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+                if (result == VK_NOT_READY || !results[0].available || !results[1].available) {
+                    if (result == VK_SUCCESS || result == VK_NOT_READY) { ++it; continue; }
+                }
+                if (result == VK_SUCCESS && results[0].available && results[1].available) {
+                    const uint64_t mask = m_timestampValidBits == 64 ? UINT64_MAX :
+                        ((uint64_t(1) << m_timestampValidBits) - 1);
+                    const uint64_t delta = (results[1].ticks - results[0].ticks) & mask;
+                    samples.push_back({it->frame, it->label,
+                        double(delta) * double(m_deviceProperties.limits.timestampPeriod) / 1000000.0});
+                } else {
+                    MR_LOG_ERROR("GPU timestamp resolve failed: " + std::to_string(result));
+                }
+            }
+            m_availableTimestampPools.push_back(it->pool);
+            it = m_timestampRecords.erase(it);
+        }
+        return samples;
+    }
+
+    void VulkanDevice::discardUnsubmittedTimestamps(VkCommandBuffer commandBuffer) {
+        std::lock_guard<std::mutex> lock(m_submissionMutex);
+        for (auto it = m_timestampRecords.begin(); it != m_timestampRecords.end();) {
+            if (it->commandBuffer == commandBuffer && it->submission == 0) {
+                m_availableTimestampPools.push_back(it->pool);
+                it = m_timestampRecords.erase(it);
+            } else ++it;
+        }
+    }
+
+    void VulkanDevice::destroyGPUTimestampResources() {
+        // Called only after device idle at shutdown.
+        std::lock_guard<std::mutex> lock(m_submissionMutex);
+        for (const auto& record : m_timestampRecords) vkDestroyQueryPool(m_device, record.pool, nullptr);
+        for (const auto pool : m_availableTimestampPools) vkDestroyQueryPool(m_device, pool, nullptr);
+        m_timestampRecords.clear();
+        m_availableTimestampPools.clear();
+        m_submissions.clear();
+        m_timestampValidBits = 0;
+    }
+
     void VulkanDevice::waitForIdle() {
         if (m_device != VK_NULL_HANDLE) {
             const auto& functions = VulkanAPI::getFunctions();
-            functions.vkDeviceWaitIdle(m_device);
+            const VkResult idleResult = functions.vkDeviceWaitIdle(m_device);
+            if (idleResult != VK_SUCCESS) {
+                MR_LOG_ERROR("Device idle failed: " + std::to_string(idleResult));
+            } else {
+                std::lock_guard<std::mutex> lock(m_submissionMutex);
+                m_completedSubmission = m_lastSubmission;
+                m_submissions.clear();
+            }
         }
     }
     
@@ -641,13 +846,17 @@ namespace MonsterRender::RHI::Vulkan {
             VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
             VkSemaphore signalSemaphores[] = {m_perImageRenderFinishedSemaphores[m_currentImageIndex]};
             
-            m_commandListContext->submitCommands(
+            if (!m_commandListContext->submitCommands(
                 waitSemaphores, 1,
                 signalSemaphores, 1
-            );
+            )) {
+                MR_LOG_ERROR("Present skipped: graphics submission failed");
+                return;
+            }
             MR_LOG_INFO("  Command buffer submitted");
         } else {
             MR_LOG_WARNING("  Cannot submit: context or semaphore issue");
+            return;
         }
         
         // Present using the per-image semaphore
@@ -705,8 +914,8 @@ namespace MonsterRender::RHI::Vulkan {
             FVulkanMemoryManager::FMemoryStats stats;
             m_memoryManager->GetMemoryStats(stats);
             usedBytes = static_cast<uint64>(stats.TotalAllocated);
-            availableBytes = stats.TotalReserved > stats.TotalAllocated
-                ? static_cast<uint64>(stats.TotalReserved - stats.TotalAllocated) : 0;
+            availableBytes = stats.PooledReserved > stats.PooledUsed
+                ? static_cast<uint64>(stats.PooledReserved - stats.PooledUsed) : 0;
         }
     }
     
@@ -2013,7 +2222,13 @@ namespace MonsterRender::RHI::Vulkan {
         m_capabilities.supportsTessellation = m_deviceFeatures.tessellationShader == VK_TRUE;
         m_capabilities.supportsComputeShader = true; // Vulkan 1.0 core feature
         m_capabilities.supportsMultiDrawIndirect = m_deviceFeatures.multiDrawIndirect == VK_TRUE;
-        m_capabilities.supportsTimestampQuery = limits.timestampComputeAndGraphics == VK_TRUE;
+        uint32_t queueCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueCount, nullptr);
+        std::vector<VkQueueFamilyProperties> queues(queueCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueCount, queues.data());
+        m_timestampValidBits = m_graphicsQueueFamily.familyIndex < queues.size() ?
+            queues[m_graphicsQueueFamily.familyIndex].timestampValidBits : 0;
+        m_capabilities.supportsTimestampQuery = supportsGPUTimestamps();
         
         // Log capabilities
         MR_LOG_INFO("Device Capabilities:");

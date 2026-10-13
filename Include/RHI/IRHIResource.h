@@ -60,6 +60,13 @@ namespace MonsterRender::RHI {
         String m_debugName;
     };
     
+    /** Actual reservation and backing allocation; shared backing IDs must be deduplicated. */
+    struct FBufferAllocationInfo {
+        uint64 reservationBytes = 0; ///< Suballocation block or dedicated allocation bytes.
+        uint64 backingBytes = 0; ///< Entire owning device-memory allocation, including free slack.
+        uint64 backingId = 0; ///< Opaque backend identity used only for deduplication.
+    };
+
     /**
      * Base class for GPU buffers
      */
@@ -81,6 +88,8 @@ namespace MonsterRender::RHI {
          * Unmap the buffer
          */
         virtual void unmap() = 0;
+        /** False means physical accounting is unavailable, never a zero-sized allocation. */
+        virtual bool getAllocationInfo(FBufferAllocationInfo&) const { return false; }
         
         /**
          * Get buffer description
@@ -111,6 +120,8 @@ namespace MonsterRender::RHI {
         }
         
         virtual ~IRHITexture() = default;
+        /** False means exact physical image accounting is unavailable. */
+        virtual bool getAllocationInfo(FBufferAllocationInfo&) const { return false; }
         
         /**
          * Get texture description

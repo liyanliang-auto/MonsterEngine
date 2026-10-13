@@ -2,6 +2,7 @@
 
 #include "Core/CoreMinimal.h"
 #include "Platform/Vulkan/VulkanRHI.h"
+#include "RHI/SplatGPUPrimitives.h"
 
 namespace MonsterRender::RHI::Vulkan {
     
@@ -61,7 +62,12 @@ namespace MonsterRender::RHI::Vulkan {
         /**
          * Mark as submitted (called by command buffer manager after queue submit)
          */
-        void markSubmitted() { m_state = EState::Submitted; }
+        void markSubmitted(VkFence fence, FGPUCompletionToken token) {
+            m_submissionFence = fence; m_submissionToken = token; m_state = EState::Submitted;
+        }
+        FGPUCompletionToken getSubmissionToken() const { return m_submissionToken; }
+        /** Fence actually attached to this recording's queue submission. */
+        VkFence getSubmissionFence() const { return m_submissionFence; }
         
         /**
          * Mark as ready for begin (called after vkResetCommandBuffer)
@@ -115,6 +121,8 @@ namespace MonsterRender::RHI::Vulkan {
         
         VkCommandBuffer m_commandBuffer;
         VkFence m_fence;
+        VkFence m_submissionFence = VK_NULL_HANDLE;
+        FGPUCompletionToken m_submissionToken;
         
         EState m_state;
         bool m_insideRenderPass;
@@ -155,14 +163,14 @@ namespace MonsterRender::RHI::Vulkan {
         /**
          * Submit the active command buffer to the GPU queue (UE5: SubmitActiveCmdBuffer())
          */
-        void submitActiveCmdBuffer(VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
+        bool submitActiveCmdBuffer(VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
                                    VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount);
         
         /**
          * Submit the active command buffer with a specific fence for frame synchronization
          * @param fence External fence to signal on completion (e.g., in-flight fence)
          */
-        void submitActiveCmdBufferWithFence(VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
+        bool submitActiveCmdBufferWithFence(VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
                                             VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount,
                                             VkFence fence);
         

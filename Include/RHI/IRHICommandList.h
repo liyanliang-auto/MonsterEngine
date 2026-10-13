@@ -9,6 +9,7 @@
 #include "RHI/IRHIDescriptorSet.h"
 #include "RDG/RDGDefinitions.h"
 #include <atomic>
+#include "RHI/SplatGPUPrimitives.h"
 
 namespace MonsterRender::RHI {
     
@@ -447,6 +448,13 @@ namespace MonsterRender::RHI {
          * @param groupCountZ Number of local workgroups in Z dimension
          */
         virtual void dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) = 0;
+        /** Dispatch from three uint32 arguments in an IndirectArgs buffer.
+         * Caller must retain the buffer through replay and owning GPU submission completion. */
+        virtual void dispatchIndirect(IRHIBuffer* arguments, uint64_t byteOffset);
+        /** Record a paired hardware timestamp scope. Unsupported backends collect nothing. */
+        virtual void writeGPUTimestamp(uint64_t frame, const std::string& label, bool begin) {
+            (void)frame; (void)label; (void)begin;
+        }
         
         // Buffer copy commands
         /**

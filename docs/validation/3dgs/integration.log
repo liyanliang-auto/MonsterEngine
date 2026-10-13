@@ -1,0 +1,15 @@
+PASS T15 strict runtime config defaults unknown duplicate and finite validation
+PASS T15 interactive validation and presentation obey explicit config
+PASS T15 validated UI freeze and budget scene queue
+PASS T15 short functional evidence does not relax registered acceptance implicitly
+PASS T15 actual Bicycle sequence metadata and valid cameras
+PASS T13 delayed event batch joins original frame IDs
+PASS T13 bounded row ring reports missing measurements
+PASS T13 actual overflow prevents successful evidence
+PASS T14 synthetic actual A B fullleaf D capture equivalence
+PASS T15 real scene switch resize and shutdown
+PASS T15 original interactive scene respects configured GPU budget
+PASS T15 visible UI frame uploads and polled input edges
+PASS R3 T13 actual app ten hardware scopes join original frame IDs
+PASS R3 T13 pipeline-only events cannot satisfy whole-frame evidence
+SUMMARY total=14 passed=14 failed=0

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "Core/CoreTypes.h"
+#include "Renderer/FTexture.h"
 #include "Core/Templates/UniquePtr.h"
 #include "Containers/Array.h"
 #include "Containers/Map.h"

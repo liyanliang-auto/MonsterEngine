@@ -48,3 +48,30 @@ CMakeUserPresets.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local agents, session notes and private configuration
+.workbuddy/memory/
+devDocument/3DGS/Anker*
+devDocument/3DGS/*会话*
+devDocument/3DGS/diagnostic_artifacts/
+.codex/
+.agents/
+.claude/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local 3DGS datasets, generated scenes, capture scripts and evidence workspace
+TestFile/
+specs/
+resources/point_cloud/
+resources/3dgs_scenes/
+output/
+Source/Tests/3DGSControl/validation/
+Source/Tests/3DGSControl/*.py
+Source/Tests/3DGSLODStreaming/*.py
+Source/Tests/3DGSLODStreaming/*.ps1
+*.rgba
+*.mgsp

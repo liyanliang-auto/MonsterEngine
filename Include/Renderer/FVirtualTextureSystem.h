@@ -107,6 +107,7 @@ private:
     
     // Helper: Find LRU candidate
     uint32 FindLRUCandidate();
+    uint32 AllocatePageLocked(); // Caller holds Mutex.
 };
 
 /**

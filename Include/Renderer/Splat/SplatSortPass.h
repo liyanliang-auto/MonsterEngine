@@ -7,9 +7,9 @@
  * @brief GPU sort pipeline pass classes for 3DGS rendering.
  * 
  * Four sequential passes:
- *   1. FSplatPrefixSumPass    - Blelloch scan on tilesTouched[]
+ *   1. FSplatPrefixSumPass    - Inclusive Hillis-Steele scan on tilesTouched[]
  *   2. FSplatAssignKeysPass   - Generate 64-bit sort keys + 32-bit values
- *   3. FSplatRadixSortPass    - 4-pass × 8-bit LSD radix sort
+ *   3. FSplatRadixSortPass    - 8-pass x 8-bit LSD radix sort
  *   4. FSplatTileBoundariesPass - Detect tile boundaries in sorted keys
  */
 
@@ -18,6 +18,7 @@
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHIDescriptorSet.h"
 #include "Renderer/Splat/SplatSortTypes.h"
+#include <vector>
 
 namespace MonsterRender {
 namespace Splat {
@@ -30,8 +31,8 @@ namespace Splat {
  * Computes a cumulative prefix sum of the tilesTouched[] array from the
  * preprocess pass output. Uses ping-pong buffers and ceil(log2(N)) iterations.
  * 
- * The final result buffer can be read back to determine totalSortElements
- * (required for later buffer allocation).
+ * The final inclusive tail is the total sort-entry count. The runtime consumes
+ * it on the GPU; verification may read it after actual submission completion.
  */
 class FSplatPrefixSumPass
 {
@@ -59,6 +60,7 @@ public:
 
     /** Get buffer A (for external tile copy / initial data write) */
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> getBufferA() const { return m_bufferA; }
+    std::vector<MonsterEngine::TSharedPtr<RHI::IRHIBuffer>> GetOwnedBuffers() const { return {m_bufferA, m_bufferB}; }
 
     bool isInitialized() const { return m_bInitialized; }
     uint32 getMaxElements() const { return m_numElements; }
@@ -99,7 +101,12 @@ public:
      * @param totalSortElements Total entries (sum of tilesTouched, from prefix sum result)
      * @param gaussianCount Number of Gaussians to process
      */
-    bool initialize(RHI::IRHIDevice* device, uint32 totalSortElements, uint32 gaussianCount);
+    bool initialize(RHI::IRHIDevice* device, uint32 totalSortElements, uint32 gaussianCount,
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> outputKeys = {},
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> outputValues = {},
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState = {});
+    void SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state);
+    void SelectFrameSlot(uint32 slot) { m_currentDsIndex = (slot + 1u) % kMaxFramesInFlight; }
 
     /**
      * Set input buffers from preprocess pass output and prefix sum pass.
@@ -124,9 +131,8 @@ public:
     uint32 getSortElementCount() const { return m_sortElementCount; }
 
     /**
-     * Update the sort element count used for the shader bounds guard. Called
-     * by FSplatPipeline when the per-frame readback detects a changed tile
-     * count (camera zoom), so the guard stays in sync with m_realSortElements.
+     * Legacy standalone capacity guard. The runtime fixes this to allocated
+     * capacity and obtains each frame's actual count from GPU dispatch state.
      */
     void setSortElementCount(uint32 count) { m_sortElementCount = count; }
 
@@ -136,6 +142,8 @@ private:
     bool m_bInitialized = false;
     uint32 m_sortElementCount = 0;
     uint32 m_gaussianCount = 0;
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_dispatchState;
+    bool m_gpuCount = false;
 
     // Output buffers
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_sortKeys;
@@ -161,7 +169,7 @@ private:
 // ============================================================================
 
 /**
- * Sorts key-value pairs using an 8-bit LSD radix sort over 4 passes (32-bit key).
+ * Sorts key-value pairs using an 8-bit LSD radix sort over eight passes (64-bit key).
  * Based on VkRadixSort by Mirco Werner (MIT License).
  * 
  * Each pass: histogram (256-bin local + global) → scatter (subgroup prefix sums).
@@ -178,10 +186,15 @@ public:
      * @param device RHI device
      * @param maxSortElements Upper bound on sort elements (from prefix sum total)
      */
-    bool initialize(RHI::IRHIDevice* device, uint32 maxSortElements);
+    bool initialize(RHI::IRHIDevice* device, uint32 maxSortElements,
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState = {});
+    void SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state);
+    std::vector<MonsterEngine::TSharedPtr<RHI::IRHIBuffer>> GetOwnedBuffers() const {
+        return {m_keysEven, m_keysOdd, m_valuesEven, m_valuesOdd, m_histogram};
+    }
 
     /**
-     * Execute the 4-pass radix sort.
+     * Execute the eight-pass radix sort.
      * On entry, keysEven/valuesEven should contain the unsorted data 
      * (e.g., copied from AssignKeys output). After execution, final sorted 
      * data is in keysEven/valuesEven if finished on even pass.
@@ -190,7 +203,7 @@ public:
      * @param numElements Actual number of sort entries
      * @return true if final result is in even buffers, false if in odd
      */
-    bool execute(RHI::IRHICommandList* cmdList, uint32 numElements);
+    bool execute(RHI::IRHICommandList* cmdList, uint32 numElements, uint32 keyBits = 64);
 
     /** Get the sorted key buffer */
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> getSortedKeys() const;
@@ -211,6 +224,8 @@ private:
 
     bool m_bInitialized = false;
     uint32 m_maxElements = 0;
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_dispatchState;
+    bool m_gpuCount = false;
 
     // Ping-pong key/value buffers (uint64_t keys, uint32 values)
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_keysEven;
@@ -225,6 +240,8 @@ private:
     MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSetLayout> m_histSetLayout;
     MonsterEngine::TSharedPtr<RHI::IRHIPipelineLayout> m_histPipelineLayout;
     MonsterEngine::TSharedPtr<RHI::IRHIPipelineState> m_histPipeline;
+    MonsterEngine::TSharedPtr<RHI::IRHIPipelineLayout> m_offsetsPipelineLayout;
+    MonsterEngine::TSharedPtr<RHI::IRHIPipelineState> m_offsetsPipeline;
     MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSet> m_histDescriptorSetEven;   // SortKeys = keysEven
     MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSet> m_histDescriptorSetOdd;    // SortKeys = keysOdd
 
@@ -263,7 +280,10 @@ public:
      * @param numTiles Total tile count (gridX * gridY)
      * @param maxSortElements Upper bound on sort elements
      */
-    bool initialize(RHI::IRHIDevice* device, uint32 numTiles, uint32 maxSortElements);
+    bool initialize(RHI::IRHIDevice* device, uint32 numTiles, uint32 maxSortElements,
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState = {});
+    void SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state);
+    void SelectFrameSlot(uint32 slot) { m_currentDsIndex = (slot + 1u) % kMaxFramesInFlight; }
 
     /**
      * Execute tile boundary detection.
@@ -296,6 +316,8 @@ public:
 private:
     bool m_bInitialized = false;
     uint32 m_numTiles = 0;
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_dispatchState;
+    bool m_gpuCount = false;
 
     // Input (external, set via setSortedKeys)
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_sortedKeys;

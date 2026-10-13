@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <algorithm>
 
 namespace MonsterRender {
 namespace Splat {
@@ -21,6 +22,7 @@ FSplatPreprocessPass::~FSplatPreprocessPass()
 {
     m_output.release();
     m_cameraBuffer.Reset();
+    for (uint32 i = 0; i < 2; ++i) { m_cameraBuffers[i].Reset(); m_activeBuffers[i].Reset(); }
     m_pipelineState.Reset();
     m_pipelineLayout.Reset();
     for (uint32 i = 0; i < kMaxFramesInFlight; ++i)
@@ -45,7 +47,7 @@ bool FSplatPreprocessPass::initialize(RHI::IRHIDevice* device, uint32 gaussianCo
         return false;
     }
 
-    if (gaussianCount == 0)
+    if (gaussianCount == 0 || uint64_t(gaussianCount) * 16 > UINT32_MAX)
     {
         MR_LOG(LogTemp, Error, "[SplatPass] Gaussian count is zero");
         return false;
@@ -69,36 +71,31 @@ bool FSplatPreprocessPass::initialize(RHI::IRHIDevice* device, uint32 gaussianCo
     if (!allocateAndUpdateDescriptorSets(device))
         return false;
 
-    // Create camera UBO (initial dummy data)
-    {
-        RHI::BufferDesc desc;
-        desc.size = sizeof(FCameraUniforms);
-        desc.usage = RHI::EResourceUsage::UniformBuffer;
-        desc.memoryUsage = RHI::EMemoryUsage::Dynamic;
-        desc.cpuAccessible = true;
-        desc.debugName = "Splat_CameraUBO";
-        m_cameraBuffer = device->createBuffer(desc);
-        if (!m_cameraBuffer)
-        {
-            MR_LOG(LogTemp, Error, "[SplatPass] Failed to create camera UBO");
-            return false;
-        }
-
-        // Pre-bake Camera UBO binding on ALL per-frame input descriptor sets.
-        // This is required because on the first frame ensureSortPassesInitialized()
-        // calls execute() which toggles m_currentDsIndex, and then the normal pass
-        // calls execute() again, potentially using a set whose Camera binding was
-        // never written. Pre-baking here ensures both sets start with a valid binding.
-        for (uint32 i = 0; i < kMaxFramesInFlight; ++i)
-        {
-            if (m_inputDescriptorSets[i])
-            {
-                m_inputDescriptorSets[i]->updateUniformBuffer(
-                    EInputBinding::Camera, m_cameraBuffer, 0, sizeof(FCameraUniforms));
-            }
-        }
+    // Independent mapped inputs for the engine's two frame slots. Writes occur
+    // only in execute, after the owning frame fence has been acquired by the app.
+    for (uint32 frame = 0; frame < kMaxFramesInFlight; ++frame) {
+        RHI::BufferDesc cameraDesc;
+        cameraDesc.dedicatedAllocation = true;
+        cameraDesc.size = sizeof(FCameraUniforms);
+        cameraDesc.usage = RHI::EResourceUsage::UniformBuffer;
+        cameraDesc.memoryUsage = RHI::EMemoryUsage::Dynamic;
+        cameraDesc.cpuAccessible = true;
+        cameraDesc.debugName = "Splat_CameraFrame";
+        m_cameraBuffers[frame] = device->createBuffer(cameraDesc);
+        RHI::BufferDesc activeDesc;
+        activeDesc.dedicatedAllocation = true;
+        activeDesc.size = uint64_t(m_gaussianCount) * sizeof(uint32);
+        activeDesc.usage = RHI::EResourceUsage::StorageBuffer;
+        activeDesc.memoryUsage = RHI::EMemoryUsage::Dynamic;
+        activeDesc.cpuAccessible = true;
+        activeDesc.debugName = "Splat_ActiveFrame";
+        m_activeBuffers[frame] = device->createBuffer(activeDesc);
+        if (!m_cameraBuffers[frame] || !m_activeBuffers[frame]) return false;
+        m_inputDescriptorSets[frame]->updateUniformBuffer(EInputBinding::Camera,
+            m_cameraBuffers[frame], 0, sizeof(FCameraUniforms));
+        m_inputDescriptorSets[frame]->updateStorageBuffer(EInputBinding::ActiveIndices,
+            m_activeBuffers[frame], 0, 0);
     }
-
     m_bInitialized = true;
     MR_LOG(LogTemp, Log, "[SplatPass] Initialized for %u Gaussians", gaussianCount);
     return true;
@@ -123,6 +120,7 @@ bool FSplatPreprocessPass::createDescriptorSetLayouts(RHI::IRHIDevice* device)
             EInputBinding::SHCoefficients, EDescriptorType::StorageBuffer, EShaderStage::Compute));
         desc.bindings.Add(FDescriptorSetLayoutBinding(
             EInputBinding::Camera, EDescriptorType::UniformBuffer, EShaderStage::Compute));
+        desc.bindings.Add(FDescriptorSetLayoutBinding(EInputBinding::ActiveIndices, EDescriptorType::StorageBuffer, EShaderStage::Compute));
 
         m_inputSetLayout = device->createDescriptorSetLayout(desc);
         if (!m_inputSetLayout)
@@ -182,7 +180,7 @@ bool FSplatPreprocessPass::createPipeline(RHI::IRHIDevice* device)
     }
 
     // Load SPIR-V bytecode
-    String spvPath = "Shaders/Splat/compiled/splat_preprocess.spv";
+    String spvPath = SplatShaderPath("Shaders/Splat/compiled/splat_preprocess.spv");
     auto bytecodeVec = MonsterRender::ShaderCompiler::readFileBytes(spvPath);
     if (bytecodeVec.empty())
     {
@@ -220,9 +218,10 @@ bool FSplatPreprocessPass::createOutputBuffers(RHI::IRHIDevice* device)
 {
     using namespace RHI;
 
-    auto createStorageBuf = [device](uint32 size, const char* name) -> MonsterEngine::TSharedPtr<IRHIBuffer>
+    auto createStorageBuf = [device](uint64_t size, const char* name) -> MonsterEngine::TSharedPtr<IRHIBuffer>
     {
         BufferDesc desc;
+        desc.dedicatedAllocation = true;
         desc.size = size;
         desc.usage = EResourceUsage::StorageBuffer | EResourceUsage::TransferDst | EResourceUsage::TransferSrc;
         desc.memoryUsage = EMemoryUsage::Default;
@@ -230,7 +229,7 @@ bool FSplatPreprocessPass::createOutputBuffers(RHI::IRHIDevice* device)
         return device->createBuffer(desc);
     };
 
-    uint32 n = m_gaussianCount;
+    uint64_t n = m_gaussianCount;
 
     m_output.radii        = createStorageBuf(n * sizeof(int32),   "Splat_Radii");
     m_output.depth        = createStorageBuf(n * sizeof(float32), "Splat_Depth");
@@ -288,43 +287,15 @@ void FSplatPreprocessPass::setInputs(const FSplatGPUData& input)
 {
     m_input = input;
 
-    // Update BOTH per-frame input descriptor sets with the newly provided buffers
-    for (uint32 i = 0; i < kMaxFramesInFlight; ++i)
-    {
-        auto& ds = m_inputDescriptorSets[i];
-        ds->updateStorageBuffer(EInputBinding::Positions,      input.positions,      0, 0);
-        ds->updateStorageBuffer(EInputBinding::Scales,         input.scales,         0, 0);
-        ds->updateStorageBuffer(EInputBinding::Rotations,      input.rotations,      0, 0);
-        ds->updateStorageBuffer(EInputBinding::Opacities,      input.opacities,      0, 0);
-        ds->updateStorageBuffer(EInputBinding::SHCoefficients, input.shCoefficients, 0, 0);
-    }
 }
 
-    void FSplatPreprocessPass::updateCamera(const FCameraUniforms& camera)
-    {
-        // Write camera data into the persistent UBO
-        if (m_cameraBuffer)
-        {
-            void* data = m_cameraBuffer->map();
-            if (data)
-            {
-                std::memcpy(data, &camera, sizeof(FCameraUniforms));
-                m_cameraBuffer->unmap();
-            }
+void FSplatPreprocessPass::updateCamera(const FCameraUniforms& camera) { m_camera = camera; }
 
-            MR_LOG(LogTemp, Verbose, "[SplatPass] updateCamera: camPos=(%.3f, %.3f, %.3f) near=%.4f far=%.4f",
-                   camera.camPos[0], camera.camPos[1], camera.camPos[2], m_nearPlane, m_farPlane);
-
-        // Pre-bake camera UBO binding for the NEXT frame's input descriptor set.
-        // Only updating the next set (not all kMaxFramesInFlight sets) avoids
-        // VUID-03047: updating a set still in use by a pending command buffer.
-        uint32 nextIndex = (m_currentDsIndex + 1) % kMaxFramesInFlight;
-        if (m_inputDescriptorSets[nextIndex])
-        {
-            m_inputDescriptorSets[nextIndex]->updateUniformBuffer(
-                EInputBinding::Camera, m_cameraBuffer, 0, sizeof(FCameraUniforms));
-        }
-    }
+bool FSplatPreprocessPass::setActiveIndices(const std::vector<uint32_t>& indices, bool enabled) {
+    if (indices.size() > m_gaussianCount) return false;
+    for (auto source : indices) if (source >= m_input.gaussianCount) return false;
+    m_activeIndices = indices; m_useActiveIndices = enabled;
+    return true;
 }
 
 void FSplatPreprocessPass::setClipPlanes(float32 nearPlane, float32 farPlane)
@@ -337,18 +308,18 @@ void FSplatPreprocessPass::setClipPlanes(float32 nearPlane, float32 farPlane)
 // Execute
 // ============================================================================
 
-void FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussianCount)
+bool FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussianCount)
 {
     if (!m_bInitialized)
     {
         MR_LOG(LogTemp, Error, "[SplatPass] Not initialized");
-        return;
+        return false;
     }
 
     if (!cmdList)
     {
         MR_LOG(LogTemp, Error, "[SplatPass] Null command list");
-        return;
+        return false;
     }
 
     // Toggle per-frame descriptor set index to avoid updating sets
@@ -357,9 +328,27 @@ void FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     auto& inDs  = m_inputDescriptorSets[m_currentDsIndex];
     auto& outDs = m_outputDescriptorSets[m_currentDsIndex];
 
-    // Camera UBO binding is pre-baked in updateCamera() for the next frame.
-    // Output descriptor sets are pre-baked in allocateAndUpdateDescriptorSets().
-
+    if (gaussianCount > m_gaussianCount || !m_input.isValid()) return false;
+    void* cameraData = m_cameraBuffers[m_currentDsIndex]->map();
+    if (!cameraData) return false;
+    FCameraUniforms camera = m_camera;
+    camera.shDegree = std::min(camera.shDegree, m_input.shDegree);
+    std::memcpy(cameraData, &camera, sizeof(camera));
+    m_cameraBuffers[m_currentDsIndex]->unmap();
+    if (m_useActiveIndices && gaussianCount) {
+        void* indices = m_activeBuffers[m_currentDsIndex]->map();
+        if (!indices || m_activeIndices.size() != gaussianCount) {
+            if (indices) m_activeBuffers[m_currentDsIndex]->unmap();
+            return false;
+        }
+        std::memcpy(indices, m_activeIndices.data(), size_t(gaussianCount) * sizeof(uint32));
+        m_activeBuffers[m_currentDsIndex]->unmap();
+    }
+    inDs->updateStorageBuffer(EInputBinding::Positions, m_input.positions, 0, 0);
+    inDs->updateStorageBuffer(EInputBinding::Scales, m_input.scales, 0, 0);
+    inDs->updateStorageBuffer(EInputBinding::Rotations, m_input.rotations, 0, 0);
+    inDs->updateStorageBuffer(EInputBinding::Opacities, m_input.opacities, 0, 0);
+    inDs->updateStorageBuffer(EInputBinding::SHCoefficients, m_input.shCoefficients, 0, 0);
     // Set up push constants
     FPreprocessPushConstants pc;
     pc.gaussianCount = gaussianCount;
@@ -367,6 +356,9 @@ void FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     pc.farPlane = m_farPlane;
     pc.culling = m_distanceCulling ? 1u : 0u;
     pc.gaussianScale = m_gaussianScale;
+    pc.useActiveIndices = m_useActiveIndices ? 1u : 0u;
+    pc.sourceCapacity = m_input.gaussianCount;
+    pc.shStride = uint32((m_input.shDegree + 1) * (m_input.shDegree + 1));
 
     // Dispatch
     uint32 groupCountX = (gaussianCount + 255) / 256;
@@ -383,7 +375,7 @@ void FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     cmdList->bindDescriptorSet(m_pipelineLayout, 1, outDs);
     cmdList->pushConstants(m_pipelineLayout, RHI::EShaderStage::Compute, 0, 
                            sizeof(FPreprocessPushConstants), &pc);
-    cmdList->dispatch(groupCountX, 1, 1);
+    if (groupCountX) cmdList->dispatch(std::min(groupCountX, 65535u), (groupCountX + 65534u) / 65535u, 1);
 
     MR_LOG(LogTemp, Verbose, "[SplatPass] Dispatched %u groups (%u Gaussians)",
            groupCountX, gaussianCount);
@@ -391,6 +383,13 @@ void FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     fprintf(stderr, "[STDERR] Preprocess: dispatch %u groups (%u gaussians) near=%.3f far=%.3f culling=%u pipeline=%d\n",
             groupCountX, gaussianCount, pc.nearPlane, pc.farPlane, pc.culling, (int)bPipeOk);
 #endif
+    return true;
+}
+
+std::vector<MonsterEngine::TSharedPtr<RHI::IRHIBuffer>> FSplatPreprocessPass::GetOwnedBuffers() const {
+    return {m_output.radii, m_output.depth, m_output.rgb, m_output.conicOpacity,
+        m_output.pointsXY, m_output.tilesTouched, m_output.bbox,
+        m_cameraBuffers[0], m_cameraBuffers[1], m_activeBuffers[0], m_activeBuffers[1]};
 }
 
 } // namespace Splat

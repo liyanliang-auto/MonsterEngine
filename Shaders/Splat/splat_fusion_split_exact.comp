@@ -1,0 +1,49 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=32) in;
+#include "split_fusion_common.glsl"
+// Identity order survives replay/store; terms use shared sorted-index maps.
+// No private K[4] arrays and no second refit in the exact stage.
+shared K src[4],dst[4];shared uint ns,nd,id,tree,valid,first;
+shared uint sourceOrder[4],candidateOrder[4],admitted;
+shared bool owner;shared vec3 si[4],di[4];shared vec2 origin;
+shared vec4 finalNorm,finalError;shared uvec4 boxes[4];shared int sizes[4];
+shared Term reference[15],trial[15];shared vec4 signalPartial[32],differencePartial[32];
+Term makeTerm(uint mask,bool source){vec3 A=vec3(0);vec2 h=vec2(0);float q=0,w=1;uint cnt=0,last=0,n=source?ns:nd;
+ for(uint rank=0;rank<n;++rank)if((mask&(1u<<rank))!=0u){uint i=source?sourceOrder[rank]:candidateOrder[rank];K k=source?src[i]:dst[i];vec3 inv=source?si[i]:di[i];vec2 ap=mul(inv,k.p);A+=inv;h+=ap;q+=dot(k.p,ap);w*=k.alpha;++cnt;last=i;}
+ Term t;float d=A.x*A.z-A.y*A.y;t.k.cov=vec3(A.z,-A.y,A.x)/d;t.k.det=1/d;t.k.p=mul(t.k.cov,h);w*=exp(min(0.0,-.5*(q-dot(t.k.p,h))));if((cnt&1u)==0u)w=-w;t.coeff=w*vec4(source?src[last].color:dst[last].color,1);return t;
+}
+void main(){uint index=gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x;if(index>=min(counters[6],pc.queueCapacity))return;uint lane=gl_LocalInvocationID.x;
+ if(lane==0u){uint item=exactQueue[index];id=item&0x7fffffffu;owner=(item&0x80000000u)!=0u;uvec2 g=interval(id);first=g.x;ns=nd=g.y;origin=xy[first];valid=1u;tree=checkpoint[base(id)].y;}
+ barrier();if(lane<ns){K k=readSource(first+lane,lane,origin);src[lane]=dst[lane]=k;if(!live(first+lane)||!validK(k))atomicExchange(valid,0u);}
+ barrier();if(lane==0u&&valid!=0u){
+  for(uint step=0;step<3u;++step){uint op=(tree>>(8u*step))&255u;if(op==0u)break;uint left=op&15u,right=op>>4u,a=4u,b=4u;
+   for(uint i=0;i<nd;++i){if(dst[i].members==left)a=i;if(dst[i].members==right)b=i;}K merged;
+   if(a==4u||b==4u||a==b||!fit(dst[a],dst[b],merged)){valid=0u;break;}
+   uint count=0;for(uint i=0;i<nd;++i)if(i!=a&&i!=b)dst[count++]=dst[i];dst[count++]=merged;nd=count;
+  }
+  for(uint i=0;i<ns;++i)for(uint j=i+1u;j<ns;++j){float a=loadK(base(id)+3u+i*3u).z,b=loadK(base(id)+3u+j*3u).z;if((a<b)!=(src[i].z<src[j].z)||(a>b)!=(src[i].z>src[j].z))valid=0u;}
+  for(uint i=0;i<nd;++i)for(uint j=i+1u;j<nd;++j){float a=loadK(base(id)+15u+i*3u).z,b=loadK(base(id)+15u+j*3u).z;if((a<b)!=(dst[i].z<dst[j].z)||(a>b)!=(dst[i].z>dst[j].z))valid=0u;}
+  for(uint i=0;i<ns;++i)sourceOrder[i]=i;for(uint i=0;i<nd;++i)candidateOrder[i]=i;
+  for(uint i=1;i<ns;++i)for(uint j=i;j>0u&&src[sourceOrder[j]].z<src[sourceOrder[j-1u]].z;--j){uint k=sourceOrder[j];sourceOrder[j]=sourceOrder[j-1u];sourceOrder[j-1u]=k;}
+  for(uint i=1;i<nd;++i)for(uint j=i;j>0u&&dst[candidateOrder[j]].z<dst[candidateOrder[j-1u]].z;--j){uint k=candidateOrder[j];candidateOrder[j]=candidateOrder[j-1u];candidateOrder[j-1u]=k;}
+ }
+ barrier();if(valid==0u){if(lane==0u)invalidate(id,owner);return;}
+ if(lane<ns)si[lane]=inverseCov(src[lane]);if(lane<nd)di[lane]=inverseCov(dst[lane]);barrier();
+ uint nr=(1u<<ns)-1u,nt=(1u<<nd)-1u;if(lane<nr)reference[lane]=makeTerm(lane+1u,true);if(lane<nt)trial[lane]=makeTerm(lane+1u,false);barrier();
+ vec4 s=vec4(0),own=vec4(0),cross=vec4(0);
+ for(uint pairIndex=lane;pairIndex<nr*nr;pairIndex+=32u){uint i=pairIndex/nr,j=pairIndex%nr;if(i==j)s+=reference[i].coeff*reference[i].coeff*(.5*TAU*sqrt(reference[i].k.det));else if(i<j)s+=2*reference[i].coeff*reference[j].coeff*integral(reference[i].k,reference[j].k);}
+ for(uint pairIndex=lane;pairIndex<nt*nt;pairIndex+=32u){uint i=pairIndex/nt,j=pairIndex%nt;if(i==j)own+=trial[i].coeff*trial[i].coeff*(.5*TAU*sqrt(trial[i].k.det));else if(i<j)own+=2*trial[i].coeff*trial[j].coeff*integral(trial[i].k,trial[j].k);}
+ for(uint pairIndex=lane;pairIndex<nr*nt;pairIndex+=32u){uint i=pairIndex/nt,j=pairIndex%nt;cross+=reference[i].coeff*trial[j].coeff*integral(reference[i].k,trial[j].k);}
+ signalPartial[lane]=s;differencePartial[lane]=s+own-2*cross;barrier();for(uint stride=16u;stride>0u;stride>>=1u){if(lane<stride){signalPartial[lane]+=signalPartial[lane+stride];differencePartial[lane]+=differencePartial[lane+stride];}barrier();}
+ if(lane==0u){atomicAdd(counters[10],1u);finalNorm=sqrt(max(vec4(0),signalPartial[0]));finalError=sqrt(max(vec4(0),differencePartial[0]));float ratio=relative(finalError,finalNorm);admitted=finite4(signalPartial[0])&&finite4(differencePartial[0])&&finite1(ratio)&&ratio<=pc.maxError?1u:0u;}
+ barrier();bool needsBounds=admitted!=0u;barrier();
+ if(lane<nd&&needsBounds&&bitCount(dst[lane].members)>1&&!bounds(dst[lane],origin,boxes[lane],sizes[lane]))atomicExchange(admitted,0u);
+ barrier();if(admitted==0u){if(lane==0u)invalidate(id,owner);return;}
+ if(lane<nd&&bitCount(dst[lane].members)>1){K k=dst[lane];uint member=uint(findLSB(k.members)),outputIndex=first+member;
+  for(uint j=0;j<ns;++j)if(j!=member&&(k.members&(1u<<j))!=0u){radii[first+j]=0;tiles[first+j]=0u;bbox[first+j]=uvec4(0);}
+  radii[outputIndex]=sizes[lane];depth[outputIndex]=k.z;xy[outputIndex]=k.p+origin;rgb[outputIndex]=vec4(k.color,0);conic[outputIndex]=vec4(inverseCov(k),k.alpha);bbox[outputIndex]=boxes[lane];tiles[outputIndex]=(boxes[lane].z-boxes[lane].x)*(boxes[lane].w-boxes[lane].y);
+ }
+ if(owner){uint address=base(id);if(lane<ns)saveK(address+3u+lane*3u,src[lane]);if(lane<nd)saveK(address+15u+lane*3u,dst[lane]);if(lane==0u){checkpoint[address+1u]=floatBitsToUint(finalNorm);checkpoint[address+2u]=floatBitsToUint(finalError);checkpoint[address].y=tree;checkpoint[address].z=pc.frame;}}
+ memoryBarrierBuffer();barrier();if(lane==0u){if(owner)checkpoint[base(id)].x=groups[id].y+1u;uint fused=0;for(uint i=0;i<nd;++i)fused+=bitCount(dst[i].members)>1?1u:0u;atomicAdd(counters[0],0u-(ns-nd));atomicAdd(counters[1],fused);atomicMax(counters[3],floatBitsToUint(relative(finalError,finalNorm)));release(id,owner);}
+}

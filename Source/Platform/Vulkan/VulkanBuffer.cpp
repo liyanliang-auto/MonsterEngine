@@ -30,6 +30,8 @@ namespace MonsterRender::RHI::Vulkan {
         m_bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         m_bufferCreateInfo.size = m_desc.size;
         m_bufferCreateInfo.usage = VulkanUtils::getBufferUsageFlags(m_desc.usage);
+        if ((m_desc.usage & EResourceUsage::IndirectArgs) != EResourceUsage::None)
+            m_bufferCreateInfo.usage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
         m_bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         // Create the buffer
         VkResult result = functions.vkCreateBuffer(device, &m_bufferCreateInfo, nullptr, &m_buffer);
@@ -89,7 +91,7 @@ namespace MonsterRender::RHI::Vulkan {
             request.MemoryTypeBits = memRequirements.memoryTypeBits;
             request.RequiredFlags = m_memoryProperties;
             request.PreferredFlags = m_memoryProperties;
-            request.bDedicated = false;  // Allow sub-allocation
+            request.bDedicated = m_desc.dedicatedAllocation;
             if (memoryManager->Allocate(request, m_allocation)) {
                 m_deviceMemory = m_allocation.DeviceMemory;
                 m_usesMemoryManager = true;
@@ -275,6 +277,15 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getDevice();
         functions.vkUnmapMemory(device, m_deviceMemory);
+    }
+
+    bool VulkanBuffer::getAllocationInfo(FBufferAllocationInfo& info) const {
+        if (!m_initialized || m_deviceMemory == VK_NULL_HANDLE) return false;
+        info.reservationBytes = m_usesMemoryManager ? m_allocation.Size : m_memoryAllocateInfo.allocationSize;
+        info.backingBytes = m_usesMemoryManager && m_allocation.Pool
+            ? m_allocation.Pool->GetPoolSize() : info.reservationBytes;
+        info.backingId = (uint64)m_deviceMemory;
+        return info.reservationBytes >= m_desc.size && info.backingBytes >= info.reservationBytes;
     }
 
     uint32 VulkanBuffer::findMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties) {

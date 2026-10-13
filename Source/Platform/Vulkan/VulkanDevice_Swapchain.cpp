@@ -11,6 +11,26 @@ namespace MonsterRender {
 namespace RHI {
 namespace Vulkan {
 
+    bool VulkanDevice::ConfigurePresentationVSync(bool enabled)
+    {
+        m_presentationVSync = enabled;
+        return recreateSwapchain(m_swapchainExtent.width, m_swapchainExtent.height);
+    }
+    bool VulkanDevice::DrainCompletedDestructions()
+    {
+        if(m_device==VK_NULL_HANDLE)return false;
+        const VkResult completion=VulkanAPI::getFunctions().vkDeviceWaitIdle(m_device);
+        if(completion!=VK_SUCCESS){MR_LOG(LogVulkanSwapchain,Error,"Teardown completion proof failed: %d",completion);return false;}
+        {
+            std::lock_guard<std::mutex> lock(m_submissionMutex);
+            m_completedSubmission=m_lastSubmission;m_submissions.clear();
+        }
+        // The proof above makes every queued destruction safe now. Drain the
+        // existing retirement counters without allocating replacement slabs.
+        for(uint32 i=0;i<=DEFERRED_DESTRUCTION_FRAMES;++i)processDeferredDestructions();
+        return true;
+    }
+
     bool VulkanDevice::recreateSwapchain(uint32 newWidth, uint32 newHeight)
     {
         // Reference: UE5 FVulkanDynamicRHI::RecreateSwapChain
@@ -89,11 +109,14 @@ namespace Vulkan {
             }
         }
         
-        // Choose present mode (prefer mailbox for reduced latency)
+        // Preserve the ordinary mailbox preference. Benchmark presentation first
+        // requests IMMEDIATE, then reports the actual mailbox/FIFO fallback.
         VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+        if (!m_presentationVSync && std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end())
+            presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
         for (const auto& availablePresentMode : presentModes)
         {
-            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+            if (presentMode != VK_PRESENT_MODE_IMMEDIATE_KHR && availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
             {
                 presentMode = availablePresentMode;
                 break;
@@ -170,6 +193,7 @@ namespace Vulkan {
             MR_LOG(LogVulkanSwapchain, Error, "Failed to recreate swapchain! Result: %d", result);
             return false;
         }
+        m_configuredPresentMode = presentMode;
         
         // ============================================================================
         // Step 6: Get new swapchain images

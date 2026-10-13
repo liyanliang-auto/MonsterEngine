@@ -7,6 +7,8 @@
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHISwapChain.h"
 #include "RHI/IRHIDescriptorSet.h"
+#include "RHI/SplatGPUPrimitives.h"
+#include <vector>
 
 namespace MonsterRender::RHI {
     
@@ -79,6 +81,8 @@ namespace MonsterRender::RHI {
          * @return Created buffer, or nullptr on failure
          */
         virtual TSharedPtr<IRHIBuffer> createBuffer(const BufferDesc& desc) = 0;
+        /** Query actual backend allocation requirements without allocating device memory. */
+        virtual bool getBufferAllocationRequirements(const BufferDesc&, uint64&, uint64&) const { return false; }
         
         /**
          * Create a vertex buffer (UE5-style convenience method)
@@ -124,6 +128,8 @@ namespace MonsterRender::RHI {
          * @return Created texture, or nullptr on failure
          */
         virtual TSharedPtr<IRHITexture> createTexture(const TextureDesc& desc) = 0;
+        /** Query image memory requirements without allocating device memory. */
+        virtual bool getTextureAllocationRequirements(const TextureDesc&, uint64&, uint64&) const { return false; }
         
         /**
          * Create a vertex shader from bytecode
@@ -208,6 +214,19 @@ namespace MonsterRender::RHI {
          * Wait for all GPU work to complete
          */
         virtual void waitForIdle() = 0;
+
+        /** Last successful submission. Call after submission, not after recording. */
+        virtual FGPUCompletionToken getLastSubmissionToken() const { return {}; }
+        /** Nonblocking completion. Invalid/unknown tokens are never complete. */
+        virtual bool isSubmissionComplete(FGPUCompletionToken) const { return false; }
+        /** Capability for real submission tracking used by streaming allocators. */
+        virtual bool supportsSubmissionCompletion() const { return false; }
+        /** Capability for indirect compute dispatch. */
+        virtual bool supportsDispatchIndirect() const { return false; }
+        /** True only when the backend implements hardware timestamp collection. */
+        virtual bool supportsGPUTimestamps() const { return false; }
+        /** Nonblocking; consumes completed samples, unavailable backends return empty. */
+        virtual std::vector<FRHIGPUTimestampSample> pollGPUTimestamps() { return {}; }
         
         /**
          * Present the current frame

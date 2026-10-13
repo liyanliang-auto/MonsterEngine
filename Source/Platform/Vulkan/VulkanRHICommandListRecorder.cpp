@@ -193,8 +193,32 @@ void VulkanRHICommandListRecorder::transitionResource(TSharedPtr<IRHIResource> r
 }
 
 void VulkanRHICommandListRecorder::resourceBarrier() {
-    // Resource barriers are implicit in Vulkan through pipeline barriers
-    // We'll handle this during replay
+    RecordCommand<FRHICommandResourceBarrier>();
+}
+
+void VulkanRHICommandListRecorder::pushConstants(TSharedPtr<IRHIPipelineLayout> layout, EShaderStage stages,
+                                                uint32 offset, uint32 size, const void* data) {
+    if (!layout || !data || size == 0 || size > 128 || (offset & 3u) || (size & 3u) || offset > 128 - size) {
+        MR_LOG_ERROR("Recorder pushConstants: invalid range or data");
+        return;
+    }
+    RecordCommand<FRHICommandPushConstants>(layout, stages, offset, size, data);
+}
+
+void VulkanRHICommandListRecorder::dispatchIndirect(IRHIBuffer* arguments, uint64_t byteOffset) {
+    if (!arguments || !IsValidDispatchIndirectRange(arguments->getSize(), byteOffset) ||
+        (arguments->getUsage() & EResourceUsage::IndirectArgs) == EResourceUsage::None) {
+        MR_LOG_ERROR("Recorder dispatchIndirect: invalid arguments");
+        return;
+    }
+    RecordCommand<FRHICommandDispatchIndirect>(arguments, byteOffset);
+}
+void VulkanRHICommandListRecorder::writeGPUTimestamp(uint64_t frame, const std::string& label, bool begin) {
+    RecordCommand<FRHICommandGPUTimestamp>(frame, label, begin);
+}
+void VulkanRHICommandListRecorder::copyBuffer(TSharedPtr<IRHIBuffer> dst, TSharedPtr<IRHIBuffer> src,
+                                             uint32 size, uint32 dstOffset, uint32 srcOffset) {
+    RecordCommand<FRHICommandCopyBuffer>(dst, src, size, dstOffset, srcOffset);
 }
 
 void VulkanRHICommandListRecorder::dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) {
@@ -256,6 +280,7 @@ bool VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer(FVulkanCmdBuffer*
         return false;
     }
     
+    VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     // Replay each recorded command
     for (const auto& command : m_commands) {
         if (!command) {
@@ -268,13 +293,13 @@ bool VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer(FVulkanCmdBuffer*
             case ERHICommandType::SetPipelineState: {
                 auto* cmd = static_cast<FRHICommandSetPipelineState*>(command.get());
                 if (cmd->pipelineState) {
-                    // Cast to Vulkan pipeline state
-                    auto* vulkanPipeline = static_cast<VulkanPipelineState*>(cmd->pipelineState.get());
-                    if (vulkanPipeline) {
-                        vkCmdBindPipeline(vkCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, 
-                                        vulkanPipeline->getPipeline());
-                        MR_LOG_DEBUG("  Replayed: SetPipelineState");
-                    }
+                    if (auto* compute = dynamic_cast<VulkanComputePipelineState*>(cmd->pipelineState.get())) {
+                        bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+                        vkCmdBindPipeline(vkCmdBuffer, bindPoint, compute->getPipeline());
+                    } else if (auto* graphics = dynamic_cast<VulkanPipelineState*>(cmd->pipelineState.get())) {
+                        bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+                        vkCmdBindPipeline(vkCmdBuffer, bindPoint, graphics->getPipeline());
+                    } else return false;
                 }
                 break;
             }
@@ -386,6 +411,58 @@ bool VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer(FVulkanCmdBuffer*
                 break;
             }
 
+            case ERHICommandType::PushConstants: {
+                auto* cmd = static_cast<FRHICommandPushConstants*>(command.get());
+                auto* layout = dynamic_cast<VulkanPipelineLayout*>(cmd->layout.get());
+                if (!layout || !layout->isValid()) return false;
+                VkShaderStageFlags stages = 0;
+                if ((uint32(cmd->stages) & uint32(EShaderStage::Vertex)) != 0) stages |= VK_SHADER_STAGE_VERTEX_BIT;
+                if ((uint32(cmd->stages) & uint32(EShaderStage::Fragment)) != 0) stages |= VK_SHADER_STAGE_FRAGMENT_BIT;
+                if ((uint32(cmd->stages) & uint32(EShaderStage::Compute)) != 0) stages |= VK_SHADER_STAGE_COMPUTE_BIT;
+                if (!stages) return false;
+                vkCmdPushConstants(vkCmdBuffer, layout->getHandle(), stages, cmd->offset,
+                    static_cast<uint32_t>(cmd->bytes.size()), cmd->bytes.data());
+                break;
+            }
+            case ERHICommandType::DispatchIndirect: {
+                auto* cmd = static_cast<FRHICommandDispatchIndirect*>(command.get());
+                auto* buffer = dynamic_cast<VulkanBuffer*>(cmd->arguments);
+                if (!buffer || !IsValidDispatchIndirectRange(buffer->getSize(), cmd->offset) ||
+                    bindPoint != VK_PIPELINE_BIND_POINT_COMPUTE || vulkanCmdBuffer->isInsideRenderPass()) return false;
+                vkCmdDispatchIndirect(vkCmdBuffer, buffer->getBuffer(), cmd->offset);
+                break;
+            }
+            case ERHICommandType::GPUTimestamp: {
+                auto* cmd = static_cast<FRHICommandGPUTimestamp*>(command.get());
+                if (vulkanCmdBuffer->isInsideRenderPass()) return false;
+                m_device->recordGPUTimestamp(vkCmdBuffer, cmd->frame, cmd->label, cmd->begin);
+                break;
+            }
+            case ERHICommandType::ResourceBarrier: {
+                VkMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                    VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+                vkCmdPipelineBarrier(vkCmdBuffer,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                    0, 1, &barrier, 0, nullptr, 0, nullptr);
+                break;
+            }
+            case ERHICommandType::CopyBuffer: {
+                auto* cmd = static_cast<FRHICommandCopyBuffer*>(command.get());
+                auto* dst = dynamic_cast<VulkanBuffer*>(cmd->destination.get());
+                auto* src = dynamic_cast<VulkanBuffer*>(cmd->source.get());
+                if (!dst || !src || cmd->size == 0 ||
+                    cmd->destinationOffset > dst->getSize() || cmd->size > dst->getSize() - cmd->destinationOffset ||
+                    cmd->sourceOffset > src->getSize() || cmd->size > src->getSize() - cmd->sourceOffset ||
+                    (src->getUsage() & EResourceUsage::TransferSrc) == EResourceUsage::None ||
+                    (dst->getUsage() & EResourceUsage::TransferDst) == EResourceUsage::None) return false;
+                VkBufferCopy region{cmd->sourceOffset, cmd->destinationOffset, cmd->size};
+                vkCmdCopyBuffer(vkCmdBuffer, src->getBuffer(), dst->getBuffer(), 1, &region);
+                break;
+            }
             case ERHICommandType::Dispatch: {
                 auto* cmd = static_cast<FRHICommandDispatch*>(command.get());
                 const auto& functions = VulkanAPI::getFunctions();
@@ -427,7 +504,7 @@ bool VulkanRHICommandListRecorder::ReplayToVulkanCommandBuffer(FVulkanCmdBuffer*
                         }
                         if (!vkDescriptorSets.empty()) {
                             const auto& functions = VulkanAPI::getFunctions();
-                            functions.vkCmdBindDescriptorSets(vkCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            functions.vkCmdBindDescriptorSets(vkCmdBuffer, bindPoint,
                                 vkLayout, cmd->firstSet,
                                 static_cast<uint32>(vkDescriptorSets.size()),
                                 vkDescriptorSets.data(), 0, nullptr);

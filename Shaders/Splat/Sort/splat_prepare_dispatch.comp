@@ -1,0 +1,34 @@
+// Copyright Monster Engine. All Rights Reserved.
+// Publish the inclusive scan tail and all consumers' indirect arguments.
+#version 450
+layout(local_size_x = 1) in;
+layout(std430, set = 0, binding = 0) readonly buffer PrefixSum { uint prefixSum[]; };
+layout(std430, set = 0, binding = 1) writeonly buffer DispatchState { uint state[]; };
+layout(push_constant) uniform PushConstants {
+    uint activeCount;
+    uint sortCapacity;
+    uint gridX;
+    uint gridY;
+} pc;
+void main() {
+    uint count = pc.activeCount == 0u ? 0u : prefixSum[pc.activeCount - 1u];
+    bool overflow = count == 0xffffffffu || count > pc.sortCapacity;
+    uint assignGroups = overflow ? 0u : (pc.activeCount + 255u) / 256u;
+    uint sortGroups = overflow ? 0u : (count + 8191u) / 8192u;
+    uint boundaryGroups = overflow ? 0u : (count + 255u) / 256u;
+    state[0] = count;
+    state[1] = overflow ? 1u : 0u;
+    state[2] = pc.activeCount;
+    state[3] = sortGroups;
+    state[4] = pc.sortCapacity;
+    state[5] = 0u; state[6] = 0u; state[7] = 0u;
+    state[8] = min(assignGroups, 65535u);
+    state[9] = max(1u, (assignGroups + 65534u) / 65535u); state[10] = 1u;
+    state[11] = sortGroups; state[12] = 1u; state[13] = 1u;
+    state[14] = min(boundaryGroups, 65535u);
+    state[15] = max(1u, (boundaryGroups + 65534u) / 65535u); state[16] = 1u;
+    // Zero count is a valid transparent render. Overflow leaves the image intact.
+    state[17] = overflow ? 0u : pc.gridX;
+    state[18] = pc.gridY; state[19] = 1u;
+    for (uint i = 20u; i < 32u; ++i) state[i] = 0u;
+}

@@ -1,856 +1,414 @@
-/**
- * @file SplatPipeline.cpp
- * @brief Implementation of the 3DGS full-pipeline orchestrator.
- * 
- * Chains: Preprocess → PrefixSum → AssignKeys → RadixSort → 
- * TileBoundaries → Render, with GPU buffer copies and staging readback
- * between passes.
- */
-
+// Copyright Monster Engine. All Rights Reserved.
 #include "Renderer/Splat/SplatPipeline.h"
+#include "Core/ShaderCompiler.h"
 #include "Core/Logging/LogMacros.h"
-#include "RHI/RHIDefinitions.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
+#include <set>
 
-namespace MonsterRender::Splat
-{
+namespace MonsterRender::Splat {
+namespace {
+constexpr auto StorageUsage = RHI::EResourceUsage::StorageBuffer |
+    RHI::EResourceUsage::TransferDst | RHI::EResourceUsage::TransferSrc;
+constexpr auto StateUsage = StorageUsage | RHI::EResourceUsage::IndirectArgs;
+RHI::BufferDesc TemporaryDesc(uint64_t bytes, RHI::EResourceUsage usage,
+    RHI::EMemoryUsage memory = RHI::EMemoryUsage::Default) {
+    RHI::BufferDesc d;
+    d.size = bytes; d.usage = usage; d.memoryUsage = memory;
+    d.cpuAccessible = memory != RHI::EMemoryUsage::Default;
+    d.dedicatedAllocation = true; d.debugName = "Splat_Temporary";
+    return d;
+}
+RHI::TextureDesc OutputDesc(uint32 width, uint32 height) {
+    RHI::TextureDesc d;
+    d.width = width; d.height = height; d.depth = 1; d.mipLevels = 1; d.arraySize = 1;
+    d.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
+    d.usage = RHI::EResourceUsage::UnorderedAccess | RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferSrc;
+    d.dedicatedAllocation = true; d.debugName = "SplatRender_Output";
+    return d;
+}
+}
 
-    // ========================================================================
-    // Helpers
-    // ========================================================================
-
-    namespace
-    {
-        /** Create a tiny host-readable staging buffer for GPU readback */
-        static MonsterEngine::TSharedPtr<RHI::IRHIBuffer> createStagingBuffer(
-            RHI::IRHIDevice* device, uint32 size, const char* name)
-        {
-            RHI::BufferDesc desc;
-            desc.size = size;
-            desc.usage = RHI::EResourceUsage::TransferDst;
-            desc.memoryUsage = RHI::EMemoryUsage::Readback;
-            desc.cpuAccessible = true;
-            desc.debugName = name;
-            return device->createBuffer(desc);
-        }
+FSplatPipeline::~FSplatPipeline() = default;
+bool FSplatPipeline::EnableProjectedFusion(bool split) {
+    if (m_bInitialized) return false;
+    m_fusionEnabled = true; m_splitFusionEnabled = split; return true;
+}
+bool FSplatPipeline::SetFusionGroups(const std::vector<FSplatFusionGroup>& groups) {
+    if (!groups.empty() && !m_fusionEnabled) return false;
+    if (m_splitFusionEnabled) return m_splitFusion.SetGroups(groups);
+    uint64_t next = 0;
+    for (const auto& group : groups) {
+        if (group.First() != next || !group.Count() ||
+            next + group.Count() > m_activeCapacity) return false;
+        next += group.Count();
     }
-
-    // ========================================================================
-    // FSplatPipeline
-    // ========================================================================
-
-    FSplatPipeline::~FSplatPipeline()
-    {
-        m_diagDepth.Reset();
-        m_stagingBuffer.Reset();
+    m_fusionGroups = groups; return true;
+}
+void FSplatPipeline::SetCapacityBudgets(uint32 source, uint32 active, uint32 sort, uint64_t bytes) {
+    if (m_bInitialized) {
+        m_stats.degraded = true; m_stats.degradationReason = "Capacity changes require a new pipeline after completion"; return;
     }
-
-    bool FSplatPipeline::initialize(RHI::IRHIDevice* device, uint32 gaussianCount,
-                                     uint32 imageWidth, uint32 imageHeight,
-                                     uint32 maxTilesPerGaussian)
-    {
-        using namespace RHI;
-
-        if (!device || gaussianCount == 0 || imageWidth == 0 || imageHeight == 0)
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] Invalid initialization parameters");
-            return false;
-        }
-
-        m_device        = device;
-        m_gaussianCount = gaussianCount;
-        m_imageWidth    = imageWidth;
-        m_imageHeight   = imageHeight;
-        m_gridX         = (imageWidth  + 15u) / 16u;
-        m_gridY         = (imageHeight + 15u) / 16u;
-        m_numTiles      = m_gridX * m_gridY;
-        m_maxSortElements = gaussianCount * maxTilesPerGaussian;
-        char* diagEnv = nullptr;
-        size_t diagEnvLength = 0;
-        _dupenv_s(&diagEnv, &diagEnvLength, "MONSTER_SPLAT_DIAG");
-        m_enableCulledBoundsDiag = diagEnv != nullptr;
-        std::free(diagEnv);
-
-        // Staging buffer for prefix sum readback (8 bytes: exclusiveSum + lastTilesTouched)
-        m_stagingBuffer = createStagingBuffer(device, sizeof(uint32) * 2, "SplatPipeline_Staging");
-        if (!m_stagingBuffer)
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] Failed to create staging buffer");
-            return false;
-        }
-
-        // Preprocess pass
-        if (!m_preprocess.initialize(device, gaussianCount))
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] Preprocess init failed");
-            return false;
-        }
-
-        // Tile boundaries pass
-        if (!m_tileBoundaries.initialize(device, m_numTiles, m_maxSortElements))
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] TileBoundaries init failed");
-            return false;
-        }
-
-        // Render pass
-        if (!m_render.initialize(device, imageWidth, imageHeight))
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] Render init failed");
-            return false;
-        }
-
-        setRenderSettings(m_renderSettings);
-
-        m_bInitialized = true;
-        MR_LOG(LogTemp, Log, "[SplatPipeline] Initialized: %u GS, %ux%u, %u tiles (%ux%u), "
-               "maxSort=%u", gaussianCount, imageWidth, imageHeight, m_numTiles,
-               m_gridX, m_gridY, m_maxSortElements);
-        return true;
+    m_sourceCapacity = source; m_activeCapacity = active; m_sortCapacity = sort;
+    m_temporaryBudget = bytes; m_explicitBudgets = true;
+}
+bool FSplatPipeline::PreflightTemporaryBuffers(uint64_t& bytes) {
+    bytes = 0;
+    auto add = [&](uint64_t size, RHI::EResourceUsage usage,
+        RHI::EMemoryUsage memory = RHI::EMemoryUsage::Default) {
+        uint64_t required = 0, alignment = 0;
+        if (!m_device->getBufferAllocationRequirements(TemporaryDesc(size, usage, memory), required, alignment) ||
+            !required || required > m_temporaryBudget - bytes) return false;
+        bytes += required; return true;
+    };
+    const uint64_t n = m_activeCapacity, s = m_sortCapacity;
+    // Compact outputs and two inclusive scan arrays; no assign copy arrays.
+    for (uint32 width : {4u, 4u, 16u, 16u, 8u, 4u, 16u, 4u, 4u}) if (!add(n * width, StorageUsage)) return false;
+    for (uint32 i = 0; i < 2; ++i)
+        if (!add(sizeof(FCameraUniforms), RHI::EResourceUsage::UniformBuffer, RHI::EMemoryUsage::Dynamic) ||
+            !add(n * 4, RHI::EResourceUsage::StorageBuffer, RHI::EMemoryUsage::Dynamic)) return false;
+    if (m_splitFusionEnabled) {
+        uint64_t required=0;
+        if (!FSplatSplitFusionPass::Preflight(m_device,m_activeCapacity,required)||required>m_temporaryBudget-bytes) return false;
+        bytes+=required;
+    } else if (m_fusionEnabled) {
+        for (uint32 i = 0; i < 2; ++i)
+            if (!add(n * sizeof(FSplatFusionGroup) + 16, RHI::EResourceUsage::StorageBuffer |
+                RHI::EResourceUsage::TransferSrc, RHI::EMemoryUsage::Dynamic)) return false;
+        if (!add(16, StorageUsage) || !add(n * 16, StorageUsage)) return false;
     }
-
-    bool FSplatPipeline::lazyInitSortPasses(RHI::IRHIDevice* device)
-    {
-        if (m_sortPassesInitialized)
-            return true;
-
-        MR_LOG(LogTemp, Log, "[SplatPipeline] Lazy-init sort passes (maxSort=%u)...",
-               m_maxSortElements);
-
-        if (!m_prefixSum.initialize(device, m_gaussianCount))
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] PrefixSum init failed");
-            return false;
-        }
-        if (!m_assignKeys.initialize(device, m_maxSortElements, m_gaussianCount))
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] AssignKeys init failed");
-            return false;
-        }
-        if (!m_radixSort.initialize(device, m_maxSortElements))
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] RadixSort init failed");
-            return false;
-        }
-
-        m_sortPassesInitialized = true;
-        MR_LOG(LogTemp, Log, "[SplatPipeline] Sort passes ready");
-        return true;
+    for (uint32 width : {8u, 8u, 4u, 4u}) if (!add(s * width, StorageUsage)) return false;
+    if (!add(((s + 8191) / 8192) * RADIX_SORT_BINS * 4, StorageUsage) ||
+        !add(uint64_t(m_gridX) * m_gridY * 8, RHI::EResourceUsage::StorageBuffer | RHI::EResourceUsage::TransferDst) ||
+        !add(ESplatDispatchState::Bytes, StateUsage)) return false;
+    for (uint32 i = 0; i < 3; ++i)
+        if (!add(ESplatDispatchState::Bytes, RHI::EResourceUsage::TransferDst, RHI::EMemoryUsage::Readback)) return false;
+    uint64_t required = 0, alignment = 0;
+    if (!m_device->getTextureAllocationRequirements(OutputDesc(m_imageWidth, m_imageHeight), required, alignment) ||
+        !required || required > m_temporaryBudget - bytes) return false;
+    bytes += required;
+    return true;
+}
+bool FSplatPipeline::MeasureTemporaryBuffers(uint64_t& bytes) const {
+    auto buffers = m_preprocess.GetOwnedBuffers();
+    for (auto b : m_prefixSum.GetOwnedBuffers()) buffers.push_back(b);
+    for (auto b : m_radixSort.GetOwnedBuffers()) buffers.push_back(b);
+    buffers.push_back(m_tileBoundaries.getTileRanges()); buffers.push_back(m_dispatchState);
+    for (const auto& slot : m_telemetry) buffers.push_back(slot.buffer);
+    if (m_splitFusionEnabled) {
+        for(auto b:m_splitFusion.GetOwnedBuffers())buffers.push_back(b);
+    } else if (m_fusionEnabled) {
+        buffers.push_back(m_fusionGroupsBuffers[0]); buffers.push_back(m_fusionGroupsBuffers[1]);
+        buffers.push_back(m_fusionCounter); buffers.push_back(m_fusionCache);
     }
-
-    bool FSplatPipeline::ensureSortPassesInitialized(RHI::IRHICommandList* cmdList)
-    {
-        if (m_sortPassesInitialized)
-            return true;
-
-        MR_LOG(LogTemp, Log, "[SplatPipeline] First frame: running readback for real sort count...");
-
-        // Initialize sort passes FIRST so their buffers exist before copyBuffer uses them
-        if (!lazyInitSortPasses(m_device))
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] Sort passes init failed before readback");
-            return false;
-        }
-
-        const FSplatPreprocessOutput& preOut = m_preprocess.getOutput();
-
-        // Run preprocess to compute tilesTouched
-        m_preprocess.execute(cmdList, m_gaussianCount);
-        cmdList->resourceBarrier();
-
-        // Copy tilesTouched -> prefix sum input
-        uint32 copySize = m_gaussianCount * sizeof(uint32);
-        cmdList->copyBuffer(m_prefixSum.getBufferA(), preOut.tilesTouched, copySize);
-        cmdList->resourceBarrier();
-
-        // Run prefix sum
-        m_prefixSum.execute(cmdList, m_gaussianCount);
-        cmdList->resourceBarrier();
-
-        // Copy last prefix sum entry + last tilesTouched to staging (8 bytes total)
-        cmdList->copyBuffer(m_stagingBuffer, m_prefixSum.getResultBuffer(), sizeof(uint32),
-                            0, (m_gaussianCount - 1) * sizeof(uint32));
-        cmdList->copyBuffer(m_stagingBuffer, preOut.tilesTouched, sizeof(uint32),
-                            sizeof(uint32), (m_gaussianCount - 1) * sizeof(uint32));
-
-        // End recording, SUBMIT to GPU, wait for completion, then read back.
-        // NOTE: waitForIdle() only calls vkDeviceWaitIdle and does NOT submit the
-        // command buffer, so the readback commands would never execute and the
-        // staging buffer would contain garbage -> m_realSortElements would be wrong
-        // (typically 0/1), causing the sort+render passes to process ~0 elements
-        // and producing a blank window.
-        cmdList->end();
-        MR_LOG(LogTemp, Log, "[SplatPipeline] Submitting readback command buffer (submitAndWait)...");
-        cmdList->submitAndWait();
-
-        void* stagingData = m_stagingBuffer->map();
-        if (!stagingData) {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] Failed to map staging buffer for readback");
-            cmdList->begin();
-            return false;
-        }
-        uint32 exclusiveSum = reinterpret_cast<uint32*>(stagingData)[0];
-        uint32 lastTiles = reinterpret_cast<uint32*>(stagingData)[1];
-        m_stagingBuffer->unmap();
-
-        m_realSortElements = exclusiveSum + lastTiles;
-        if (m_realSortElements == 0) m_realSortElements = 1;
-        if (m_realSortElements > m_maxSortElements) m_realSortElements = m_maxSortElements;
-        m_assignKeys.setSortElementCount(m_realSortElements);
-        m_lastCountCamera = m_currentCamera;
-        m_lastCountSettings = m_renderSettings;
-        m_hasCountCamera = true;
-
-        MR_LOG(LogTemp, Log, "[SplatPipeline] Readback: exclusiveSum=%u lastTiles=%u -> totalSortElements=%u (max=%u)",
-               exclusiveSum, lastTiles, m_realSortElements, m_maxSortElements);
-
-        // Begin fresh command list for the actual frame rendering
-        cmdList->begin();
-
-        return true;
-    }
-
-    void FSplatPipeline::setGaussianData(const FSplatGPUData& data)
-    {
-        m_preprocess.setInputs(data);
-        m_hasGaussianData = data.isValid();
-    }
-
-    void FSplatPipeline::setCamera(const FCameraUniforms& camera)
-    {
-        m_preprocess.updateCamera(camera);
-        m_currentCamera = camera;
-        m_prevTanFovY = camera.tanFovY;
-        m_hasCamera = true;
-    }
-
-    void FSplatPipeline::setRenderSettings(const FSplatRenderSettings& settings)
-    {
-        // UI and sequence loaders should validate their inputs as well. Keep
-        // the GPU path safe if a caller supplies malformed or non-finite data.
-        FSplatRenderSettings safe = settings;
-        if (!std::isfinite(safe.nearPlane) || safe.nearPlane <= 0.0f || safe.nearPlane > 1.0e6f)
-            safe.nearPlane = 0.1f;
-        if (!std::isfinite(safe.farPlane) || safe.farPlane <= safe.nearPlane || safe.farPlane > 1.0e9f)
-            safe.farPlane = std::max(1000.0f, safe.nearPlane + 1.0f);
-        if (!std::isfinite(safe.gaussianScale) || safe.gaussianScale <= 0.0f)
-            safe.gaussianScale = 1.0f;
-        safe.gaussianScale = std::clamp(safe.gaussianScale, 0.01f, 10.0f);
-        m_renderSettings = safe;
-        m_preprocess.setClipPlanes(safe.nearPlane, safe.farPlane);
-        m_preprocess.setDistanceCulling(safe.distanceCulling);
-        m_preprocess.setGaussianScale(safe.gaussianScale);
-        m_render.setWireframe(safe.wireframe);
-    }
-
-    MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICommandList* cmdList)
-    {
-        using namespace RHI;
-
-        if (!m_bInitialized || !cmdList)
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] Not initialized or null cmdList");
-            return nullptr;
-        }
-        if (!m_hasGaussianData || !m_hasCamera)
-        {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] Missing input data (gs=%d, cam=%d)",
-                   m_hasGaussianData, m_hasCamera);
-            return nullptr;
-        }
-        if (!m_sortPassesInitialized)
-        {
-            // First frame: run preprocess+prefixSum, read back real totalTiles,
-            // initialize sort passes with real count.
-            // NOTE: ensureSortPassesInitialized() resets the command buffer
-            // (end + begin), which loses any previously recorded commands.
-            if (!ensureSortPassesInitialized(cmdList))
-            {
-                MR_LOG(LogTemp, Error, "[SplatPipeline] Sort passes initialization failed");
-                return nullptr;
-            }
-
-            // Re-apply output texture layout transition that was lost during
-            // the command buffer reset in ensureSortPassesInitialized().
-            // The compute shader requires VK_IMAGE_LAYOUT_GENERAL for imageStore.
-            auto outputTex = m_render.getOutputTexture();
-            if (outputTex)
-            {
-                cmdList->transitionResource(outputTex,
-                    RHI::EResourceUsage::None,
-                    RHI::EResourceUsage::UnorderedAccess);
-            }
-        }
-
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline::execute: BEGIN totalSort=%u gaussians=%u grid=%ux%u tiles=%u\n",
-                m_realSortElements, m_gaussianCount, m_gridX, m_gridY, m_numTiles);
-#endif
-
-        MR_LOG(LogTemp, Verbose, "[SplatPipeline] === Begin frame === totalSortElements=%u gaussianCount=%u",
-               m_realSortElements, m_gaussianCount);
-
-        const FSplatPreprocessOutput& preOut = m_preprocess.getOutput();
-
-        // ---- Pass 1/6: Preprocess ----
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline: Pass 1/6 Preprocess start\n");
-#endif
-        m_preprocess.execute(cmdList, m_gaussianCount);
-        cmdList->resourceBarrier();
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline: Pass 1/6 Preprocess done\n");
-#endif
-
-        // ---- Pass 2/6: Prefix Sum ----
-        // Copy tilesTouched from preprocess to prefix sum buffer A
-        {
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-            fprintf(stderr, "[STDERR] SplatPipeline: Pass 2/6 PrefixSum start\n");
-#endif
-            uint32 copySize = m_gaussianCount * sizeof(uint32);
-            cmdList->copyBuffer(m_prefixSum.getBufferA(), preOut.tilesTouched, copySize);
-            cmdList->resourceBarrier();
-
-            // Run Blelloch scan
-            m_prefixSum.execute(cmdList, m_gaussianCount);
-            cmdList->resourceBarrier();
-
-            MR_LOG(LogTemp, Verbose, "[SplatPipeline] Pass 2/6: PrefixSum done");
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-            fprintf(stderr, "[STDERR] SplatPipeline: Pass 2/6 PrefixSum done\n");
-#endif
-        }
-
-        // The prefix sum above belongs to this camera. Read its count before
-        // AssignKeys and RadixSort so neither pass uses the previous view's size.
-        if (!refreshSortCountIfNeeded(cmdList))
-            return nullptr;
-        const uint32 totalSortElements = m_realSortElements;
-
-        // ---- Pass 3/6: Assign Keys ----
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline: Pass 3/6 AssignKeys start\n");
-#endif
-        m_assignKeys.setInputBuffers(
-            m_prefixSum.getResultBuffer(),
-            preOut.bbox,
-            preOut.depth);
-        m_assignKeys.execute(cmdList, m_gaussianCount, m_gridX, m_gridY);
-        cmdList->resourceBarrier();
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline: Pass 3/6 AssignKeys done\n");
-#endif
-
-        // ---- Pass 4/6: Radix Sort ----
-        // Copy assign keys output → radix sort even buffers
-        {
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-            fprintf(stderr, "[STDERR] SplatPipeline: Pass 4/6 RadixSort start (elements=%u)\n", totalSortElements);
-#endif
-            uint32 keySize   = totalSortElements * sizeof(uint64);
-            uint32 valueSize = totalSortElements * sizeof(uint32);
-
-            cmdList->copyBuffer(m_radixSort.getKeysEven(),  m_assignKeys.getSortKeys(),   keySize);
-            cmdList->copyBuffer(m_radixSort.getValuesEven(), m_assignKeys.getSortValues(), valueSize);
-            cmdList->resourceBarrier();
-
-            m_radixSort.execute(cmdList, totalSortElements);
-            cmdList->resourceBarrier();
-
-            MR_LOG(LogTemp, Verbose, "[SplatPipeline] Pass 4/6: RadixSort done (%u elements)", totalSortElements);
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-            fprintf(stderr, "[STDERR] SplatPipeline: Pass 4/6 RadixSort done\n");
-#endif
-        }
-
-        // ---- Pass 5/6: Tile Boundaries ----
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline: Pass 5/6 TileBoundaries start\n");
-#endif
-        m_tileBoundaries.setSortedKeys(m_radixSort.getSortedKeys());
-        m_tileBoundaries.execute(cmdList, totalSortElements);
-        cmdList->resourceBarrier();
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline: Pass 5/6 TileBoundaries done\n");
-#endif
-
-        // ---- Pass 6/6: Render (EWA alpha blend) ----
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline: Pass 6/6 Render start, image=%ux%u\n", m_imageWidth, m_imageHeight);
-#endif
-        m_render.setTileRanges(m_tileBoundaries.getTileRanges());
-        m_render.setSortedIds(m_radixSort.getSortedValues());
-        m_render.setColors(preOut.rgb);
-        m_render.setConicOpacity(preOut.conicOpacity);
-        m_render.setPointsXY(preOut.pointsXY);
-        m_render.execute(cmdList);
-        if (m_enableCulledBoundsDiag && !m_culledBoundsDiagDone && m_prevTanFovY <= 0.15f)
-        {
-            m_culledBoundsDiagDone = true;
-            diagnoseCulledBounds(cmdList);
-        }
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline: Pass 6/6 Render done\n");
-#endif
-
-        // ---- TEMP DIAGNOSTIC (blank-screen investigation) ----
-        // Read back real GPU state once and log it. Does NOT change rendering;
-        // it ends+submits+rebegins the command list so onRender can proceed.
-        if (!m_diagDone)
-        {
-            m_diagDone = true;
-            diagnoseRenderState(cmdList);
-        }
-
-        MR_LOG(LogTemp, Verbose, "[SplatPipeline] === Frame complete ===");
-#if 0  // Set to 1 to re-enable per-frame stderr pipeline diagnostics
-        fprintf(stderr, "[STDERR] SplatPipeline::execute: END returning output texture\n");
-#endif
-
-        return m_render.getOutputTexture();
-    }
-
-    // ========================================================================
-    // Read the count produced for the current view before generating sort keys.
-    // Translation and rotation change tile coverage even when FOV is constant.
-    // ========================================================================
-    bool FSplatPipeline::refreshSortCountIfNeeded(RHI::IRHICommandList* cmdList)
-    {
-        const bool changed = !m_hasCountCamera ||
-            std::memcmp(m_currentCamera.viewMatrix, m_lastCountCamera.viewMatrix,
-                        sizeof(m_currentCamera.viewMatrix)) != 0 ||
-            std::memcmp(m_currentCamera.projMatrix, m_lastCountCamera.projMatrix,
-                        sizeof(m_currentCamera.projMatrix)) != 0 ||
-            m_currentCamera.focalX != m_lastCountCamera.focalX ||
-            m_currentCamera.focalY != m_lastCountCamera.focalY ||
-            m_currentCamera.tanFovX != m_lastCountCamera.tanFovX ||
-            m_currentCamera.tanFovY != m_lastCountCamera.tanFovY ||
-            m_currentCamera.imageWidth != m_lastCountCamera.imageWidth ||
-            m_currentCamera.imageHeight != m_lastCountCamera.imageHeight ||
-            m_renderSettings.nearPlane != m_lastCountSettings.nearPlane ||
-            m_renderSettings.farPlane != m_lastCountSettings.farPlane ||
-            m_renderSettings.distanceCulling != m_lastCountSettings.distanceCulling ||
-            m_renderSettings.gaussianScale != m_lastCountSettings.gaussianScale;
-        const bool fovChanged = !m_hasCountCamera ||
-            m_currentCamera.tanFovY != m_lastCountCamera.tanFovY;
-        const FSplatPreprocessOutput& preOut = m_preprocess.getOutput();
-        static uint32 diagFrame = 0;
-        const bool sample = m_enableCulledBoundsDiag && (++diagFrame % 60u == 0u);
-        if (!changed && !sample)
-            return true;
-
-        // Copy prefix-sum result tail + last tilesTouched into staging.
-        cmdList->copyBuffer(m_stagingBuffer, m_prefixSum.getResultBuffer(), sizeof(uint32),
-                            0, (m_gaussianCount - 1) * sizeof(uint32));
-        cmdList->copyBuffer(m_stagingBuffer, preOut.tilesTouched, sizeof(uint32),
-                            sizeof(uint32), (m_gaussianCount - 1) * sizeof(uint32));
-        cmdList->resourceBarrier();
-
-        // Submit what we have, wait, then inspect.
-        cmdList->end();
-        cmdList->submitAndWait();
-
-        void* stagingData = m_stagingBuffer->map();
-        if (!stagingData) {
-            MR_LOG(LogTemp, Error, "[SplatPipeline] refreshSortCount: staging map failed");
-            cmdList->begin();
-            return false;
-        }
-        uint32 exclusiveSum = reinterpret_cast<uint32*>(stagingData)[0];
-        uint32 lastTiles    = reinterpret_cast<uint32*>(stagingData)[1];
-        m_stagingBuffer->unmap();
-
-        uint32 newCount = exclusiveSum + lastTiles;
-        if (newCount == 0) newCount = 1;
-        uint32 oldCount = m_realSortElements;
-        if (!changed) {
-            MR_LOG(LogTemp, Log,
-                   "[DIAG][SortCount] pan/sample tanFovY=%.5f used=%u actual=%u delta=%lld",
-                   m_prevTanFovY, oldCount, newCount,
-                   static_cast<long long>(newCount) - static_cast<long long>(oldCount));
-            cmdList->begin();
-            auto outputTex = m_render.getOutputTexture();
-            if (outputTex) {
-                cmdList->transitionResource(outputTex,
-                    RHI::EResourceUsage::None, RHI::EResourceUsage::UnorderedAccess);
-            }
-            return true;
-        }
-        bool  capped    = false;
-        if (newCount > m_maxSortElements) { newCount = m_maxSortElements; capped = true; }
-        m_realSortElements = newCount;
-        // CRITICAL sync: the AssignKeys shader's bounds guard reads
-        // m_assignKeys.m_sortElementCount as its max write index. If we update
-        // m_realSortElements but NOT this, the guard would clip at the stale
-        // first-frame value while RadixSort processes the new count -> mismatch
-        // -> corrupted image. Keep them identical.
-        m_assignKeys.setSortElementCount(newCount);
-        m_lastCountCamera = m_currentCamera;
-        m_lastCountSettings = m_renderSettings;
-        m_hasCountCamera = true;
-
-        MR_LOG(LogTemp, Log,
-               "[SplatPipeline] RefreshSortCount: viewChanged=1 fovChanged=%d pos=(%.2f,%.2f,%.2f) tanFovY=%.5f used=%u actual=%u%s (max=%u)",
-               fovChanged ? 1 : 0, m_currentCamera.camPos[0], m_currentCamera.camPos[1],
-               m_currentCamera.camPos[2], m_prevTanFovY, oldCount, newCount,
-               capped ? " [CAPPED]" : "", m_maxSortElements);
-
-        // Re-begin so onRender can keep recording (render output texture needs
-        // GENERAL layout for imageStore, same as ensureSortPassesInitialized).
-        // CRITICAL: diagnoseRadiusStats() records copyBuffer + resourceBarrier
-        // into THIS command list, so it MUST run AFTER begin() — otherwise
-        // vkCmdPipelineBarrier hits a non-recording command buffer and the
-        // NVIDIA driver crashes (0xC0000005 @ nvoglv64, read 0xFFFFFFFFFFFFFFFF).
-        auto outputTex = m_render.getOutputTexture();
-        cmdList->begin();
-        if (outputTex)
-        {
-            cmdList->transitionResource(outputTex,
-                RHI::EResourceUsage::None,
-                RHI::EResourceUsage::UnorderedAccess);
-        }
-
-        // Optional readback to correlate large projected splats with depth.
-        if (m_enableCulledBoundsDiag && (fovChanged || sample))
-        {
-            diagnoseRadiusStats(cmdList);
+    bytes = 0; std::set<uint64_t> seen;
+    auto add = [&](const RHI::FBufferAllocationInfo& info) {
+        if (!info.backingId || !info.backingBytes) return false;
+        if (seen.insert(info.backingId).second) {
+            if (info.backingBytes > m_temporaryBudget - bytes) return false;
+            bytes += info.backingBytes;
         }
         return true;
+    };
+    for (const auto& b : buffers) {
+        RHI::FBufferAllocationInfo info{};
+        if (!b || !b->getAllocationInfo(info) || !add(info)) return false;
     }
-
-    void FSplatPipeline::diagnoseCulledBounds(RHI::IRHICommandList* cmdList)
-    {
-        auto tiles = createStagingBuffer(m_device, m_gaussianCount * sizeof(uint32), "Diag_TilesTouched");
-        auto bounds = createStagingBuffer(m_device, m_gaussianCount * 4u * sizeof(uint32), "Diag_BBox");
-        auto ranges = createStagingBuffer(m_device, m_numTiles * 2u * sizeof(uint32), "Diag_ZoomTileRanges");
-        if (!tiles || !bounds || !ranges) {
-            MR_LOG(LogTemp, Error, "[DIAG][CulledBounds] staging allocation failed");
-            return;
-        }
-        const FSplatPreprocessOutput& out = m_preprocess.getOutput();
-        cmdList->copyBuffer(tiles, out.tilesTouched, m_gaussianCount * sizeof(uint32));
-        cmdList->copyBuffer(bounds, out.bbox, m_gaussianCount * 4u * sizeof(uint32));
-        cmdList->copyBuffer(ranges, m_tileBoundaries.getTileRanges(), m_numTiles * 2u * sizeof(uint32));
-        cmdList->resourceBarrier();
-        cmdList->end();
-        cmdList->submitAndWait();
-
-        auto* tileData = static_cast<uint32*>(tiles->map());
-        auto* boundData = static_cast<uint32*>(bounds->map());
-        auto* rangeData = static_cast<uint32*>(ranges->map());
-        uint32 zeroTilesWithBounds = 0, nonzeroMismatch = 0, zeroTiles = 0;
-        uint32 emptyRenderTiles = 0;
-        if (!tileData || !boundData || !rangeData) {
-            MR_LOG(LogTemp, Error, "[DIAG][CulledBounds] staging map failed");
-        }
-        if (tileData && boundData) {
-            for (uint32 i = 0; i < m_gaussianCount; ++i) {
-                const uint32* b = boundData + 4u * i;
-                const uint32 area = (b[2] > b[0] && b[3] > b[1])
-                    ? (b[2] - b[0]) * (b[3] - b[1]) : 0u;
-                if (tileData[i] == 0u) {
-                    ++zeroTiles;
-                    if (area) ++zeroTilesWithBounds;
-                } else if (area != tileData[i]) {
-                    ++nonzeroMismatch;
-                }
-            }
-        }
-        if (rangeData) {
-            for (uint32 i = 0; i < m_numTiles; ++i) {
-                if (rangeData[i * 2u] >= rangeData[i * 2u + 1u]) ++emptyRenderTiles;
-            }
-        }
-        if (tileData && boundData && rangeData) {
-            MR_LOG(LogTemp, Log,
-                   "[DIAG][CulledBounds] tanFovY=%.5f zeroTiles=%u zeroTilesWithBounds=%u nonzeroMismatch=%u emptyRenderTiles=%u/%u",
-                   m_prevTanFovY, zeroTiles, zeroTilesWithBounds, nonzeroMismatch, emptyRenderTiles, m_numTiles);
-        }
-        if (tileData) tiles->unmap();
-        if (boundData) bounds->unmap();
-        if (rangeData) ranges->unmap();
-
-        cmdList->begin();
-        auto outputTex = m_render.getOutputTexture();
-        if (outputTex) {
-            cmdList->transitionResource(outputTex,
-                RHI::EResourceUsage::None, RHI::EResourceUsage::UnorderedAccess);
-        }
+    RHI::FBufferAllocationInfo image{};
+    return m_render.getOutputTexture()->getAllocationInfo(image) && add(image);
+}
+bool FSplatPipeline::initialize(RHI::IRHIDevice* device, uint32 count, uint32 width, uint32 height, uint32 estimateTiles) {
+    if (m_bInitialized || !device || !width || !height || width > 65535u * 16u || height > 65535u * 16u ||
+        !device->supportsDispatchIndirect() || !device->supportsSubmissionCompletion()) return false;
+    m_device = device; m_gaussianCount = count; m_imageWidth = width; m_imageHeight = height;
+    m_gridX = (width + 15u) / 16u; m_gridY = (height + 15u) / 16u;
+    if (uint64_t(m_gridX) * m_gridY > UINT32_MAX / 8u) return false;
+    if (!m_explicitBudgets) {
+        m_sourceCapacity = std::max(1u, count); m_activeCapacity = std::max(1u, count);
+        m_sortCapacity = uint32(std::max<uint64_t>(1, std::min<uint64_t>(uint64_t(count) * std::max(1u, estimateTiles), 16ull * 1024 * 1024)));
     }
-
-    // ========================================================================
-    // Optional GPU readback of radius/depth distribution.
-    // ========================================================================
-    void FSplatPipeline::diagnoseRadiusStats(RHI::IRHICommandList* cmdList)
-    {
-        using namespace RHI;
-        if (!m_diagRadii)
-            m_diagRadii = createStagingBuffer(m_device, m_gaussianCount * sizeof(uint32), "Diag_Radii");
-        if (!m_diagDepth)
-            m_diagDepth = createStagingBuffer(m_device, m_gaussianCount * sizeof(float), "Diag_Depth");
-        if (!m_diagRadii || !m_diagDepth) {
-            MR_LOG(LogTemp, Error, "[DIAG] radii staging allocation failed");
-            return;
-        }
-
-        const FSplatPreprocessOutput& out = m_preprocess.getOutput();
-        cmdList->copyBuffer(m_diagRadii, out.radii, m_gaussianCount * sizeof(uint32));
-        cmdList->copyBuffer(m_diagDepth, out.depth, m_gaussianCount * sizeof(float));
-        cmdList->resourceBarrier();
-        cmdList->end();
-        cmdList->submitAndWait();
-
-        int* r = reinterpret_cast<int*>(m_diagRadii->map());
-        float* z = reinterpret_cast<float*>(m_diagDepth->map());
-        if (!r || !z) {
-            MR_LOG(LogTemp, Error, "[DIAG] radii map failed");
-            if (r) m_diagRadii->unmap();
-            if (z) m_diagDepth->unmap();
-            cmdList->begin();
-            return;
-        }
-        uint32 maxR = 0, culled = 0;
-        uint64_t sumR = 0;
-        uint32 wideByDepth[5] = {}, activeByDepth[5] = {};
-        float depthAtMax = 0.0f;
-        for (uint32 i = 0; i < m_gaussianCount; ++i) {
-            int v = r[i];
-            if (v > (int)maxR) { maxR = (uint32)v; depthAtMax = z[i]; }
-            if (v <= 0)    culled++;        // fully outside frustum
-            sumR += (uint32)(v > 0 ? v : 0);
-            if (v > 0) {
-                int bucket = z[i] < 0.25f ? 0 : z[i] < 0.5f ? 1 : z[i] < 1.0f ? 2 : z[i] < 2.0f ? 3 : 4;
-                ++activeByDepth[bucket];
-                if (v >= 30) ++wideByDepth[bucket];
-            }
-        }
-        m_diagRadii->unmap();
-        m_diagDepth->unmap();
-
-        float avgR = (float)sumR / (float)m_gaussianCount;
-        MR_LOG(LogTemp, Log,
-               "[DIAG][RadiusDepth] count=%u maxRadius=%u depthAtMax=%.3f avgRadius=%.2f culled=%u "
-               "activeDepth=[%u,%u,%u,%u,%u] wide30Depth=[%u,%u,%u,%u,%u]",
-               m_gaussianCount, maxR, depthAtMax, avgR, culled,
-               activeByDepth[0], activeByDepth[1], activeByDepth[2], activeByDepth[3], activeByDepth[4],
-               wideByDepth[0], wideByDepth[1], wideByDepth[2], wideByDepth[3], wideByDepth[4]);
-        fprintf(stderr,
-               "[DIAG][RadiusDepth] maxRadius=%u depthAtMax=%.3f active=[%u,%u,%u,%u,%u] wide30=[%u,%u,%u,%u,%u]\n",
-               maxR, depthAtMax, activeByDepth[0], activeByDepth[1], activeByDepth[2], activeByDepth[3], activeByDepth[4],
-               wideByDepth[0], wideByDepth[1], wideByDepth[2], wideByDepth[3], wideByDepth[4]);
-
-        // Re-begin for onRender.
-        auto outputTex = m_render.getOutputTexture();
-        cmdList->begin();
-        if (outputTex)
-        {
-            cmdList->transitionResource(outputTex,
-                RHI::EResourceUsage::None,
-                RHI::EResourceUsage::UnorderedAccess);
-        }
+    if (!m_sourceCapacity || m_sourceCapacity > UINT32_MAX / 192u || !m_activeCapacity || !m_sortCapacity || !m_temporaryBudget || count > m_sourceCapacity ||
+        uint64_t(m_activeCapacity) * 16 > UINT32_MAX || m_sortCapacity > 65535u * 8192u) return false;
+    uint64_t bytes = 0;
+    if (!m_explicitBudgets) while (!PreflightTemporaryBuffers(bytes) && m_sortCapacity > 1)
+        m_sortCapacity = std::max(1u, m_sortCapacity / 2);
+    if (!PreflightTemporaryBuffers(bytes)) {
+        m_stats.degraded = true; m_stats.degradationReason = "Physical temporary memory requirements exceed budget or are unavailable"; return false;
     }
-
-    // ========================================================================
-    // ROOT-CAUSE FIX ② verification: prove the cov2D ceiling clamp engages.
-    // One readback of conicOpacity[] per FOV refresh. We reconstruct the max
-    // eigenvalue of the ORIGINAL cov2D from its inverse (conic) and check it is
-    // bounded by kCovCeil=800. overCeil800 (lambdaMax > 800) must be 0 for the
-    // clamp to be active; over30000 is the pre-fix reference. Pure logging.
-    // ========================================================================
-    void FSplatPipeline::diagnoseCovCeil(RHI::IRHICommandList* cmdList)
-    {
-        using namespace RHI;
-        if (!m_diagConic)
-            m_diagConic = createStagingBuffer(m_device, m_gaussianCount * 4 * sizeof(float), "Diag_Conic");
-        if (!m_diagConic) {
-            MR_LOG(LogTemp, Error, "[DIAG] conic staging allocation failed");
-            return;
-        }
-
-        const FSplatPreprocessOutput& out = m_preprocess.getOutput();
-        cmdList->copyBuffer(m_diagConic, out.conicOpacity, m_gaussianCount * 4 * sizeof(float));
-        cmdList->resourceBarrier();
-        cmdList->end();
-        cmdList->submitAndWait();
-
-        float* c = reinterpret_cast<float*>(m_diagConic->map());
-        if (!c) {
-            MR_LOG(LogTemp, Error, "[DIAG] conic map failed");
-            cmdList->begin();
-            return;
-        }
-        // conic stored as vec4(conic.x, conic.y, conic.z, opacity) where
-        //   conic.x = covZZ * detInv,  conic.z = covXX * detInv
-        // so the smaller of (conic.x, conic.z) ~ 1 / (larger diagonal cov2D).
-        float  minDiagConic = 1e30f;
-        float  maxLambdaCov = 0.0f;   // max lambdaMax of raw cov2D, reconstructed from conic
-        uint32 overCeil     = 0;      // lambdaMax > kCovCeil(800) => clamp leaked (should be 0)
-        uint32 over30k      = 0;      // lambdaMax > 30000 (pre-fix reference)
-        for (uint32 i = 0; i < m_gaussianCount; ++i) {
-            float cx = c[i * 4 + 0];  // conic.x = covZZ / det
-            float cy = c[i * 4 + 1];  // conic.y = -covXY / det
-            float cz = c[i * 4 + 2];  // conic.z = covXX / det
-            float d  = (cx < cz) ? cx : cz;
-            if (d < minDiagConic) minDiagConic = d;
-            // Reconstruct the max eigenvalue of the ORIGINAL cov2D from its
-            // inverse (conic). inverse = [[cx,cy],[cy,cz]]; its eigenvalues are
-            // 1/λ1 and 1/λ2, so λmax_cov = 1/(smaller inverse eigenvalue)
-            // = 2 / (tr_inv - sqrt(tr_inv² - 4·det_inv)).
-            float trInv   = cx + cz;
-            float detInv  = cx * cz - cy * cy;
-            float discInv = trInv * trInv - 4.0f * detInv;
-            if (discInv > 0.0f) {
-                float denom = trInv - sqrtf(discInv);
-                if (denom > 1e-9f) {
-                    float lambdaMax = 2.0f / denom;
-                    if (lambdaMax > maxLambdaCov) maxLambdaCov = lambdaMax;
-                    if (lambdaMax > 800.0f)       overCeil++;
-                    if (lambdaMax > 30000.0f)     over30k++;
-                }
-            }
-        }
-        m_diagConic->unmap();
-
-        MR_LOG(LogTemp, Log,
-               "[DIAG][CovCeil] tanFovY=%.5f maxLambdaCov=%.1f overCeil800=%u (%.2f%%) "
-               "over30000=%u (%.2f%%) minDiagConic=%.3e  [clamp: overCeil800==0 => fix active]",
-               m_prevTanFovY, maxLambdaCov, overCeil,
-               100.0f * (float)overCeil / (float)m_gaussianCount,
-               over30k, 100.0f * (float)over30k / (float)m_gaussianCount,
-               minDiagConic);
-        fprintf(stderr,
-                "[DIAG][CovCeil] tanFovY=%.5f maxLambdaCov=%.1f overCeil800=%u over30000=%u minDiagConic=%.3e\n",
-                m_prevTanFovY, maxLambdaCov, overCeil, over30k, minDiagConic);
-
-        // Re-begin for onRender (output texture needs GENERAL layout for imageStore).
-        auto outputTex = m_render.getOutputTexture();
-        cmdList->begin();
-        if (outputTex) {
-            cmdList->transitionResource(outputTex,
-                RHI::EResourceUsage::None,
-                RHI::EResourceUsage::UnorderedAccess);
-        }
+    m_dispatchState = device->createBuffer(TemporaryDesc(ESplatDispatchState::Bytes, StateUsage));
+    if (!m_dispatchState || !m_preprocess.initialize(device, m_activeCapacity) || !m_prefixSum.initialize(device, m_activeCapacity) ||
+        !m_radixSort.initialize(device, m_sortCapacity, m_dispatchState) ||
+        !m_assignKeys.initialize(device, m_sortCapacity, m_activeCapacity, m_radixSort.getKeysEven(), m_radixSort.getValuesEven(), m_dispatchState) ||
+        !m_tileBoundaries.initialize(device, m_gridX * m_gridY, m_sortCapacity, m_dispatchState) ||
+        !m_render.initialize(device, width, height, m_dispatchState) ||
+        (m_fusionEnabled && !CreateFusionPass()) || !CreatePreparePass()) return false;
+    for (auto& slot : m_telemetry) {
+        slot.buffer = device->createBuffer(TemporaryDesc(ESplatDispatchState::Bytes, RHI::EResourceUsage::TransferDst, RHI::EMemoryUsage::Readback));
+        if (!slot.buffer) return false;
     }
-
-    // ========================================================================
-    // TEMP DIAGNOSTIC: read back real GPU state to pin down the blank-screen
-    // cause. Logs: (1) how many tile ranges are non-empty, (2) for the first
-    // N scheduled gaussians, whether their projected pointsXY lands inside the
-    // viewport and whether their conic is positive-definite (required for any
-    // splat to survive the power<=0 test in the render shader).
-    // ========================================================================
-    void FSplatPipeline::diagnoseRenderState(RHI::IRHICommandList* cmdList)
-    {
-        using namespace RHI;
-
-        const uint32 kSampleSorted = 4096u;
-        const uint32 sidSample = (m_realSortElements < kSampleSorted) ? m_realSortElements : kSampleSorted;
-
-        // Allocate staging buffers once.
-        if (!m_diagBuffersAllocated)
-        {
-            m_diagTR     = createStagingBuffer(m_device, m_numTiles * 2 * sizeof(uint32), "Diag_TR");
-            m_diagSorted = createStagingBuffer(m_device, sidSample * sizeof(uint32),        "Diag_Sorted");
-            m_diagSortedKeys = createStagingBuffer(m_device, sidSample * sizeof(uint64),    "Diag_SortedKeys");
-            m_diagPXY    = createStagingBuffer(m_device, m_gaussianCount * 2 * sizeof(float), "Diag_PXY");
-            m_diagConic  = createStagingBuffer(m_device, m_gaussianCount * 4 * sizeof(float), "Diag_Conic");
-            if (!m_diagTR || !m_diagSorted || !m_diagSortedKeys || !m_diagPXY || !m_diagConic)
-            {
-                MR_LOG(LogTemp, Error, "[DIAG] staging buffer allocation failed");
-                return;
-            }
-            m_diagBuffersAllocated = true;
-        }
-
-        const FSplatPreprocessOutput& out = m_preprocess.getOutput();
-
-        // Copy everything we need into staging (all written earlier this frame).
-        cmdList->copyBuffer(m_diagTR,     m_tileBoundaries.getTileRanges(), m_numTiles * 2 * sizeof(uint32));
-        cmdList->copyBuffer(m_diagSorted, m_radixSort.getSortedValues(),    sidSample * sizeof(uint32));
-        cmdList->copyBuffer(m_diagSortedKeys, m_radixSort.getSortedKeys(),  sidSample * sizeof(uint64));
-        cmdList->copyBuffer(m_diagPXY,    out.pointsXY,    m_gaussianCount * 2 * sizeof(float));
-        cmdList->copyBuffer(m_diagConic,  out.conicOpacity, m_gaussianCount * 4 * sizeof(float));
-        cmdList->resourceBarrier();
-
-        // Submit what we have, wait for completion, then inspect.
-        cmdList->end();
-        cmdList->submitAndWait();
-
-        // ---- (1) tile ranges ----
-        uint32* tr = reinterpret_cast<uint32*>(m_diagTR->map());
-        uint32 nonEmpty = 0, totalCovered = 0;
-        for (uint32 i = 0; i < m_numTiles; ++i)
-        {
-            uint32 s = tr[i * 2], e = tr[i * 2 + 1];
-            if (s < e) { nonEmpty++; totalCovered += (e - s); }
-        }
-        uint32 cx = m_gridX / 2, cy = m_gridY / 2;
-        uint32 centerTile = cy * m_gridX + cx;
-        uint32 cs = tr[centerTile * 2], ce = tr[centerTile * 2 + 1];
-        // a couple more sample tiles (top-left and middle-right)
-        uint32 tl = 0;                       uint32 tlS = tr[tl*2],     tlE = tr[tl*2+1];
-        uint32 mr = cy * m_gridX + (m_gridX-1); uint32 mrS = tr[mr*2], mrE = tr[mr*2+1];
-        m_diagTR->unmap();
-
-        MR_LOG(LogTemp, Log, "[DIAG] tileRanges: nonEmpty=%u/%u totalCovered=%u | center(%u,%u)=[%u,%u] tl=[%u,%u] mr=[%u,%u]",
-               nonEmpty, m_numTiles, totalCovered, cx, cy, cs, ce, tlS, tlE, mrS, mrE);
-        fprintf(stderr, "[DIAG] tileRanges: nonEmpty=%u/%u totalCovered=%u center=[%u,%u] tl=[%u,%u] mr=[%u,%u]\n",
-                nonEmpty, m_numTiles, totalCovered, cs, ce, tlS, tlE, mrS, mrE);
-
-        // ---- (2) scheduled gaussians: on-screen + conic sign ----
-        uint32* sid   = reinterpret_cast<uint32*>(m_diagSorted->map());
-        uint64* skeys = reinterpret_cast<uint64*>(m_diagSortedKeys->map());
-        float*  pxy   = reinterpret_cast<float*>(m_diagPXY->map());
-        float*  conic = reinterpret_cast<float*>(m_diagConic->map());
-
-        // Raw dump of first 32 sorted (tileID, value) pairs to reveal sort corruption pattern.
-        {
-            char dumpBuf[1024];
-            int pos = 0;
-            pos += (int)snprintf(dumpBuf + pos, sizeof(dumpBuf) - pos, "[DIAG] first32 raw (tileID,value): ");
-            for (uint32 i = 0; i < 32 && i < sidSample; ++i)
-            {
-                uint32 tileID = (uint32)(skeys[i] >> 32u);
-                pos += (int)snprintf(dumpBuf + pos, sizeof(dumpBuf) - pos, "(%u,%u) ", tileID, sid[i]);
-            }
-            fprintf(stderr, "%s\n", dumpBuf);
-        }
-
-        uint32 onScreen = 0, conicOK = 0, garbageIdx = 0;
-        float minX =  1e30f, maxX = -1e30f, minY =  1e30f, maxY = -1e30f;
-        float badConicX = 0.0f, badConicZ = 0.0f; // remember one bad conic for logging
-        bool  gotBad = false;
-        for (uint32 i = 0; i < sidSample; ++i)
-        {
-            uint32 g = sid[i];
-            if (g >= m_gaussianCount) { garbageIdx++; continue; }
-            float px = pxy[g * 2], py = pxy[g * 2 + 1];
-            float cx_ = conic[g * 4], cy_ = conic[g * 4 + 1], cz_ = conic[g * 4 + 2], op = conic[g * 4 + 3];
-            if (px < minX) minX = px; if (px > maxX) maxX = px;
-            if (py < minY) minY = py; if (py > maxY) maxY = py;
-            if (px >= 0.0f && px < (float)m_imageWidth && py >= 0.0f && py < (float)m_imageHeight)
-                onScreen++;
-            if (cx_ > 0.0f && cz_ > 0.0f) conicOK++;
-            else if (!gotBad) { badConicX = cx_; badConicZ = cz_; gotBad = true; }
-        }
-        m_diagSorted->unmap(); m_diagSortedKeys->unmap(); m_diagPXY->unmap(); m_diagConic->unmap();
-
-        MR_LOG(LogTemp, Log, "[DIAG] sampled %u scheduled gaussians: onScreen=%u conicOK=%u garbageIdx=%u",
-               sidSample, onScreen, conicOK, garbageIdx);
-        MR_LOG(LogTemp, Log, "[DIAG] pointsXY X-range=[%.2f,%.2f] Y-range=[%.2f,%.2f] (viewport %ux%u); badConic sample=(%.4g,%.4g)",
-               minX, maxX, minY, maxY, m_imageWidth, m_imageHeight, badConicX, badConicZ);
-        fprintf(stderr, "[DIAG] sampled gaussians: onScreen=%u/%u conicOK=%u garbage=%u pxyX[%.1f,%.1f] pxyY[%.1f,%.1f] img=%ux%u\n",
-                onScreen, sidSample, conicOK, garbageIdx, minX, maxX, minY, maxY, m_imageWidth, m_imageHeight);
-        fprintf(stderr, "[DIAG] conic sign: conicOK=%u/%u (need both conic.x>0 AND conic.z>0); badConicSample=(%.4g,%.4g)\n",
-                conicOK, sidSample, badConicX, badConicZ);
-
-        // Restart the command list so onRender (transition + present) can continue.
-        cmdList->begin();
+    if (!MeasureTemporaryBuffers(m_stats.temporaryBytes)) return false;
+    RHI::FBufferAllocationInfo image{};
+    if (!m_render.getOutputTexture()->getAllocationInfo(image)) return false;
+    m_stats.outputImageBytes = image.backingBytes;
+    m_stats.sourceCapacity = m_sourceCapacity; m_stats.activeCapacity = m_activeCapacity; m_stats.sortCapacity = m_sortCapacity;
+    m_stats.timingAvailable = device->supportsGPUTimestamps(); m_render.SetGPUDispatchState(m_dispatchState);
+    const auto& out = m_preprocess.getOutput();
+    // Static bindings are baked before submission; scan result descriptors use
+    // completion-protected slots when the number of scan steps changes.
+    for (uint32 slot = 0; slot < 2; ++slot) {
+        m_tileBoundaries.SelectFrameSlot(slot); m_tileBoundaries.setSortedKeys(m_radixSort.getSortedKeys());
+        m_render.SelectFrameSlot(slot); m_render.setTileRanges(m_tileBoundaries.getTileRanges());
+        m_render.setSortedIds(m_radixSort.getSortedValues()); m_render.setColors(out.rgb);
+        m_render.setConicOpacity(out.conicOpacity); m_render.setPointsXY(out.pointsXY);
     }
-
+    setRenderSettings(m_renderSettings); m_bInitialized = true; return true;
+}
+bool FSplatPipeline::CreatePreparePass() {
+    using namespace RHI;
+    FDescriptorSetLayoutDesc sets(0, "SplatPrepareDispatch");
+    sets.bindings.Add(FDescriptorSetLayoutBinding(0, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+    sets.bindings.Add(FDescriptorSetLayoutBinding(1, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+    if(m_splitFusionEnabled)sets.bindings.Add(FDescriptorSetLayoutBinding(2, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+    m_prepareSetLayout = m_device->createDescriptorSetLayout(sets); if (!m_prepareSetLayout) return false;
+    FPipelineLayoutDesc layout("SplatPrepareDispatch"); layout.setLayouts.Add(m_prepareSetLayout);
+    layout.pushConstantRanges.Add(FPushConstantRange(EShaderStage::Compute, 0, 16));
+    m_prepareLayout = m_device->createPipelineLayout(layout); if (!m_prepareLayout) return false;
+    const auto bytes = ShaderCompiler::readFileBytes(SplatShaderPath(m_splitFusionEnabled?
+        "Shaders/Splat/Sort/compiled/splat_prepare_split_dispatch.spv":"Shaders/Splat/Sort/compiled/splat_prepare_dispatch.spv"));
+    if (bytes.empty()) return false;
+    auto shader = m_device->createComputeShader(TSpan<const uint8>(bytes.data(), bytes.size())); if (!shader) return false;
+    ComputePipelineStateDesc pipeline;
+    pipeline.computeShader = shader; pipeline.pipelineLayout = m_prepareLayout; pipeline.debugName = "SplatPrepareDispatch";
+    m_preparePipeline = m_device->createComputePipelineState(pipeline); if (!m_preparePipeline) return false;
+    for (auto& set : m_prepareSets) {
+        set = m_device->allocateDescriptorSet(m_prepareSetLayout); if (!set) return false;
+        set->updateStorageBuffer(1, m_dispatchState, 0, 0);
+        if(m_splitFusionEnabled)set->updateStorageBuffer(2,m_splitFusion.GetCounter(),0,FSplatSplitFusionPass::CounterBytes);
+    }
+    return true;
+}
+bool FSplatPipeline::CreateFusionPass() {
+    if(m_splitFusionEnabled)return m_splitFusion.Initialize(m_device,m_activeCapacity,m_preprocess.getOutput());
+    using namespace RHI;
+    static_assert(sizeof(FSplatFusionGroup) == 8);
+    FDescriptorSetLayoutDesc setDesc(0, "SplatProjectedFusion");
+    for (uint32 binding = 0; binding < 10; ++binding)
+        setDesc.bindings.Add(FDescriptorSetLayoutBinding(binding, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+    m_fusionSetLayout = m_device->createDescriptorSetLayout(setDesc); if (!m_fusionSetLayout) return false;
+    FPipelineLayoutDesc layout("SplatProjectedFusion"); layout.setLayouts.Add(m_fusionSetLayout);
+    layout.pushConstantRanges.Add(FPushConstantRange(EShaderStage::Compute, 0, 32));
+    m_fusionLayout = m_device->createPipelineLayout(layout); if (!m_fusionLayout) return false;
+    const auto bytes = ShaderCompiler::readFileBytes(SplatShaderPath("Shaders/Splat/compiled/splat_fusion.spv"));
+    if (bytes.empty()) return false;
+    auto shader = m_device->createComputeShader(TSpan<const uint8>(bytes.data(), bytes.size())); if (!shader) return false;
+    ComputePipelineStateDesc pipeline;
+    pipeline.computeShader = shader; pipeline.pipelineLayout = m_fusionLayout; pipeline.debugName = "SplatProjectedFusion";
+    m_fusionPipeline = m_device->createComputePipelineState(pipeline); if (!m_fusionPipeline) return false;
+    m_fusionCounter = m_device->createBuffer(TemporaryDesc(16, StorageUsage)); if (!m_fusionCounter) return false;
+    m_fusionCache = m_device->createBuffer(TemporaryDesc(uint64_t(m_activeCapacity) * 16, StorageUsage)); if (!m_fusionCache) return false;
+    const auto& out = m_preprocess.getOutput();
+    const MonsterEngine::TSharedPtr<IRHIBuffer> outputs[] = {out.radii, out.depth, out.rgb,
+        out.conicOpacity, out.pointsXY, out.tilesTouched, out.bbox};
+    for (uint32 slot = 0; slot < 2; ++slot) {
+        m_fusionGroupsBuffers[slot] = m_device->createBuffer(TemporaryDesc(uint64_t(m_activeCapacity) * sizeof(FSplatFusionGroup) + 16,
+            EResourceUsage::StorageBuffer | EResourceUsage::TransferSrc, EMemoryUsage::Dynamic));
+        m_fusionSets[slot] = m_device->allocateDescriptorSet(m_fusionSetLayout);
+        if (!m_fusionGroupsBuffers[slot] || !m_fusionSets[slot]) return false;
+        for (uint32 binding = 0; binding < 7; ++binding) m_fusionSets[slot]->updateStorageBuffer(binding, outputs[binding], 0, 0);
+        m_fusionSets[slot]->updateStorageBuffer(7, m_fusionGroupsBuffers[slot], 0, uint64_t(m_activeCapacity) * sizeof(FSplatFusionGroup));
+        m_fusionSets[slot]->updateStorageBuffer(8, m_fusionCounter, 0, 16);
+        m_fusionSets[slot]->updateStorageBuffer(9, m_fusionCache, 0, 0);
+    }
+    return true;
+}
+bool FSplatPipeline::ExecuteFusion(RHI::IRHICommandList* cmd, uint32 slot, uint32 count) {
+    if(m_splitFusionEnabled)return m_splitFusion.Execute(cmd,slot,count,m_gridX,m_gridY,m_frame,m_renderSettings.fusionRelativeRGBAError);
+    if (m_fusionGroups.empty()) return true;
+    // This frame slot has already passed the actual submission-completion gate.
+    void* mapped = m_fusionGroupsBuffers[slot]->map(); if (!mapped) return false;
+    std::memcpy(mapped, m_fusionGroups.data(), m_fusionGroups.size() * sizeof(FSplatFusionGroup));
+    const uint32 zeroOffset = m_activeCapacity * sizeof(FSplatFusionGroup);
+    const uint32 counters[4]={0,0,1,0};std::memcpy(static_cast<uint8*>(mapped)+zeroOffset,counters,sizeof(counters));m_fusionGroupsBuffers[slot]->unmap();
+    cmd->copyBuffer(m_fusionCounter, m_fusionGroupsBuffers[slot], 16, 0, zeroOffset); cmd->resourceBarrier();
+    struct alignas(16) Push {uint32 groups,count,x,y;float error;uint32 cacheCapacity,phase,frame;};
+    Push push{uint32(m_fusionGroups.size()), count, m_gridX, m_gridY,m_renderSettings.fusionRelativeRGBAError,m_activeCapacity,0,uint32(m_frame)};
+    cmd->setPipelineState(m_fusionPipeline); cmd->bindDescriptorSet(m_fusionLayout, 0, m_fusionSets[slot]);
+    if (!m_fusionCacheCleared) {
+        push.phase=1;
+        cmd->pushConstants(m_fusionLayout, RHI::EShaderStage::Compute, 0, sizeof(push), &push);
+        const uint32 clearGroups=(m_activeCapacity+31u)/32u;
+        cmd->dispatch(std::min(clearGroups,65535u),(clearGroups+65534u)/65535u,1);cmd->resourceBarrier();
+        m_pendingFusionCacheClear=true;push.phase=0;
+    }
+    cmd->pushConstants(m_fusionLayout, RHI::EShaderStage::Compute, 0, sizeof(push), &push);
+    const uint32 groups = (push.groups + 31u) / 32u;
+    cmd->dispatch(std::min(groups, 65535u), (groups + 65534u) / 65535u, 1); cmd->resourceBarrier();
+    return true;
+}
+void FSplatPipeline::setGaussianData(const FSplatGPUData& data) {
+    if(m_splitFusionEnabled&&(data.positions!=m_fusionSourceIdentity.positions||data.scales!=m_fusionSourceIdentity.scales||
+        data.rotations!=m_fusionSourceIdentity.rotations||data.opacities!=m_fusionSourceIdentity.opacities||
+        data.shCoefficients!=m_fusionSourceIdentity.shCoefficients||data.shDegree!=m_fusionSourceIdentity.shDegree))m_splitFusion.InvalidateCheckpoint();
+    m_fusionSourceIdentity=data;
+    m_hasGaussianData = data.isValid() && data.gaussianCount <= m_sourceCapacity && data.shDegree >= 0 && data.shDegree <= 3;
+    if (!m_hasGaussianData) return;
+    const uint64_t n = data.gaussianCount, sh = uint64_t(data.shDegree + 1) * (data.shDegree + 1);
+    m_hasGaussianData = data.positions->getSize() >= n * 16 && data.scales->getSize() >= n * 16 &&
+        data.rotations->getSize() >= n * 16 && data.opacities->getSize() >= n * 4 && data.shCoefficients->getSize() >= n * sh * 12;
+    if (m_hasGaussianData) { m_preprocess.setInputs(data); m_gaussianCount = data.gaussianCount; }
+}
+void FSplatPipeline::setCamera(const FCameraUniforms& camera) {
+    if(m_splitFusionEnabled&&(camera.shDegree!=m_fusionCameraIdentity.shDegree||
+        std::memcmp(camera.projMatrix,m_fusionCameraIdentity.projMatrix,sizeof(camera.projMatrix))))m_splitFusion.InvalidateCheckpoint();
+    m_fusionCameraIdentity=camera;
+    m_hasCamera = camera.imageWidth == int32(m_imageWidth) && camera.imageHeight == int32(m_imageHeight) && camera.shDegree >= 0 && camera.shDegree <= 3;
+    for (float v : camera.viewMatrix) m_hasCamera = m_hasCamera && std::isfinite(v);
+    for (float v : camera.projMatrix) m_hasCamera = m_hasCamera && std::isfinite(v);
+    for (float v : camera.camPos) m_hasCamera = m_hasCamera && std::isfinite(v);
+    m_hasCamera = m_hasCamera && std::isfinite(camera.focalX) && std::isfinite(camera.focalY) && std::isfinite(camera.tanFovX) &&
+        std::isfinite(camera.tanFovY) && camera.focalX > 0 && camera.focalY > 0;
+    if (m_hasCamera) m_preprocess.updateCamera(camera);
+}
+void FSplatPipeline::SetActiveSet(const FSplatActiveSet& set) {
+    if(m_splitFusionEnabled&&set.sceneGeneration!=m_activeSet.sceneGeneration)m_splitFusion.InvalidateCheckpoint();
+    m_activeSet.sourceIndices = set.sourceIndices; m_activeSet.selectionVersion = set.selectionVersion;
+    m_activeSet.residencyVersion = set.residencyVersion; m_hasActiveSet = true;
+    m_activeSet.sceneGeneration=set.sceneGeneration;
+    if (!SetFusionGroups(set.fusionGroups)) { m_fusionGroups.clear(); m_hasGaussianData = false; }
+}
+void FSplatPipeline::UseFullGaussianSet() { m_activeSet = {}; m_hasActiveSet = false; m_fusionGroups.clear();if(m_splitFusionEnabled){m_splitFusion.SetGroups({});m_splitFusion.InvalidateCheckpoint();} }
+uint64_t FSplatPipeline::ReserveFrameId() {
+    m_frameReserved = true; m_stats.frame = ++m_frame; return m_frame;
+}
+void FSplatPipeline::setRenderSettings(const FSplatRenderSettings& settings) {
+    FSplatRenderSettings safe = settings;
+    if (!std::isfinite(safe.nearPlane) || safe.nearPlane <= 0 || safe.nearPlane > 1e6f) safe.nearPlane = 0.1f;
+    if (!std::isfinite(safe.farPlane) || safe.farPlane <= safe.nearPlane || safe.farPlane > 1e9f) safe.farPlane = std::max(1000.0f, safe.nearPlane + 1);
+    if (!std::isfinite(safe.gaussianScale) || safe.gaussianScale <= 0) safe.gaussianScale = 1;
+    safe.gaussianScale = std::clamp(safe.gaussianScale, 0.01f, 10.0f);
+    if(!std::isfinite(safe.fusionRelativeRGBAError)||safe.fusionRelativeRGBAError<=0||safe.fusionRelativeRGBAError>1) safe.fusionRelativeRGBAError=0.4f;
+    if(m_splitFusionEnabled&&(safe.gaussianScale!=m_renderSettings.gaussianScale||safe.nearPlane!=m_renderSettings.nearPlane||
+        safe.farPlane!=m_renderSettings.farPlane||safe.distanceCulling!=m_renderSettings.distanceCulling||
+        safe.fusionRelativeRGBAError!=m_renderSettings.fusionRelativeRGBAError))m_splitFusion.InvalidateCheckpoint();
+    m_renderSettings = safe;
+    m_preprocess.setClipPlanes(safe.nearPlane, safe.farPlane); m_preprocess.setDistanceCulling(safe.distanceCulling);
+    m_preprocess.setGaussianScale(safe.gaussianScale); m_render.setWireframe(safe.wireframe);
+}
+void FSplatPipeline::PollTelemetry() {
+    m_stats.countSamples.clear();
+    m_stats.timestampSamples = m_device->pollGPUTimestamps();
+    for (auto& slot : m_telemetry) {
+        if (!slot.pending || !slot.token.value || !m_device->isSubmissionComplete(slot.token)) continue;
+        void* mapped = slot.buffer->map(); if (!mapped) continue;
+        uint32 state[32]; std::memcpy(state, mapped, sizeof(state)); slot.buffer->unmap();
+        float fusionError=0;std::memcpy(&fusionError,&state[23],sizeof(fusionError));
+        m_stats.countSamples.push_back({slot.frame,state[0],state[1]!=0,state[20],state[21],state[2],state[22]!=0,fusionError});
+        auto& sample=m_stats.countSamples.back();sample.fusionFreshQueued=state[24];sample.fusionExactQueued=state[26];
+        sample.fusionCertificatePass=state[28];sample.fusionCertificateFail=state[29];sample.fusionExactChecks=state[30];
+        sample.fusionOriginalVisible=state[31];sample.fusionQueueOverflow=state[25]!=0||state[27]!=0;sample.fusionUsesCertificates=m_splitFusionEnabled;
+        if (state[1]) ++m_stats.overflowFrames;
+        if (slot.frame >= m_stats.countFrame) {
+            m_stats.countFrame = slot.frame; m_stats.actualSortCount = state[0]; m_stats.overflow = state[1] != 0; m_stats.countAvailable = true;
+            m_stats.renderedPrimitives = state[20]; m_stats.fusedPrimitives = state[21];m_stats.fusionApplied=state[22]!=0;
+            m_stats.maxFusionRelativeRGBAError=fusionError;
+        }
+        slot.pending = false; slot.token = {};
+    }
+}
+const FSplatPipelineFrameStats& FSplatPipeline::CollectCompletedFrameStats() {
+    if(m_device)PollTelemetry();
+    return m_stats;
+}
+void FSplatPipeline::MarkFrameSubmitted(RHI::FGPUCompletionToken token) {
+    if (m_recordedFrameSlot < 0 || !token.value || token.value == m_beforeSubmission.value ||
+        token.value != m_device->getLastSubmissionToken().value) return;
+    m_frameTokens[m_recordedFrameSlot] = token;
+    if (m_pendingTelemetry >= 0) m_telemetry[m_pendingTelemetry].token = token;
+    if (m_pendingOutputClear) m_outputCleared = true;
+    if (m_pendingFusionCacheClear) m_fusionCacheCleared = true;
+    if(m_splitFusionEnabled)m_splitFusion.ConfirmSubmitted();
+    m_pendingOutputClear = false;
+    m_pendingFusionCacheClear = false;
+    m_recordedFrameSlot = -1; m_pendingTelemetry = -1;
+}
+MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICommandList* cmd) {
+    using namespace RHI;
+    if (!m_bInitialized || !cmd) return nullptr;
+    // Legacy caller compatibility: only a changed real submission can associate
+    // the preceding recording. Explicit callers mark immediately after present.
+    MarkFrameSubmitted(m_device->getLastSubmissionToken());
+    if (m_recordedFrameSlot >= 0) {
+        if (m_pendingTelemetry >= 0) m_telemetry[m_pendingTelemetry].pending = false;
+        m_pendingOutputClear = false;
+        m_pendingFusionCacheClear = false;
+        if(m_splitFusionEnabled)m_splitFusion.DiscardRecording();
+        m_recordedFrameSlot = -1; m_pendingTelemetry = -1;
+    }
+    PollTelemetry();
+    if (!m_frameReserved) ReserveFrameId();
+    m_frameReserved = false;
+    const uint64_t activeSize = m_hasActiveSet ? m_activeSet.sourceIndices.size() : m_gaussianCount;
+    m_stats.degraded = false; m_stats.degradationReason.clear();
+    auto fail = [&](const char* reason) {
+        m_stats.degraded = true; m_stats.degradationReason = reason;
+        return (m_outputCleared || m_pendingOutputClear) ? m_render.getOutputTexture() : MonsterEngine::TSharedPtr<IRHITexture>{};
+    };
+    if (!m_hasCamera || (activeSize && !m_hasGaussianData)) return fail("Missing valid input data or camera");
+    if (activeSize > m_activeCapacity) return fail("Active count exceeds compact capacity");
+    if (!m_fusionGroups.empty() && uint64_t(m_fusionGroups.back().First()) + m_fusionGroups.back().Count() != activeSize)
+        return fail("Fusion groups do not exactly partition the current original active mapping");
+    if (!m_preprocess.setActiveIndices(m_activeSet.sourceIndices, m_hasActiveSet)) return fail("Invalid source index mapping");
+    int frameSlot = -1;
+    for (uint32 slot = 0; slot < 2; ++slot)
+        if (!m_frameTokens[slot].value || m_device->isSubmissionComplete(m_frameTokens[slot])) { frameSlot = int(slot); break; }
+    if (frameSlot < 0) return fail("Mapped input slots still referenced by GPU submissions");
+    m_recordedFrameSlot = frameSlot; m_beforeSubmission = m_device->getLastSubmissionToken();
+    m_stats.activeCount = uint32(activeSize);
+    m_stats.selectionVersion = m_activeSet.selectionVersion; m_stats.residencyVersion = m_activeSet.residencyVersion;
+    if (m_stats.overflow) { m_stats.degraded = true; m_stats.degradationReason = "Sort overflow: prior output retained; tighten selection budget"; }
+    const uint32 count = uint32(activeSize);
+    m_preprocess.SelectFrameSlot(frameSlot); m_assignKeys.SelectFrameSlot(frameSlot);
+    m_tileBoundaries.SelectFrameSlot(frameSlot); m_render.SelectFrameSlot(frameSlot);
+    const auto& out = m_preprocess.getOutput(); cmd->resourceBarrier();
+    cmd->writeGPUTimestamp(m_frame, "Pipeline", true);
+    if (!m_outputCleared) {
+        cmd->transitionResource(m_render.getOutputTexture(), EResourceUsage::None, EResourceUsage::UnorderedAccess);
+        m_render.execute(cmd, true); cmd->resourceBarrier(); m_render.SelectFrameSlot(frameSlot); m_pendingOutputClear = true;
+    }
+    cmd->writeGPUTimestamp(m_frame, "Preprocess", true);
+    if (count && !m_preprocess.execute(cmd, count)) {
+        cmd->writeGPUTimestamp(m_frame, "Preprocess", false); cmd->writeGPUTimestamp(m_frame, "Pipeline", false);
+        return fail("Mapped input upload failed");
+    }
+    cmd->resourceBarrier();
+    if ((count||m_splitFusionEnabled) && !ExecuteFusion(cmd, uint32(frameSlot), count)) {
+        cmd->writeGPUTimestamp(m_frame, "Preprocess", false); cmd->writeGPUTimestamp(m_frame, "Pipeline", false);
+        return fail("Fusion descriptor upload failed");
+    }
+    cmd->writeGPUTimestamp(m_frame, "Preprocess", false);
+    cmd->writeGPUTimestamp(m_frame, "Scan", true);
+    if (count) { cmd->copyBuffer(m_prefixSum.getBufferA(), out.tilesTouched, uint64_t(count) * 4); cmd->resourceBarrier(); m_prefixSum.execute(cmd, count); }
+    cmd->resourceBarrier();
+    auto& set = m_prepareSets[frameSlot]; set->updateStorageBuffer(0, m_prefixSum.getResultBuffer(), 0, 0);
+    const uint32 prepare[4] = {count, m_sortCapacity, m_gridX, m_gridY};
+    cmd->setPipelineState(m_preparePipeline); cmd->bindDescriptorSet(m_prepareLayout, 0, set);
+    cmd->pushConstants(m_prepareLayout, EShaderStage::Compute, 0, sizeof(prepare), prepare); cmd->dispatch(1, 1, 1); cmd->resourceBarrier();
+    if(m_splitFusionEnabled){cmd->copyBuffer(m_dispatchState,m_splitFusion.GetCounter(),FSplatSplitFusionPass::CounterBytes,80,0);cmd->resourceBarrier();}
+    else if (!m_fusionGroups.empty()) { cmd->copyBuffer(m_dispatchState, m_fusionCounter, 16, 80, 0); cmd->resourceBarrier(); }
+    cmd->writeGPUTimestamp(m_frame, "Scan", false);
+    cmd->writeGPUTimestamp(m_frame, "AssignKeys", true);
+    m_assignKeys.setInputBuffers(m_prefixSum.getResultBuffer(), out.bbox, out.depth); m_assignKeys.execute(cmd, count, m_gridX, m_gridY);
+    cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "AssignKeys", false);
+    cmd->writeGPUTimestamp(m_frame, "RadixSort", true); m_radixSort.execute(cmd, 0, uint64_t(m_gridX)*m_gridY<=65536 ? 48 : 64); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "RadixSort", false);
+    cmd->writeGPUTimestamp(m_frame, "TileBounds", true); m_tileBoundaries.execute(cmd, 0); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "TileBounds", false);
+    cmd->writeGPUTimestamp(m_frame, "Render", true); m_render.execute(cmd); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "Render", false);
+    cmd->writeGPUTimestamp(m_frame, "Pipeline", false);
+    for (uint32 slot = 0; slot < 3; ++slot) if (!m_telemetry[slot].pending) {
+        cmd->copyBuffer(m_telemetry[slot].buffer, m_dispatchState, ESplatDispatchState::Bytes); cmd->resourceBarrier();
+        m_telemetry[slot].pending = true; m_telemetry[slot].token = {}; m_telemetry[slot].frame = m_frame; m_pendingTelemetry = int(slot); break;
+    }
+    if (m_pendingTelemetry < 0) ++m_stats.telemetrySkippedFrames;
+    return m_render.getOutputTexture();
+}
 } // namespace MonsterRender::Splat

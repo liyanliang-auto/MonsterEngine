@@ -168,6 +168,15 @@ private:
 
     /** Uniform buffer for projection matrix */
     TSharedPtr<MonsterRender::RHI::IRHIBuffer> UniformBuffer;
+    // Vulkan waits for the current swapchain slot before RenderDrawData.
+    // Uploads in another slot can still be consumed by the GPU.
+    struct FUploadSlot {
+        TSharedPtr<MonsterRender::RHI::IRHIBuffer> vertex, index, uniform;
+        uint32 vertexCapacity = 0, indexCapacity = 0;
+    };
+    static constexpr uint32 UploadSlotCount = 2;
+    FUploadSlot UploadSlots[UploadSlotCount];
+    uint32 ActiveUploadSlot = 0;
 
     /** Font texture atlas */
     TSharedPtr<MonsterRender::RHI::IRHITexture> FontTexture;

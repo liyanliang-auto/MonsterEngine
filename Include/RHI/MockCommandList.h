@@ -105,6 +105,18 @@ public:
         MR_LOG_DEBUG("MockCommandList::dispatch - Dispatch compute shader");
     }
     
+    void dispatchIndirect(MonsterRender::RHI::IRHIBuffer* arguments, uint64_t byteOffset) override {
+        lastIndirectBuffer = arguments;
+        lastIndirectOffset = byteOffset;
+        ++indirectDispatchCount;
+    }
+    void writeGPUTimestamp(uint64_t frame, const std::string& label, bool begin) override {
+        (void)frame; (void)label; (void)begin; // Mock never supplies hardware timing.
+    }
+    MonsterRender::RHI::IRHIBuffer* lastIndirectBuffer = nullptr;
+    uint64_t lastIndirectOffset = 0;
+    uint32_t indirectDispatchCount = 0;
+
     // Clear operations
     virtual void clearRenderTarget(TSharedPtr<MonsterRender::RHI::IRHITexture> renderTarget, 
                                    const float32 clearColor[4]) override {

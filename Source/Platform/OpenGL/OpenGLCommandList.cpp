@@ -534,6 +534,19 @@ void FOpenGLCommandList::transitionResource(TSharedPtr<IRHIResource> resource,
     }
 }
 
+void FOpenGLCommandList::dispatchIndirect(IRHIBuffer* arguments, uint64_t byteOffset) {
+    auto* buffer = dynamic_cast<FOpenGLBuffer*>(arguments);
+    if (!buffer || !glDispatchComputeIndirect || !m_recording ||
+        (buffer->getUsage() & EResourceUsage::IndirectArgs) == EResourceUsage::None ||
+        !IsValidDispatchIndirectRange(buffer->getSize(), byteOffset)) {
+        MR_LOG_ERROR("OpenGL dispatchIndirect: unsupported or invalid arguments");
+        return;
+    }
+    glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, buffer->GetGLBuffer());
+    glDispatchComputeIndirect(static_cast<GLintptr>(byteOffset));
+    glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, 0);
+}
+
 void FOpenGLCommandList::resourceBarrier()
 {
     if (glMemoryBarrier)

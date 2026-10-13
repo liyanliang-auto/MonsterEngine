@@ -7,6 +7,11 @@
 #include "CubeSceneApplication.h"
 #include "SplatSceneApplication.h"
 #include <cstdlib>
+#include <atomic>
+#include <filesystem>
+#include <limits>
+#include <stdexcept>
+#include <sstream>
 // CubeSceneRendererTest - now using MonsterEngine::Renderer namespace
 #include "Tests/CubeSceneRendererTest.h"
 #include "Tests/CubeSceneRendererTestApp.h"
@@ -74,14 +79,30 @@ namespace MonsterEngine {
 
 // Entry point following UE5's application architecture
 int RunSplatCameraSequenceTests();
+
+// Legacy suites report assertion failures through logging rather than return values.
+class FLegacyTestFailureOutput final : public MonsterRender::FOutputDevice {
+public:
+    void Serialize(const char* message, MonsterRender::ELogVerbosity::Type,
+                   const char*) override {
+        if (message && (strstr(message, "[FAIL]") || strstr(message, "FAILED:") ||
+                        strstr(message, " test(s) failed"))) {
+            Failed.store(true, std::memory_order_relaxed);
+        }
+    }
+    std::atomic<bool> Failed{false};
+};
+
 int main(int argc, char** argv) {
     using namespace MonsterRender;
+    bool splatEvidenceRun=false;
+    for(int i=1;i<argc;++i)if(strcmp(argv[i],"--splat-benchmark")==0||strcmp(argv[i],"--splat-capture-only")==0||strcmp(argv[i],"--splat-scene")==0||strcmp(argv[i],"--splat-config")==0)splatEvidenceRun=true;
     
     // ========================================================================
     // Initialize Logging System FIRST - before any other initialization
     // ========================================================================
     InitializeLogging(
-        "log/MonsterEngine.log",    // Log file name (in log subdirectory)
+        splatEvidenceRun?"TestFile/3DGSLODStreaming/application/MonsterEngine.log":"log/MonsterEngine.log",
         true,                        // Enable console output
         true,                        // Enable debug output (OutputDebugString on Windows)
         true                         // Enable file output
@@ -119,12 +140,34 @@ int main(int argc, char** argv) {
     bool useDeferredRendering = false;  // Enable deferred rendering in CubeSceneApplication
     bool runZFightingTests = false;  // Run Z-Fighting test suite
     bool runSplatScene = true;  // Run SplatSceneApplication (3DGS render)
-    // // https://huggingface.co/datasets/dylanebert/3dgs/tree/main/bonsai
-    String splatModelPath = "resources\\point_cloud\\bonsai_30k.ply";  // PLY model path for splat
+    String splatModelPath = "resources/point_cloud/bicycle/point_cloud_30000.ply";
     SplatSceneApplication::FStartupExportOptions splatExport;
+    Splat::FSplatLODRuntimeOptions splatRuntime;
+    bool splatLODRequested = false;
+    // Default showcase uses the bounded Bicycle scene built from the original PLY.
+    // Explicit CLI runs keep their own model/config and camera settings.
+    if (argc == 1 || (argc == 2 && (strcmp(argv[1], "--splat") == 0 || strcmp(argv[1], "-splat") == 0))) {
+        std::string error;
+        if (!Splat::FSplatLODRuntimeOptions::LoadConfig("resources/3dgs_sequences/lod_streaming_defaults.json", splatRuntime, error)) {
+            std::fprintf(stderr, "Cannot load Bicycle showcase defaults: %s\n", error.c_str());
+            ShutdownLogging(); return 2;
+        }
+        splatLODRequested = true;
+    }
+    for(int i=1;i<argc;++i)if(strcmp(argv[i],"--splat-config")==0){
+        std::string error;
+        if(i+1>=argc||!Splat::FSplatLODRuntimeOptions::LoadConfig(argv[++i],splatRuntime,error)){
+            std::fprintf(stderr,"Invalid splat config: %s\n",error.c_str());ShutdownLogging();return 2;
+        }
+        splatLODRequested=true;
+    }
+    if(!splatRuntime.sourcePLY.empty())splatModelPath=splatRuntime.sourcePLY;
+    auto unsignedOption=[](const char* text)->uint64_t{size_t consumed=0;if(!text||!*text||*text=='-')throw std::runtime_error("Expected unsigned option");const auto n=std::stoull(text,&consumed);if(consumed!=std::strlen(text))throw std::runtime_error("Malformed integer option");return n;};
+    auto realOption=[](const char* text)->double{size_t consumed=0;const auto n=std::stod(text,&consumed);if(consumed!=std::strlen(text)||!std::isfinite(n))throw std::runtime_error("Malformed numeric option");return n;};
     bool splatControlUIVisible = true;
-    
+    try {
     for (int i = 1; i < argc; ++i) {
+        auto argument=[&](){if(i+1>=argc)throw std::runtime_error(std::string("Missing argument for ")+argv[i]);return argv[++i];};
         if (strcmp(argv[i], "--test-memory") == 0 || strcmp(argv[i], "-tm") == 0) {
             runMemoryTests = true;
         }
@@ -177,7 +220,7 @@ int main(int argc, char** argv) {
             runSplatScene = true;
             // Optional: next arg is model path
             if (i + 1 < argc && argv[i + 1][0] != '-')
-                splatModelPath = argv[++i];
+                splatRuntime.sourcePLY = splatModelPath = argv[++i];
         }
         else if (strcmp(argv[i], "--test-splat-controls") == 0) {
             const int result = RunSplatCameraSequenceTests();
@@ -188,7 +231,32 @@ int main(int argc, char** argv) {
             splatControlUIVisible = false;
         }
         else if (strcmp(argv[i], "--splat-sequence") == 0 && i + 1 < argc) {
-            splatExport.sequencePath = argv[++i];
+            splatRuntime.sequencePath = splatExport.sequencePath = argv[++i];
+        }
+        else if(strcmp(argv[i],"--splat-config")==0){argument();}
+        else if(strcmp(argv[i],"--splat-scene")==0){splatRuntime.scenePath=argument();splatLODRequested=true;}
+        else if(strcmp(argv[i],"--splat-source-ply")==0){splatRuntime.sourcePLY=splatModelPath=argument();}
+        else if(strcmp(argv[i],"--splat-mode")==0){const std::string mode=argument();if(mode.size()!=1)throw std::runtime_error("Mode requires one letter");splatRuntime.mode=mode[0];splatLODRequested=true;}
+        else if(strcmp(argv[i],"--splat-benchmark")==0){splatRuntime.benchmark=true;}
+        else if(strcmp(argv[i],"--splat-capture-only")==0){splatRuntime.benchmark=true;splatRuntime.captureOnly=true;}
+        else if(strcmp(argv[i],"--splat-validation")==0){splatRuntime.validation=true;}
+        else if(strcmp(argv[i],"--splat-full-leaf")==0){splatRuntime.fullLeaf=true;}
+        else if(strcmp(argv[i],"--splat-output")==0){splatRuntime.outputDirectory=argument();}
+        else if(strcmp(argv[i],"--splat-cache-condition")==0){splatRuntime.cacheCondition=argument();}
+        else if(strcmp(argv[i],"--splat-warmup")==0){splatRuntime.warmupSeconds=realOption(argument());}
+        else if(strcmp(argv[i],"--splat-seconds")==0){splatRuntime.sampleSeconds=realOption(argument());}
+        else if(strcmp(argv[i],"--splat-quality")==0){splatRuntime.lod.qualityPixels=float(realOption(argument()));}
+        else if(strcmp(argv[i],"--splat-capture-settle")==0){splatRuntime.captureSettleSeconds=realOption(argument());}
+        else if(strcmp(argv[i],"--splat-rounds")==0){const auto n=unsignedOption(argument());if(n>100)throw std::runtime_error("Rounds exceed 100");splatRuntime.rounds=uint32_t(n);}
+        else if(strcmp(argv[i],"--splat-width")==0){const auto n=unsignedOption(argument());if(n>16384)throw std::runtime_error("Width exceeds 16384");splatRuntime.width=uint32_t(n);}
+        else if(strcmp(argv[i],"--splat-height")==0){const auto n=unsignedOption(argument());if(n>16384)throw std::runtime_error("Height exceeds 16384");splatRuntime.height=uint32_t(n);}
+        else if(strcmp(argv[i],"--splat-active-capacity")==0){const auto n=unsignedOption(argument());if(n>UINT32_MAX)throw std::runtime_error("Active capacity exceeds uint32");splatRuntime.activeCapacity=uint32_t(n);}
+        else if(strcmp(argv[i],"--splat-sort-capacity")==0){const auto n=unsignedOption(argument());if(n>UINT32_MAX)throw std::runtime_error("Sort capacity exceeds uint32");splatRuntime.sortCapacity=uint32_t(n);}
+        else if(strcmp(argv[i],"--splat-sh-degree")==0){const auto n=unsignedOption(argument());if(n>3)throw std::runtime_error("SH degree exceeds 3");splatRuntime.displaySHDegree=int32_t(n);}
+        else if(strcmp(argv[i],"--splat-capture-times")==0){std::istringstream times(argument());std::string item;splatRuntime.captureTimes.clear();while(std::getline(times,item,','))splatRuntime.captureTimes.push_back(realOption(item.c_str()));}
+        else if(strcmp(argv[i],"--splat-scene-mib")==0||strcmp(argv[i],"--splat-cpu-mib")==0||strcmp(argv[i],"--splat-staging-mib")==0||strcmp(argv[i],"--splat-temporary-mib")==0||strcmp(argv[i],"--splat-upload-mib")==0){
+            const std::string option=argv[i];const auto n=unsignedOption(argument());if(n>(1ull<<28))throw std::runtime_error("Budget exceeds supported bytes");const uint64_t bytes=n<<20;
+            if(option=="--splat-scene-mib")splatRuntime.streaming.sceneGPUBytes=bytes;else if(option=="--splat-cpu-mib")splatRuntime.streaming.cpuCacheBytes=bytes;else if(option=="--splat-staging-mib")splatRuntime.streaming.stagingBytes=bytes;else if(option=="--splat-temporary-mib")splatRuntime.streaming.temporaryGPUBytes=bytes;else splatRuntime.streaming.maxUploadBytesPerFrame=bytes;
         }
         else if (strcmp(argv[i], "--splat-export") == 0 && i + 1 < argc) {
             splatExport.videoPath = argv[++i];
@@ -216,6 +284,15 @@ int main(int argc, char** argv) {
             return -1;
         }
     }
+    }catch(const std::exception& e){std::fprintf(stderr,"Invalid splat option: %s\n",e.what());ShutdownLogging();return 2;}
+    if(splatLODRequested||splatRuntime.benchmark){
+        std::string error;
+        if(!splatRuntime.Validate(error)||(splatRuntime.mode!='A'&&splatRuntime.scenePath.empty())){
+            std::fprintf(stderr,"Invalid splat runtime: %s\n",error.empty()?"Modes B-E require --splat-scene":error.c_str());ShutdownLogging();return 2;
+        }
+    }
+    // SplatShaderPath uses the current build's generated directory unless the
+    // caller explicitly overrides it; never select a stale experiment package.
     
     // Default behavior: run parallel rendering integration example by default
     // If no command line arguments provided, keep runParallelIntegrationExample = true
@@ -239,6 +316,7 @@ int main(int argc, char** argv) {
         printf("\n");
         
         RunMathLibraryTests();
+        ShutdownLogging();
         return 0;
     }
     
@@ -250,12 +328,14 @@ int main(int argc, char** argv) {
         RunContainerTests();
         printf("Container tests completed.\n");
         fflush(stdout);
+        ShutdownLogging();
         return 0;
     }
     
     // Run smart pointer tests
     if (runSmartPointerTests) {
         RunSmartPointerTests();
+        ShutdownLogging();
         return 0;
     }
     
@@ -301,6 +381,9 @@ int main(int argc, char** argv) {
     // Run tests if requested
     if (runMemoryTests || runTextureTests || runVirtualTextureTests || 
         runVulkanMemoryTests || runVulkanResourceTests || runMathTests || runContainerTests || runAllTests) {
+        SetGlobalLogVerbosity(ELogVerbosity::Log);
+        FLegacyTestFailureOutput testFailures;
+        GLog->AddOutputDevice(&testFailures);
         printf("\n");
         printf("==========================================");
         printf("  MonsterEngine Test Suite");
@@ -404,7 +487,11 @@ int main(int argc, char** argv) {
         printf("\n");
         
         // Exit after tests
-        return 0;
+        GLog->Flush();
+        GLog->RemoveOutputDevice(&testFailures);
+        const bool failed = testFailures.Failed.load(std::memory_order_relaxed);
+        ShutdownLogging();
+        return failed ? 1 : 0;
     }
     
     // CubeSceneRendererTest - uses MonsterEngine::Renderer namespace
@@ -427,12 +514,12 @@ int main(int argc, char** argv) {
     // SplatSceneApplication — 3DGS render
     if (runSplatScene) {
         MR_LOG(LogInit, Log, "Running SplatSceneApplication with model: %s", splatModelPath.c_str());
-        auto splatApp = MakeUnique<SplatSceneApplication>(splatModelPath, splatExport);
+        auto splatApp = MakeUnique<SplatSceneApplication>(splatModelPath, splatExport, splatRuntime);
         if (splatApp) {
-            splatApp->SetControlUIVisible(splatControlUIVisible);
+            splatApp->SetControlUIVisible(splatControlUIVisible&&!splatRuntime.benchmark);
             int32 exitCode = splatApp->run();
-            if (splatApp->HasStartupExportFailed()) exitCode = 1;
             splatApp->shutdown();
+            if (splatApp->HasRunFailed()) exitCode = 1;
             splatApp.reset();
             ShutdownLogging();
             return exitCode;

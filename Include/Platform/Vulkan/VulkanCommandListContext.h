@@ -111,7 +111,7 @@ namespace MonsterRender::RHI::Vulkan {
         /**
          * Submit commands to GPU (UE5: SubmitCommandsAndFlushGPU())
          */
-        void submitCommands(VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
+        bool submitCommands(VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
                           VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount);
         
         // Command recording delegations

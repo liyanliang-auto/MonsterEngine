@@ -110,12 +110,15 @@ bool FImGuiRenderer::Initialize(MonsterRender::RHI::IRHIDevice* InDevice)
     ubDesc.usage = MonsterRender::RHI::EResourceUsage::UniformBuffer;
     ubDesc.cpuAccessible = true;
     ubDesc.debugName = "ImGui Uniform Buffer";
-    UniformBuffer = Device->createBuffer(ubDesc);
-    if (!UniformBuffer)
-    {
-        MR_LOG(LogImGuiRenderer, Error, "Failed to create uniform buffer");
-        return false;
+    static_assert(UploadSlotCount == MonsterRender::RHI::Vulkan::VulkanDevice::MAX_FRAMES_IN_FLIGHT);
+    for (auto& slot : UploadSlots) {
+        slot.uniform = Device->createBuffer(ubDesc);
+        if (!slot.uniform) {
+            MR_LOG(LogImGuiRenderer, Error, "Failed to create uniform buffer");
+            return false;
+        }
     }
+    UniformBuffer = UploadSlots[0].uniform;
 
     bInitialized = true;
     MR_LOG(LogImGuiRenderer, Log, "ImGui renderer initialized successfully");
@@ -141,6 +144,7 @@ void FImGuiRenderer::Shutdown()
     UniformBuffer.Reset();
     IndexBuffer.Reset();
     VertexBuffer.Reset();
+    for (auto& slot : UploadSlots) slot = FUploadSlot{};
 
     Device = nullptr;
     bInitialized = false;
@@ -166,6 +170,11 @@ void FImGuiRenderer::RenderDrawData(MonsterRender::RHI::IRHICommandList* CmdList
     }
 
     // Create or resize buffers if needed
+    ActiveUploadSlot = RHIBackend == MonsterRender::RHI::ERHIBackend::Vulkan
+        ? static_cast<MonsterRender::RHI::Vulkan::VulkanDevice*>(Device)->getCurrentFrame() : 0;
+    auto& slot = UploadSlots[ActiveUploadSlot];
+    VertexBuffer = slot.vertex; IndexBuffer = slot.index; UniformBuffer = slot.uniform;
+    VertexBufferSize = slot.vertexCapacity; IndexBufferSize = slot.indexCapacity;
     if (DrawData->TotalVtxCount > 0)
     {
         if (!CreateOrResizeBuffers(
@@ -508,7 +517,7 @@ bool FImGuiRenderer::CreateOrResizeBuffers(uint32 VertexCount, uint32 IndexCount
     uint32 requiredIdxSize = IndexCount + 10000;
 
     // Resize vertex buffer if needed
-    if (!VertexBuffer || VertexBufferSize < requiredVtxSize)
+    if (!VertexBuffer || VertexBufferSize < VertexCount)
     {
         VertexBuffer.Reset();
 
@@ -529,7 +538,7 @@ bool FImGuiRenderer::CreateOrResizeBuffers(uint32 VertexCount, uint32 IndexCount
     }
 
     // Resize index buffer if needed
-    if (!IndexBuffer || IndexBufferSize < requiredIdxSize)
+    if (!IndexBuffer || IndexBufferSize < IndexCount)
     {
         IndexBuffer.Reset();
 
@@ -549,6 +558,9 @@ bool FImGuiRenderer::CreateOrResizeBuffers(uint32 VertexCount, uint32 IndexCount
         IndexBufferSize = requiredIdxSize;
     }
 
+    auto& slot = UploadSlots[ActiveUploadSlot];
+    slot.vertex = VertexBuffer; slot.index = IndexBuffer;
+    slot.vertexCapacity = VertexBufferSize; slot.indexCapacity = IndexBufferSize;
     return true;
 }
 

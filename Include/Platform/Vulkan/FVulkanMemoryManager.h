@@ -278,6 +278,9 @@ public:
     struct FMemoryStats {
         VkDeviceSize TotalAllocated;
         VkDeviceSize TotalReserved;
+        VkDeviceSize PooledReserved; ///< Retained shared VkDeviceMemory backing.
+        VkDeviceSize PooledUsed; ///< Live physical suballocations inside pools.
+        VkDeviceSize DedicatedCommitted; ///< Live dedicated VkDeviceMemory bytes.
         uint32 AllocationCount;
         uint32 PoolCount;
         VkDeviceSize LargestFreeBlock;
@@ -288,6 +291,9 @@ public:
         FMemoryStats()
             : TotalAllocated(0)
             , TotalReserved(0)
+            , PooledReserved(0)
+            , PooledUsed(0)
+            , DedicatedCommitted(0)
             , AllocationCount(0)
             , PoolCount(0)
             , LargestFreeBlock(0)
@@ -320,6 +326,7 @@ private:
     std::atomic<uint32> TotalAllocationCount;
     std::atomic<uint32> DedicatedAllocationCount;
     std::atomic<VkDeviceSize> TotalAllocatedMemory;
+    std::atomic<VkDeviceSize> DedicatedCommittedMemory{0};
     
     // Per-type pool mutex
     std::mutex PoolsMutex[VK_MAX_MEMORY_TYPES];

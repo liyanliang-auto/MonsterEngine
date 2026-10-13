@@ -1,0 +1,162 @@
+// Copyright Monster Engine. All Rights Reserved.
+// Current-view, ordered RGBA moment fusion. No source Gaussian or SH is rewritten.
+#version 450
+layout(local_size_x=32) in;
+layout(std430,set=0,binding=0) buffer Radii { int radii[]; };
+layout(std430,set=0,binding=1) buffer Depth { float depth[]; };
+layout(std430,set=0,binding=2) buffer RGB { vec4 rgb[]; };
+layout(std430,set=0,binding=3) buffer Conic { vec4 conic[]; };
+layout(std430,set=0,binding=4) buffer XY { vec2 xy[]; };
+layout(std430,set=0,binding=5) buffer Tiles { uint tiles[]; };
+layout(std430,set=0,binding=6) buffer BBox { uvec4 bbox[]; };
+layout(std430,set=0,binding=7) readonly buffer Groups { uvec2 groups[]; };
+layout(std430,set=0,binding=8) buffer Counters { uint counters[]; };
+// Only merge identities are cached. Projected kernels, SH, alpha and depth are
+// reconstructed and the complete coarse field is revalidated every frame.
+layout(std430,set=0,binding=9) coherent buffer Cache { uvec4 cache[]; };
+layout(push_constant) uniform Push { uint groupCount; uint sourceCount; uint gridX; uint gridY; float maxError; uint cacheCapacity; uint phase; uint frame; } pc;
+const float TAU=6.283185307179586;
+struct K { vec2 p; vec3 cov; float det; float z; float alpha; vec3 color; uint members; };
+// Product terms need only their kernel, not source identity/color/depth/opacity.
+struct Gaussian { vec2 p; vec3 cov; float det; };
+struct Term { Gaussian k; vec4 coeff; };
+bool finite1(float x) { return !isnan(x)&&!isinf(x); }
+vec3 inverseCov(K k) { return vec3(k.cov.z,-k.cov.y,k.cov.x)/k.det; }
+vec2 mul(vec3 m,vec2 p) { return vec2(m.x*p.x+m.y*p.y,m.y*p.x+m.z*p.y); }
+void field(K inputK[4], uint n, out Term terms[15], out uint size) {
+    K ks[4]; for(uint i=0;i<n;++i)ks[i]=inputK[i];
+    // Stable local depth order follows the original active identity for ties.
+    for(uint i=1;i<n;++i)for(uint j=i;j>0u&&ks[j].z<ks[j-1u].z;--j){K t=ks[j];ks[j]=ks[j-1u];ks[j-1u]=t;}
+    vec3 inv[4];for(uint i=0;i<n;++i)inv[i]=inverseCov(ks[i]);
+    size=(1u<<n)-1u;
+    for(uint mask=1u;mask<=size;++mask){
+        vec3 A=vec3(0);vec2 h=vec2(0);float quad=0,weight=1;uint cnt=0,last=0;
+        for(uint i=0;i<n;++i)if((mask&(1u<<i))!=0u){
+            vec3 a=inv[i];vec2 ap=mul(a,ks[i].p);
+            A+=a;h+=ap;quad+=dot(ks[i].p,ap);weight*=ks[i].alpha;++cnt;last=i;
+        }
+        float d=A.x*A.z-A.y*A.y;
+        Gaussian k;k.cov=vec3(A.z,-A.y,A.x)/d;k.det=1.0/d;k.p=mul(k.cov,h);
+        weight*=exp(min(0.0,-0.5*(quad-dot(k.p,h))));if((cnt&1u)==0u)weight=-weight;
+        terms[mask-1u].k=k;terms[mask-1u].coeff=weight*vec4(ks[last].color,1);
+    }
+}
+float integral(Gaussian a,Gaussian b) {
+    vec3 c=a.cov+b.cov;float d=c.x*c.z-c.y*c.y;vec2 p=a.p-b.p;
+    return TAU*sqrt(a.det*b.det/d)*exp(-0.5*dot(p,mul(vec3(c.z,-c.y,c.x)/d,p)));
+}
+vec4 inner(Term a[15],uint na,Term b[15],uint nb) {
+    vec4 sum=vec4(0);
+    for(uint i=0;i<na;++i)for(uint j=0;j<nb;++j)sum+=a[i].coeff*b[j].coeff*integral(a[i].k,b[j].k);
+    return sum;
+}
+vec4 squaredNorm(Term terms[15],uint n) {
+    vec4 sum=vec4(0);
+    for(uint i=0;i<n;++i){
+        // The diagonal integral is pi*sqrt(det(C)), without a matrix inverse/exp.
+        sum+=terms[i].coeff*terms[i].coeff*(0.5*TAU*sqrt(terms[i].k.det));
+        for(uint j=i+1u;j<n;++j)sum+=2.0*terms[i].coeff*terms[j].coeff*integral(terms[i].k,terms[j].k);
+    }
+    return sum;
+}
+bool fit(K first,K second,out K result) {
+    // Exact two-source expansion has three terms. Avoid constructing a 15-term
+    // scratch field for each of the six trial pairs in every iteration.
+    if(second.z<first.z){K swapK=first;first=second;second=swapK;}
+    vec3 ia=inverseCov(first),ib=inverseCov(second),A=ia+ib;
+    vec2 ha=mul(ia,first.p),hb=mul(ib,second.p),h=ha+hb;
+    float d=A.x*A.z-A.y*A.y;
+    vec3 c=vec3(A.z,-A.y,A.x)/d;vec2 p=mul(c,h);
+    float peak=first.alpha*second.alpha*exp(min(0.0,-0.5*(dot(first.p,ha)+dot(second.p,hb)-dot(p,h))));
+    float ma=TAU*sqrt(first.det)*first.alpha,mb=TAU*sqrt(second.det)*second.alpha,mab=TAU*sqrt(1.0/d)*peak;
+    float mass=ma+mb-mab,z=ma*first.z+mb*second.z-mab*second.z;
+    vec2 mean=ma*first.p+mb*second.p-mab*p;
+    vec3 moment=ma*(first.cov+vec3(first.p.x*first.p.x,first.p.x*first.p.y,first.p.y*first.p.y))+
+        mb*(second.cov+vec3(second.p.x*second.p.x,second.p.x*second.p.y,second.p.y*second.p.y))-
+        mab*(c+vec3(p.x*p.x,p.x*p.y,p.y*p.y));
+    vec3 color=ma*first.color+(mb-mab)*second.color;
+    if(!(mass>0)||!finite1(mass))return false;
+    result.p=mean/mass;p=result.p;result.cov=moment/mass-vec3(p.x*p.x,p.x*p.y,p.y*p.y);
+    result.det=result.cov.x*result.cov.z-result.cov.y*result.cov.y;
+    float intrinsic=(result.cov.x-0.3)*(result.cov.z-0.3)-result.cov.y*result.cov.y;
+    if(!(result.cov.x>0.3&&result.cov.z>0.3&&intrinsic>0&&result.det>0)||!finite1(result.det))return false;
+    result.alpha=min(0.99,mass/(TAU*sqrt(result.det)));result.color=max(vec3(0),color/mass);
+    result.z=clamp(z/mass,min(first.z,second.z),max(first.z,second.z));result.members=first.members|second.members;
+    return finite1(result.z)&&all(not(isnan(result.color)))&&all(not(isinf(result.color)));
+}
+void main() {
+    uint groupID=(gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x)*32u+gl_LocalInvocationID.x;
+    if(pc.phase==1u){if(groupID<pc.cacheCapacity)cache[groupID]=uvec4(0);return;}
+    if(groupID>=pc.groupCount)return;
+    uvec2 descriptor=groups[groupID];
+    uvec2 g=uvec2(descriptor.x&0x0fffffffu,((descriptor.x>>28u)&3u)+1u);
+    if((descriptor.x&0x80000000u)!=0u||g.x>=pc.sourceCount||g.y>pc.sourceCount-g.x)return;
+    K original[4],current[4];uint n=g.y;bool valid=true;uint live=0;
+    for(uint i=0;i<n;++i){bool alive=radii[g.x+i]>0&&tiles[g.x+i]>0u;live+=alive?1u:0u;valid=valid&&alive;}
+    if(!valid||n<2u){atomicAdd(counters[0],live);return;}
+    vec2 origin=xy[g.x];
+    for(uint i=0;i<n;++i){uint index=g.x+i;
+        vec3 q=conic[index].xyz;float d=q.x*q.z-q.y*q.y;
+        K k;k.p=xy[index]-origin;k.cov=vec3(q.z,-q.y,q.x)/d;k.det=1.0/d;k.z=depth[index];
+        k.alpha=conic[index].w;k.color=rgb[index].xyz;k.members=1u<<i;
+        valid=valid&&d>0&&finite1(k.det)&&k.alpha>=0&&k.alpha<=1;
+        original[i]=k;current[i]=k;
+    }
+    // Culled/invalid members never lend mass or depth to surviving members.
+    if(!valid||n<2u){atomicAdd(counters[0],live);return;}
+    uint stableID=descriptor.y,cacheIndex=stableID%pc.cacheCapacity;
+    bool owner=stableID!=0xffffffffu&&atomicCompSwap(cache[cacheIndex].w,0u,1u)==0u;
+    if(owner)memoryBarrierBuffer();
+    bool reuse=owner&&cache[cacheIndex].x==stableID+1u&&cache[cacheIndex].z!=0u&&((stableID+pc.frame)&31u)!=0u;
+    uint tree=reuse?cache[cacheIndex].y:0u;
+    bool accepted=reuse;float finalError=0;
+    // Refit the ordered tree from this frame's original projected Gaussians.
+    if(reuse&&tree!=0u)for(uint step=0;step<3u;++step){
+        uint op=(tree>>(8u*step))&255u;if(op==0u)break;
+        uint left=op&15u,right=op>>4u,i=4u,j=4u;
+        for(uint k=0;k<n;++k){if(current[k].members==left)i=k;if(current[k].members==right)j=k;}
+        K merged;
+        if(i==4u||j==4u||i==j||!fit(current[i],current[j],merged)){accepted=false;break;}
+        uint count=0;for(uint k=0;k<n;++k)if(k!=i&&k!=j)current[count++]=current[k];current[count++]=merged;n=count;
+    }
+    Term reference[15];uint refN;vec4 signal;
+    // Fine cached groups are exactly the source field; no approximate admission.
+    if(!accepted||tree!=0u){field(original,g.y,reference,refN);signal=squaredNorm(reference,refN);}
+    if(accepted&&tree!=0u){
+        Term trial[15];uint trialN;field(current,n,trial,trialN);
+        vec4 own=squaredNorm(trial,trialN),cross=inner(reference,refN,trial,trialN);
+        vec4 relative=sqrt(max(vec4(0),signal+own-2.0*cross)/max(vec4(1e-20),signal));
+        finalError=max(max(relative.x,relative.y),max(relative.z,relative.w));
+        accepted=finite1(finalError)&&finalError<=pc.maxError;
+    }
+    if(!accepted){n=g.y;tree=0u;finalError=0;for(uint i=0;i<n;++i)current[i]=original[i];}
+    for(uint step=0;!accepted&&step<3u&&n>1u;++step){
+        float best=1.0/0.0;uint bestI=4u,bestJ=4u;K bestK;
+        for(uint i=0;i<n;++i)for(uint j=i+1u;j<n;++j){
+            K merged;if(!fit(current[i],current[j],merged))continue;
+            K candidate[4];uint count=0;for(uint k=0;k<n;++k)if(k!=i&&k!=j)candidate[count++]=current[k];candidate[count++]=merged;
+            Term trial[15];uint trialN;field(candidate,count,trial,trialN);
+            vec4 own=squaredNorm(trial,trialN),cross=inner(reference,refN,trial,trialN);
+            vec4 relative=sqrt(max(vec4(0),signal+own-2.0*cross)/max(vec4(1e-20),signal));
+            float error=max(max(relative.x,relative.y),max(relative.z,relative.w));
+            if(finite1(error)&&error<=pc.maxError&&error<best){best=error;bestI=i;bestJ=j;bestK=merged;}
+        }
+        if(bestI==4u)break;
+        finalError=best;
+        tree|=(current[bestI].members|(current[bestJ].members<<4u))<<(8u*step);
+        uint count=0;for(uint k=0;k<n;++k)if(k!=bestI&&k!=bestJ)current[count++]=current[k];current[count++]=bestK;n=count;
+    }
+    if(owner){cache[cacheIndex].x=stableID+1u;cache[cacheIndex].y=tree;cache[cacheIndex].z=1u;memoryBarrierBuffer();atomicExchange(cache[cacheIndex].w,0u);}
+    uint fused=0;
+    for(uint i=0;i<n;++i){K k=current[i];if(bitCount(k.members)<2)continue;++fused;
+        uint lane=uint(findLSB(k.members)),index=g.x+lane;
+        for(uint j=0;j<g.y;++j)if(j!=lane&&(k.members&(1u<<j))!=0u){radii[g.x+j]=0;tiles[g.x+j]=0u;bbox[g.x+j]=uvec4(0);}
+        vec2 p=k.p+origin;float mid=(k.cov.x+k.cov.z)*0.5;
+        float radius=ceil(3.0*sqrt(mid+sqrt(max(0.1,mid*mid-k.det))));
+        uvec2 lo=uvec2(clamp((p-radius)/16.0,vec2(0),vec2(pc.gridX,pc.gridY)));
+        uvec2 hi=uvec2(clamp((p+radius+15.0)/16.0,vec2(0),vec2(pc.gridX,pc.gridY)));
+        radii[index]=int(min(radius,2147483520.0));depth[index]=k.z;xy[index]=p;rgb[index]=vec4(k.color,0);
+        conic[index]=vec4(inverseCov(k),k.alpha);bbox[index]=uvec4(lo,hi);tiles[index]=(hi.x-lo.x)*(hi.y-lo.y);
+    }
+    atomicAdd(counters[0],n);atomicAdd(counters[1],fused);atomicMax(counters[3],floatBitsToUint(finalError));
+}

@@ -48,6 +48,7 @@ layout(std430, set = 0, binding = 4) readonly buffer PointsXYBuf {
 
 // Output image: writes final blended color
 layout(set = 0, binding = 5, rgba8) uniform writeonly image2D outputImage;
+layout(std430, set = 0, binding = 6) readonly buffer DispatchState { uint state[]; };
 
 // ============================================================================
 // Push Constants (12 bytes)
@@ -56,12 +57,14 @@ layout(push_constant) uniform PushConstants {
     uint imageWidth;            // Viewport width in pixels
     uint imageHeight;           // Viewport height in pixels
     uint wireframe;             // Draw projected Gaussian ellipse contours
+    uint forceClear;
 } pc;
 
 // ============================================================================
 // Main
 // ============================================================================
 void main() {
+    if (pc.forceClear == 0u && state[1] != 0u) return;
     uint tileX = gl_WorkGroupID.x;
     uint tileY = gl_WorkGroupID.y;
     uint localX = gl_LocalInvocationID.x;
@@ -74,6 +77,8 @@ void main() {
         return; // Out of bounds
     }
 
+    if (pc.forceClear == 1u) { imageStore(outputImage, ivec2(pixel), vec4(0.0)); return; }
+
     // Tile grid dimensions
     uint tilesPerRow = (pc.imageWidth  + TILE_WIDTH  - 1u) / TILE_WIDTH;
     uint tileID = tileX + tileY * tilesPerRow;
@@ -82,7 +87,7 @@ void main() {
     // Note: tileRanges is indexed by tileID, not by a linear offset
     uvec2 range = tileRanges[tileID];
     uint start = range.x;
-    uint end   = range.y;
+    uint end   = pc.forceClear == 0u ? min(range.y, state[0]) : range.y;
 
     if (start >= end) {
         imageStore(outputImage, ivec2(pixel), vec4(0.0));
@@ -98,6 +103,7 @@ void main() {
     // Iterate over sorted Gaussians for this tile (front-to-back by depth)
     for (uint i = start; i < end; i++) {
         uint gaussIdx = sortedIds[i];
+        if (pc.forceClear == 0u && gaussIdx >= state[2]) continue;
 
         // Screen-space distance from pixel to Gaussian center
         vec2 xy = pointsXY[gaussIdx];

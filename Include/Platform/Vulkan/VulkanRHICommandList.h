@@ -80,6 +80,8 @@ using MonsterEngine::TMap;
                                  uint32 startInstanceLocation = 0) override;
         
         void dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) override;
+        void dispatchIndirect(IRHIBuffer* arguments, uint64_t byteOffset) override;
+        void writeGPUTimestamp(uint64_t frame, const std::string& label, bool begin) override;
         
         void copyBuffer(TSharedPtr<IRHIBuffer> dst, TSharedPtr<IRHIBuffer> src,
                         uint32 size, uint32 dstOffset = 0, uint32 srcOffset = 0) override;

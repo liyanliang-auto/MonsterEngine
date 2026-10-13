@@ -51,7 +51,10 @@ void FAsyncFileIO::Shutdown() {
     MR_LOG_INFO("Shutting down FAsyncFileIO...");
 
     // Signal shutdown
-    bShuttingDown = true;
+    {
+        std::scoped_lock lock(QueueMutex);
+        bShuttingDown = true;
+    }
     QueueCV.notify_all();
 
     // Wait for all worker threads to finish

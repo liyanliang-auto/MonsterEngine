@@ -1,0 +1,10 @@
+PASS T02-builder-valid
+PASS T02-builder-independent-report
+PASS T02-builder-no-overwrite
+PASS T02-builder-input-cap
+PASS T02-builder-unknown-option
+PASS T15-viewer-invalid-mode
+PASS T15-viewer-invalid-number
+PASS T15-viewer-resident-missing-scene
+PASS R1-builder-underbound-support
+SUMMARY total=9 passed=9 failed=0

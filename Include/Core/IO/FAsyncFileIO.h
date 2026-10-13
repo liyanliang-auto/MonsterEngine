@@ -99,7 +99,7 @@ private:
     std::mutex ActiveRequestsMutex;
 
     uint64 NextRequestID;
-    bool bShuttingDown;
+    std::atomic<bool> bShuttingDown;
     bool bInitialized;
 
     // Statistics

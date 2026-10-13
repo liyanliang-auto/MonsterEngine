@@ -20,6 +20,7 @@
 #include "RHI/RHIDefinitions.h"
 
 #include <cmath>
+#include <algorithm>
 
 namespace MonsterRender {
 namespace Splat {
@@ -55,7 +56,7 @@ bool createSortPipeline(RHI::IRHIDevice* device,
     }
 
     // Load SPIR-V
-    auto bytecodeVec = MonsterRender::ShaderCompiler::readFileBytes(spvPath);
+    auto bytecodeVec = MonsterRender::ShaderCompiler::readFileBytes(SplatShaderPath(spvPath.c_str()));
     if (bytecodeVec.empty())
     {
         MR_LOG(LogTemp, Error, "[SortPass] Failed to load SPIR-V: %s", spvPath.c_str());
@@ -87,9 +88,10 @@ bool createSortPipeline(RHI::IRHIDevice* device,
 }
 
 MonsterEngine::TSharedPtr<RHI::IRHIBuffer> createStorageBuffer(
-    RHI::IRHIDevice* device, uint32 size, const char* name)
+    RHI::IRHIDevice* device, uint64_t size, const char* name)
 {
     RHI::BufferDesc desc;
+    desc.dedicatedAllocation = true;
     desc.size = size;
     desc.usage = RHI::EResourceUsage::StorageBuffer | RHI::EResourceUsage::TransferDst | RHI::EResourceUsage::TransferSrc;
     desc.memoryUsage = RHI::EMemoryUsage::Default;
@@ -153,8 +155,8 @@ bool FSplatPrefixSumPass::initialize(RHI::IRHIDevice* device, uint32 maxElements
             return false;
     }
 
-    // Allocate ping-pong buffers (size rounded up to 256)
-    uint32 paddedSize = ((maxElements + 255u) / 256u) * 256u;
+    // Exact capacity: the shader guards padding invocations before any access.
+    uint64_t paddedSize = maxElements;
     m_bufferA = createStorageBuffer(device, paddedSize * sizeof(uint32), "PrefixSum_BufA");
     m_bufferB = createStorageBuffer(device, paddedSize * sizeof(uint32), "PrefixSum_BufB");
     if (!m_bufferA || !m_bufferB)
@@ -174,7 +176,7 @@ bool FSplatPrefixSumPass::initialize(RHI::IRHIDevice* device, uint32 maxElements
     m_descriptorSet->updateStorageBuffer(EPrefixSumBinding::BufferB, m_bufferB, 0, 0);
 
     m_bInitialized = true;
-    MR_LOG(LogTemp, Log, "[PrefixSum] Initialized for %u elements (padded: %u)", maxElements, paddedSize);
+    MR_LOG(LogTemp, Log, "[PrefixSum] Initialized for %u elements", maxElements);
     return true;
 }
 
@@ -190,7 +192,7 @@ uint32 FSplatPrefixSumPass::execute(RHI::IRHICommandList* cmdList, uint32 actual
         return 0;
     }
 
-    // Blelloch scan: ceil(log2(N)) iterations
+    // Inclusive Hillis-Steele scan: ceil(log2(N)) saturating iterations.
     uint32 numSteps = 0;
     {
         uint32 n = actualCount;
@@ -215,7 +217,7 @@ uint32 FSplatPrefixSumPass::execute(RHI::IRHICommandList* cmdList, uint32 actual
         cmdList->bindDescriptorSet(m_pipelineLayout, 0, m_descriptorSet);
         cmdList->pushConstants(m_pipelineLayout, RHI::EShaderStage::Compute, 0,
                                sizeof(FPrefixSumPushConstants), &pc);
-        cmdList->dispatch(numGroups, 1, 1);
+        if (numGroups) cmdList->dispatch(std::min(numGroups, 65535u), (numGroups + 65534u) / 65535u, 1);
 
         // Barrier: ensure previous dispatch writes are visible to next dispatch
         cmdList->resourceBarrier(); // Full pipeline barrier
@@ -224,7 +226,7 @@ uint32 FSplatPrefixSumPass::execute(RHI::IRHICommandList* cmdList, uint32 actual
     // If numSteps is odd, final result is in bufferB; otherwise in bufferA
     m_resultIsInB = (numSteps % 2 == 1);
 
-    MR_LOG(LogTemp, Log, "[PrefixSum] Completed %u steps for %u elements", numSteps, actualCount);
+    MR_LOG(LogTemp, Verbose, "[PrefixSum] Completed %u steps for %u elements", numSteps, actualCount);
     return actualCount;
 }
 
@@ -248,7 +250,10 @@ FSplatAssignKeysPass::~FSplatAssignKeysPass()
     m_setLayout.Reset();
 }
 
-bool FSplatAssignKeysPass::initialize(RHI::IRHIDevice* device, uint32 totalSortElements, uint32 gaussianCount)
+bool FSplatAssignKeysPass::initialize(RHI::IRHIDevice* device, uint32 totalSortElements, uint32 gaussianCount,
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> outputKeys,
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> outputValues,
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState)
 {
     using namespace RHI;
 
@@ -274,6 +279,7 @@ bool FSplatAssignKeysPass::initialize(RHI::IRHIDevice* device, uint32 totalSortE
             EAssignKeysBinding::SortKeys, EDescriptorType::StorageBuffer, EShaderStage::Compute));
         desc.bindings.Add(FDescriptorSetLayoutBinding(
             EAssignKeysBinding::SortValues, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+        desc.bindings.Add(FDescriptorSetLayoutBinding(EAssignKeysBinding::DispatchState, EDescriptorType::StorageBuffer, EShaderStage::Compute));
 
         m_setLayout = device->createDescriptorSetLayout(desc);
         if (!m_setLayout)
@@ -292,8 +298,8 @@ bool FSplatAssignKeysPass::initialize(RHI::IRHIDevice* device, uint32 totalSortE
     }
 
     // Allocate output buffers (key = 8 bytes, value = 4 bytes per entry)
-    m_sortKeys = createStorageBuffer(device, totalSortElements * sizeof(uint64), "AssignKeys_Keys");
-    m_sortValues = createStorageBuffer(device, totalSortElements * sizeof(uint32), "AssignKeys_Values");
+    m_sortKeys = outputKeys ? outputKeys : createStorageBuffer(device, uint64_t(totalSortElements) * sizeof(uint64), "AssignKeys_Keys");
+    m_sortValues = outputValues ? outputValues : createStorageBuffer(device, uint64_t(totalSortElements) * sizeof(uint32), "AssignKeys_Values");
     if (!m_sortKeys || !m_sortValues)
     {
         MR_LOG(LogTemp, Error, "[AssignKeys] Failed to create output buffers");
@@ -315,6 +321,10 @@ bool FSplatAssignKeysPass::initialize(RHI::IRHIDevice* device, uint32 totalSortE
         m_descriptorSets[i]->updateStorageBuffer(EAssignKeysBinding::SortValues, m_sortValues, 0, 0);
     }
 
+    m_dispatchState = dispatchState ? dispatchState : createStorageBuffer(device, ESplatDispatchState::Bytes, "Splat_DummyDispatchState");
+    if (!m_dispatchState) return false;
+    SetGPUDispatchState(m_dispatchState);
+    m_gpuCount = bool(dispatchState);
     m_bInitialized = true;
     MR_LOG(LogTemp, Log, "[AssignKeys] Initialized: %u Gaussians → %u sort entries",
            gaussianCount, totalSortElements);
@@ -354,7 +364,7 @@ void FSplatAssignKeysPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     auto& ds = m_descriptorSets[m_currentDsIndex];
 
     FAssignKeysPushConstants pc;
-    pc.gaussianCount = gaussianCount;
+    pc.gaussianCount = m_gpuCount ? UINT32_MAX : gaussianCount;
     pc.gridX = gridX;
     pc.gridY = gridY;
     pc.maxSortElements = m_sortElementCount;
@@ -365,7 +375,8 @@ void FSplatAssignKeysPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     cmdList->bindDescriptorSet(m_pipelineLayout, 0, ds);
     cmdList->pushConstants(m_pipelineLayout, RHI::EShaderStage::Compute, 0,
                            sizeof(FAssignKeysPushConstants), &pc);
-    cmdList->dispatch(numGroups, 1, 1);
+    if (m_gpuCount) cmdList->dispatchIndirect(m_dispatchState.Get(), ESplatDispatchState::AssignOffset);
+    else if (numGroups) cmdList->dispatch(std::min(numGroups, 65535u), (numGroups + 65534u) / 65535u, 1);
 }
 
 // ============================================================================
@@ -380,6 +391,8 @@ FSplatRadixSortPass::~FSplatRadixSortPass()
     m_valuesOdd.Reset();
     m_histogram.Reset();
     m_histPipeline.Reset();
+    m_offsetsPipeline.Reset();
+    m_offsetsPipelineLayout.Reset();
     m_histPipelineLayout.Reset();
     m_histDescriptorSetEven.Reset();
     m_histDescriptorSetOdd.Reset();
@@ -402,6 +415,7 @@ bool FSplatRadixSortPass::createHistogramPipeline(RHI::IRHIDevice* device)
             ERadixHistogramBinding::SortKeys, EDescriptorType::StorageBuffer, EShaderStage::Compute));
         desc.bindings.Add(FDescriptorSetLayoutBinding(
             ERadixHistogramBinding::Histogram, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+        desc.bindings.Add(FDescriptorSetLayoutBinding(ERadixHistogramBinding::DispatchState, EDescriptorType::StorageBuffer, EShaderStage::Compute));
 
         m_histSetLayout = device->createDescriptorSetLayout(desc);
         if (!m_histSetLayout)
@@ -414,6 +428,9 @@ bool FSplatRadixSortPass::createHistogramPipeline(RHI::IRHIDevice* device)
     FPushConstantRange pushRange(EShaderStage::Compute, 0, sizeof(FRadixSortPushConstants));
     if (!createSortPipeline(device, "Shaders/Splat/Sort/compiled/splat_radix_histogram.spv",
                             m_histSetLayout, pushRange, m_histPipelineLayout, m_histPipeline))
+        return false;
+    if (!createSortPipeline(device, "Shaders/Splat/Sort/compiled/splat_radix_offsets.spv",
+                            m_histSetLayout, pushRange, m_offsetsPipelineLayout, m_offsetsPipeline))
         return false;
 
     return true;
@@ -436,6 +453,7 @@ bool FSplatRadixSortPass::createScatterPipeline(RHI::IRHIDevice* device)
             ERadixScatterBinding::SortValuesOut, EDescriptorType::StorageBuffer, EShaderStage::Compute));
         desc.bindings.Add(FDescriptorSetLayoutBinding(
             ERadixScatterBinding::Histogram, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+        desc.bindings.Add(FDescriptorSetLayoutBinding(ERadixScatterBinding::DispatchState, EDescriptorType::StorageBuffer, EShaderStage::Compute));
 
         m_scatterSetLayout = device->createDescriptorSetLayout(desc);
         if (!m_scatterSetLayout)
@@ -453,7 +471,8 @@ bool FSplatRadixSortPass::createScatterPipeline(RHI::IRHIDevice* device)
     return true;
 }
 
-bool FSplatRadixSortPass::initialize(RHI::IRHIDevice* device, uint32 maxSortElements)
+bool FSplatRadixSortPass::initialize(RHI::IRHIDevice* device, uint32 maxSortElements,
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState)
 {
     using namespace RHI;
 
@@ -475,8 +494,8 @@ bool FSplatRadixSortPass::initialize(RHI::IRHIDevice* device, uint32 maxSortElem
         return false;
 
     // Allocate ping-pong buffers
-    uint32 keySize   = maxSortElements * sizeof(uint64);
-    uint32 valueSize = maxSortElements * sizeof(uint32);
+    uint64_t keySize   = uint64_t(maxSortElements) * sizeof(uint64);
+    uint64_t valueSize = uint64_t(maxSortElements) * sizeof(uint32);
 
     m_keysEven   = createStorageBuffer(device, keySize,   "RadixSort_KeysEven");
     m_keysOdd    = createStorageBuffer(device, keySize,   "RadixSort_KeysOdd");
@@ -523,6 +542,10 @@ bool FSplatRadixSortPass::initialize(RHI::IRHIDevice* device, uint32 maxSortElem
     m_scatterDescriptorSetOdd->updateStorageBuffer(ERadixScatterBinding::SortValuesOut, m_valuesEven, 0, 0);
     m_scatterDescriptorSetOdd->updateStorageBuffer(ERadixScatterBinding::Histogram,     m_histogram,   0, 0);
 
+    m_dispatchState = dispatchState ? dispatchState : createStorageBuffer(device, ESplatDispatchState::Bytes, "Splat_DummyDispatchState");
+    if (!m_dispatchState) return false;
+    SetGPUDispatchState(m_dispatchState);
+    m_gpuCount = bool(dispatchState);
     m_bInitialized = true;
     m_finalInEven = true;
     MR_LOG(LogTemp, Log, "[RadixSort] Initialized for %u elements (max %u WGs)",
@@ -530,11 +553,11 @@ bool FSplatRadixSortPass::initialize(RHI::IRHIDevice* device, uint32 maxSortElem
     return true;
 }
 
-bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numElements)
+bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numElements, uint32 keyBits)
 {
     using namespace RHI;
 
-    if (!m_bInitialized || !cmdList || numElements == 0 || numElements > m_maxElements)
+    if (!m_bInitialized || !cmdList || (keyBits != 48 && keyBits != 64) || (!m_gpuCount && (numElements == 0 || numElements > m_maxElements)))
         return false;
 
     // Compute workgroups for this element count
@@ -545,12 +568,14 @@ bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numEleme
     uint32 numHistWGs = numWGs;
 
     FRadixSortPushConstants pc;
-    pc.numElements = numElements;
+    pc.numElements = m_gpuCount ? UINT32_MAX : numElements;
     pc.numWorkgroups = numWGs;
     pc.numBlocksPerWorkgroup = RADIX_SORT_BLOCKS_PER_WG;
 
-    // 8 passes for 64-bit keys, each processing 8 bits
-    for (uint32 pass = 0; pass < 8; pass++)
+    // Callers may certify the high 16 bits are zero (tile IDs below 65536).
+    // Both supported pass counts end in the even buffer; all depth bits remain.
+    const uint32 passes = keyBits / 8;
+    for (uint32 pass = 0; pass < passes; pass++)
     {
         pc.shift = pass * 8U;
 
@@ -571,9 +596,19 @@ bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numEleme
         cmdList->bindDescriptorSet(m_histPipelineLayout, 0, histSet);
         cmdList->pushConstants(m_histPipelineLayout, EShaderStage::Compute, 0,
                                sizeof(FRadixSortPushConstants), &pc);
-        cmdList->dispatch(numHistWGs, 1, 1);
+        if (m_gpuCount) cmdList->dispatchIndirect(m_dispatchState.Get(), ESplatDispatchState::RadixOffset);
+        else cmdList->dispatch(numHistWGs, 1, 1);
 
         // Barrier: histogram writes must be visible to scatter
+        cmdList->resourceBarrier();
+
+        // Compute each bin/workgroup offset once, rather than having every
+        // scatter workgroup rescan every histogram row (quadratic work).
+        cmdList->setPipelineState(m_offsetsPipeline);
+        cmdList->bindDescriptorSet(m_offsetsPipelineLayout, 0, histSet);
+        cmdList->pushConstants(m_offsetsPipelineLayout, EShaderStage::Compute, 0,
+                               sizeof(FRadixSortPushConstants), &pc);
+        cmdList->dispatch(1, 1, 1);
         cmdList->resourceBarrier();
 
         // ---- Scatter Dispatch ----
@@ -581,15 +616,16 @@ bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numEleme
         cmdList->bindDescriptorSet(m_scatterPipelineLayout, 0, scatterSet);
         cmdList->pushConstants(m_scatterPipelineLayout, EShaderStage::Compute, 0,
                                sizeof(FRadixSortPushConstants), &pc);
-        cmdList->dispatch(numWGs, 1, 1);
+        if (m_gpuCount) cmdList->dispatchIndirect(m_dispatchState.Get(), ESplatDispatchState::RadixOffset);
+        else cmdList->dispatch(numWGs, 1, 1);
 
         // Barrier: scatter writes must be visible to next histogram
         cmdList->resourceBarrier();
     }
 
-    // After 4 even/odd passes, final result is in even buffers
+    // After an even number of LSD passes, final result is in even buffers.
     m_finalInEven = true;
-    MR_LOG(LogTemp, Log, "[RadixSort] Completed 4-pass sort on %u elements", numElements);
+    MR_LOG(LogTemp, Verbose, "[RadixSort] Completed %u-pass sort on %u elements", passes, numElements);
     return true;
 }
 
@@ -617,7 +653,8 @@ FSplatTileBoundariesPass::~FSplatTileBoundariesPass()
     m_setLayout.Reset();
 }
 
-bool FSplatTileBoundariesPass::initialize(RHI::IRHIDevice* device, uint32 numTiles, uint32 maxSortElements)
+bool FSplatTileBoundariesPass::initialize(RHI::IRHIDevice* device, uint32 numTiles, uint32 maxSortElements,
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState)
 {
     using namespace RHI;
 
@@ -636,6 +673,7 @@ bool FSplatTileBoundariesPass::initialize(RHI::IRHIDevice* device, uint32 numTil
             ETileBoundariesBinding::SortKeys, EDescriptorType::StorageBuffer, EShaderStage::Compute));
         desc.bindings.Add(FDescriptorSetLayoutBinding(
             ETileBoundariesBinding::TileRanges, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+        desc.bindings.Add(FDescriptorSetLayoutBinding(ETileBoundariesBinding::DispatchState, EDescriptorType::StorageBuffer, EShaderStage::Compute));
 
         m_setLayout = device->createDescriptorSetLayout(desc);
         if (!m_setLayout)
@@ -655,19 +693,14 @@ bool FSplatTileBoundariesPass::initialize(RHI::IRHIDevice* device, uint32 numTil
 
     // Allocate tile ranges buffer (pre-cleared to zero)
     // Tiles with no entries remain as (0,0)
-    uint32 rangesSize = numTiles * 2 * sizeof(uint32); // uvec2 per tile
+    uint64_t rangesSize = uint64_t(numTiles) * 2 * sizeof(uint32); // uvec2 per tile
     {
-        // Create zero-filled initial data
-        TArray<uint32> zeros;
-        zeros.SetNum(numTiles * 2);
-        memset(zeros.GetData(), 0, rangesSize);
 
         BufferDesc desc;
         desc.size = rangesSize;
         desc.usage = EResourceUsage::StorageBuffer | EResourceUsage::TransferDst;
         desc.memoryUsage = EMemoryUsage::Default;
-        desc.initialData = zeros.GetData();
-        desc.initialDataSize = rangesSize;
+        desc.dedicatedAllocation = true;
         desc.debugName = "TileBoundaries_Ranges";
 
         m_tileRanges = device->createBuffer(desc);
@@ -693,6 +726,10 @@ bool FSplatTileBoundariesPass::initialize(RHI::IRHIDevice* device, uint32 numTil
             ETileBoundariesBinding::TileRanges, m_tileRanges, 0, 0);
     }
 
+    m_dispatchState = dispatchState ? dispatchState : createStorageBuffer(device, ESplatDispatchState::Bytes, "Splat_DummyDispatchState");
+    if (!m_dispatchState) return false;
+    SetGPUDispatchState(m_dispatchState);
+    m_gpuCount = bool(dispatchState);
     m_bInitialized = true;
     MR_LOG(LogTemp, Log, "[TileBounds] Initialized: %u tiles", numTiles);
     return true;
@@ -700,7 +737,7 @@ bool FSplatTileBoundariesPass::initialize(RHI::IRHIDevice* device, uint32 numTil
 
 void FSplatTileBoundariesPass::execute(RHI::IRHICommandList* cmdList, uint32 numSortElements)
 {
-    if (!m_bInitialized || !cmdList || numSortElements == 0)
+    if (!m_bInitialized || !cmdList)
         return;
 
     // Toggle per-frame descriptor set index
@@ -722,14 +759,14 @@ void FSplatTileBoundariesPass::execute(RHI::IRHICommandList* cmdList, uint32 num
         cmdList->bindDescriptorSet(m_pipelineLayout, 0, ds);
         cmdList->pushConstants(m_pipelineLayout, RHI::EShaderStage::Compute, 0,
                                sizeof(FTileBoundariesPushConstants), &clearPc);
-        cmdList->dispatch(clearGroups, 1, 1);
+        cmdList->dispatch(std::min(clearGroups, 65535u), (clearGroups + 65534u) / 65535u, 1);
         // Ensure the clear's writes are visible before boundary detection reads/writes.
         cmdList->resourceBarrier();
     }
 
     // ---- Boundary detection (mode 0) ----
     FTileBoundariesPushConstants pc;
-    pc.numSortElements = numSortElements;
+    pc.numSortElements = m_gpuCount ? UINT32_MAX : numSortElements;
     pc.numTiles = m_numTiles;
     pc.mode = 0u;
 
@@ -739,11 +776,30 @@ void FSplatTileBoundariesPass::execute(RHI::IRHICommandList* cmdList, uint32 num
     cmdList->bindDescriptorSet(m_pipelineLayout, 0, ds);
     cmdList->pushConstants(m_pipelineLayout, RHI::EShaderStage::Compute, 0,
                            sizeof(FTileBoundariesPushConstants), &pc);
-    cmdList->dispatch(numGroups, 1, 1);
+    if (m_gpuCount) cmdList->dispatchIndirect(m_dispatchState.Get(), ESplatDispatchState::BoundaryOffset);
+    else if (numGroups) cmdList->dispatch(std::min(numGroups, 65535u), (numGroups + 65534u) / 65535u, 1);
 
-    MR_LOG(LogTemp, Log, "[TileBounds] Dispatched clear(%u groups) + boundary(%u groups) for %u sort entries",
+    MR_LOG(LogTemp, Verbose, "[TileBounds] Dispatched clear(%u groups) + boundary(%u groups) for %u sort entries",
            (m_numTiles + 255u) / 256u, numGroups, numSortElements);
 }
 
+
+void FSplatAssignKeysPass::SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state) {
+    m_dispatchState = state; m_gpuCount = bool(state);
+    for (auto& ds : m_descriptorSets) if (ds && state)
+        ds->updateStorageBuffer(EAssignKeysBinding::DispatchState, state, 0, 0);
+}
+void FSplatRadixSortPass::SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state) {
+    m_dispatchState = state; m_gpuCount = bool(state);
+    for (auto ds : {m_histDescriptorSetEven, m_histDescriptorSetOdd}) if (ds && state)
+        ds->updateStorageBuffer(ERadixHistogramBinding::DispatchState, state, 0, 0);
+    for (auto ds : {m_scatterDescriptorSetEven, m_scatterDescriptorSetOdd}) if (ds && state)
+        ds->updateStorageBuffer(ERadixScatterBinding::DispatchState, state, 0, 0);
+}
+void FSplatTileBoundariesPass::SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state) {
+    m_dispatchState = state; m_gpuCount = bool(state);
+    for (auto& ds : m_descriptorSets) if (ds && state)
+        ds->updateStorageBuffer(ETileBoundariesBinding::DispatchState, state, 0, 0);
+}
 } // namespace Splat
 } // namespace MonsterRender

@@ -9,7 +9,8 @@ layout(location = 0) out vec4 outColor;
 
 void main()
 {
-    // Vulkan: flip Y to match swapchain coordinate system
-    vec2 uv = vec2(fragUV.x, 1.0 - fragUV.y);
-    outColor = texture(splatOutput, uv);
+    // VulkanPendingState already uses a negative-height viewport. A second
+    // fragment UV flip cancels it and displays the compute image upside down
+    // for the source-camera convention used by the Bicycle scene.
+    outColor = texture(splatOutput, fragUV);
 }

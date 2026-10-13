@@ -1,0 +1,44 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=32) in;
+#include "split_fusion_common.glsl"
+
+// L_old L_checkpoint^-1, with lower triangular covariance Cholesky factors.
+// Kernel coordinates are relative to the group's first current source.
+vec3 affine(K oldK,K nowK){float a=sqrt(oldK.cov.x),b=oldK.cov.y/a,c=sqrt(oldK.cov.z-b*b);float u=sqrt(nowK.cov.x),v=nowK.cov.y/u,w=sqrt(nowK.cov.z-v*v);return vec3(u/a,(v-w*b/c)/a,w/c);}
+K warp(K k,vec3 f){vec2 p=k.p;vec3 c=k.cov;k.p=vec2(f.x*p.x,f.y*p.x+f.z*p.y);k.cov=vec3(f.x*f.x*c.x,f.x*(f.y*c.x+f.z*c.y),f.y*f.y*c.x+2*f.y*f.z*c.y+f.z*f.z*c.z);k.det=k.cov.x*k.cov.z-k.cov.y*k.cov.y;return k;}
+vec4 delta(K a,K b){
+    // Noncancelling Hellinger form of Gaussian L2. 1-exp(-t)<=min(1,t)
+    // makes the mean contribution a conservative bound without an exponential.
+    vec3 m=(a.cov+b.cov)*.5,d=(a.cov-b.cov)*.5;float detM=m.x*m.z-m.y*m.y;
+    float tr=(m.z*d.x+m.x*d.z-2*m.y*d.y)/detM,detH=(d.x*d.z-d.y*d.y)/detM;
+    float e=tr*tr-2*detH-detH*detH;
+    if(!finite1(e)||e>1.000001||e<-.000001)return vec4(1.0/0.0);
+    e=clamp(e,0,1);float s=sqrt(1-e),shape=e/((1+s)*(1+sqrt(s)));
+    vec2 p=a.p-b.p;float mean=min(1.0,max(0.0,.25*dot(p,mul(vec3(m.z,-m.y,m.x)/detM,p))));
+    float loss=shape+(1-shape)*mean;
+    float na=sqrt(.5*TAU*sqrt(a.det)),nb=sqrt(.5*TAU*sqrt(b.det));
+    vec4 ca=a.alpha*vec4(a.color,1)*na,cb=b.alpha*vec4(b.color,1)*nb;
+    // Roundoff allowance is added to the squared bound, never subtracted.
+    return sqrt(max(vec4(0),(ca-cb)*(ca-cb)+2*ca*cb*(loss+2e-7)));
+}
+vec4 drift(K nowK[4],uint n,uint address,vec3 f){vec4 sum=vec4(0);for(uint i=0;i<n;++i){K oldK=loadK(address+i*3u);vec4 difference=delta(warp(oldK,f),nowK[i]);vec3 after=vec3(0);for(uint j=0;j<n;++j)if(oldK.z<loadK(address+j*3u).z||(oldK.z==loadK(address+j*3u).z&&i<j))after=max(after,max(loadK(address+j*3u).color,nowK[j].color));sum+=difference+vec4(after,0)*difference.w;}return sum;}
+void main(){
+ uint id=(gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x)*32u+gl_LocalInvocationID.x;if(id>=pc.groupCount)return;
+ uvec2 g=interval(id);if(g.x>=pc.sourceCount||g.y>pc.sourceCount-g.x)return;
+ uint stable=groups[id].y;bool owner=stable!=0xffffffffu&&atomicCompSwap(checkpoint[base(id)].w,0u,1u)==0u;
+ if(owner)memoryBarrierBuffer();
+ K original[4],current[4];bool valid=true;vec2 origin=xy[g.x];for(uint i=0;i<g.y;++i){valid=valid&&live(g.x+i);original[i]=readSource(g.x+i,i,origin);valid=valid&&validK(original[i]);}
+ if(!valid){invalidate(id,owner);return;}
+ if(!owner||checkpoint[base(id)].x!=stable+1u){enqueue(id,owner,false);return;}
+ uint address=base(id),tree=checkpoint[address].y,n;
+ if(!orderMatches(original,g.y,address+3u)||!refit(original,g.y,tree,current,n)||!orderMatches(current,n,address+15u)){invalidate(id,owner);return;}
+ if(tree==0u){if(((stable+pc.frame)&31u)==0u)enqueue(id,owner,false);else release(id,owner);return;}
+ if(pc.frame-checkpoint[address].z>=32u){enqueue(id,owner,true);return;}
+ vec3 f=affine(loadK(address+3u),original[0]);float scale=sqrt(f.x*f.z);
+ vec4 od=drift(original,g.y,address+3u,f),cd=drift(current,n,address+15u,f);
+ vec4 norm=uintBitsToFloat(checkpoint[address+1u]),error=uintBitsToFloat(checkpoint[address+2u]);
+ float bound=relative(scale*error+od+cd,scale*norm-od);
+ if(finite1(bound)&&bound<=pc.maxError&&emit(id,current,n)){atomicAdd(counters[8],1u);atomicMax(counters[3],floatBitsToUint(bound));release(id,owner);return;}
+ atomicAdd(counters[9],1u);enqueue(id,owner,true);
+}

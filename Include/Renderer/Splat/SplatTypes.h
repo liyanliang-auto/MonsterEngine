@@ -13,9 +13,27 @@
 
 #include "Core/CoreTypes.h"
 #include "RHI/RHIDefinitions.h"
+#include <cstdlib>
+#include <string>
 
 namespace MonsterRender {
 namespace Splat {
+
+/** Resolve generated shader output without copying binaries into the source tree. */
+inline std::string SplatShaderPath(const char* fallback) {
+    const char* directory = std::getenv("MONSTER_SPLAT_SHADER_DIR");
+#ifdef MONSTER_SPLAT_DEFAULT_SHADER_DIR
+    if (!directory || !*directory) directory = MONSTER_SPLAT_DEFAULT_SHADER_DIR;
+#endif
+    if (!directory || !*directory) return fallback;
+    const std::string path(fallback);
+    return std::string(directory) + "/" + path.substr(path.find_last_of("/\\") + 1);
+}
+/** Shared GPU count/dispatch state layout; indirect triples are four-byte aligned. */
+namespace ESplatDispatchState {
+    constexpr uint32 Bytes = 128;
+    constexpr uint32 AssignOffset = 32, RadixOffset = 44, BoundaryOffset = 56, RenderOffset = 68;
+}
 
 /** Controls applied to both preprocess and blend passes each frame. */
 struct FSplatRenderSettings
@@ -25,6 +43,7 @@ struct FSplatRenderSettings
     bool distanceCulling = true;
     bool wireframe = false;
     float32 gaussianScale = 1.0f;
+    float32 fusionRelativeRGBAError = 0.4f; ///< Explicit continuous per-channel L2 tolerance; image gates are separate.
 };
 
 // ============================================================================
@@ -61,6 +80,9 @@ struct alignas(16) FPreprocessPushConstants
     uint32 culling;           // 0 = disabled, 1 = enabled
 
     float32 gaussianScale;    // Multiplier for 3D covariance scale
+    uint32 useActiveIndices = 0; ///< Source indirection enabled.
+    uint32 sourceCapacity = 0; ///< Source-buffer index bound.
+    uint32 shStride = 0; ///< Coefficients per Gaussian, excluding RGB factor.
 };
 
 static_assert(sizeof(FPreprocessPushConstants) == 32, "FPreprocessPushConstants must be 32 bytes");
@@ -78,7 +100,8 @@ namespace EInputBinding
     constexpr uint32 Opacities      = 3;   // storage buffer: float[]
     constexpr uint32 SHCoefficients = 4;   // storage buffer: float[]
     constexpr uint32 Camera         = 5;   // uniform buffer: FCameraUniforms
-    constexpr uint32 Count          = 6;
+    constexpr uint32 ActiveIndices  = 6;
+    constexpr uint32 Count          = 7;
 }
 
 /** Set 1: Preprocess output buffers (7 bindings) */

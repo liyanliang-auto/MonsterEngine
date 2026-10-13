@@ -178,7 +178,8 @@ namespace MonsterRender::RHI::Vulkan {
         m_device->setImageInFlightFence(imageIndex, inFlightFence);
         // Reset the in-flight fence (the one we just waited on) for this frame's submit
         if (inFlightFence != VK_NULL_HANDLE) {
-            functions.vkResetFences(device, 1, &inFlightFence);
+            if (!m_device->prepareSubmissionFenceReset(inFlightFence)) return false;
+            if (functions.vkResetFences(device, 1, &inFlightFence) != VK_SUCCESS) return false;
         }
 
         m_device->setCurrentImageIndex(imageIndex);
@@ -212,20 +213,20 @@ namespace MonsterRender::RHI::Vulkan {
 
     }
 
-    void FVulkanCommandListContext::submitCommands(
+    bool FVulkanCommandListContext::submitCommands(
         VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
         VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount) {
         if (m_manager && m_device) {
             // Use the in-flight fence for this frame to enable proper frame synchronization
             uint32 currentFrame = m_device->getCurrentFrame();
             VkFence inFlightFence = m_device->getInFlightFence(currentFrame);
-            m_manager->submitActiveCmdBufferWithFence(
+            return m_manager->submitActiveCmdBufferWithFence(
                 waitSemaphores, waitSemaphoreCount,
                 signalSemaphores, signalSemaphoreCount,
                 inFlightFence
             );
         }
-
+        return false;
     }
 
     void FVulkanCommandListContext::endRenderPass() {

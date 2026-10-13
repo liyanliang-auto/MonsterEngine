@@ -1,0 +1,30 @@
+// Copyright Monster Engine. All Rights Reserved.
+// Convert histogram rows to exclusive global scatter offsets once per radix pass.
+#version 450
+layout(local_size_x = 256) in;
+layout(std430, set = 0, binding = 1) buffer Histogram { uint histograms[]; };
+layout(std430, set = 0, binding = 2) readonly buffer DispatchState { uint state[]; };
+layout(push_constant) uniform PushConstants {
+    uint numElements; uint shift; uint numWorkgroups; uint numBlocks;
+} pc;
+shared uint totals[256];
+void main() {
+    bool gpuCount = pc.numElements == 0xffffffffu;
+    if (gpuCount && state[1] != 0u) return;
+    uint groups = gpuCount ? state[3] : pc.numWorkgroups;
+    uint bin = gl_LocalInvocationID.x;
+    uint sum = 0u;
+    // Each invocation exclusively owns one column, so in-place writes do not
+    // race other columns. Keep original values before replacing each row.
+    for (uint row = 0u; row < groups; ++row) {
+        uint index = row * 256u + bin;
+        uint count = histograms[index];
+        histograms[index] = sum;
+        sum += count;
+    }
+    totals[bin] = sum;
+    barrier();
+    uint base = 0u;
+    for (uint previous = 0u; previous < bin; ++previous) base += totals[previous];
+    for (uint row = 0u; row < groups; ++row) histograms[row * 256u + bin] += base;
+}

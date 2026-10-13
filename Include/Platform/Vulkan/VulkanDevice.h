@@ -6,6 +6,7 @@
 #include "RHI/RHI.h"
 
 #include <vector>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -99,7 +100,9 @@ namespace MonsterRender::RHI::Vulkan {
         ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
         
         TSharedPtr<IRHIBuffer> createBuffer(const BufferDesc& desc) override;
+        bool getBufferAllocationRequirements(const BufferDesc& desc, uint64& bytes, uint64& alignment) const override;
         TSharedPtr<IRHITexture> createTexture(const TextureDesc& desc) override;
+        bool getTextureAllocationRequirements(const TextureDesc& desc, uint64& bytes, uint64& alignment) const override;
         TSharedPtr<IRHIVertexShader> createVertexShader(TSpan<const uint8> bytecode) override;
         TSharedPtr<IRHIPixelShader> createPixelShader(TSpan<const uint8> bytecode) override;
         TSharedPtr<IRHIComputeShader> createComputeShader(TSpan<const uint8> bytecode) override;
@@ -134,6 +137,21 @@ namespace MonsterRender::RHI::Vulkan {
         IRHICommandList* getImmediateCommandList() override;
         
         void waitForIdle() override;
+        FGPUCompletionToken getLastSubmissionToken() const override;
+        bool isSubmissionComplete(FGPUCompletionToken token) const override;
+        bool supportsSubmissionCompletion() const override { return m_device != VK_NULL_HANDLE; }
+        bool supportsDispatchIndirect() const override { return m_device != VK_NULL_HANDLE; }
+        bool supportsGPUTimestamps() const override;
+        std::vector<FRHIGPUTimestampSample> pollGPUTimestamps() override;
+        /** Called only after successful graphics queue submission. */
+        void trackSubmission(VkCommandBuffer commandBuffer, VkFence fence);
+        /** Must be called before resetting or destroying any submission fence. */
+        bool prepareSubmissionFenceReset(VkFence fence);
+        /** Records query commands owned by this native command buffer. */
+        void recordGPUTimestamp(VkCommandBuffer commandBuffer, uint64_t frame,
+                                const std::string& label, bool begin);
+        /** Discard query resources for an unsubmitted recording before reset. */
+        void discardUnsubmittedTimestamps(VkCommandBuffer commandBuffer);
         void present() override;
         
         void getMemoryStats(uint64& usedBytes, uint64& availableBytes) override;
@@ -157,6 +175,12 @@ namespace MonsterRender::RHI::Vulkan {
         VkCommandPool getCommandPool() const { return m_commandPool; }
         VkSurfaceKHR getSurface() const { return m_surface; }
         VkSwapchainKHR getSwapchain() const { return m_swapchain; }
+        /** Recreate presentation with uncapped IMMEDIATE preferred when VSync is disabled. */
+        bool ConfigurePresentationVSync(bool enabled);
+        /** Mode recorded by the last configured/recreated swapchain. */
+        VkPresentModeKHR GetConfiguredPresentMode() const { return m_configuredPresentMode; }
+        /** Teardown-only GPU-idle proof followed by draining retired backing allocations. */
+        bool DrainCompletedDestructions();
         uint32 getGraphicsQueueFamilyIndex() const { return m_graphicsQueueFamily.familyIndex; }
         
         // UE5-style per-frame command buffer management
@@ -241,6 +265,24 @@ namespace MonsterRender::RHI::Vulkan {
         bool recreateSwapchain(uint32 newWidth, uint32 newHeight);
         
     private:
+        struct SubmissionRecord { uint64_t value; VkFence fence; };
+        struct TimestampRecord {
+            VkCommandBuffer commandBuffer;
+            VkQueryPool pool;
+            uint64_t frame;
+            std::string label;
+            uint64_t submission = 0;
+            bool ended = false;
+        };
+        void refreshSubmissionCompletionLocked() const;
+        void destroyGPUTimestampResources();
+        mutable std::mutex m_submissionMutex;
+        mutable std::vector<SubmissionRecord> m_submissions;
+        uint64_t m_lastSubmission = 0;
+        mutable uint64_t m_completedSubmission = 0;
+        std::vector<TimestampRecord> m_timestampRecords;
+        std::vector<VkQueryPool> m_availableTimestampPools;
+        uint32_t m_timestampValidBits = 0;
         // Initialization helper functions
         bool createInstance(const RHICreateInfo& createInfo);
         bool setupDebugMessenger();
@@ -290,6 +332,8 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Swapchain - use std::vector for Vulkan API compatibility
         VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
+        bool m_presentationVSync = true;
+        VkPresentModeKHR m_configuredPresentMode = VK_PRESENT_MODE_MAX_ENUM_KHR;
         std::vector<VkImage> m_swapchainImages;
         std::vector<VkImageView> m_swapchainImageViews;
         VkFormat m_swapchainImageFormat = VK_FORMAT_UNDEFINED;

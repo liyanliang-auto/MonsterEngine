@@ -25,6 +25,16 @@ namespace MonsterRender::RHI::Vulkan {
         destroy();
     }
     
+    bool VulkanTexture::getAllocationInfo(FBufferAllocationInfo& info) const {
+        info = {};
+        if (!m_image || !m_deviceMemory) return false;
+        info.reservationBytes = m_usesMemoryManager ? m_allocation.Size : m_memoryAllocateInfo.allocationSize;
+        info.backingBytes = m_usesMemoryManager && m_allocation.Pool
+            ? m_allocation.Pool->GetPoolSize() : info.reservationBytes;
+        info.backingId = (uint64)m_deviceMemory;
+        return info.reservationBytes > 0 && info.backingBytes >= info.reservationBytes;
+    }
+
     bool VulkanTexture::initialize() {
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getDevice();
@@ -71,7 +81,7 @@ namespace MonsterRender::RHI::Vulkan {
             request.MemoryTypeBits = memRequirements.memoryTypeBits;
             request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
             request.PreferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.bDedicated = (memRequirements.size >= 16 * 1024 * 1024);  // 16MB+ use dedicated
+            request.bDedicated = m_desc.dedicatedAllocation || (memRequirements.size >= 16 * 1024 * 1024);  // 16MB+ use dedicated
             
             if (memoryManager->Allocate(request, m_allocation)) {
                 m_deviceMemory = m_allocation.DeviceMemory;

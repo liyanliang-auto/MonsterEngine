@@ -1,0 +1,6 @@
+// Copyright Monster Engine. All Rights Reserved.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=128) in;
+#include "split_fusion_common.glsl"
+void main(){uint i=(gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x)*128u+gl_LocalInvocationID.x;if(i<pc.cacheSlots)checkpoint[i*27u]=uvec4(0);}

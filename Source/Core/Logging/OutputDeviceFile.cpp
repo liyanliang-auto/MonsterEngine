@@ -54,11 +54,11 @@ void FAsyncWriter::Flush() {
     }
 
     // Request flush and wait for completion
+    std::unique_lock<std::mutex> lock(m_queueMutex);
     m_bFlushRequested.store(true, std::memory_order_release);
     m_queueCV.notify_one();
 
-    // Wait for flush to complete
-    std::unique_lock<std::mutex> lock(m_queueMutex);
+    // The predicate and notifications share the wait mutex to prevent lost wakes.
     m_flushCV.wait(lock, [this]() {
         return !m_bFlushRequested.load(std::memory_order_acquire) || 
                m_bStopRequested.load(std::memory_order_acquire);
@@ -66,11 +66,15 @@ void FAsyncWriter::Flush() {
 }
 
 void FAsyncWriter::Stop() {
-    if (m_bStopRequested.exchange(true, std::memory_order_acq_rel)) {
-        return; // Already stopped
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        if (m_bStopRequested.exchange(true, std::memory_order_acq_rel)) {
+            return; // Already stopped
+        }
     }
 
     m_queueCV.notify_one();
+    m_flushCV.notify_all();
 
     if (m_writerThread.joinable()) {
         m_writerThread.join();
@@ -112,9 +116,9 @@ void FAsyncWriter::WriterThreadFunc() {
         if (m_bFlushRequested.load(std::memory_order_acquire)) {
             lock.unlock();
             m_file.flush();
+            lock.lock();
             m_bFlushRequested.store(false, std::memory_order_release);
             m_flushCV.notify_all();
-            lock.lock();
         }
     }
 }

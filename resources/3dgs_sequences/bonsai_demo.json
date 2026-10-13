@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "timeUnit": "seconds",
+  "fpsSuggestion": 30,
+  "keyframes": [
+    {"time": 0, "positionX": 0, "positionY": 0, "positionZ": 0, "yaw": 80, "pitch": -10, "roll": 0, "fov": 60, "near": 0.1, "far": 1000, "distanceCulling": true, "wireframe": false, "gaussianScale": 1},
+    {"time": 2, "positionX": 0.45, "positionY": 0.08, "positionZ": -0.3, "yaw": 76, "pitch": -8, "roll": 1, "fov": 54, "near": 0.1, "far": 1000, "distanceCulling": true, "wireframe": false, "gaussianScale": 1.08},
+    {"time": 4, "positionX": -0.3, "positionY": 0.1, "positionZ": 0.25, "yaw": 84, "pitch": -11, "roll": -1, "fov": 68, "near": 0.15, "far": 900, "distanceCulling": false, "wireframe": true, "gaussianScale": 1.15},
+    {"time": 6, "positionX": 0, "positionY": 0, "positionZ": 0, "yaw": 80, "pitch": -10, "roll": 0, "fov": 60, "near": 0.1, "far": 1000, "distanceCulling": true, "wireframe": false, "gaussianScale": 1}
+  ]
+}

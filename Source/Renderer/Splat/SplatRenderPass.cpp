@@ -4,6 +4,7 @@
  */
 
 #include "Renderer/Splat/SplatRenderPass.h"
+#include "Renderer/Splat/SplatTypes.h"
 #include "Core/Logging/LogMacros.h"
 #include "Core/ShaderCompiler.h"
 #include "RHI/IRHIDevice.h"
@@ -33,7 +34,7 @@ namespace MonsterRender::Splat
             using namespace RHI;
 
             // Load SPIR-V bytecode
-            auto bytecodeVec = MonsterRender::ShaderCompiler::readFileBytes(spirvPath);
+            auto bytecodeVec = MonsterRender::ShaderCompiler::readFileBytes(SplatShaderPath(spirvPath.c_str()));
             if (bytecodeVec.empty())
             {
                 MR_LOG(LogTemp, Error, "[SplatRender] Failed to read SPIR-V: %s", spirvPath.c_str());
@@ -108,6 +109,7 @@ namespace MonsterRender::Splat
         desc.format   = EPixelFormat::R8G8B8A8_UNORM;
         desc.usage    = EResourceUsage::UnorderedAccess | EResourceUsage::ShaderResource |
                         EResourceUsage::TransferSrc;
+        desc.dedicatedAllocation = true;
         desc.debugName = "SplatRender_Output";
 
         m_outputTexture = device->createTexture(desc);
@@ -142,6 +144,7 @@ namespace MonsterRender::Splat
                 ERenderBinding::PointsXY,     EDescriptorType::StorageBuffer,  EShaderStage::Compute));
             desc.bindings.Add(FDescriptorSetLayoutBinding(
                 ERenderBinding::OutputImage,  EDescriptorType::StorageTexture, EShaderStage::Compute));
+            desc.bindings.Add(FDescriptorSetLayoutBinding(ERenderBinding::DispatchState, EDescriptorType::StorageBuffer, EShaderStage::Compute));
 
             m_setLayout = device->createDescriptorSetLayout(desc);
             if (!m_setLayout)
@@ -166,7 +169,8 @@ namespace MonsterRender::Splat
         return true;
     }
 
-    bool FSplatRenderPass::initialize(RHI::IRHIDevice* device, uint32 width, uint32 height)
+    bool FSplatRenderPass::initialize(RHI::IRHIDevice* device, uint32 width, uint32 height,
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState)
     {
         using namespace RHI;
 
@@ -195,6 +199,16 @@ namespace MonsterRender::Splat
             m_descriptorSets[i]->updateStorageImage(ERenderBinding::OutputImage, m_outputTexture);
         }
 
+        if (!dispatchState) {
+            BufferDesc stateDesc;
+            stateDesc.size = ESplatDispatchState::Bytes;
+            stateDesc.usage = EResourceUsage::StorageBuffer;
+            stateDesc.dedicatedAllocation = true;
+            m_dispatchState = device->createBuffer(stateDesc);
+            if (!m_dispatchState) return false;
+            SetGPUDispatchState(m_dispatchState);
+            m_gpuCount = false;
+        } else SetGPUDispatchState(dispatchState);
         m_bInitialized = true;
         MR_LOG(LogTemp, Log, "[SplatRender] Initialized for %ux%u", width, height);
         return true;
@@ -243,7 +257,13 @@ namespace MonsterRender::Splat
             m_descriptorSets[nextIndex]->updateStorageBuffer(ERenderBinding::PointsXY, m_pointsXYBuf, 0, 0);
     }
 
-    void FSplatRenderPass::execute(RHI::IRHICommandList* cmdList)
+    void FSplatRenderPass::SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state) {
+        m_dispatchState = state; m_gpuCount = bool(state);
+        for (auto& ds : m_descriptorSets) if (ds && state)
+            ds->updateStorageBuffer(ERenderBinding::DispatchState, state, 0, 0);
+    }
+
+    void FSplatRenderPass::execute(RHI::IRHICommandList* cmdList, bool forceClear)
     {
         using namespace RHI;
 
@@ -259,6 +279,7 @@ namespace MonsterRender::Splat
         pc.imageWidth  = m_imageWidth;
         pc.imageHeight = m_imageHeight;
         pc.wireframe = m_wireframe ? 1u : 0u;
+        pc.forceClear = forceClear ? 1u : (m_gpuCount ? 0u : 2u);
 
         // Dispatch groups: one 16x16 workgroup per tile
         uint32 tilesX = (m_imageWidth  + 15u) / 16u;
@@ -268,9 +289,11 @@ namespace MonsterRender::Splat
         cmdList->bindDescriptorSet(m_pipelineLayout, 0, ds);
         cmdList->pushConstants(m_pipelineLayout, EShaderStage::Compute, 0,
                                sizeof(FRenderPushConstants), &pc);
-        cmdList->dispatch(tilesX, tilesY, 1);
+        if (m_gpuCount && !forceClear)
+            cmdList->dispatchIndirect(m_dispatchState.Get(), ESplatDispatchState::RenderOffset);
+        else cmdList->dispatch(tilesX, tilesY, 1);
 
-        MR_LOG(LogTemp, Log, "[SplatRender] Dispatched %ux%u WG (%u tiles)",
+        MR_LOG(LogTemp, Verbose, "[SplatRender] Dispatched %ux%u WG (%u tiles)",
                tilesX, tilesY, tilesX * tilesY);
 #if 0  // Set to 1 to re-enable per-frame stderr render diagnostics
         fprintf(stderr, "[STDERR] SplatRender: dispatch %ux%u WG (%u tiles) img=%ux%u dsIdx=%u\n",

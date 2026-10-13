@@ -5,8 +5,16 @@
 #include "Core/Log.h"
 #include <new>
 #include <algorithm>
+#include <limits>
 
 namespace MonsterRender {
+
+namespace {
+struct FLargeAllocationHeader {
+    void* Base;
+    SIZE_T Size;
+};
+}
 
 // Static TLS cache
 thread_local FMallocBinned2::FThreadCache* FMallocBinned2::TLSCache = nullptr;
@@ -39,14 +47,24 @@ FMallocBinned2::~FMallocBinned2() {
 void* FMallocBinned2::Malloc(SIZE_T Size, uint32 Alignment) {
     if (Size == 0) Size = 1;
 
-    // Large allocations fall back to standard malloc for debug heap compatibility
-    if (Size > SMALL_BIN_MAX_SIZE) {
-        (void)Alignment; // Alignment ignored for large allocations with malloc
-        return std::malloc(Size);
+    Alignment = std::max<uint32>(Alignment, 16);
+    if ((Alignment & (Alignment - 1)) != 0) return nullptr;
+
+    // Keep the original allocation and size immediately before the aligned address.
+    if (Size > SMALL_BIN_MAX_SIZE || Alignment > SMALL_BIN_MAX_SIZE) {
+        const SIZE_T overhead = sizeof(FLargeAllocationHeader) + Alignment - 1;
+        if (Size > std::numeric_limits<SIZE_T>::max() - overhead) return nullptr;
+        void* base = std::malloc(Size + overhead);
+        if (!base) return nullptr;
+        const SIZE_T address = (reinterpret_cast<SIZE_T>(base) + sizeof(FLargeAllocationHeader) + Alignment - 1) & ~(SIZE_T(Alignment) - 1);
+        auto* header = reinterpret_cast<FLargeAllocationHeader*>(address) - 1;
+        header->Base = base;
+        header->Size = Size;
+        return reinterpret_cast<void*>(address);
     }
 
     // Small allocation - use binned allocator
-    uint32 binIdx = SelectBinIndex(Size);
+    uint32 binIdx = SelectBinIndex(std::max<SIZE_T>(Size, Alignment));
     FThreadCache* cache = GetTLSCache();
     return AllocateFromBin(SmallBins[binIdx], Alignment, cache);
 }
@@ -65,6 +83,7 @@ void* FMallocBinned2::Realloc(void* Original, SIZE_T Size, uint32 Alignment) {
     // TODO: Optimize by checking if new size fits in same bin
     SIZE_T oldSize = GetAllocationSize(Original);
     void* newPtr = Malloc(Size, Alignment);
+    if (!newPtr) return nullptr;
     if (newPtr && oldSize > 0) {
         SIZE_T copySize = (oldSize < Size) ? oldSize : Size;
         ::memcpy(newPtr, Original, copySize);
@@ -76,30 +95,30 @@ void* FMallocBinned2::Realloc(void* Original, SIZE_T Size, uint32 Alignment) {
 void FMallocBinned2::Free(void* Original) {
     if (!Original) return;
 
-    // Check if it's a large allocation (heuristic: not in our pages)
-    // For simplicity, we'll track this via allocation metadata in future
-    // For now, attempt to free to bins, fallback to OS free
-
     // Try to find which bin owns this pointer
     for (uint32 i = 0; i < NUM_SMALL_BINS; ++i) {
         auto& bin = SmallBins[i];
-        std::scoped_lock lock(bin.Mutex);
-        for (auto* page : bin.Pages) {
-            uint8* pageStart = reinterpret_cast<uint8*>(page);
-            uint8* pageEnd = pageStart + PAGE_SIZE;
-            if (reinterpret_cast<uint8*>(Original) >= pageStart && 
-                reinterpret_cast<uint8*>(Original) < pageEnd) {
-                // Found it - free to this bin
-                FThreadCache* cache = GetTLSCache();
-                FreeToBin(bin, Original, cache);
-                return;
+        bool ownsPointer = false;
+        {
+            std::scoped_lock lock(bin.Mutex);
+            for (auto* page : bin.Pages) {
+                uint8* pageStart = reinterpret_cast<uint8*>(page);
+                uint8* pageEnd = pageStart + PAGE_SIZE;
+                if (reinterpret_cast<uint8*>(Original) >= pageStart &&
+                    reinterpret_cast<uint8*>(Original) < pageEnd) {
+                    ownsPointer = true;
+                    break;
+                }
             }
+        }
+        if (ownsPointer) {
+            FreeToBin(bin, Original, GetTLSCache());
+            return;
         }
     }
 
-    // Not found in bins - must be large allocation
-    // Use standard free for debug heap compatibility
-    std::free(Original);
+    // Not found in bins: release the large allocation's original address.
+    std::free((reinterpret_cast<FLargeAllocationHeader*>(Original) - 1)->Base);
 }
 
 SIZE_T FMallocBinned2::GetAllocationSize(void* Original) {
@@ -119,7 +138,7 @@ SIZE_T FMallocBinned2::GetAllocationSize(void* Original) {
         }
     }
 
-    return 0;  // Unknown (large allocation)
+    return (reinterpret_cast<FLargeAllocationHeader*>(Original) - 1)->Size;
 }
 
 bool FMallocBinned2::ValidateHeap() {

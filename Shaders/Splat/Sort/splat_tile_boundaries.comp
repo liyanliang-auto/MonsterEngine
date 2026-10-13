@@ -24,6 +24,8 @@ layout(std430, set = 0, binding = 1) buffer TileRanges {
     uvec2 ranges[];             // [tileID].x = start (inclusive), .y = end (exclusive)
 };
 
+layout(std430, set = 0, binding = 2) readonly buffer DispatchState { uint state[]; };
+
 // ============================================================================
 // Push Constants (12 bytes: 3 x uint32)
 // ============================================================================
@@ -37,42 +39,23 @@ layout(push_constant) uniform PushConstants {
 // Main
 // ============================================================================
 void main() {
-    uint idx = gl_GlobalInvocationID.x;
-    if (idx >= pc.numRendered) {
-        return;
-    }
-
-    // --- Mode 1: per-frame reset of every tile's range to (0,0) ---
-    // The boundary-detection pass below only writes tiles that are actually
-    // touched by gaussians. Tiles that lose their gaussians between frames
-    // would otherwise keep stale (start,end) ranges and re-draw ghost
-    // gaussians. Clearing every tile each frame eliminates that.
+    uint idx = (gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x) * 256u + gl_LocalInvocationID.x;
     if (pc.mode == 1u) {
-        if (idx < pc.numTiles) {
-            ranges[idx] = uvec2(0u, 0u);
+        if (idx < pc.numTiles) ranges[idx] = uvec2(0u);
+        return;
+    }
+    uint count = pc.numRendered == 0xffffffffu ? state[0] : pc.numRendered;
+    if (idx >= count) return;
+    uint tile = uint(keys[idx] >> 32u);
+    if (tile >= pc.numTiles) return;
+    if (idx == 0u) ranges[tile].x = 0u;
+    else {
+        uint previous = uint(keys[idx - 1u] >> 32u);
+        if (tile != previous) {
+            ranges[tile].x = idx;
+            if (previous < pc.numTiles) ranges[previous].y = idx;
         }
-        return;
     }
-
-    // --- Mode 0: boundary detection (default) ---
-    uint tileID = uint(keys[idx] >> 32u);
-
-    if (idx == 0u) {
-        // First entry: mark start of first tile
-        ranges[tileID].x = 0u;
-        return;
-    }
-
-    uint prevTileID = uint(keys[idx - 1u] >> 32u);
-
-    if (tileID != prevTileID) {
-        // Tile boundary detected
-        ranges[tileID].x     = idx;      // Start of new tile
-        ranges[prevTileID].y = idx;      // End of previous tile (exclusive)
-    }
-
-    // Last entry: mark end of last tile
-    if (idx == pc.numRendered - 1u) {
-        ranges[tileID].y = pc.numRendered;  // End of last tile (exclusive)
-    }
+    // Includes singleton lists: do not return after marking the first entry.
+    if (idx == count - 1u) ranges[tile].y = count;
 }

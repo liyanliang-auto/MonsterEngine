@@ -65,7 +65,8 @@ namespace EAssignKeysBinding
     // Output
     constexpr uint32 SortKeys      = 4;  // storage buffer (write): uint64_t[] (tile<<32 | depth)
     constexpr uint32 SortValues    = 5;  // storage buffer (write): uint32[] (Gaussian index)
-    constexpr uint32 Count         = 6;
+    constexpr uint32 DispatchState = 6;
+    constexpr uint32 Count         = 7;
 }
 
 // ============================================================================
@@ -83,7 +84,7 @@ constexpr uint32 RADIX_SORT_BLOCKS_PER_WG = 32;
 struct alignas(16) FRadixSortPushConstants
 {
     uint32 numElements;           // Total sort entries
-    uint32 shift;                 // Bit shift for this pass (0, 8, 16, 24)
+    uint32 shift;                 // Bit shift for this pass (0, 8, ..., 56)
     uint32 numWorkgroups;         // Number of workgroups to dispatch
     uint32 numBlocksPerWorkgroup; // Blocks processed per workgroup (= RADIX_SORT_BLOCKS_PER_WG)
 };
@@ -95,7 +96,8 @@ namespace ERadixHistogramBinding
 {
     constexpr uint32 SortKeys    = 0;  // storage buffer (read): uint64_t[]
     constexpr uint32 Histogram   = 1;  // storage buffer (write): uint32[RADIX_SORT_BINS * numWorkgroups]
-    constexpr uint32 Count       = 2;
+    constexpr uint32 DispatchState = 2;
+    constexpr uint32 Count       = 3;
 }
 
 /** Descriptor set bindings for radix sort scatter (Set 0)
@@ -109,7 +111,8 @@ namespace ERadixScatterBinding
     constexpr uint32 SortValuesIn  = 2;  // storage buffer (read):  uint32[]      (binding 2: ValuesIn)
     constexpr uint32 SortValuesOut = 3;  // storage buffer (write): uint32[]      (binding 3: ValuesOut)
     constexpr uint32 Histogram     = 4;  // storage buffer (read):  uint32[RADIX_SORT_BINS * numWorkgroups] (binding 4: HistogramBuf)
-    constexpr uint32 Count         = 5;
+    constexpr uint32 DispatchState = 5;
+    constexpr uint32 Count         = 6;
 }
 
 // ============================================================================
@@ -131,7 +134,8 @@ namespace ETileBoundariesBinding
 {
     constexpr uint32 SortKeys = 0;  // storage buffer (read): uint64_t[] (sorted by tile→depth)
     constexpr uint32 TileRanges = 1; // storage buffer (write): uvec2[] (start, end per tile)
-    constexpr uint32 Count      = 2;
+    constexpr uint32 DispatchState = 2;
+    constexpr uint32 Count      = 3;
 }
 
 } // namespace Splat

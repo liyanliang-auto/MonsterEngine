@@ -1,0 +1,7 @@
+// Copyright Monster Engine. All Rights Reserved.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=256) in;
+#include "split_fusion_common.glsl"
+shared uint sum[256];
+void main(){uint lane=gl_LocalInvocationID.x,i=(gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x)*256u+lane;sum[lane]=i<pc.sourceCount&&live(i)?1u:0u;barrier();for(uint step=128u;step>0u;step>>=1u){if(lane<step)sum[lane]+=sum[lane+step];barrier();}if(lane==0u){atomicAdd(counters[0],sum[0]);atomicAdd(counters[11],sum[0]);}}

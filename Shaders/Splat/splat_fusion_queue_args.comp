@@ -1,0 +1,6 @@
+// Copyright Monster Engine. All Rights Reserved.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=1) in;
+#include "split_fusion_common.glsl"
+void main(){uint f=min(counters[4],pc.queueCapacity),e=min(counters[6],pc.queueCapacity);freshArgs[0]=min(f,65535u);freshArgs[1]=max(1u,(f+65534u)/65535u);freshArgs[2]=1u;exactArgs[0]=min(e,65535u);exactArgs[1]=max(1u,(e+65534u)/65535u);exactArgs[2]=1u;}

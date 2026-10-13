@@ -99,6 +99,7 @@ namespace MonsterRender::RHI::Vulkan {
                 MR_LOG_ERROR("  vkResetCommandBuffer FAILED with result: " + std::to_string(resetResult));
                 return;
             }
+            m_device->discardUnsubmittedTimestamps(m_commandBuffer);
             // Clear transitioned textures tracking for this command buffer
             m_device->clearTransitionedTexturesForCmdBuffer(m_commandBuffer);
             m_state = EState::ReadyForBegin;
@@ -112,11 +113,11 @@ namespace MonsterRender::RHI::Vulkan {
             // Wait for the fence to be signaled (GPU finished with this command buffer)
             // Use a reasonable timeout (5 seconds) instead of UINT64_MAX to avoid infinite hang
             constexpr uint64 timeoutNs = 5000000000ULL; // 5 seconds
-            VkResult waitResult = functions.vkWaitForFences(device, 1, &m_fence, VK_TRUE, timeoutNs);
+            VkResult waitResult = m_device->isSubmissionComplete(m_submissionToken) ? VK_SUCCESS :
+                functions.vkWaitForFences(device, 1, &m_submissionFence, VK_TRUE, timeoutNs);
             if (waitResult == VK_TIMEOUT) {
                 MR_LOG_WARNING("  vkWaitForFences TIMEOUT - fence may not have been signaled properly");
-                // Try to continue anyway by resetting fence
-                functions.vkResetFences(device, 1, &m_fence);
+                return;
             } else if (waitResult != VK_SUCCESS) {
                 MR_LOG_ERROR("  vkWaitForFences FAILED with result: " + std::to_string(waitResult));
                 return;
@@ -128,6 +129,7 @@ namespace MonsterRender::RHI::Vulkan {
                 MR_LOG_ERROR("  vkResetCommandBuffer FAILED with result: " + std::to_string(resetResult));
                 return;
             }
+            m_device->discardUnsubmittedTimestamps(m_commandBuffer);
             // Clear transitioned textures tracking for this command buffer
             m_device->clearTransitionedTexturesForCmdBuffer(m_commandBuffer);
             m_state = EState::ReadyForBegin;
@@ -198,7 +200,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkDevice device = m_device->getLogicalDevice();
         
         // Check fence status without blocking
-        VkResult result = functions.vkGetFenceStatus(device, m_fence);
+        VkResult result = m_device->isSubmissionComplete(m_submissionToken) ? VK_SUCCESS : VK_NOT_READY;
         if (result == VK_SUCCESS) {
             // Fence signaled - GPU finished execution
             m_fenceSignaledCounter++;
@@ -290,13 +292,13 @@ namespace MonsterRender::RHI::Vulkan {
         return m_activeCmdBuffer;
     }
     
-    void FVulkanCommandBufferManager::submitActiveCmdBuffer(
+    bool FVulkanCommandBufferManager::submitActiveCmdBuffer(
         VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
         VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount) {
         
         if (!m_activeCmdBuffer || !m_activeCmdBuffer->hasEnded()) {
             MR_LOG_ERROR("Cannot submit command buffer - not ended");
-            return;
+            return false;
         }
         
         const auto& functions = VulkanAPI::getFunctions();
@@ -304,7 +306,11 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Reset fence before submission
         VkFence fence = m_activeCmdBuffer->getFence();
-        functions.vkResetFences(m_device->getLogicalDevice(), 1, &fence);
+        if (!m_device->prepareSubmissionFenceReset(fence)) return false;
+        if (functions.vkResetFences(m_device->getLogicalDevice(), 1, &fence) != VK_SUCCESS) {
+            MR_LOG_ERROR("Submission fence reset failed");
+            return false;
+        }
         
         // Prepare submit info
         VkSubmitInfo submitInfo{};
@@ -334,33 +340,40 @@ namespace MonsterRender::RHI::Vulkan {
         VkResult result = functions.vkQueueSubmit(queue, 1, &submitInfo, fence);
         if (result != VK_SUCCESS) {
             MR_LOG_ERROR("Failed to submit command buffer: " + std::to_string(result));
-            return;
+            return false;
         }
         
-        m_activeCmdBuffer->markSubmitted();
+        m_device->trackSubmission(cmdBuffer, fence);
+        m_activeCmdBuffer->markSubmitted(fence, m_device->getLastSubmissionToken());
         
         MR_LOG_DEBUG("Command buffer submitted to GPU");
+        return true;
     }
     
-    void FVulkanCommandBufferManager::submitActiveCmdBufferWithFence(
+    bool FVulkanCommandBufferManager::submitActiveCmdBufferWithFence(
         VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
         VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount,
         VkFence fence) {
         
         if (!m_activeCmdBuffer) {
             MR_LOG_ERROR("Cannot submit command buffer - no active buffer");
-            return;
+            return false;
         }
         
         if (!m_activeCmdBuffer->hasEnded()) {
             MR_LOG_ERROR("Cannot submit command buffer - not ended (state mismatch)");
-            return;
+            return false;
         }
         
         const auto& functions = VulkanAPI::getFunctions();
         VkQueue queue = getQueue();
         VkDevice device = m_device->getLogicalDevice();
         
+        if (fence == VK_NULL_HANDLE) {
+            MR_LOG_ERROR("Submission requires a completion fence");
+            return false;
+        }
+        if (!m_device->prepareSubmissionFenceReset(fence)) return false;
         // Fence state handling:
         // The fence should already be in unsignaled state (reset by acquireNextSwapchainImage).
         // If it's still signaled, it means the synchronization flow has an issue.
@@ -368,10 +381,14 @@ namespace MonsterRender::RHI::Vulkan {
         if (fence != VK_NULL_HANDLE) {
             VkResult fenceStatus = functions.vkGetFenceStatus(device, fence);
             if (fenceStatus == VK_SUCCESS) {
-                // Fence is signaled - reset it silently (expected on first frame)
-                functions.vkResetFences(device, 1, &fence);
+                if (!m_device->prepareSubmissionFenceReset(fence)) return false;
+                if (functions.vkResetFences(device, 1, &fence) != VK_SUCCESS) return false;
             }
-            // If fenceStatus == VK_NOT_READY, fence is already unsignaled - good
+            else if (fenceStatus != VK_NOT_READY) {
+                MR_LOG_ERROR("Submission fence status query failed: " + std::to_string(fenceStatus));
+                return false;
+            }
+            // VK_NOT_READY is valid only after ownership checks above.
         }
         
         // Prepare submit info
@@ -402,24 +419,27 @@ namespace MonsterRender::RHI::Vulkan {
         VkResult result = functions.vkQueueSubmit(queue, 1, &submitInfo, fence);
         if (result != VK_SUCCESS) {
             MR_LOG_ERROR("Failed to submit command buffer with fence: " + std::to_string(result));
-            return;
+            return false;
         }
         
-        m_activeCmdBuffer->markSubmitted();
+        m_device->trackSubmission(cmdBuffer, fence);
+        m_activeCmdBuffer->markSubmitted(fence, m_device->getLastSubmissionToken());
         
         MR_LOG_DEBUG("Command buffer submitted to GPU with external fence");
+        return true;
     }
     
     void FVulkanCommandBufferManager::waitForCmdBuffer(FVulkanCmdBuffer* cmdBuffer, float timeInSecondsToWait) {
-        if (!cmdBuffer) {
+        if (!cmdBuffer || !cmdBuffer->isSubmitted() ||
+            m_device->isSubmissionComplete(cmdBuffer->getSubmissionToken())) {
             return;
         }
-        
+
         const auto& functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
         
         uint64 timeoutNs = static_cast<uint64>(timeInSecondsToWait * 1000000000.0);
-        VkFence fence = cmdBuffer->getFence();
+        VkFence fence = cmdBuffer->getSubmissionFence();
         
         VkResult result = functions.vkWaitForFences(device, 1, &fence, VK_TRUE, timeoutNs);
         if (result == VK_TIMEOUT) {
@@ -434,25 +454,17 @@ namespace MonsterRender::RHI::Vulkan {
         m_currentBufferIndex = (m_currentBufferIndex + 1) % NUM_FRAMES_IN_FLIGHT;
         m_activeCmdBuffer = m_cmdBuffers[m_currentBufferIndex].get();
         
-        // If the command buffer was previously submitted, ensure its fence is ready
-        // before resetting. We do NOT vkWaitForFences on the cmd buffer's own fence here,
-        // because submitCommands() signals inFlightFences[...] (not the cmd buffer's fence),
-        // and acquireNextSwapchainImage() already waits on the in-flight fence from
-        // NUM_FRAMES_IN_FLIGHT ago. Waiting on the cmd buffer's own fence would deadlock
-        // once the ring buffer wraps around, since that fence is never actually submitted
-        // to vkQueueSubmit in the normal (non-readback) code path.
-        if (m_activeCmdBuffer->isSubmitted())
-        {
-            const auto& functions = VulkanAPI::getFunctions();
-            VkDevice device = m_device->getLogicalDevice();
-            VkFence fence = m_activeCmdBuffer->getFence();
-
-            // Just reset the fence to unsignaled state — the in-flight fence in
-            // acquireNextSwapchainImage() already guarantees the GPU has finished
-            // with this command buffer.
-            functions.vkResetFences(device, 1, &fence);
+        // Wait on the fence actually attached to this command buffer. Frame
+        // submissions use an external fence; one-off submissions use its own.
+        if (m_activeCmdBuffer->isSubmitted()) {
+            const VkFence owner = m_activeCmdBuffer->getSubmissionFence();
+            if (!m_device->isSubmissionComplete(m_activeCmdBuffer->getSubmissionToken()) &&
+                (owner == VK_NULL_HANDLE ||
+                 vkWaitForFences(m_device->getLogicalDevice(), 1, &owner, VK_TRUE, UINT64_MAX) != VK_SUCCESS)) {
+                MR_LOG_ERROR("Cannot recycle incomplete command buffer");
+                return;
+            }
         }
-        
         // Reset command buffer for reuse
         const auto& functions = VulkanAPI::getFunctions();
         VkCommandBuffer cmdBuffer = m_activeCmdBuffer->getHandle();
@@ -463,6 +475,7 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         
+        m_device->discardUnsubmittedTimestamps(m_activeCmdBuffer->getHandle());
         // Update internal state to ReadyForBegin after reset
         m_activeCmdBuffer->markAsReadyForBegin();
     }

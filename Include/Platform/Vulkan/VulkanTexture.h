@@ -29,6 +29,8 @@ using MonsterRender::RHI::FVulkanAllocation;
         
         // IRHIResource interface - backend identification
         ERHIBackend getBackendType() const override { return ERHIBackend::Vulkan; }
+        /** Actual reservation/backing allocation for budgeted resources. */
+        bool getAllocationInfo(FBufferAllocationInfo& info) const override;
         
         // Vulkan-specific interface
         VkImage getImage() const { return m_image; }

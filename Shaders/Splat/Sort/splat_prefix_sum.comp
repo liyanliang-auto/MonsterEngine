@@ -1,8 +1,8 @@
 // Copyright Monster Engine. All Rights Reserved.
-// splat_prefix_sum.comp - Blelloch Scan Prefix Sum
+// splat_prefix_sum.comp - Saturating inclusive Hillis-Steele prefix sum
 //
-// Computes a cumulative (exclusive-to-inclusive) prefix sum of tilesTouched[]
-// using a ping-pong Blelloch scan. After ceil(log2(N)) iterations, the final
+// Computes the inclusive sum of tilesTouched[] with saturating uint addition
+// using a ping-pong Hillis-Steele scan. After ceil(log2(N)) iterations, the final
 // buffer contains the cumulative offsets for per-Gaussian sort entry allocation.
 //
 // Reference: 3dgs-vulkan-cpp prefixsum.comp / 3DGS.cpp prefix_sum.comp
@@ -27,7 +27,7 @@ layout(std430, set = 0, binding = 1) buffer BufferB {
 // Push Constants (12 bytes)
 // ============================================================================
 layout(push_constant) uniform PushConstants {
-    uint step;         // Current Blelloch step (0, 1, 2, ...)
+    uint step;         // Current Hillis-Steele step (0, 1, 2, ...)
     uint numElements;  // Total element count
     uint readFromA;    // 1 = read buffer_a → write buffer_b, 0 = read buffer_b → write buffer_a
 } pc;
@@ -36,7 +36,7 @@ layout(push_constant) uniform PushConstants {
 // Main
 // ============================================================================
 void main() {
-    uint index = gl_GlobalInvocationID.x;
+    uint index = (gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x) * 256u + gl_LocalInvocationID.x;
 
     if (index >= pc.numElements) {
         return;
@@ -48,14 +48,16 @@ void main() {
         // Read from A, accumulate, write to B
         uint value = buffer_a[index];
         if (index >= stride) {
-            value += buffer_a[index - stride];
+            uint addend = buffer_a[index - stride];
+            value = addend > 0xffffffffu - value ? 0xffffffffu : value + addend;
         }
         buffer_b[index] = value;
     } else {
         // Read from B, accumulate, write to A
         uint value = buffer_b[index];
         if (index >= stride) {
-            value += buffer_b[index - stride];
+            uint addend = buffer_b[index - stride];
+            value = addend > 0xffffffffu - value ? 0xffffffffu : value + addend;
         }
         buffer_a[index] = value;
     }

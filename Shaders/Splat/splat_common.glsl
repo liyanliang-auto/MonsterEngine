@@ -59,7 +59,8 @@ void computeCov3D(vec3 scale, vec4 rot, float scaleModifier, out float cov3D_out
     );
 
     // Normalize quaternion and compute rotation matrix
-    vec4 q = normalize(rot);
+    float lengthSquared = dot(rot, rot);
+    vec4 q = lengthSquared > 0.0 ? rot * inversesqrt(lengthSquared) : vec4(1.0, 0.0, 0.0, 0.0);
     float r = q.x, x = q.y, y = q.z, z = q.w;
 
     mat3 R = mat3(

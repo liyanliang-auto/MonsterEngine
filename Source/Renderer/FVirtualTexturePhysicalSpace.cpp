@@ -49,6 +49,10 @@ FVirtualTexturePhysicalSpace::~FVirtualTexturePhysicalSpace() {
 
 uint32 FVirtualTexturePhysicalSpace::AllocatePage() {
     std::scoped_lock lock(Mutex);
+    return AllocatePageLocked();
+}
+
+uint32 FVirtualTexturePhysicalSpace::AllocatePageLocked() {
     
     // Try to allocate from free list first
     if (!FreeList.empty()) {
@@ -105,12 +109,12 @@ bool FVirtualTexturePhysicalSpace::MapPage(uint32 VirtualAddress, uint32 MipLeve
     uint32* FoundPhysical = VirtualToPhysicalMap.Find(VirtualAddress);
     if (FoundPhysical) {
         OutPhysicalAddress = *FoundPhysical;
-        TouchPage(OutPhysicalAddress);
+        Pages[OutPhysicalAddress].FrameLastUsed = CurrentFrame;
         return true;
     }
     
     // Allocate new physical page
-    uint32 physicalPage = AllocatePage();
+    uint32 physicalPage = AllocatePageLocked();
     if (physicalPage == 0xFFFFFFFF) {
         return false;
     }

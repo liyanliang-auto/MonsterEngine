@@ -27,6 +27,7 @@ namespace MonsterRender::Splat
         constexpr uint32 Colors        = 2;  // vec4 colors[]
         constexpr uint32 ConicOpacity  = 3;  // vec4 conicOpacity[]
         constexpr uint32 PointsXY      = 4;  // vec2 pointsXY[]
+        constexpr uint32 DispatchState = 6;
         constexpr uint32 OutputImage   = 5;  // writeonly image2D (rgba8)
     }
 
@@ -36,8 +37,9 @@ namespace MonsterRender::Splat
         uint32 imageWidth;
         uint32 imageHeight;
         uint32 wireframe;
+        uint32 forceClear;
     };
-    static_assert(sizeof(FRenderPushConstants) == 12, "Render push constants must match GLSL");
+    static_assert(sizeof(FRenderPushConstants) == 16, "Render push constants must match GLSL");
 
     /**
      * FSplatRenderPass
@@ -61,7 +63,8 @@ namespace MonsterRender::Splat
          * @param height Output image height in pixels
          * @return true on success
          */
-        bool initialize(RHI::IRHIDevice* device, uint32 width, uint32 height);
+        bool initialize(RHI::IRHIDevice* device, uint32 width, uint32 height,
+            MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState = {});
 
         /**
          * Set input buffers for the render pass.
@@ -73,6 +76,8 @@ namespace MonsterRender::Splat
         void setConicOpacity(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setPointsXY(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setWireframe(bool enabled) { m_wireframe = enabled; }
+        void SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state);
+        void SelectFrameSlot(uint32 slot) { m_currentDsIndex = (slot + 1u) % kMaxFramesInFlight; }
 
         /**
          * Execute the render dispatch.
@@ -80,7 +85,7 @@ namespace MonsterRender::Splat
          * 
          * @param cmdList Command list to record into
          */
-        void execute(RHI::IRHICommandList* cmdList);
+        void execute(RHI::IRHICommandList* cmdList, bool forceClear = false);
 
         /** Access the output texture (for display / further processing) */
         MonsterEngine::TSharedPtr<RHI::IRHITexture> getOutputTexture() const { return m_outputTexture; }
@@ -97,6 +102,8 @@ namespace MonsterRender::Splat
         uint32 m_imageWidth  = 0;
         uint32 m_imageHeight = 0;
         bool m_wireframe = false;
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_dispatchState;
+        bool m_gpuCount = false;
 
         // Output storage image
         MonsterEngine::TSharedPtr<RHI::IRHITexture> m_outputTexture;

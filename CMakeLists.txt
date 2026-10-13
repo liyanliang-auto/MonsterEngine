@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.20)
 project(MonsterEngine 
     VERSION 1.0.0
     DESCRIPTION "Modern 3D Rendering Engine with Vulkan and OpenGL support"
-    LANGUAGES CXX C
+    LANGUAGES CXX
 )
 
 # ==============================================================================
@@ -46,6 +46,12 @@ message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}
 # Find Dependencies
 # ==============================================================================
 
+option(MONSTER_BUILD_ENGINE "Build the Windows native viewer" ON)
+if(MONSTER_BUILD_ENGINE)
+if(NOT WIN32)
+    message(FATAL_ERROR "The native viewer currently requires Windows; use -DMONSTER_BUILD_ENGINE=OFF for the CPU builder")
+endif()
+
 # Vulkan (bundled headers and import library - no SDK required)
 set(VULKAN_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rd-party/vulkan")
 message(STATUS "Vulkan: using bundled headers and library at ${VULKAN_LOCAL_DIR}")
@@ -57,6 +63,28 @@ message(STATUS "Vulkan: using bundled headers and library at ${VULKAN_LOCAL_DIR}
 # Main entry point
 set(MAIN_SOURCES
     main.cpp
+)
+
+# Top-level applications and baseline suite dispatchers mirror the working VS inventory.
+set(ROOT_APPLICATION_SOURCES
+    "Source/BenchmarkParallelRendering.cpp"
+    "Source/CubeRenderer.cpp"
+    "Source/CubeSceneApplication.cpp"
+    "Source/CubeSceneApplicationPBR.cpp"
+    "Source/Engine.cpp"
+    "Source/ImGuiTestApplication.cpp"
+    "Source/MemorySystemTest.cpp"
+    "Source/ParallelRenderingIntegrationExample.cpp"
+    "Source/ParallelRenderingTestMain.cpp"
+    "Source/RunParallelRenderingTest.cpp"
+    "Source/SplatSceneApplication.cpp"
+    "Source/TestCommandListPool.cpp"
+    "Source/TestMain.cpp"
+    "Source/TestParallelCommandBufferExecution.cpp"
+    "Source/TestParallelTranslator.cpp"
+    "Source/TestVulkanParallelRendering.cpp"
+    "Source/TriangleApplication.cpp"
+    "Source/TriangleRenderer.cpp"
 )
 
 # Core module
@@ -108,6 +136,8 @@ file(GLOB_RECURSE RDG_SOURCES
 file(GLOB_RECURSE TEST_SOURCES 
     "Source/Tests/*.cpp"
 )
+# Verification supplies standalone entry points; never compile them into the viewer.
+list(FILTER TEST_SOURCES EXCLUDE REGEX "/Source/Tests/3DGSLODStreaming/")
 
 # ImGui third-party library
 file(GLOB IMGUI_SOURCES 
@@ -117,6 +147,7 @@ file(GLOB IMGUI_SOURCES
 # Combine all sources
 set(ALL_SOURCES
     ${MAIN_SOURCES}
+    ${ROOT_APPLICATION_SOURCES}
     ${CORE_SOURCES}
     ${CONTAINER_SOURCES}
     ${RHI_SOURCES}
@@ -128,6 +159,26 @@ set(ALL_SOURCES
     ${TEST_SOURCES}
     ${IMGUI_SOURCES}
 )
+
+# Use the maintained native VS production inventory. Recursive discovery also
+# finds historical implementation fragments excluded by the working VS build.
+# Sharing the list keeps CMake and native MSBuild on the same complete baseline.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/MonsterEngine.vcxproj" VS_COMPILE_ENTRIES
+    REGEX "<ClCompile Include=")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/MonsterEngine.vcxproj")
+set(ALL_SOURCES)
+foreach(entry IN LISTS VS_COMPILE_ENTRIES)
+    string(REGEX MATCH "Include=\"([^\"]+)\"" match "${entry}")
+    string(REPLACE "\\" "/" relative "${CMAKE_MATCH_1}")
+    if(relative STREQUAL "Source/Core/MonsterEnginePCH.cpp" OR relative MATCHES "^Source/Tests/3DGSLODStreaming/")
+        continue()
+    endif()
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${relative}")
+        message(FATAL_ERROR "Production source inventory references absent file: ${relative}")
+    endif()
+    list(APPEND ALL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/${relative}")
+endforeach()
+list(REMOVE_DUPLICATES ALL_SOURCES)
 
 # Header files (for IDE project organization)
 file(GLOB_RECURSE ALL_HEADERS 
@@ -144,6 +195,7 @@ add_executable(MonsterEngine
     ${ALL_SOURCES}
     ${ALL_HEADERS}
 )
+set_property(TARGET MonsterEngine PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # ==============================================================================
 # Include Directories
@@ -161,6 +213,7 @@ target_include_directories(MonsterEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd-party/glfw-3.4.bin.WIN64/Include
     
     # Vulkan (bundled headers)
+    ${VULKAN_LOCAL_DIR}
     ${VULKAN_LOCAL_DIR}/vulkan
     ${VULKAN_LOCAL_DIR}/vk_video
 )
@@ -221,6 +274,7 @@ if(MSVC)
         _CONSOLE
         UNICODE
         _UNICODE
+        _CRT_SECURE_NO_WARNINGS
         
         # Configuration-specific
         $<$<CONFIG:Debug>:_DEBUG>
@@ -315,6 +369,9 @@ source_group("Source Files" FILES ${MAIN_SOURCES})
 
 # Group header files
 source_group("Header Files" FILES ${ALL_HEADERS})
+
+endif() # MONSTER_BUILD_ENGINE
+include(cmake/SplatLODStreaming.cmake)
 
 # ==============================================================================
 # Build Summary

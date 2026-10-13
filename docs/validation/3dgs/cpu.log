@@ -1,0 +1,48 @@
+PASS T01 degree 0 activation reordered properties
+PASS T01 degree 1 activation reordered properties
+PASS T01 degree 2 activation reordered properties
+PASS T01 degree 3 activation reordered properties
+PASS T01 binary endian little
+PASS T01 binary endian big
+PASS T01 rejects x=nan
+PASS T01 rejects x=inf
+PASS T01 rejects rot_0=0
+PASS T01 rejects scale_0=1000
+PASS T01 rejects truncated binary payload
+PASS T02 deterministic builds and three useful levels
+PASS T02 empty duplicates maximum-depth termination
+PASS T03 unique exact leaves and conservative cross-cell support
+PASS T04 two Gaussian moment covariance oracle
+PASS T05 SHA256 known vector and format roundtrip
+PASS T05 rejects checksum version offset path and size overflow
+PASS T06 visibility resolution FOV orthographic and near-plane
+PASS T06 hysteresis freeze and residency invalidation
+PASS T07 partial multipage readiness preserves parent
+PASS T07 transition active source budgets preserve coverage
+PASS T07 downgrade keeps ready children until ancestor ready
+PASS T08 async dedup and external leases survive shutdown
+PASS T08 bounded terminal retry fault 0
+PASS T08 bounded terminal retry fault 1
+PASS T08 bounded terminal retry fault 2
+PASS T08 delayed generation cancellation and prompt shutdown
+PASS T08 exact single-page CPU budget loads without optional cache
+PASS T08 verified cache hit avoids repeated disk reads
+PASS T05 truncated and bad-version manifest with valid outer checksum
+PASS T07 rejected expensive refinement preserves cheaper sibling and pinned charge
+PASS T01 rejects duplicate properties incomplete SH and inactive nonfinite coefficients
+PASS T03 rotated anisotropic support remains conservative
+PASS T07 missing ancestor never publishes partial visible descendant coverage
+PASS T06 broad support estimate does not veto complete refinement but zero hard sort budget fails
+PASS T08 priority and metadata saturation are bounded admission failures not terminal I/O
+PASS T08 LRU encoded eviction permits verified reread without growth
+PASS T05 v1-v5 roundtrip and leaf-self membership validation
+PASS T07 ready siblings remain charged across simultaneous refinements
+PASS R1 T06 accepted scale and disabled distance culling preserve support
+PASS R1 T03 builder and manifest reject support below renderer three sigma
+PASS R4 T08 replacing wanted work cancels obsolete queued reading and ready payloads
+PASS T07 evicted intermediate parent does not reload a complete fine frontier
+PASS R7 T08 two-worker destroy-before-credit actual heap no-cache
+PASS R7 T08 two-worker destroy-before-credit actual heap optional-cache
+PASS R7 T08 two-worker destroy-before-credit actual heap cached
+PASS T07 sparse empty branch does not force root reload after parent eviction
+SUMMARY total=47 passed=47 failed=0
