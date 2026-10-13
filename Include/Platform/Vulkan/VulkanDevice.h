@@ -255,6 +255,11 @@ namespace MonsterRender::RHI::Vulkan {
         
         VkFramebuffer getCurrentFramebuffer() const;
         VkImageView getCurrentSwapchainImageView() const;
+        /** Current resolved presentation image, available for bounded GPU capture. */
+        VkImage getCurrentSwapchainImage() const {
+            return m_currentImageIndex < m_swapchainImages.size() ? m_swapchainImages[m_currentImageIndex] : VK_NULL_HANDLE;
+        }
+        bool supportsSwapchainReadback() const { return m_swapchainReadbackSupported; }
         const VkExtent2D& getSwapchainExtent() const { return m_swapchainExtent; }
         VkFormat getSwapchainFormat() const { return m_swapchainImageFormat; }
         
@@ -337,6 +342,7 @@ namespace MonsterRender::RHI::Vulkan {
         std::vector<VkImage> m_swapchainImages;
         std::vector<VkImageView> m_swapchainImageViews;
         VkFormat m_swapchainImageFormat = VK_FORMAT_UNDEFINED;
+        bool m_swapchainReadbackSupported = false;
         VkExtent2D m_swapchainExtent = {0, 0};
         
         // Render pass and framebuffers

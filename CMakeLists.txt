@@ -331,6 +331,31 @@ add_custom_command(TARGET MonsterEngine POST_BUILD
 )
 
 # Copy shaders directory (if exists)
+# Build the receiver shaders from source; source-tree SPIR-V binaries are not
+# required. Refresh the executable's shaders even when only GLSL changed.
+find_program(MONSTER_GLSLC NAMES glslc HINTS "$ENV{VULKAN_SDK}/Bin")
+if(NOT MONSTER_GLSLC)
+    message(FATAL_ERROR "glslc is required for the Vulkan cube shadow shaders. Install the Vulkan SDK or set MONSTER_GLSLC.")
+endif()
+set(MONSTER_CUBE_SHADOW_OUTPUTS)
+foreach(shader CubeLitShadow.vert CubeLitShadow.frag)
+    set(shader_output "${CMAKE_CURRENT_BINARY_DIR}/generated-shaders/${shader}.spv")
+    add_custom_command(OUTPUT "${shader_output}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated-shaders"
+        COMMAND "${MONSTER_GLSLC}" --target-env=vulkan1.0
+            "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${shader}" -o "${shader_output}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${shader}"
+        VERBATIM)
+    list(APPEND MONSTER_CUBE_SHADOW_OUTPUTS "${shader_output}")
+endforeach()
+add_custom_target(MonsterCubeShadowShaders
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MonsterEngine>/Shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MONSTER_CUBE_SHADOW_OUTPUTS}
+        "$<TARGET_FILE_DIR:MonsterEngine>/Shaders"
+    DEPENDS ${MONSTER_CUBE_SHADOW_OUTPUTS}
+    VERBATIM)
+add_dependencies(MonsterEngine MonsterCubeShadowShaders)
+
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders")
     add_custom_command(TARGET MonsterEngine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -338,6 +363,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders")
             "$<TARGET_FILE_DIR:MonsterEngine>/Shaders"
         COMMENT "Copying shaders to output directory"
     )
+    add_custom_command(TARGET MonsterEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MONSTER_CUBE_SHADOW_OUTPUTS}
+            "$<TARGET_FILE_DIR:MonsterEngine>/Shaders"
+        VERBATIM)
 endif()
 
 # Copy resources directory (if exists)

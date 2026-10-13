@@ -299,45 +299,15 @@ namespace MonsterRender::RHI::Vulkan {
             rtInfo.bIsSwapchain = false;
             rtInfo.bClearDepth = true;
             rtInfo.bClearStencil = false;
-            // Check if we need to use swapchain as color target (empty renderTargets but custom depth)
-            // IMPORTANT: Only use swapchain color if depth target matches swapchain size
-            // If depth target has different size (e.g., shadow map), use depth-only render pass
-            bool bUseSwapchainColor = false;
+            // Explicit depth and no explicit colors is always a depth-only pass.
             if (renderTargets.empty() && depthStencil)
             {
-                // Check if depth target size matches swapchain size
                 uint32 depthWidth = depthStencil->getWidth();
                 uint32 depthHeight = depthStencil->getHeight();
-                VkExtent2D swapchainExtent = m_device->getSwapchainExtent();
-                if (depthWidth == swapchainExtent.width && depthHeight == swapchainExtent.height)
-                {
-                    // Depth matches swapchain size - use swapchain as color target
-                    bUseSwapchainColor = true;
-                    MR_LOG_DEBUG("setRenderTargets: Depth matches swapchain size, using swapchain color");
-                }
-
-                else
-                {
-                    // Depth has different size (e.g., shadow map) - depth-only render pass
-                    bUseSwapchainColor = false;
-                    MR_LOG_DEBUG("setRenderTargets: Depth-only mode (shadow map or RTT), size=%ux%u",
-                                depthWidth, depthHeight);
-                }
-
+                MR_LOG_DEBUG("setRenderTargets: Depth-only mode, size=%ux%u", depthWidth, depthHeight);
             }
 
-            if (bUseSwapchainColor) {
-                // Use swapchain image view as color target with custom depth
-                rtInfo.bIsSwapchain = true;  // Mark as swapchain for proper handling
-                rtInfo.SwapchainImageView = m_device->getCurrentSwapchainImageView();
-                rtInfo.NumColorTargets = 1;
-                rtInfo.bClearColor[0] = true;  // Clear to ensure render pass compatibility
-                // Set render area from swapchain extent
-                rtInfo.RenderAreaWidth = renderExtent.width;
-                rtInfo.RenderAreaHeight = renderExtent.height;
-                MR_LOG_DEBUG("setRenderTargets: Using swapchain color + custom depth, extent=" +
-                            std::to_string(renderExtent.width) + "x" + std::to_string(renderExtent.height));
-            } else {
+            {
                 // Build color targets from provided textures
                 for (uint32 i = 0; i < renderTargets.size() && i < FVulkanRenderTargetInfo::MaxColorTargets; ++i) {
                     if (renderTargets[i]) {
@@ -491,6 +461,10 @@ namespace MonsterRender::RHI::Vulkan {
             const auto& functions = VulkanAPI::getFunctions();
             functions.vkCmdBeginRenderPass(m_cmdBuffer->getHandle(), &renderPassBeginInfo,
                                          VK_SUBPASS_CONTENTS_INLINE);
+            if (depthStencil) {
+                auto depthTexture = StaticCastSharedPtr<VulkanTexture>(depthStencil);
+                depthTexture->setCurrentLayout(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+            }
             // CRITICAL: Mark that we are now inside a render pass
             if (m_pendingState) {
                 m_pendingState->setInsideRenderPass(true);

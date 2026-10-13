@@ -109,6 +109,7 @@ FCubeSceneProxy::~FCubeSceneProxy()
     // Release GPU resources
     VertexBuffer.Reset();
     TransformUniformBuffer.Reset();
+    DepthTransformUniformBuffer.Reset();
     LightUniformBuffer.Reset();
     Texture1.Reset();
     Texture2.Reset();
@@ -337,7 +338,9 @@ bool FCubeSceneProxy::CreateUniformBuffers()
     TransformBufferDesc.debugName = "CubeProxy Transform UBO";
     
     TransformUniformBuffer = Device->createBuffer(TransformBufferDesc);
-    if (!TransformUniformBuffer)
+    TransformBufferDesc.debugName = "CubeProxy Depth Transform UBO";
+    DepthTransformUniformBuffer = Device->createBuffer(TransformBufferDesc);
+    if (!TransformUniformBuffer || !DepthTransformUniformBuffer)
     {
         return false;
     }
@@ -700,8 +703,10 @@ static TSharedPtr<MonsterRender::RHI::IRHITexture> CreatePlaceholderTexture(
 void FCubeSceneProxy::UpdateTransformBuffer(
     const FMatrix& ViewMatrix,
     const FMatrix& ProjectionMatrix,
-    const FVector& CameraPosition)
+    const FVector& CameraPosition,
+    TSharedPtr<MonsterRender::RHI::IRHIBuffer> TargetBuffer)
 {
+    if (!TargetBuffer) TargetBuffer = TransformUniformBuffer;
     FCubeLitUniformBuffer UBO;
     
     // Model matrix from local to world transform
@@ -751,11 +756,11 @@ void FCubeSceneProxy::UpdateTransformBuffer(
     UBO.TextureBlend[3] = 0.0f;
     
     // Upload to GPU
-    void* MappedData = TransformUniformBuffer->map();
+    void* MappedData = TargetBuffer->map();
     if (MappedData)
     {
         std::memcpy(MappedData, &UBO, sizeof(FCubeLitUniformBuffer));
-        TransformUniformBuffer->unmap();
+        TargetBuffer->unmap();
     }
 }
 
@@ -765,9 +770,9 @@ void FCubeSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
     std::memset(&LightUBO, 0, sizeof(FCubeLightUniformBuffer));
     
     // Default ambient light
-    LightUBO.AmbientColor[0] = 0.1f;
-    LightUBO.AmbientColor[1] = 0.1f;
-    LightUBO.AmbientColor[2] = 0.1f;
+    LightUBO.AmbientColor[0] = 0.30f;
+    LightUBO.AmbientColor[1] = 0.32f;
+    LightUBO.AmbientColor[2] = 0.36f;
     LightUBO.AmbientColor[3] = 1.0f;
     
     // Process lights (up to 8)
@@ -924,7 +929,7 @@ void FCubeSceneProxy::DrawWithShadows(
     if (!ShadowSampler)
     {
         MonsterRender::RHI::SamplerDesc SamplerDesc;
-        SamplerDesc.filter = MonsterRender::RHI::ESamplerFilter::Bilinear;
+        SamplerDesc.filter = MonsterRender::RHI::ESamplerFilter::Point;
         SamplerDesc.addressU = MonsterRender::RHI::ESamplerAddressMode::Border;
         SamplerDesc.addressV = MonsterRender::RHI::ESamplerAddressMode::Border;
         SamplerDesc.addressW = MonsterRender::RHI::ESamplerAddressMode::Border;
@@ -968,20 +973,23 @@ void FCubeSceneProxy::DrawWithShadows(
     if (Texture1)
     {
         CmdList->setShaderResource(17, Texture1);
+        CmdList->setSampler(17, Sampler);
     }
     // Set 2, Binding 2 -> slot 18
     if (Texture2)
     {
         CmdList->setShaderResource(18, Texture2);
+        CmdList->setSampler(18, Sampler);
     }
     
     // Bind a default texture to binding 19 (diffuseTexture) for cube rendering
-    // The shader will detect alpha = 0 and use texture1/texture2 instead
+    // textureBlend.y selects cube textures, independently of texture alpha.
     // This ensures the descriptor set is complete for both cube and floor rendering
     // Set 2, Binding 3 -> slot 19
     if (Texture1)
     {
         CmdList->setShaderResource(19, Texture1);
+        CmdList->setSampler(19, Sampler);
     }
     
     // Bind vertex buffer
@@ -1271,13 +1279,13 @@ void FCubeSceneProxy::DrawDepthOnly(
     
     // Update transform buffer with light matrices (using light VP as both view and projection)
     // For depth-only rendering, we just need the model and light VP matrices
-    UpdateTransformBuffer(LightViewProjection, FMatrix::Identity, FVector::ZeroVector);
+    UpdateTransformBuffer(LightViewProjection, FMatrix::Identity, FVector::ZeroVector, DepthTransformUniformBuffer);
     
     // Set depth-only pipeline state
     CmdList->setPipelineState(DepthOnlyPipelineState);
     
     // Bind transform uniform buffer
-    CmdList->setConstantBuffer(0, TransformUniformBuffer);
+    CmdList->setConstantBuffer(0, DepthTransformUniformBuffer);
     
     // Bind vertex buffer
     TArray<TSharedPtr<MonsterRender::RHI::IRHIBuffer>> VertexBuffers;

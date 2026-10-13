@@ -5,6 +5,7 @@
 #include "Platform/Vulkan/VulkanDescriptorSet.h"
 #include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/Vulkan/VulkanUtils.h"
+#include "Platform/Vulkan/VulkanTexture.h"
 #include "Core/Log.h"
 #include "Core/Logging/LogMacros.h"
 
@@ -178,7 +179,8 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanPendingState::setTexture(uint32 set, uint32 binding,
                                          VkImageView imageView, VkSampler sampler,
                                          VkImage image, VkFormat format, 
-                                         uint32 mipLevels, uint32 arrayLayers) {
+                                         uint32 mipLevels, uint32 arrayLayers,
+                                         VulkanTexture* texture) {
         // Validate range
         if (!RHI::ValidateSetBinding(set, binding, "FVulkanPendingState::setTexture")) {
             return;
@@ -196,6 +198,7 @@ namespace MonsterRender::RHI::Vulkan {
             textureBinding.format = format;
             textureBinding.mipLevels = mipLevels;
             textureBinding.arrayLayers = arrayLayers;
+            textureBinding.texture = texture;
             setState.dirty = true;
             m_descriptorsDirty = true;
             
@@ -257,9 +260,10 @@ namespace MonsterRender::RHI::Vulkan {
 
             VkImageMemoryBarrier barrier{};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            // Use UNDEFINED as oldLayout - tells Vulkan we don't care about previous contents
-            // The actual data was already uploaded in a previous command buffer
-            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            // Raw callers provide already readable images. Tracked textures retain
+            // their uploaded texels and previously generated shadow depth.
+            if (!binding.texture) continue;
+            barrier.oldLayout = binding.texture->getCurrentLayout();
             // Determine aspect mask and correct layout based on format
             VkImageAspectFlags aspectMask = VulkanUtils::getImageAspectMask(binding.format);
             barrier.subresourceRange.aspectMask = aspectMask;
@@ -269,6 +273,7 @@ namespace MonsterRender::RHI::Vulkan {
             } else {
                 barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             }
+            if (barrier.oldLayout == barrier.newLayout) continue;
 
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -277,16 +282,18 @@ namespace MonsterRender::RHI::Vulkan {
             barrier.subresourceRange.levelCount = binding.mipLevels;
             barrier.subresourceRange.baseArrayLayer = 0;
             barrier.subresourceRange.layerCount = binding.arrayLayers;
-            barrier.srcAccessMask = 0;
+            barrier.srcAccessMask = barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 :
+                VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             barriers.push_back(barrier);
+            binding.texture->setCurrentLayout(barrier.newLayout);
             }
         }
 
         if (!barriers.empty()) {
             functions.vkCmdPipelineBarrier(
                 cmdBuffer,
-                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                 0,
                 0, nullptr,
@@ -509,6 +516,10 @@ namespace MonsterRender::RHI::Vulkan {
         // Skip cache if explicitly disabled (e.g., for PBR rendering with pre-updated descriptor sets)
         auto* Cache = m_device->GetDescriptorSetCache();
         if (Cache && m_descriptorSetCacheEnabled) {
+            if (DescriptorLayouts.size() > 1) {
+                bindDescriptorSets(CmdBuffer);
+                return m_descriptorSets[0].descriptorSet;
+            }
             // Build key from current bindings
             FVulkanDescriptorSetKey Key = buildDescriptorSetKey();
             Key.Layout = DescriptorLayouts[0];
@@ -561,7 +572,8 @@ namespace MonsterRender::RHI::Vulkan {
             imageBinding.Binding = binding;
             imageBinding.ImageView = textureInfo.imageView;
             imageBinding.Sampler = textureInfo.sampler;
-            imageBinding.ImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageBinding.ImageLayout = (VulkanUtils::getImageAspectMask(textureInfo.format) & VK_IMAGE_ASPECT_DEPTH_BIT)
+                ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             Key.ImageBindings[binding] = imageBinding;
         }
         
@@ -574,6 +586,9 @@ namespace MonsterRender::RHI::Vulkan {
         // Build descriptor set key
         FVulkanDescriptorSetKey key;
         key.SetIndex = set;
+        const auto& layouts = m_currentPipeline->getDescriptorSetLayouts();
+        if (set >= layouts.size()) return VK_NULL_HANDLE;
+        key.Layout = layouts[set];
         
         // Add buffer bindings
         for (const auto& [binding, bufferInfo] : setState.buffers) {
@@ -591,7 +606,8 @@ namespace MonsterRender::RHI::Vulkan {
             imageBinding.Binding = binding;
             imageBinding.ImageView = textureInfo.imageView;
             imageBinding.Sampler = textureInfo.sampler;
-            imageBinding.ImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageBinding.ImageLayout = (VulkanUtils::getImageAspectMask(textureInfo.format) & VK_IMAGE_ASPECT_DEPTH_BIT)
+                ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             key.ImageBindings[binding] = imageBinding;
         }
         

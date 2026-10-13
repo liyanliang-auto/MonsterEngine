@@ -113,7 +113,33 @@ public:
      */
     void setUseDeferredRendering(bool bEnable) { m_bUseDeferredRendering = bEnable; }
 
+    /** Configure a reproducible smile-cube showcase before initialization. */
+    void configureShowcase(bool bShowShadows, uint32 FrameLimit = 0, bool bFreezeCamera = true)
+    {
+        m_bShowShadowSampling = bShowShadows;
+        m_showcaseFrameLimit = FrameLimit;
+        m_bShowcaseMode = bFreezeCamera;
+        m_bHelmetPBREnabled = false;
+    }
+
+    /** Capture resolved GPU pixels to a PPM file, then exit after warmup. */
+    void setCaptureOutput(const String& Path) {
+        m_captureOutput = Path;
+        m_bShowcaseMode = true;
+        if (!m_showcaseFrameLimit) m_showcaseFrameLimit = 8;
+    }
+    bool hasCaptureFailed() const {
+        return m_bCaptureFailed || (!m_captureOutput.empty() && !m_bCaptureCompleted);
+    }
+
 protected:
+    /** Record and finish a copy of the actual resolved swapchain image. */
+    bool recordShowcaseCapture(RHI::IRHICommandList* CmdList);
+    bool finishShowcaseCapture();
+    String m_captureOutput;
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_captureReadback;
+    bool m_bCaptureFailed = false;
+    bool m_bCaptureCompleted = false;
 
     /**
      * Initialize the scene with actors and lights
@@ -672,13 +698,13 @@ protected:
     MonsterEngine::TSharedPtr<RHI::IRHITexture> m_shadowMapTexture;
 
     /** Shadow map resolution */
-    uint32 m_shadowMapResolution = 1024;
+    uint32 m_shadowMapResolution = 2048;
 
     /** Shadow depth bias */
-    float m_shadowDepthBias = 0.005f;
+    float m_shadowDepthBias = 0.0007f;
 
     /** Shadow slope bias */
-    float m_shadowSlopeBias = 0.01f;
+    float m_shadowSlopeBias = 0.0015f;
 
     /** Shadow normal bias */
     float m_shadowNormalBias = 0.02f;
@@ -687,7 +713,15 @@ protected:
     float m_shadowDistance = 50.0f;
 
     /** Whether shadows are enabled (set to false for debugging PBR without shadows) */
-    bool m_bShadowsEnabled = false;
+    bool m_bShadowsEnabled = true;
+
+    /** Keep the same producer and receiver pipeline for shadow comparison. */
+    bool m_bShowShadowSampling = true;
+    /** Freeze user camera input for repeatable GPU screenshots. */
+    bool m_bShowcaseMode = false;
+    /** Optional automatic exit after this many presented frames. */
+    uint32 m_showcaseFrameLimit = 0;
+    uint32 m_showcaseRenderedFrames = 0;
 
     /** Whether to use RDG for rendering */
     bool m_bUseRDG = false;  // Disabled - RDG has null texture issues

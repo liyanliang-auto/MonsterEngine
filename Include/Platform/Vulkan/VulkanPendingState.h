@@ -11,6 +11,7 @@ namespace MonsterRender::RHI::Vulkan {
     // Forward declarations
     class VulkanDevice;
     class VulkanPipelineState;
+    class VulkanTexture;
     class FVulkanCmdBuffer;
     struct FVulkanDescriptorSetKey;
 
@@ -29,6 +30,8 @@ namespace MonsterRender::RHI::Vulkan {
         VkFormat format = VK_FORMAT_UNDEFINED;
         uint32 mipLevels = 1;
         uint32 arrayLayers = 1;
+        /** Optional tracked texture; raw bindings are already shader readable. */
+        VulkanTexture* texture = nullptr;
     };
 
     /**
@@ -148,7 +151,8 @@ namespace MonsterRender::RHI::Vulkan {
 
         void setTexture(uint32 set, uint32 binding, VkImageView imageView, VkSampler sampler,
                        VkImage image = VK_NULL_HANDLE, VkFormat format = VK_FORMAT_UNDEFINED,
-                       uint32 mipLevels = 1, uint32 arrayLayers = 1);
+                       uint32 mipLevels = 1, uint32 arrayLayers = 1,
+                       VulkanTexture* texture = nullptr);
 
         /**
          * Update sampler for texture at (set, binding)

@@ -1539,6 +1539,8 @@ namespace MonsterRender::RHI::Vulkan {
         createInfoSwapchain.imageExtent = extent;
         createInfoSwapchain.imageArrayLayers = 1;
         createInfoSwapchain.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        m_swapchainReadbackSupported = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+        if (m_swapchainReadbackSupported) createInfoSwapchain.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         
         uint32 queueFamilyIndices[] = {m_graphicsQueueFamily.familyIndex, m_presentQueueFamily.familyIndex};
         

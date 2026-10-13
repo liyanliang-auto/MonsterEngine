@@ -45,6 +45,10 @@
 #include "Platform/Vulkan/VulkanCommandListContext.h"
 #include "Platform/Vulkan/VulkanRHICommandList.h"
 #include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanBuffer.h"
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
+#include <fstream>
+#include <filesystem>
 #include "Platform/Vulkan/VulkanDescriptorSetLayoutCache.h"
 #include "Platform/OpenGL/OpenGLFunctions.h"
 #include "Platform/OpenGL/OpenGLDefinitions.h"
@@ -85,7 +89,7 @@ static ApplicationConfig CreateCubeSceneConfig()
 CubeSceneApplication::CubeSceneApplication()
     : Application(CreateCubeSceneConfig())
     , m_device(nullptr)
-    , m_bUseSceneRenderer(true)  // Enable FSceneRenderer for UE5-style rendering
+    , m_bUseSceneRenderer(false)  // This demo uses its explicit shadow + forward passes.
     , m_parallelRenderer(nullptr)  // Initialize parallel renderer to null
     , m_bEnableParallelRendering(false)  // Disabled - command list pool not yet implemented
     , m_numParallelThreads(4)  // Use 4 worker threads
@@ -106,7 +110,7 @@ CubeSceneApplication::CubeSceneApplication()
     , m_bShowLightingControl(true)
     , m_bShowDemoWindow(false)
     , m_cubeRotationSpeed(1.0f)
-    , m_lightIntensity(3.0f)
+    , m_lightIntensity(1.35f)
     , m_viewportTextureID(0)
     , m_viewportWidth(800)
     , m_viewportHeight(600)
@@ -241,7 +245,7 @@ void CubeSceneApplication::onInitialize()
         if (!initializeShadowMap())
         {
             MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize shadow map, shadows will be disabled");
-            m_bShadowsEnabled = true;
+            m_bShadowsEnabled = false;
         }
 
     }
@@ -378,7 +382,7 @@ void CubeSceneApplication::onRender()
     // Combined with RHI viewport negative height, this produces correct rendering
     // Do NOT apply additional Y-flip here to avoid double-flip
     // Get camera position
-    FVector cameraPosition = cameraView.Location;
+    FVector cameraPosition = cameraPos;
     // Gather lights from scene
     TArray<FLightSceneInfo*> lights;
     if (m_scene)
@@ -496,6 +500,9 @@ void CubeSceneApplication::onRender()
         RHI::IRHICommandList* cmdList = m_device->getImmediateCommandList();
         if (!cmdList) return;
         // Prepare for new frame
+        // The demo owns persistent mapped UBOs. Finish their previous GPU use
+        // before updating them; shadow and camera passes use separate buffers.
+        vulkanDevice->waitForIdle();
         context->prepareForNewFrame();
         // Begin command recording
         cmdList->begin();
@@ -615,12 +622,116 @@ void CubeSceneApplication::onRender()
 
         // End render pass
         cmdList->endRenderPass();
+        const bool captureFrame = !m_captureOutput.empty() &&
+            m_showcaseRenderedFrames + 1 >= m_showcaseFrameLimit;
+        if (captureFrame && !recordShowcaseCapture(cmdList)) m_bCaptureFailed = true;
         // End command recording
         cmdList->end();
         // Present frame
         m_device->present();
+        if (captureFrame && !m_bCaptureFailed && !finishShowcaseCapture()) m_bCaptureFailed = true;
+        if (m_showcaseFrameLimit && ++m_showcaseRenderedFrames >= m_showcaseFrameLimit)
+        {
+            requestExit();
+        }
     }
 
+}
+
+bool CubeSceneApplication::recordShowcaseCapture(RHI::IRHICommandList* CmdList)
+{
+    auto* device = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+    auto* list = dynamic_cast<RHI::Vulkan::FVulkanRHICommandListImmediate*>(CmdList);
+    const VkFormat format = device->getSwapchainFormat();
+    if (!device->supportsSwapchainReadback() || !list || !list->GetVulkanCommandBuffer() ||
+        (format != VK_FORMAT_B8G8R8A8_UNORM && format != VK_FORMAT_B8G8R8A8_SRGB &&
+         format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_R8G8B8A8_SRGB)) {
+        MR_LOG(LogCubeSceneApp, Error, "Swapchain does not support RGBA8/BGRA8 GPU capture");
+        return false;
+    }
+    const auto extent = device->getSwapchainExtent();
+    RHI::BufferDesc desc;
+    desc.size = uint64(extent.width) * extent.height * 4;
+    desc.usage = RHI::EResourceUsage::TransferDst;
+    desc.memoryUsage = RHI::EMemoryUsage::Readback;
+    desc.cpuAccessible = true;
+    desc.dedicatedAllocation = true;
+    desc.debugName = "CubeShowcaseReadback";
+    m_captureReadback = m_device->createBuffer(desc);
+    auto* buffer = dynamic_cast<RHI::Vulkan::VulkanBuffer*>(m_captureReadback.Get());
+    const VkImage image = device->getCurrentSwapchainImage();
+    if (!buffer || !image) {
+        MR_LOG(LogCubeSceneApp, Error, "Cannot allocate cube GPU capture readback");
+        return false;
+    }
+    const VkCommandBuffer native = list->GetVulkanCommandBuffer()->getHandle();
+    VkImageMemoryBarrier before{};
+    before.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    before.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    before.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    before.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    before.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    before.srcQueueFamilyIndex = before.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    before.image = image;
+    before.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(native, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &before);
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {extent.width, extent.height, 1};
+    vkCmdCopyImageToBuffer(native, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        buffer->getBuffer(), 1, &region);
+    auto after = before;
+    after.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    after.dstAccessMask = 0;
+    after.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    after.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    vkCmdPipelineBarrier(native, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &after);
+    VkBufferMemoryBarrier host{};
+    host.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    host.srcQueueFamilyIndex = host.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    host.buffer = buffer->getBuffer();
+    host.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(native, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &host, 0, nullptr);
+    return true;
+}
+
+bool CubeSceneApplication::finishShowcaseCapture()
+{
+    m_device->waitForIdle();
+    const auto* pixels = static_cast<const uint8*>(m_captureReadback->map());
+    if (!pixels) {
+        MR_LOG(LogCubeSceneApp, Error, "Cannot map cube GPU capture readback");
+        return false;
+    }
+    bool success = false;
+    try {
+        const auto output = std::filesystem::u8path(m_captureOutput);
+        if (output.has_parent_path()) std::filesystem::create_directories(output.parent_path());
+        std::ofstream file(output, std::ios::binary);
+        file.exceptions(std::ios::failbit | std::ios::badbit);
+        auto* device = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+        const auto extent = device->getSwapchainExtent();
+        const auto format = device->getSwapchainFormat();
+        const bool bgra = format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+        file << "P6\n" << extent.width << ' ' << extent.height << "\n255\n";
+        for (uint64 i = 0; i < uint64(extent.width) * extent.height; ++i) {
+            const char rgb[] = {char(pixels[i * 4 + (bgra ? 2 : 0)]),
+                char(pixels[i * 4 + 1]), char(pixels[i * 4 + (bgra ? 0 : 2)])};
+            file.write(rgb, 3);
+        }
+        file.close();
+        success = true;
+        m_bCaptureCompleted = true;
+    } catch (const std::exception& error) {
+        MR_LOG(LogCubeSceneApp, Error, "Cube GPU capture failed: %s", error.what());
+    }
+    m_captureReadback->unmap();
+    return success;
 }
 
 void CubeSceneApplication::renderCube(
@@ -832,6 +943,8 @@ bool CubeSceneApplication::initializeSceneRenderer()
 
 void CubeSceneApplication::onShutdown()
 {
+    if (m_device) m_device->waitForIdle();
+    m_captureReadback.Reset();
     MR_LOG(LogCubeSceneApp, Log, "Shutting down CubeSceneApplication...");
     MR_LOG(LogCubeSceneApp, Log, "=== CubeSceneApplication::onShutdown() called ===");
     shutdownParallelRendering();
@@ -1007,12 +1120,12 @@ bool CubeSceneApplication::initializeScene()
 
     MR_LOG(LogCubeSceneApp, Log, "Floor actor created at position (0, 0, 0)");
     // Create directional light (sun) - main light source
-    // Light direction: pitch=-45 (from above), yaw=200 (from front-left of helmet)
-    // The helmet faces roughly -Z direction after rotation, so light should come from +Z side
     m_directionalLight = MakeUnique<UDirectionalLightComponent>();
     m_directionalLight->SetLightColor(FLinearColor(1.0f, 0.98f, 0.95f));  // Slight warm tint
-    m_directionalLight->SetIntensity(4.0f);  // Higher intensity for stronger specular highlights
-    m_directionalLight->SetWorldRotation(FRotator(-225.0f, 30.0f, 0.0f));  // Light from front of helmet
+    m_directionalLight->SetIntensity(m_lightIntensity);
+    // Y is up in this scene. Aim the sun down and across the floor so the
+    // front faces are readable and the floating cubes cast visible shadows.
+    m_directionalLight->SetWorldRotation(FRotator(35.0f, -135.0f, 0.0f));
     m_scene->AddLight(m_directionalLight.Get());
     // Point light disabled for now
     // m_pointLight = new UPointLightComponent();
@@ -1113,6 +1226,7 @@ bool CubeSceneApplication::initializeRenderer()
 
 void CubeSceneApplication::updateCamera(float DeltaTime)
 {
+    if (m_bShowcaseMode) return;
     if (!m_cameraManager)
     {
         return;
@@ -2108,8 +2222,7 @@ void CubeSceneApplication::renderShadowDepthPass(
 
     MR_LOG(LogCubeSceneApp, Verbose, "Rendering shadow depth pass");
     // Calculate light view-projection matrix
-    // Must be large enough to cover entire floor (size = 25.0f, so bounds = ��25)
-    float sceneBoundsRadius = 30.0f;  // Cover floor and cubes
+    float sceneBoundsRadius = 8.0f;  // Fit the casters and nearby receiving floor.
     outLightViewProjection = calculateLightViewProjection(lightDirection, sceneBoundsRadius);
     // Set shadow map as render target (depth only)
     TArray<TSharedPtr<RHI::IRHITexture>> emptyColorTargets;
@@ -2137,7 +2250,6 @@ void CubeSceneApplication::renderShadowDepthPass(
     // Clear depth buffer
     cmdList->clearDepthStencil(m_shadowMapTexture, 1.0f, 0);
     // Render all cube actors to shadow map
-    FVector lightPos = -lightDirection.GetSafeNormal() * 10.0f;
     for (auto& cubeActor : m_cubeActors)
     {
         if (!cubeActor) continue;
@@ -2152,7 +2264,7 @@ void CubeSceneApplication::renderShadowDepthPass(
                 // Update model matrix
                 cubeProxy->UpdateModelMatrix(cubeActor->GetActorTransform().ToMatrixWithScale());
                 // Draw cube for shadow map (using light's matrices)
-                cubeProxy->Draw(cmdList, outLightViewProjection, FMatrix::Identity, lightPos);
+                cubeProxy->DrawDepthOnly(cmdList, outLightViewProjection);
             }
 
         }
@@ -2193,7 +2305,7 @@ void CubeSceneApplication::renderCubeWithShadows(
         m_shadowDepthBias,
         m_shadowSlopeBias,
         m_shadowNormalBias,
-        m_shadowDistance
+        m_bShowShadowSampling ? m_shadowDistance : 0.0f
     );
     // Render all cube actors with shadows
     for (auto& cubeActor : m_cubeActors)

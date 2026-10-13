@@ -41,7 +41,11 @@ Cook–Torrance BRDF、Metallic–Roughness 材质、基于图像的光照（IBL
 
 ### 场景与光照
 
+实际 Vulkan 渲染：笑脸立方体使用 2048×2048 Shadow Map 与 3×3 PCF，在木地板上投射阴影。
+
 ![Vulkan 立方体与地面场景](docs/images/samples/vulkan_smile_cube.jpg)
+
+
 
 ## 获取与构建
 

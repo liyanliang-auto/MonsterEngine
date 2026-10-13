@@ -45,6 +45,7 @@ struct alignas(16) FFloorUniformBuffer
     float Projection[16];      // Projection matrix (4x4)
     float NormalMatrix[16];    // Normal transformation matrix (4x4)
     float CameraPosition[4];   // Camera world position (xyz) + padding
+    float TextureBlend[4];     // Shared receiver ABI: y selects the floor material.
 };
 
 /**

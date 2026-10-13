@@ -617,7 +617,7 @@ bool FFloorSceneProxy::CreateShadowShaders()
 
     // Create shadow sampler with clamp to edge (border not always supported)
     MonsterRender::RHI::SamplerDesc ShadowSamplerDesc;
-    ShadowSamplerDesc.filter = MonsterRender::RHI::ESamplerFilter::Bilinear;
+    ShadowSamplerDesc.filter = MonsterRender::RHI::ESamplerFilter::Point;
     ShadowSamplerDesc.addressU = MonsterRender::RHI::ESamplerAddressMode::Clamp;
     ShadowSamplerDesc.addressV = MonsterRender::RHI::ESamplerAddressMode::Clamp;
     ShadowSamplerDesc.addressW = MonsterRender::RHI::ESamplerAddressMode::Clamp;
@@ -696,7 +696,7 @@ void FFloorSceneProxy::UpdateTransformBuffer(
         return;
     }
 
-    FFloorUniformBuffer UBOData;
+    FFloorUniformBuffer UBOData{};
     // Get model matrix from local to world transform
     FMatrix ModelMatrix = GetLocalToWorld();
     // Calculate normal matrix (inverse transpose of model matrix)
@@ -711,6 +711,7 @@ void FFloorSceneProxy::UpdateTransformBuffer(
     UBOData.CameraPosition[1] = static_cast<float>(CameraPosition.Y);
     UBOData.CameraPosition[2] = static_cast<float>(CameraPosition.Z);
     UBOData.CameraPosition[3] = 1.0f;
+    UBOData.TextureBlend[1] = 1.0f;
     // Upload to GPU
     void* MappedData = TransformUniformBuffer->map();
     if (MappedData)
@@ -731,9 +732,9 @@ void FFloorSceneProxy::UpdateLightBuffer(const TArray<FLightSceneInfo*>& Lights)
     FFloorLightUniformBuffer LightUBO;
     std::memset(&LightUBO, 0, sizeof(LightUBO));
     // Ambient color
-    LightUBO.AmbientColor[0] = 0.1f;
-    LightUBO.AmbientColor[1] = 0.1f;
-    LightUBO.AmbientColor[2] = 0.15f;
+    LightUBO.AmbientColor[0] = 0.30f;
+    LightUBO.AmbientColor[1] = 0.32f;
+    LightUBO.AmbientColor[2] = 0.36f;
     LightUBO.AmbientColor[3] = 1.0f;
     // Process lights (max 8)
     int32 LightCount = FMath::Min(Lights.Num(), 8);

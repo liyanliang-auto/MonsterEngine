@@ -725,8 +725,13 @@ namespace MonsterRender::RHI::Vulkan
             }
             m_descriptorSetLayouts.clear();
 
-            // Note: Do NOT destroy render pass - it's owned by VulkanDevice
-            // Pipeline only holds a reference to device's render pass
+            // Custom depth/sample-count passes are created by this pipeline;
+            // ordinary swapchain passes are borrowed from VulkanDevice.
+            const bool ownsRenderPass =
+                (m_desc.renderTargetFormats.empty() && m_desc.depthStencilFormat != EPixelFormat::Unknown) ||
+                (m_desc.sampleCount > 0 && m_desc.sampleCount != static_cast<uint32>(m_device->getMSAASampleCount()));
+            if (ownsRenderPass && m_renderPass != VK_NULL_HANDLE)
+                functions.vkDestroyRenderPass(device, m_renderPass, nullptr);
             m_renderPass = VK_NULL_HANDLE;
         }
 

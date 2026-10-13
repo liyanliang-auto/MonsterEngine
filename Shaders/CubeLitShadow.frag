@@ -86,7 +86,10 @@ layout(location = 0) out vec4 outColor;
 // Basic shadow comparison
 float shadowCompare(vec2 uv, float compareDepth) {
     float shadowDepth = texture(shadowMap, uv).r;
-    float bias = shadow.shadowParams.x;
+    vec3 normal = normalize(fragNormal);
+    vec3 sunDirection = normalize(-lighting.lights[0].position.xyz);
+    float bias = shadow.shadowParams.x + shadow.shadowParams.y *
+        (1.0 - max(dot(normal, sunDirection), 0.0));
     return (compareDepth - bias <= shadowDepth) ? 1.0 : 0.0;
 }
 
@@ -129,11 +132,14 @@ float pcf5x5(vec2 uv, float compareDepth) {
 
 // Calculate shadow factor
 float calculateShadow(vec4 shadowCoord) {
+    if (shadow.shadowParams.w <= 0.0 || shadowCoord.w <= 0.0) return 1.0;
     // Perspective divide
     vec3 projCoords = shadowCoord.xyz / shadowCoord.w;
     
     // Transform to [0,1] range
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
+    // The depth producer uses the RHI's negative-height Vulkan viewport.
+    projCoords.y = 1.0 - projCoords.y;
     
     // Check if outside shadow map bounds
     if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
@@ -231,11 +237,11 @@ void main() {
     vec4 texColor1 = texture(texture1, fragTexCoord);
     vec4 texColor2 = texture(texture2, fragTexCoord);
     
-    // Determine base color based on which texture is valid
+    // Select cube or floor explicitly; both textures have opaque alpha.
     vec3 baseColor;
     
-    // If diffuse texture has valid alpha, use it (floor)
-    if (diffuseColor.a > 0.01) {
+    // textureBlend.y is the shared receiver's floor material flag.
+    if (transform.textureBlend.y > 0.5) {
         baseColor = diffuseColor.rgb;
     }
     // Otherwise blend cube textures

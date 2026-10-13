@@ -117,7 +117,10 @@ void FScene::AddPrimitive(UPrimitiveComponent* Primitive)
     MR_LOG(LogScene, Verbose, "Adding primitive to scene");
 
     // Create scene proxy
-    FPrimitiveSceneProxy* SceneProxy = Primitive->CreateSceneProxy();
+    // Components may already have created their proxy during registration.
+    // Adopt that exact proxy: rendering must use the same object the scene owns.
+    FPrimitiveSceneProxy* SceneProxy = Primitive->GetSceneProxy();
+    if (!SceneProxy) SceneProxy = Primitive->CreateSceneProxy();
     if (!SceneProxy)
     {
         MR_LOG(LogScene, Verbose, "Primitive did not create a scene proxy");

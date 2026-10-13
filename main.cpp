@@ -136,6 +136,10 @@ int main(int argc, char** argv) {
     bool runParallelIntegrationExample = false;  // Run parallel rendering integration example
     bool runAllTests = false;
     bool runCubeScene = false;  // Run CubeSceneApplication with lighting
+    bool cubeShowShadows = true;
+    bool cubeShowcase = false;
+    uint32 cubeFrameLimit = 0;
+    String cubeCaptureOutput;
     bool runCubeSceneTest = false;  // Run CubeSceneRendererTest (pipeline integration test)
     bool useDeferredRendering = false;  // Enable deferred rendering in CubeSceneApplication
     bool runZFightingTests = false;  // Run Z-Fighting test suite
@@ -206,6 +210,45 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(argv[i], "--cube-scene") == 0 || strcmp(argv[i], "-cs") == 0) {
             runCubeScene = true;
+            runSplatScene = false;
+        }
+        else if (strcmp(argv[i], "--cube-showcase") == 0) {
+            runCubeScene = true;
+            runSplatScene = false;
+            cubeShowcase = true;
+        }
+        else if (strcmp(argv[i], "--cube-no-shadows") == 0) {
+            runCubeScene = true;
+            runSplatScene = false;
+            cubeShowShadows = false;
+            cubeShowcase = true;
+        }
+        else if (strcmp(argv[i], "--cube-frames") == 0) {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--cube-frames requires a positive frame count\n");
+                ShutdownLogging(); return 2;
+            }
+            char* end = nullptr;
+            const char* value = argv[++i];
+            const unsigned long frames = std::strtoul(value, &end, 10);
+            if (!*value || *value == '-' || *end || frames == 0 || frames > 1000000) {
+                std::fprintf(stderr, "Invalid --cube-frames value\n");
+                ShutdownLogging(); return 2;
+            }
+            cubeFrameLimit = static_cast<uint32>(frames);
+            runCubeScene = true;
+            runSplatScene = false;
+            cubeShowcase = true;
+        }
+        else if (strcmp(argv[i], "--cube-capture") == 0) {
+            if (i + 1 >= argc || !*argv[i + 1] || argv[i + 1][0] == '-') {
+                std::fprintf(stderr, "--cube-capture requires a PPM output path\n");
+                ShutdownLogging(); return 2;
+            }
+            cubeCaptureOutput = argv[++i];
+            runCubeScene = true;
+            runSplatScene = false;
+            cubeShowcase = true;
         }
         else if (strcmp(argv[i], "--cube-scene-test") == 0 || strcmp(argv[i], "-cst") == 0) {
             runCubeSceneTest = true;
@@ -540,15 +583,21 @@ int main(int argc, char** argv) {
     }
     
     // Enable deferred rendering if requested
+    if (runCubeScene || cubeShowcase) {
+        cubeApp->configureShowcase(cubeShowShadows, cubeFrameLimit, cubeShowcase);
+    }
+    if (!cubeCaptureOutput.empty()) cubeApp->setCaptureOutput(cubeCaptureOutput);
     if (useDeferredRendering) {
         MR_LOG(LogInit, Log, "Deferred Rendering enabled via command line");
         cubeApp->setUseDeferredRendering(true);
     }
     
+    auto* cubeRunState = cubeApp.Get();
     app = std::move(cubeApp);
     
     // Run the application
     int32 exitCode = app->run();
+    if (cubeRunState->hasCaptureFailed()) exitCode = 1;
     
     // Shutdown before destroying to ensure proper cleanup order
     app->shutdown();

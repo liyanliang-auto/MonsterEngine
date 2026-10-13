@@ -261,7 +261,8 @@ protected:
     void UpdateTransformBuffer(
         const FMatrix& ViewMatrix,
         const FMatrix& ProjectionMatrix,
-        const FVector& CameraPosition);
+        const FVector& CameraPosition,
+        TSharedPtr<MonsterRender::RHI::IRHIBuffer> TargetBuffer = nullptr);
 
     /**
      * Update light uniform buffer
@@ -318,6 +319,9 @@ protected:
 
     /** Transform uniform buffer */
     TSharedPtr<MonsterRender::RHI::IRHIBuffer> TransformUniformBuffer;
+
+    /** Separate light-view transforms, immutable during the main pass. */
+    TSharedPtr<MonsterRender::RHI::IRHIBuffer> DepthTransformUniformBuffer;
 
     /** Light uniform buffer */
     TSharedPtr<MonsterRender::RHI::IRHIBuffer> LightUniformBuffer;

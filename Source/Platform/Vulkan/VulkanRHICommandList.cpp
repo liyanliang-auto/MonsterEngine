@@ -411,7 +411,7 @@ namespace MonsterRender::RHI::Vulkan {
                 uint32 mipLevels = texture->getDesc().mipLevels;
                 uint32 arrayLayers = texture->getDesc().arraySize;
                 
-                m_context->getPendingState()->setTexture(set, binding, imageView, sampler, image, format, mipLevels, arrayLayers);
+                m_context->getPendingState()->setTexture(set, binding, imageView, sampler, image, format, mipLevels, arrayLayers, vulkanTexture);
             } else {
                 MR_LOG_ERROR("setShaderResource: Failed to cast texture to VulkanTexture for slot " + std::to_string(slot));
             }
@@ -766,6 +766,7 @@ namespace MonsterRender::RHI::Vulkan {
                 0, nullptr,
                 1, &barrier
             );
+            vkTexture->setCurrentLayout(newLayout);
             
             MR_LOG(LogVulkanRHI, Verbose, "Texture transition: layout %d -> %d", oldLayout, newLayout);
         }
