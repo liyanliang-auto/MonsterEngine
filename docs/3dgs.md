@@ -48,6 +48,7 @@ Bicycle 的场景分页构建：
 逐帧视频导出需要 FFmpeg：
 
 ```powershell
+New-Item -ItemType Directory -Path output -Force | Out-Null
 .\build\bin\Release\MonsterEngine.exe --splat-config resources/3dgs_sequences/bicycle_full_quality.json --splat-sequence resources/3dgs_sequences/bicycle_lod_mid_far.json --splat-export output/bicycle.mp4 --splat-export-fps 24 --splat-ffmpeg "path\to\ffmpeg.exe"
 ```
 
