@@ -136,6 +136,7 @@ int main(int argc, char** argv) {
     bool runParallelIntegrationExample = false;  // Run parallel rendering integration example
     bool runAllTests = false;
     bool runCubeScene = false;  // Run CubeSceneApplication with lighting
+    bool runPBRScene = false;
     bool cubeShowShadows = true;
     bool cubeShowcase = false;
     uint32 cubeFrameLimit = 0;
@@ -207,6 +208,11 @@ int main(int argc, char** argv) {
         }
         else if (strcmp(argv[i], "--test-all") == 0 || strcmp(argv[i], "-ta") == 0) {
             runAllTests = true;
+        }
+        else if (strcmp(argv[i], "--renderPBR") == 0 || strcmp(argv[i], "--pbr-scene") == 0) {
+            runPBRScene = true;
+            runCubeScene = true;
+            runSplatScene = false;
         }
         else if (strcmp(argv[i], "--cube-scene") == 0 || strcmp(argv[i], "-cs") == 0) {
             runCubeScene = true;
@@ -583,7 +589,10 @@ int main(int argc, char** argv) {
     }
     
     // Enable deferred rendering if requested
-    if (runCubeScene || cubeShowcase) {
+    if (runPBRScene) {
+        cubeApp->configurePBRShowcase(cubeFrameLimit);
+    }
+    else if (runCubeScene || cubeShowcase) {
         cubeApp->configureShowcase(cubeShowShadows, cubeFrameLimit, cubeShowcase);
     }
     if (!cubeCaptureOutput.empty()) cubeApp->setCaptureOutput(cubeCaptureOutput);

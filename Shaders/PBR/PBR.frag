@@ -8,7 +8,7 @@
 // - GGX specular BRDF (D_GGX, V_SmithGGXCorrelated, F_Schlick)
 // - Lambertian diffuse
 // - Direct lighting (point, directional, spot lights)
-// - Simple ambient lighting (IBL to be added later)
+// - Analytic studio environment with diffuse and specular indirect lighting
 //
 // Row-major matrices, row vector multiplication (UE5 convention)
 // Non-reverse Z depth buffer
@@ -59,7 +59,7 @@ float pow5(float x) {
 float D_GGX(float alpha, float NoH) {
     float a2 = alpha * alpha;
     float d = (NoH * a2 - NoH) * NoH + 1.0;
-    return a2 / (PI * d * d + EPSILON);
+    return a2 / max(PI * d * d, 1e-10);
 }
 
 // Smith GGX Correlated Visibility Function
@@ -203,7 +203,7 @@ struct MaterialParams {
 MaterialParams evaluateMaterial() {
     MaterialParams params;
     
-    // Sample base color
+    // Color textures use sRGB GPU formats; samples are already linear.
     vec4 baseColorSample = texture(BaseColorMap, inTexCoord0);
     params.baseColor = baseColorSample.rgb * Material.BaseColorFactor.rgb * inVertexColor.rgb;
     
@@ -213,7 +213,8 @@ MaterialParams evaluateMaterial() {
     params.metallic = mrSample.b * Material.MetallicFactor;
     
     // Clamp roughness to avoid numerical issues
-    params.roughness = max(params.roughness, MIN_ROUGHNESS);
+    params.roughness = clamp(params.roughness, MIN_ROUGHNESS, 1.0);
+    params.metallic = saturate(params.metallic);
     
     // Reflectance for dielectrics
     params.reflectance = Material.ReflectanceFactor;
@@ -278,7 +279,7 @@ vec3 evaluateDirectLight(
     vec3 diffuse = diffuseColor * Fd_Lambert();
     
     // Energy conservation: diffuse is reduced by Fresnel
-    vec3 kD = (1.0 - F) * (1.0 - f0.r); // Approximate energy conservation
+    vec3 kD = 1.0 - F; // diffuseColor already includes (1 - metallic)
     
     // Final contribution
     return (kD * diffuse + specular) * lightColor * NoL;
@@ -302,6 +303,56 @@ float getSpotAttenuation(vec3 L, vec3 spotDir, float innerCone, float outerCone)
 // Main
 //------------------------------------------------------------------------------
 
+// A compact analytic substitute for a prefiltered studio cubemap. Broad panels
+// are softened as roughness increases. Like Filament's indirect-light path,
+// reflected radiance and diffuse irradiance are evaluated separately: metals
+// have no diffuse lobe and must still receive environment specular lighting.
+vec3 studioRadiance(vec3 R, float roughness) {
+    vec3 radiance = mix(vec3(0.20, 0.23, 0.28), vec3(0.65, 0.72, 0.85),
+                        smoothstep(-0.6, 0.8, R.y));
+    float exponent = mix(48.0, 2.0, roughness * roughness);
+    float panelScale = mix(1.0, 0.55, roughness);
+    radiance += vec3(2.8, 2.5, 2.1) * panelScale *
+                pow(max(dot(R, normalize(vec3(-0.6, 0.8, 1.0))), 0.0), exponent);
+    radiance += vec3(1.0, 1.5, 2.2) * panelScale *
+                pow(max(dot(R, normalize(vec3(0.8, 0.3, 0.6))), 0.0), exponent);
+    radiance += vec3(1.8) * panelScale *
+                pow(max(dot(R, normalize(vec3(0.1, 0.9, -0.8))), 0.0), exponent);
+    return radiance;
+}
+
+// Standard analytic split-sum GGX DFG fit, avoiding an extra LUT descriptor.
+vec2 environmentDFG(float NoV, float roughness) {
+    vec4 r = roughness * vec4(-1.0, -0.0275, -0.572, 0.022) +
+             vec4(1.0, 0.0425, 1.04, -0.04);
+    float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
+    return vec2(-1.04, 1.04) * a004 + r.zw;
+}
+
+vec3 evaluateIndirectLight(vec3 N, vec3 V, vec3 diffuseColor, vec3 f0,
+                           float roughness, float ao) {
+    float NoV = max(dot(N, V), MIN_N_DOT_V);
+    vec3 R = normalize(mix(reflect(-V, N), N, roughness * roughness));
+    vec2 dfg = environmentDFG(NoV, roughness);
+    vec3 specularResponse = max(f0 * dfg.x + dfg.y, vec3(0.0));
+    float specularAO = saturate(pow(NoV + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao);
+    vec3 irradiance = mix(vec3(0.35, 0.38, 0.43), vec3(0.80, 0.85, 0.95), N.y * 0.5 + 0.5);
+    vec3 diffuse = diffuseColor * (1.0 - specularResponse) * irradiance * ao;
+    vec3 specular = studioRadiance(R, roughness) * specularResponse * specularAO;
+    return diffuse + specular;
+}
+
+vec3 toneMap(vec3 color) {
+    // Fitted filmic curve preserves highlight roll-off and material contrast.
+    return clamp((color * (2.51 * color + 0.03)) /
+                 (color * (2.43 * color + 0.59) + 0.14), 0.0, 1.0);
+}
+
+vec3 linearToSRGB(vec3 color) {
+    return mix(12.92 * color, 1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055,
+               step(vec3(0.0031308), color));
+}
+
 void main() {
     // Evaluate material parameters
     MaterialParams mat = evaluateMaterial();
@@ -312,7 +363,7 @@ void main() {
     
     // Surface normal and view direction
     vec3 N = mat.normal;
-    vec3 V = normalize(inViewDirection);
+    vec3 V = normalize(View.CameraPosition.xyz - inWorldPosition);
     
     // Accumulate lighting
     vec3 Lo = vec3(0.0);
@@ -322,7 +373,7 @@ void main() {
         LightData light = Lighting.Lights[i];
         int lightType = int(light.Position.w);
         
-        vec3 L;
+        vec3 L = N;
         float attenuation = 1.0;
         
         if (lightType == LIGHT_TYPE_DIRECTIONAL) {
@@ -333,14 +384,14 @@ void main() {
             // Point light
             vec3 lightVec = light.Position.xyz - inWorldPosition;
             float distance = length(lightVec);
-            L = lightVec / distance;
+            L = lightVec / max(distance, EPSILON);
             attenuation = getDistanceAttenuation(distance, light.Attenuation.x);
         }
         else if (lightType == LIGHT_TYPE_SPOT) {
             // Spot light
             vec3 lightVec = light.Position.xyz - inWorldPosition;
             float distance = length(lightVec);
-            L = lightVec / distance;
+            L = lightVec / max(distance, EPSILON);
             attenuation = getDistanceAttenuation(distance, light.Attenuation.x);
             attenuation *= getSpotAttenuation(L, normalize(light.Direction.xyz),
                                               light.Attenuation.y, light.Attenuation.z);
@@ -350,8 +401,8 @@ void main() {
         Lo += evaluateDirectLight(N, V, L, lightColor, diffuseColor, f0, mat.roughness);
     }
     
-    // Simple ambient lighting (placeholder for IBL)
-    vec3 ambient = diffuseColor * Lighting.AmbientIntensity * mat.ao;
+    vec3 ambient = evaluateIndirectLight(N, V, diffuseColor, f0, mat.roughness, mat.ao)
+                   * Lighting.AmbientIntensity;
     
     // Add emissive
     vec3 emissive = mat.emissive;
@@ -359,11 +410,8 @@ void main() {
     // Final color
     vec3 color = Lo + ambient + emissive;
     
-    // Tone mapping (simple Reinhard)
-    color = color / (color + vec3(1.0));
-    
-    // Gamma correction (linear to sRGB)
-    color = pow(color, vec3(1.0 / 2.2));
+    // The demo's UNORM swapchain needs exactly one linear-to-sRGB encoding.
+    color = linearToSRGB(toneMap(max(color, vec3(0.0))));
     
     outColor = vec4(color, 1.0);
 }

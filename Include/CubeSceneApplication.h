@@ -18,6 +18,7 @@
 #include "RHI/RHI.h"
 #include "Math/MonsterMath.h"
 #include "Containers/Array.h"
+#include <vector>
 
 namespace MonsterEngine
 {
@@ -122,6 +123,21 @@ public:
         m_bHelmetPBREnabled = false;
     }
 
+    /** Configure the actual helmet renderer with a stable studio presentation. */
+    void configurePBRShowcase(uint32 FrameLimit = 0)
+    {
+        m_bHelmetPBREnabled = true;
+        m_bHelmetShowcase = true;
+        m_bRenderCube = false;
+        m_bShadowsEnabled = false;
+        m_bShowcaseMode = true;
+        m_showcaseFrameLimit = FrameLimit;
+        m_config.name = "Monster Engine - renderPBR Helmet";
+        m_config.windowProperties.title = m_config.name;
+        m_config.windowProperties.width = 1200;
+        m_config.windowProperties.height = 900;
+    }
+
     /** Capture resolved GPU pixels to a PPM file, then exit after warmup. */
     void setCaptureOutput(const String& Path) {
         m_captureOutput = Path;
@@ -132,10 +148,21 @@ public:
         return m_bCaptureFailed || (!m_captureOutput.empty() && !m_bCaptureCompleted);
     }
 
+    /** Paint the last completed Vulkan frame in a native WM_PRINTCLIENT request. */
+    bool printNativeClient(void* DeviceContext);
+
 protected:
     /** Record and finish a copy of the actual resolved swapchain image. */
     bool recordShowcaseCapture(RHI::IRHICommandList* CmdList);
     bool finishShowcaseCapture();
+    bool initializeNativePrintSupport();
+    void shutdownNativePrintSupport();
+    bool updateNativePrintCapture();
+    std::vector<uint8> m_nativePrintPixels;
+    uint32 m_nativePrintWidth = 0;
+    uint32 m_nativePrintHeight = 0;
+    bool m_bNativePrintEnabled = false;
+    bool m_bNativePrintRefresh = true;
     String m_captureOutput;
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_captureReadback;
     bool m_bCaptureFailed = false;
@@ -791,6 +818,9 @@ protected:
 
     /** Whether PBR helmet rendering is enabled */
     bool m_bHelmetPBREnabled = true;
+
+    /** Isolate and freeze the helmet for a repeatable README showcase. */
+    bool m_bHelmetShowcase = false;
 
     /** Whether helmet resources are initialized */
     bool m_bHelmetInitialized = false;

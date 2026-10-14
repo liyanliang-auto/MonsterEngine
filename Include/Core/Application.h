@@ -108,7 +108,8 @@ namespace MonsterRender {
         
         // Statistics
         uint64 m_frameCount = 0;
-        float32 m_fpsTimer = 0.0f;
+        /** Raw wall-clock interval for completed frames, separate from simulation delta. */
+        std::chrono::steady_clock::time_point m_fpsSampleStart{};
         uint32 m_fps = 0;
     };
     

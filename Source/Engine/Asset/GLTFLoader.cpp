@@ -15,6 +15,7 @@
 #include <cstring>
 #include <cmath>
 #include <cfloat>
+#include <future>
 
 // cgltf implementation - must be before engine headers to avoid namespace issues
 #define CGLTF_IMPLEMENTATION
@@ -33,6 +34,7 @@ extern "C" {
         const char* filename,
         int* x, int* y, int* channels_in_file, int desired_channels);
     void stbi_image_free(void* retval_from_stbi_load);
+    void stbi_set_flip_vertically_on_load_thread(int flag_true_if_should_flip);
 }
 
 // Engine headers
@@ -576,31 +578,45 @@ bool FGLTFLoader::_loadImageData(
     
     int width = 0, height = 0, channels = 0;
     unsigned char* data = nullptr;
-    
-    if (Image->buffer_view && Image->buffer_view->buffer && Image->buffer_view->buffer->data)
-    {
-        const uint8* bufferData = static_cast<const uint8*>(Image->buffer_view->buffer->data);
-        bufferData += Image->buffer_view->offset;
-        MR_LOG(LogGLTFLoader, Verbose, "Loading image from buffer view, size: %zu", Image->buffer_view->size);
-        data = stbi_load_from_memory(bufferData, static_cast<int>(Image->buffer_view->size),
-                                     &width, &height, &channels, 4);
-    }
-    else if (Image->uri && Image->uri[0] != '\0')
-    {
-        String imagePath = CombinePaths(BasePath, Image->uri);
-        MR_LOG(LogGLTFLoader, Verbose, "Loading image from file: %s", imagePath.c_str());
-        data = stbi_load(imagePath.c_str(), &width, &height, &channels, 4);
-        if (!data)
+
+    try {
+        if (Image->buffer_view && Image->buffer_view->buffer && Image->buffer_view->buffer->data)
         {
-            MR_LOG(LogGLTFLoader, Warning, "Failed to load image: %s", imagePath.c_str());
+            const uint8* bufferData = static_cast<const uint8*>(Image->buffer_view->buffer->data);
+            bufferData += Image->buffer_view->offset;
+            MR_LOG(LogGLTFLoader, Verbose, "Loading image from buffer view, size: %zu", Image->buffer_view->size);
+            // glTF uses top-first image rows. Decode on a temporary worker so the
+            // thread-local override neither inherits nor changes caller flip state.
+            data = std::async(std::launch::async, [&] {
+                stbi_set_flip_vertically_on_load_thread(0);
+                return stbi_load_from_memory(bufferData, static_cast<int>(Image->buffer_view->size),
+                                            &width, &height, &channels, 4);
+            }).get();
         }
-    }
-    else
-    {
-        MR_LOG(LogGLTFLoader, Warning, "Image has no valid buffer_view or uri");
+        else if (Image->uri && Image->uri[0] != '\0')
+        {
+            String imagePath = CombinePaths(BasePath, Image->uri);
+            MR_LOG(LogGLTFLoader, Verbose, "Loading image from file: %s", imagePath.c_str());
+            data = std::async(std::launch::async, [&] {
+                stbi_set_flip_vertically_on_load_thread(0);
+                return stbi_load(imagePath.c_str(), &width, &height, &channels, 4);
+            }).get();
+            if (!data)
+            {
+                MR_LOG(LogGLTFLoader, Warning, "Failed to load image: %s", imagePath.c_str());
+            }
+        }
+        else
+        {
+            MR_LOG(LogGLTFLoader, Warning, "Image has no valid buffer_view or uri");
+            return false;
+        }
+
+    } catch (const std::exception& error) {
+        MR_LOG(LogGLTFLoader, Error, "Cannot decode glTF image: %s", error.what());
         return false;
     }
-    
+
     if (!data) return false;
     
     // Validate image dimensions
@@ -648,6 +664,11 @@ void FGLTFLoader::_generateTangents(FGLTFPrimitive& Primitive)
     TArray<Math::FVector3f> tan1, tan2;
     tan1.SetNum(vertexCount);
     tan2.SetNum(vertexCount);
+    for (uint32 i = 0; i < vertexCount; ++i)
+    {
+        tan1[i] = Math::FVector3f(0.0f, 0.0f, 0.0f);
+        tan2[i] = Math::FVector3f(0.0f, 0.0f, 0.0f);
+    }
     
     for (uint32 i = 0; i < indexCount; i += 3)
     {
@@ -664,7 +685,11 @@ void FGLTFLoader::_generateTangents(FGLTFPrimitive& Primitive)
         float z1 = v1.Z - v0.Z, z2 = v2.Z - v0.Z;
         float s1 = uv1.X - uv0.X, s2 = uv2.X - uv0.X;
         float t1 = uv1.Y - uv0.Y, t2 = uv2.Y - uv0.Y;
-        float r = 1.0f / (s1 * t2 - s2 * t1 + 0.0001f);
+        const float determinant = s1 * t2 - s2 * t1;
+        // Adding an epsilon changes the sign of small mirrored UV triangles,
+        // reversing their tangent basis. Skip degenerate UVs and retain sign.
+        if (std::fabs(determinant) < 1e-12f) continue;
+        float r = 1.0f / determinant;
         
         Math::FVector3f sdir((t2 * x1 - t1 * x2) * r, (t2 * y1 - t1 * y2) * r, (t2 * z1 - t1 * z2) * r);
         Math::FVector3f tdir((s1 * x2 - s2 * x1) * r, (s1 * y2 - s2 * y1) * r, (s1 * z2 - s2 * z1) * r);

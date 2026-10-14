@@ -68,6 +68,47 @@ using namespace MonsterEngine;
 // Use global log category (defined in LogCategories.cpp)
 using MonsterRender::LogCubeSceneApp;
 
+#if PLATFORM_WINDOWS
+namespace {
+constexpr const wchar_t* NativePrintOwnerProperty = L"MonsterEngine.PBR.PrintOwner";
+constexpr const wchar_t* NativePrintProcProperty = L"MonsterEngine.PBR.PrintProc";
+
+LRESULT CALLBACK HelmetPrintWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    auto* owner = static_cast<CubeSceneApplication*>(GetPropW(window, NativePrintOwnerProperty));
+    auto previous = reinterpret_cast<WNDPROC>(GetPropW(window, NativePrintProcProperty));
+    if (message == WM_PRINTCLIENT && owner && owner->printNativeClient(reinterpret_cast<void*>(wParam)))
+        return 0;
+    if (message == WM_PRINT && owner && (lParam & PRF_CLIENT))
+    {
+        // Some GLFW/DefWindowProc versions paint the client directly for
+        // WM_PRINT instead of dispatching WM_PRINTCLIENT. Let that procedure
+        // paint all native non-client elements, then render our own client.
+        const LRESULT result = previous ? CallWindowProcW(previous, window, message, wParam, lParam)
+                                        : DefWindowProcW(window, message, wParam, lParam);
+        auto dc = reinterpret_cast<HDC>(wParam);
+        RECT rect{};
+        POINT clientOrigin{};
+        if (dc && GetWindowRect(window, &rect) && ClientToScreen(window, &clientOrigin))
+        {
+            const int saved = SaveDC(dc);
+            if (saved)
+            {
+                SetViewportOrgEx(dc, clientOrigin.x - rect.left, clientOrigin.y - rect.top, nullptr);
+                owner->printNativeClient(dc);
+                RestoreDC(dc, saved);
+            }
+        }
+        return result;
+    }
+    // GLFW / DefWindowProc still draws the genuine OS title and frame, and
+    // dispatches WM_PRINTCLIENT to this renderer. No window chrome is drawn here.
+    return previous ? CallWindowProcW(previous, window, message, wParam, lParam)
+                    : DefWindowProcW(window, message, wParam, lParam);
+}
+}
+#endif
+
 // ============================================================================
 
 // Construction / Destruction
@@ -160,7 +201,7 @@ void CubeSceneApplication::onInitialize()
     {
         RHI::ERHIBackend backend = m_device->getRHIBackend();
         const char* backendName = (backend == RHI::ERHIBackend::Vulkan) ? "Vulkan" : "OpenGL";
-        String windowTitle = String("MonsterEngine - CubeScene [") + backendName + "]";
+        String windowTitle = String(m_bHelmetShowcase ? "Monster Engine - renderPBR Helmet [" : "MonsterEngine - CubeScene [") + backendName + "]";
         getWindow()->setTitle(windowTitle);
         MR_LOG(LogCubeSceneApp, Log, "Window title set to: %s", windowTitle.c_str());
     }
@@ -265,6 +306,11 @@ void CubeSceneApplication::onInitialize()
         {
             MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize PBR helmet");
             m_bHelmetPBREnabled = false;
+            if (m_bHelmetShowcase) {
+                m_bCaptureFailed = true;
+                requestExit();
+                return;
+            }
         }
 
     }
@@ -277,6 +323,13 @@ void CubeSceneApplication::onInitialize()
             MR_LOG(LogCubeSceneApp, Warning, "Failed to initialize Deferred Renderer, falling back to Forward");
             m_bUseDeferredRendering = false;
         }
+    }
+
+    if (m_bHelmetShowcase && !initializeNativePrintSupport())
+    {
+        MR_LOG(LogCubeSceneApp, Error, "Cannot initialize native helmet print support");
+        m_bCaptureFailed = true;
+        requestExit();
     }
 
     MR_LOG(LogCubeSceneApp, Log, "CubeSceneApplication initialized successfully");
@@ -624,13 +677,18 @@ void CubeSceneApplication::onRender()
         cmdList->endRenderPass();
         const bool captureFrame = !m_captureOutput.empty() &&
             m_showcaseRenderedFrames + 1 >= m_showcaseFrameLimit;
-        if (captureFrame && !recordShowcaseCapture(cmdList)) m_bCaptureFailed = true;
+        // The showcase is static. Keep one completed frame, refreshing only
+        // after native print requests or a resize instead of polling readback.
+        const bool nativePrintFrame = m_bNativePrintEnabled && m_bNativePrintRefresh;
+        if ((captureFrame || nativePrintFrame) && !recordShowcaseCapture(cmdList)) m_bCaptureFailed = true;
         // End command recording
         cmdList->end();
         // Present frame
         m_device->present();
         if (captureFrame && !m_bCaptureFailed && !finishShowcaseCapture()) m_bCaptureFailed = true;
-        if (m_showcaseFrameLimit && ++m_showcaseRenderedFrames >= m_showcaseFrameLimit)
+        if (nativePrintFrame && !m_bCaptureFailed && !updateNativePrintCapture()) m_bCaptureFailed = true;
+        ++m_showcaseRenderedFrames;
+        if (m_showcaseFrameLimit && m_showcaseRenderedFrames >= m_showcaseFrameLimit)
         {
             requestExit();
         }
@@ -732,6 +790,91 @@ bool CubeSceneApplication::finishShowcaseCapture()
     }
     m_captureReadback->unmap();
     return success;
+}
+
+bool CubeSceneApplication::initializeNativePrintSupport()
+{
+#if PLATFORM_WINDOWS
+    auto window = getWindow() ? static_cast<HWND>(getWindow()->getNativeHandle()) : nullptr;
+    if (!window) return false;
+    auto previous = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(window, GWLP_WNDPROC));
+    if (!previous || !SetPropW(window, NativePrintOwnerProperty, this)) return false;
+    if (!SetPropW(window, NativePrintProcProperty, reinterpret_cast<HANDLE>(previous)))
+    {
+        RemovePropW(window, NativePrintOwnerProperty);
+        return false;
+    }
+    SetLastError(0);
+    if (!SetWindowLongPtrW(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(HelmetPrintWindowProc)) && GetLastError())
+    {
+        RemovePropW(window, NativePrintOwnerProperty);
+        RemovePropW(window, NativePrintProcProperty);
+        return false;
+    }
+    m_bNativePrintEnabled = true;
+#endif
+    return true;
+}
+
+void CubeSceneApplication::shutdownNativePrintSupport()
+{
+#if PLATFORM_WINDOWS
+    auto window = getWindow() ? static_cast<HWND>(getWindow()->getNativeHandle()) : nullptr;
+    if (window && m_bNativePrintEnabled)
+    {
+        auto previous = reinterpret_cast<WNDPROC>(RemovePropW(window, NativePrintProcProperty));
+        if (previous) SetWindowLongPtrW(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(previous));
+        RemovePropW(window, NativePrintOwnerProperty);
+    }
+#endif
+    m_bNativePrintEnabled = false;
+    m_nativePrintPixels.clear();
+    m_nativePrintWidth = m_nativePrintHeight = 0;
+}
+
+bool CubeSceneApplication::updateNativePrintCapture()
+{
+    // Copy only a completed frame; the window procedure never records GPU
+    // commands or waits for the renderer, preventing reentrant capture deadlocks.
+    m_device->waitForIdle();
+    const auto* pixels = static_cast<const uint8*>(m_captureReadback->map());
+    if (!pixels) return false;
+    auto* device = static_cast<RHI::Vulkan::VulkanDevice*>(m_device);
+    const auto extent = device->getSwapchainExtent();
+    const auto format = device->getSwapchainFormat();
+    const bool bgra = format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+    m_nativePrintPixels.resize(size_t(extent.width) * extent.height * 4);
+    std::memcpy(m_nativePrintPixels.data(), pixels, m_nativePrintPixels.size());
+    m_captureReadback->unmap();
+    if (!bgra)
+        for (size_t i = 0; i < m_nativePrintPixels.size(); i += 4)
+            std::swap(m_nativePrintPixels[i], m_nativePrintPixels[i + 2]);
+    m_nativePrintWidth = extent.width;
+    m_nativePrintHeight = extent.height;
+    m_bNativePrintRefresh = false;
+    return true;
+}
+
+bool CubeSceneApplication::printNativeClient(void* DeviceContext)
+{
+#if PLATFORM_WINDOWS
+    m_bNativePrintRefresh = true;
+    if (!DeviceContext || m_nativePrintPixels.empty()) return false;
+    RECT client{};
+    if (!GetClientRect(static_cast<HWND>(getWindow()->getNativeHandle()), &client)) return false;
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = static_cast<LONG>(m_nativePrintWidth);
+    info.bmiHeader.biHeight = -static_cast<LONG>(m_nativePrintHeight);
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    const int result = StretchDIBits(static_cast<HDC>(DeviceContext), 0, 0, client.right, client.bottom,
+        0, 0, m_nativePrintWidth, m_nativePrintHeight, m_nativePrintPixels.data(), &info, DIB_RGB_COLORS, SRCCOPY);
+    return result != 0 && result != static_cast<int>(GDI_ERROR);
+#else
+    return false;
+#endif
 }
 
 void CubeSceneApplication::renderCube(
@@ -943,11 +1086,15 @@ bool CubeSceneApplication::initializeSceneRenderer()
 
 void CubeSceneApplication::onShutdown()
 {
+    shutdownNativePrintSupport();
     if (m_device) m_device->waitForIdle();
     m_captureReadback.Reset();
     MR_LOG(LogCubeSceneApp, Log, "Shutting down CubeSceneApplication...");
     MR_LOG(LogCubeSceneApp, Log, "=== CubeSceneApplication::onShutdown() called ===");
     shutdownParallelRendering();
+    // Release the helmet's native Vulkan children while their device is alive.
+    // This also handles resources allocated before a partial initialization.
+    shutdownHelmetPBR();
 
     // CRITICAL: Clean up in reverse order of initialization to avoid dangling pointers
     // Step 1: Shutdown ImGui first (it may reference textures)
@@ -1203,6 +1350,14 @@ bool CubeSceneApplication::initializeCamera()
     settings.SprintMultiplier = 2.0f;
     // Set FOV to match camera manager
     m_fpsCameraController->SetFOV(45.0f);
+    if (m_bHelmetShowcase)
+    {
+        // A near-level three-quarter front view keeps the face and painted
+        // surface readable instead of showing mostly the top of the helmet.
+        m_fpsCameraController->SetPosition(FVector(0.9, 0.3, 3.8));
+        m_fpsCameraController->SetRotation(-103.3f, -4.4f);
+        m_fpsCameraController->SetFOV(38.0f);
+    }
     // Initialize with camera manager
     m_fpsCameraController->Initialize(m_cameraManager.Get());
     // Verify camera position after FPS controller initialization
@@ -1522,6 +1677,7 @@ void CubeSceneApplication::renderLightingControlPanel()
 
 void CubeSceneApplication::onWindowResize(uint32 width, uint32 height)
 {
+    m_bNativePrintRefresh = true;
     // Reference: UE5 FSlateRHIRenderer::OnWindowResized
     MR_LOG(LogCubeSceneApp, Log, "Window resized to %ux%u", width, height);
     m_windowWidth = width;

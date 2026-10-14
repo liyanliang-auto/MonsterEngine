@@ -81,6 +81,11 @@ namespace MonsterRender {
         
         // Call derived class initialization
         onInitialize();
+
+        // Asset initialization is not part of a rendered-frame FPS sample.
+        m_fpsSampleStart = std::chrono::steady_clock::now();
+        m_frameCount = 0;
+        m_fps = 0;
         
         m_initialized = true;
         MR_LOG_INFO("Application initialized successfully");
@@ -153,6 +158,8 @@ namespace MonsterRender {
         if (m_minimized) {
             // Sleep a bit to avoid busy waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            m_frameCount = 0;
+            m_fpsSampleStart = std::chrono::steady_clock::now();
             return;
         }
         
@@ -164,11 +171,12 @@ namespace MonsterRender {
         
         // Update statistics
         m_frameCount++;
-        m_fpsTimer += m_deltaTime;
-        if (m_fpsTimer >= 1.0f) {
-            m_fps = static_cast<uint32>(m_frameCount / m_fpsTimer);
+        const auto sampleEnd = std::chrono::steady_clock::now();
+        const double elapsed = std::chrono::duration<double>(sampleEnd - m_fpsSampleStart).count();
+        if (elapsed >= 1.0) {
+            m_fps = static_cast<uint32>(m_frameCount / elapsed);
             m_frameCount = 0;
-            m_fpsTimer = 0.0f;
+            m_fpsSampleStart = sampleEnd;
             
             // Update window title with backend name and FPS
             if (m_config.windowProperties.title.find("FPS") == String::npos) {

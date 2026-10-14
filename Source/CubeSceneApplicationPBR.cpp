@@ -161,7 +161,8 @@ bool CubeSceneApplication::initializeHelmetPBR()
     // Create default textures first (needed for missing PBR maps)
     if (!createDefaultTextures())
     {
-        MR_LOG(LogCubeSceneApp, Warning, "Failed to create default textures");
+        MR_LOG(LogCubeSceneApp, Error, "Failed to create default PBR textures");
+        return false;
     }
     MR_LOG(LogCubeSceneApp, Log, "Step 1: Default textures created");
     
@@ -181,7 +182,8 @@ bool CubeSceneApplication::initializeHelmetPBR()
     
     if (!createHelmetTextures())
     {
-        MR_LOG(LogCubeSceneApp, Warning, "Step 4: Failed to create helmet textures, using defaults");
+        MR_LOG(LogCubeSceneApp, Error, "Step 4: Failed to create helmet textures");
+        return false;
     }
     else
     {
@@ -356,11 +358,11 @@ bool CubeSceneApplication::createHelmetTextures()
     
     if (!m_helmetModel || m_helmetModel->Images.Num() == 0)
     {
-        MR_LOG(LogCubeSceneApp, Warning, "No images in helmet model");
-        return true;
+        MR_LOG(LogCubeSceneApp, Error, "No images in helmet model");
+        return false;
     }
     
-    auto createTex = [this](const FGLTFImage& img, const char* name) -> TSharedPtr<RHI::IRHITexture>
+    auto createTex = [this](const FGLTFImage& img, const char* name, bool bSRGB = false) -> TSharedPtr<RHI::IRHITexture>
     {
         if (!img.bIsLoaded || img.Data.Num() == 0) return nullptr;
         
@@ -374,7 +376,9 @@ bool CubeSceneApplication::createHelmetTextures()
         desc.depth = 1;
         desc.mipLevels = mipLevels;
         desc.arraySize = 1;
-        desc.format = RHI::EPixelFormat::R8G8B8A8_UNORM;
+        // Hardware decodes color maps once, including filtering/mip generation.
+        // Normal, metallic/roughness and occlusion maps remain linear data.
+        desc.format = bSRGB ? RHI::EPixelFormat::R8G8B8A8_SRGB : RHI::EPixelFormat::R8G8B8A8_UNORM;
         desc.usage = RHI::EResourceUsage::ShaderResource | RHI::EResourceUsage::TransferDst | RHI::EResourceUsage::TransferSrc;
         desc.initialData = img.Data.GetData();
         desc.initialDataSize = img.Data.Num();
@@ -401,7 +405,7 @@ bool CubeSceneApplication::createHelmetTextures()
         };
         
         if (auto* img = getImage(mat.BaseColorTexture))
-            m_helmetBaseColorTexture = createTex(*img, "Helmet_BaseColor");
+            m_helmetBaseColorTexture = createTex(*img, "Helmet_BaseColor", true);
         if (auto* img = getImage(mat.NormalTexture))
             m_helmetNormalTexture = createTex(*img, "Helmet_Normal");
         if (auto* img = getImage(mat.MetallicRoughnessTexture))
@@ -409,7 +413,17 @@ bool CubeSceneApplication::createHelmetTextures()
         if (auto* img = getImage(mat.OcclusionTexture))
             m_helmetOcclusionTexture = createTex(*img, "Helmet_AO");
         if (auto* img = getImage(mat.EmissiveTexture))
-            m_helmetEmissiveTexture = createTex(*img, "Helmet_Emissive");
+            m_helmetEmissiveTexture = createTex(*img, "Helmet_Emissive", true);
+
+        if ((mat.BaseColorTexture.IsValid() && !m_helmetBaseColorTexture) ||
+            (mat.NormalTexture.IsValid() && !m_helmetNormalTexture) ||
+            (mat.MetallicRoughnessTexture.IsValid() && !m_helmetMetallicRoughnessTexture) ||
+            (mat.OcclusionTexture.IsValid() && !m_helmetOcclusionTexture) ||
+            (mat.EmissiveTexture.IsValid() && !m_helmetEmissiveTexture))
+        {
+            MR_LOG(LogCubeSceneApp, Error, "A referenced helmet material texture failed to load");
+            return false;
+        }
     }
     
     MR_LOG(LogCubeSceneApp, Log, "Helmet textures created");
@@ -711,14 +725,14 @@ void CubeSceneApplication::updatePBRUniforms(
     if (!m_bHelmetInitialized) return;
     
     // Update rotation
-    m_helmetRotationAngle += m_helmetRotationSpeed * m_deltaTime;
+    if (!m_bHelmetShowcase) m_helmetRotationAngle += m_helmetRotationSpeed * m_deltaTime;
     if (m_helmetRotationAngle > 360.0f) m_helmetRotationAngle -= 360.0f;
     
     // Build model matrix
     // DamagedHelmet model faces +Z by default, rotate to face camera (-Z direction)
     constexpr double PI = 3.14159265358979323846;
     
-    // X-axis rotation (45 degrees tilt)
+    // Convert the DamagedHelmet mesh's local up axis to this scene's Y-up.
     double xAngleRad = -90.0 * (PI / 180.0);
     double cosX = std::cos(xAngleRad), sinX = std::sin(xAngleRad);
     FMatrix rotX = FMatrix::Identity;
@@ -726,22 +740,22 @@ void CubeSceneApplication::updatePBRUniforms(
     rotX.M[2][1] = sinX; rotX.M[2][2] = cosX;
     
     // Y-axis rotation (90 degrees to face camera + animation)
-    double yAngleRad = (-20.0 + m_helmetRotationAngle) * (PI / 180.0);
+    double yAngleRad = ((m_bHelmetShowcase ? -45.0 : -20.0) + m_helmetRotationAngle) * (PI / 180.0);
     double cosY = std::cos(yAngleRad), sinY = std::sin(yAngleRad);
     FMatrix rotY = FMatrix::Identity;
     rotY.M[0][0] = cosY; rotY.M[0][2] = sinY;
     rotY.M[2][0] = -sinY; rotY.M[2][2] = cosY;
     
-    // Position helmet to the right of and at the same height as the highest cube (Y=2.0)
+    // Keep the original mixed scene placement, or center the isolated showcase.
     m_helmetModelMatrix = FMatrix::MakeScale(FVector(1, 1, 1)) * rotX * rotY * 
-                          FMatrix::MakeTranslation(FVector(4.0, 2.0, 0.0));
+                          FMatrix::MakeTranslation(m_bHelmetShowcase ? FVector(0.0, 0.0, 0.0) : FVector(4.0, 2.0, 0.0));
     
     // Update view UBO
     // Note: Transpose matrices before upload because GLSL uses column-major layout
     // but our TMatrix is row-major (UE5 convention)
     if (m_pbrViewUniformBuffer)
     {
-        FPBRViewUniforms view;
+        FPBRViewUniforms view{};
         view.ViewMatrix = ToMatrix44f(viewMatrix.GetTransposed());
         view.ProjectionMatrix = ToMatrix44f(projectionMatrix.GetTransposed());
         view.ViewProjectionMatrix = ToMatrix44f((viewMatrix * projectionMatrix).GetTransposed());
@@ -761,7 +775,7 @@ void CubeSceneApplication::updatePBRUniforms(
     {
         FPBRLightUniforms lights;
         std::memset(&lights, 0, sizeof(lights));
-        lights.AmbientIntensity = 0.03f;  // Increased for better shadow fill
+        lights.AmbientIntensity = 0.45f;  // Studio environment radiance, diffuse + specular
         
         // Get directional lights from scene
         const TArray<FLightSceneInfo*>& dirLights = m_scene ? m_scene->GetDirectionalLights() : TArray<FLightSceneInfo*>();
@@ -785,6 +799,19 @@ void CubeSceneApplication::updatePBRUniforms(
             ld.Direction = FVector4f((float)dir.X, (float)dir.Y, (float)dir.Z, 0);
             ld.Attenuation = FVector4f(10.0f, 0.9f, 0.8f, 0.0f);  // Default attenuation
         }
+
+        if (m_bHelmetShowcase)
+        {
+            // Small direct sources complement the broad analytic environment.
+            // These affect only the helmet showcase, not the cube's lighting.
+            lights.NumLights = 3;
+            lights.Lights[0].Position = FVector4f(-0.6f, -0.8f, -1.0f, 0.0f);
+            lights.Lights[0].Color = FVector4f(1.0f, 0.94f, 0.86f, 1.4f);
+            lights.Lights[1].Position = FVector4f(0.8f, -0.2f, -0.5f, 0.0f);
+            lights.Lights[1].Color = FVector4f(0.72f, 0.85f, 1.0f, 0.8f);
+            lights.Lights[2].Position = FVector4f(-0.2f, -0.7f, 0.8f, 0.0f);
+            lights.Lights[2].Color = FVector4f(1.0f, 1.0f, 1.0f, 1.1f);
+        }
         
         void* data = m_pbrLightUniformBuffer->map();
         if (data) { std::memcpy(data, &lights, sizeof(lights)); m_pbrLightUniformBuffer->unmap(); }
@@ -795,7 +822,7 @@ void CubeSceneApplication::updatePBRUniforms(
     {
         FPBRMaterialUniforms mat;
         mat.BaseColorFactor = FVector4f(1, 1, 1, 1);
-        mat.EmissiveFactor = FVector4f(1, 1, 1, 0);
+        mat.EmissiveFactor = FVector4f(0, 0, 0, 0);
         mat.MetallicFactor = 1.0f;
         mat.RoughnessFactor = 1.0f;
         mat.ReflectanceFactor = 0.5f;
@@ -812,6 +839,7 @@ void CubeSceneApplication::updatePBRUniforms(
                                             m.BaseColorFactor.Z, m.BaseColorFactor.W);
             mat.MetallicFactor = m.MetallicFactor;
             mat.RoughnessFactor = m.RoughnessFactor;
+            mat.EmissiveFactor = FVector4f(m.EmissiveFactor.X, m.EmissiveFactor.Y, m.EmissiveFactor.Z, 0);
         }
         
         void* data = m_pbrMaterialUniformBuffer->map();
@@ -926,7 +954,7 @@ void CubeSceneApplication::renderHelmetWithPBR(
             MR_LOG(LogCubeSceneApp, Verbose, "DEBUG: Re-enabled descriptor set cache");
         }
         
-        MR_LOG(LogCubeSceneApp, Log, "PBR helmet rendered: %u indices", m_helmetIndexCount);
+        MR_LOG(LogCubeSceneApp, Verbose, "PBR helmet rendered: %u indices", m_helmetIndexCount);
     }
     else if (backend == RHI::ERHIBackend::OpenGL)
     {
@@ -1153,6 +1181,12 @@ void CubeSceneApplication::_setOpenGLPBRUniforms(
 void CubeSceneApplication::shutdownHelmetPBR()
 {
     MR_LOG(LogCubeSceneApp, Log, "Shutting down PBR helmet resources...");
+
+    // The pipeline owns shader references and layout state. Destroy it before
+    // releasing the application's descriptor/layout and material resources.
+    m_pbrPipelineState.Reset();
+    m_pbrVertexShader.Reset();
+    m_pbrFragmentShader.Reset();
     
     // Release descriptor sets first
     m_pbrPerFrameDescriptorSet.Reset();
@@ -1187,11 +1221,6 @@ void CubeSceneApplication::shutdownHelmetPBR()
     // Release buffers
     m_helmetVertexBuffer.Reset();
     m_helmetIndexBuffer.Reset();
-    
-    // Release pipeline and shaders
-    m_pbrPipelineState.Reset();
-    m_pbrVertexShader.Reset();
-    m_pbrFragmentShader.Reset();
     
     // Release model
     m_helmetModel.Reset();
