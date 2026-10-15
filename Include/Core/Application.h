@@ -22,6 +22,8 @@ namespace MonsterRender {
         bool enableVSync = true;
         bool enableValidation = true;
         bool enableDebugMarkers = true;
+        /** Label for completed application frames shown in the native title bar. */
+        String fpsLabel = "FPS";
         
         // RHI backend selection (None = auto-select best available)
         RHI::ERHIBackend preferredBackend = RHI::ERHIBackend::None;

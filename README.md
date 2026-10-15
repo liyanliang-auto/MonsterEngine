@@ -13,13 +13,15 @@ MonsterEngine 是使用 C++20 开发的 3D 渲染引擎，提供 Vulkan / OpenGL
 
 ### 3D Gaussian Splatting · Bicycle
 
-**约 613.2 万个高斯 · SH3 · 1920×1080 内部渲染分辨率**
+**全量画质：约 613.2 万个高斯 · SH3 · 1920×1080 内部渲染分辨率 · 约 12 FPS**
 
 以下截图来自 MonsterEngine 实际运行窗口，保留引擎标题栏并隐藏控制面板。展示使用原始全量模式，呈现模型的细节。
 
 ![MonsterEngine Bicycle 实际窗口](docs/images/samples/bicycle_monsterengine_window.png)
 
-[![Bicycle 相机路径预览，点击查看完整视频](docs/images/samples/bicycle_monsterengine_path_window_preview.gif)](docs/images/samples/bicycle_monsterengine_path_window.mp4)
+<a href="docs/images/samples/bicycle_monsterengine_path_window.mp4">
+  <img src="docs/images/samples/bicycle_monsterengine_path_window_preview.gif" alt="Bicycle 相机路径预览，点击查看完整视频" width="100%">
+</a>
 
 [观看真实窗口录屏](docs/images/samples/bicycle_monsterengine_path_window.mp4) · [观看 1080p 高清导出视频](docs/images/samples/bicycle_3dgs_full_1080p.mp4)
 
@@ -148,11 +150,15 @@ cmake --build build --config Release --target MonsterEngine SplatLODBuilder
 
 # 高画质 LOD / 流式加载
 .\build\bin\Release\MonsterEngine.exe --splat-config resources/3dgs_sequences/bicycle_lod_high.json
+
+# 实时作品展示：720p 内部渲染，高质量放大至 1080p 窗口
+.\build\bin\Release\MonsterEngine.exe --splat-config resources/3dgs_sequences/bicycle_realtime_1080p.json
 ```
 
 | 配置 | 活动高斯容量上限 | 场景 GPU 预算 | 细节误差 |
 | --- | ---: | ---: | ---: |
 | 日常 LOD：`lod_streaming_defaults.json` | 150 万 | 1 GiB | 2 px |
+| 实时 1080p 展示：`bicycle_realtime_1080p.json` | 140 万 | 2 GiB | 2 px |
 | 高画质 LOD：`bicycle_lod_high.json` | 613 万 | 2 GiB | 1 px |
 | 原始全量：`bicycle_full_quality.json` | 613 万 | 2 GiB | — |
 

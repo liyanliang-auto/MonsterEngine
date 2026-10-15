@@ -299,6 +299,8 @@ int main(int argc, char** argv) {
         else if(strcmp(argv[i],"--splat-rounds")==0){const auto n=unsignedOption(argument());if(n>100)throw std::runtime_error("Rounds exceed 100");splatRuntime.rounds=uint32_t(n);}
         else if(strcmp(argv[i],"--splat-width")==0){const auto n=unsignedOption(argument());if(n>16384)throw std::runtime_error("Width exceeds 16384");splatRuntime.width=uint32_t(n);}
         else if(strcmp(argv[i],"--splat-height")==0){const auto n=unsignedOption(argument());if(n>16384)throw std::runtime_error("Height exceeds 16384");splatRuntime.height=uint32_t(n);}
+        else if(strcmp(argv[i],"--splat-render-width")==0){const auto n=unsignedOption(argument());if(n>16384)throw std::runtime_error("Render width exceeds 16384");splatRuntime.renderWidth=uint32_t(n);}
+        else if(strcmp(argv[i],"--splat-render-height")==0){const auto n=unsignedOption(argument());if(n>16384)throw std::runtime_error("Render height exceeds 16384");splatRuntime.renderHeight=uint32_t(n);}
         else if(strcmp(argv[i],"--splat-active-capacity")==0){const auto n=unsignedOption(argument());if(n>UINT32_MAX)throw std::runtime_error("Active capacity exceeds uint32");splatRuntime.activeCapacity=uint32_t(n);}
         else if(strcmp(argv[i],"--splat-sort-capacity")==0){const auto n=unsignedOption(argument());if(n>UINT32_MAX)throw std::runtime_error("Sort capacity exceeds uint32");splatRuntime.sortCapacity=uint32_t(n);}
         else if(strcmp(argv[i],"--splat-sh-degree")==0){const auto n=unsignedOption(argument());if(n>3)throw std::runtime_error("SH degree exceeds 3");splatRuntime.displaySHDegree=int32_t(n);}

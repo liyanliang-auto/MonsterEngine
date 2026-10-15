@@ -75,6 +75,7 @@ static ApplicationConfig CreateSplatSceneConfig(const Splat::FSplatLODRuntimeOpt
 {
     ApplicationConfig config;
     config.name = "Monster Engine - 3DGS Splat";
+    config.fpsLabel = "Render FPS";
     config.preferredBackend = RHI::ERHIBackend::Vulkan;
     config.windowProperties.width  = runtime.width;
     config.windowProperties.height = runtime.height;
@@ -196,7 +197,7 @@ bool SplatSceneApplication::initializeBenchmark()
     metadata["allocatorScope"]="Engine live allocations = pooled used + dedicated committed; available = pooled reserved - pooled used; total retained backing = pooled reserved + dedicated committed; not driver free VRAM";
     metadata["gpuTimingScope"]="gpu_ms is WholeFrame hardware interval before Upload through fullscreen/UI draw and ending render-pass barriers; excludes queue presentation/compositor latency. Pipeline and its six overlapping subpasses, Upload and Presentation are separately reported; never sum overlapping scopes.";
     metadata["initialUploadStagingPeakBackingBytes"]=std::to_string(m_initialUploadStagingPeakBytes);
-    std::ostringstream canonical;canonical<<std::setprecision(17)<<m_runtime.projectedFusion<<'|'<<m_runtime.fusionImplementation<<'|'<<m_runtime.fusionRelativeRGBAError<<'|'<<m_runtime.mode<<'|'<<m_runtime.width<<'|'<<m_runtime.height<<'|'<<m_runtime.activeCapacity<<'|'<<m_runtime.sortCapacity<<'|'<<m_runtime.displaySHDegree<<'|'<<m_runtime.lod.qualityPixels<<'|'<<m_runtime.lod.hysteresis<<'|'<<m_runtime.fullLeaf<<'|'<<m_runtime.warmupSeconds<<'|'<<m_runtime.sampleSeconds<<'|'<<m_runtime.rounds<<'|'<<m_runtime.streaming.sceneGPUBytes<<'|'<<m_runtime.streaming.cpuCacheBytes<<'|'<<m_runtime.streaming.stagingBytes<<'|'<<m_runtime.streaming.temporaryGPUBytes<<'|'<<m_runtime.streaming.maxUploadBytesPerFrame<<'|'<<m_runtime.streaming.maxConcurrentReads<<'|'<<m_runtime.streaming.retries<<'|'<<m_runtime.streaming.retryDelayMilliseconds;
+    std::ostringstream canonical;canonical<<std::setprecision(17)<<m_runtime.projectedFusion<<'|'<<m_runtime.fusionImplementation<<'|'<<m_runtime.fusionRelativeRGBAError<<'|'<<m_runtime.mode<<'|'<<m_runtime.width<<'|'<<m_runtime.height<<'|'<<m_runtime.renderWidth<<'|'<<m_runtime.renderHeight<<'|'<<m_runtime.activeCapacity<<'|'<<m_runtime.sortCapacity<<'|'<<m_runtime.displaySHDegree<<'|'<<m_runtime.lod.qualityPixels<<'|'<<m_runtime.lod.hysteresis<<'|'<<m_runtime.fullLeaf<<'|'<<m_runtime.warmupSeconds<<'|'<<m_runtime.sampleSeconds<<'|'<<m_runtime.rounds<<'|'<<m_runtime.streaming.sceneGPUBytes<<'|'<<m_runtime.streaming.cpuCacheBytes<<'|'<<m_runtime.streaming.stagingBytes<<'|'<<m_runtime.streaming.temporaryGPUBytes<<'|'<<m_runtime.streaming.maxUploadBytesPerFrame<<'|'<<m_runtime.streaming.maxConcurrentReads<<'|'<<m_runtime.streaming.retries<<'|'<<m_runtime.streaming.retryDelayMilliseconds;
     for(double t:m_runtime.captureTimes)canonical<<'|'<<t;const auto resolved=canonical.str();metadata["configurationSHA256"]=Splat::FSplatSceneFormat::SHA256(std::vector<uint8_t>(resolved.begin(),resolved.end()));
     const char* processor=std::getenv("PROCESSOR_IDENTIFIER");metadata["CPU"]=processor?processor:"unavailable";
     MEMORYSTATUSEX ram{};ram.dwLength=sizeof(ram);metadata["systemRAMBytes"]=GlobalMemoryStatusEx(&ram)?std::to_string(ram.ullTotalPhys):"unavailable";
@@ -289,12 +290,20 @@ void SplatSceneApplication::onInitialize()
         m_windowWidth  = getWindow()->getWidth();
         m_windowHeight = getWindow()->getHeight();
     }
-    const bool largeWindow = m_windowWidth > 2560 || m_windowHeight > 1440;
-    const float maxRenderWidth = largeWindow ? 1600.0f : 1920.0f;
-    const float maxRenderHeight = largeWindow ? 900.0f : 1080.0f;
-    const float renderScale = std::min({1.0f, maxRenderWidth / m_windowWidth, maxRenderHeight / m_windowHeight});
-    m_renderWidth = std::max(2u, (static_cast<uint32>(m_windowWidth * renderScale) & ~1u));
-    m_renderHeight = std::max(2u, (static_cast<uint32>(m_windowHeight * renderScale) & ~1u));
+    if (m_runtime.renderWidth && m_runtime.renderHeight)
+    {
+        m_renderWidth = m_runtime.renderWidth;
+        m_renderHeight = m_runtime.renderHeight;
+    }
+    else
+    {
+        const bool largeWindow = m_windowWidth > 2560 || m_windowHeight > 1440;
+        const float maxRenderWidth = largeWindow ? 1600.0f : 1920.0f;
+        const float maxRenderHeight = largeWindow ? 900.0f : 1080.0f;
+        const float renderScale = std::min({1.0f, maxRenderWidth / m_windowWidth, maxRenderHeight / m_windowHeight});
+        m_renderWidth = std::max(2u, (static_cast<uint32>(m_windowWidth * renderScale) & ~1u));
+        m_renderHeight = std::max(2u, (static_cast<uint32>(m_windowHeight * renderScale) & ~1u));
+    }
     MR_LOG(LogSplatScene, Log, "Splat startup: window=%ux%u render=%ux%u mode=%c validation=%d VSync=%d activeCapacity=%u sortCapacity=%u sceneGPUBytes=%llu",
            m_windowWidth, m_windowHeight, m_renderWidth, m_renderHeight, m_runtime.mode,
            m_config.enableValidation, m_config.enableVSync, m_runtime.activeCapacity, m_runtime.sortCapacity,

@@ -18,7 +18,8 @@ struct FSplatLODRuntimeOptions {
     bool projectedFusion = false; ///< Experimental explicit C/D/E original-source GPU fusion; A/B/fullLeaf always bypass.
     std::string fusionImplementation = "split"; ///< Explicit split or legacy scalar experiment; ignored when fusion is bypassed.
     float fusionRelativeRGBAError = 0.4f; ///< Continuous kernel admission tolerance, never an image-gate override.
-    uint32_t width = 1920, height = 1080, rounds = 3; ///< Registered presentation and rounds.
+    uint32_t width = 1920, height = 1080, rounds = 3; ///< Window/presentation dimensions and rounds.
+    uint32_t renderWidth = 0, renderHeight = 0; ///< Optional internal 3DGS dimensions; zero uses the window policy.
     uint32_t activeCapacity = 1000000, sortCapacity = 8000000; ///< Explicit pipeline capacities.
     int32_t displaySHDegree = -1; ///< -1 means source degree; never changes source stride.
     double warmupSeconds = 10, sampleSeconds = 60, captureSettleSeconds = 2; ///< Fixed wall-clock protocol.

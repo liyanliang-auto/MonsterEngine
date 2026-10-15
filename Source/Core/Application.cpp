@@ -185,7 +185,8 @@ namespace MonsterRender {
                     RHI::ERHIBackend backend = m_engine->getRHIDevice()->getRHIBackend();
                     backendName = (backend == RHI::ERHIBackend::Vulkan) ? "Vulkan" : "OpenGL";
                 }
-                String titleWithFPS = m_config.name + " [" + backendName + "] - FPS: " + std::to_string(m_fps);
+                String titleWithFPS = m_config.name + " [" + backendName + "] - " +
+                    m_config.fpsLabel + ": " + std::to_string(m_fps);
                 m_window->setTitle(titleWithFPS);
             }
         }
