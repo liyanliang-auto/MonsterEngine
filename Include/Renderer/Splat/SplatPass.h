@@ -94,6 +94,8 @@ public:
 
     void setDistanceCulling(bool enabled) { m_distanceCulling = enabled; }
     void setGaussianScale(float32 scale) { m_gaussianScale = scale; }
+    /** Set the same culling mode as AssignKeys. */
+    void setTightTileCulling(uint32 mode) { m_tightTileCulling = mode <= 2 ? mode : 0; }
     /** Upload compact indices into the next frame's independent dynamic buffer. */
     bool setActiveIndices(const std::vector<uint32_t>& indices, bool enabled);
 
@@ -144,6 +146,7 @@ private:
     float32 m_farPlane  = 1000.0f;
     bool m_distanceCulling = true;
     float32 m_gaussianScale = 1.0f;
+    uint32 m_tightTileCulling = 0;
 
     // Output buffers
     FSplatPreprocessOutput m_output;

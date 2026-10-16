@@ -14,11 +14,12 @@
 #version 450
 #extension GL_GOOGLE_include_directive : enable
 #include "splat_common.glsl"
+#include "splat_tight_culling.glsl"
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 // ============================================================================
-// Push Constants (20 bytes of fields; CPU range padded to 32 bytes)
+// Push Constants (36 bytes of fields; CPU range padded to 48 bytes)
 // ============================================================================
 layout(push_constant) uniform PushConstants {
     uint gaussianCount;
@@ -29,6 +30,7 @@ layout(push_constant) uniform PushConstants {
     uint useActiveIndices;
     uint sourceCapacity;
     uint shStride;
+    uint tightTileCulling;
 } pc;
 
 // ============================================================================
@@ -287,9 +289,23 @@ void main() {
         int(clamp((pointImage.y + myRadius + BLOCK_Y - 1) / BLOCK_Y, 0.0, float(gridY)))
     );
 
-    bbox[idx] = uvec4(rectMin.x, rectMin.y, rectMax.x, rectMax.y);
-
-    if ((rectMax.x - rectMin.x) * (rectMax.y - rectMin.y) == 0) return;
+    uvec4 tileRect = uvec4(rectMin.x, rectMin.y, rectMax.x, rectMax.y);
+    SplatTightSupport support;
+    if (pc.tightTileCulling != 0u) {
+        support = splatTightSupport(vec4(conic, opacities[sourceIdx]), pointImage);
+        tileRect = splatTightRect(tileRect, pointImage, support, uvec2(gridX, gridY), pc.tightTileCulling);
+    }
+    if (tileRect.x >= tileRect.z || tileRect.y >= tileRect.w) return;
+    uint retained = (tileRect.z - tileRect.x) * (tileRect.w - tileRect.y);
+    if (pc.tightTileCulling == 2u) {
+        retained = 0u;
+        for (uint y = tileRect.y; y < tileRect.w; ++y)
+            for (uint x = tileRect.x; x < tileRect.z; ++x)
+                if (splatTileRetained(uvec2(x,y), pointImage, support,
+                    uvec2(camera.imageWidth, camera.imageHeight), pc.tightTileCulling)) ++retained;
+    }
+    if (retained == 0u) return;
+    bbox[idx] = tileRect;
 
     // Step 1.7: SH color
     vec3 color = computeColorFromSH(positions[sourceIdx].xyz, camera.camPos.xyz, camera.shDegree, sourceIdx * pc.shStride);
@@ -299,6 +315,6 @@ void main() {
     radii[idx] = int(min(myRadius, 2147483520.0));
     pointsXY[idx] = pointImage;
     conicOpacity[idx] = vec4(conic, opacities[sourceIdx]);
-    tilesTouched[idx] = uint((rectMax.y - rectMin.y) * (rectMax.x - rectMin.x));
+    tilesTouched[idx] = retained;
     rgb[idx].xyz = color;
 }

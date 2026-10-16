@@ -114,7 +114,11 @@ public:
     void setInputBuffers(
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> prefixSum,
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> bbox,
-        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> depth);
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> depth,
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> conicOpacity = {},
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> pointsXY = {});
+    /** Configure identical count/emit predicates and exact framebuffer domain. */
+    void setTightTileCulling(uint32 mode, uint32 width, uint32 height);
 
     /**
      * Execute the key assignment compute shader.
@@ -153,6 +157,8 @@ private:
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_prefixSum;
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_bbox;
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_depth;
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_conicOpacity, m_pointsXY;
+    uint32 m_tightTileCulling = 0, m_imageWidth = 0, m_imageHeight = 0;
 
     // Pipeline resources
     MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSetLayout> m_setLayout;

@@ -39,6 +39,8 @@ struct FSplatPipelineFrameStats {
     bool overflow = false, degraded = false, countAvailable = false; ///< Delayed GPU sample.
     bool timingAvailable = false; ///< Hardware timestamp capability.
     std::string degradationReason; ///< Configuration/capacity failure.
+    uint32 tightTileCullingRequested = 0, tightTileCullingEffective = 0; ///< Count/emit mode selected for this pipeline.
+    std::string tightTileCullingFallback; ///< Explicit compatibility fallback reason, empty if none.
     std::vector<RHI::FRHIGPUTimestampSample> timestampSamples; ///< Resolved real GPU intervals.
     std::vector<FSplatGPUCountSample> countSamples; ///< Every resolved count since the preceding poll.
 };

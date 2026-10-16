@@ -14,6 +14,7 @@
 #include "Core/CoreTypes.h"
 #include "RHI/RHIDefinitions.h"
 #include <cstdlib>
+#include <cstddef>
 #include <string>
 
 namespace MonsterRender {
@@ -43,6 +44,7 @@ struct FSplatRenderSettings
     bool distanceCulling = true;
     bool wireframe = false;
     float32 gaussianScale = 1.0f;
+    uint32 tightTileCulling = 0; ///< 0=baseline, 1=tight rectangle, 2=conservative tile test.
     float32 fusionRelativeRGBAError = 0.4f; ///< Explicit continuous per-channel L2 tolerance; image gates are separate.
 };
 
@@ -70,7 +72,7 @@ static_assert(alignof(FCameraUniforms) == 16, "FCameraUniforms must be 16-byte a
 
 // ============================================================================
 // Preprocess Push Constants (matches splat_preprocess.comp)
-// 32 bytes total (20 bytes of fields, padded to 16-byte alignment)
+// 48 bytes total (36 bytes of fields, padded to 16-byte alignment)
 // ============================================================================
 struct alignas(16) FPreprocessPushConstants
 {
@@ -83,9 +85,12 @@ struct alignas(16) FPreprocessPushConstants
     uint32 useActiveIndices = 0; ///< Source indirection enabled.
     uint32 sourceCapacity = 0; ///< Source-buffer index bound.
     uint32 shStride = 0; ///< Coefficients per Gaussian, excluding RGB factor.
+    uint32 tightTileCulling = 0; ///< Shared count/emit mode at offset 32.
+    uint32 pad[3] = {}; ///< Push range padding.
 };
 
-static_assert(sizeof(FPreprocessPushConstants) == 32, "FPreprocessPushConstants must be 32 bytes");
+static_assert(sizeof(FPreprocessPushConstants) == 48, "FPreprocessPushConstants must be 48 bytes");
+static_assert(offsetof(FPreprocessPushConstants, tightTileCulling) == 32, "Preprocess culling ABI offset");
 
 // ============================================================================
 // Binding point definitions for descriptor sets

@@ -280,6 +280,8 @@ bool FSplatAssignKeysPass::initialize(RHI::IRHIDevice* device, uint32 totalSortE
         desc.bindings.Add(FDescriptorSetLayoutBinding(
             EAssignKeysBinding::SortValues, EDescriptorType::StorageBuffer, EShaderStage::Compute));
         desc.bindings.Add(FDescriptorSetLayoutBinding(EAssignKeysBinding::DispatchState, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+        desc.bindings.Add(FDescriptorSetLayoutBinding(EAssignKeysBinding::ConicOpacity, EDescriptorType::StorageBuffer, EShaderStage::Compute));
+        desc.bindings.Add(FDescriptorSetLayoutBinding(EAssignKeysBinding::PointsXY, EDescriptorType::StorageBuffer, EShaderStage::Compute));
 
         m_setLayout = device->createDescriptorSetLayout(desc);
         if (!m_setLayout)
@@ -334,11 +336,14 @@ bool FSplatAssignKeysPass::initialize(RHI::IRHIDevice* device, uint32 totalSortE
 void FSplatAssignKeysPass::setInputBuffers(
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> prefixSum,
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> bbox,
-    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> depth)
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> depth,
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> conicOpacity,
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> pointsXY)
 {
     m_prefixSum = prefixSum;
     m_bbox = bbox;
     m_depth = depth;
+    m_conicOpacity = conicOpacity; m_pointsXY = pointsXY;
 
     // Only update the descriptor set that will be used by the next execute() call.
     // Updating ALL per-frame sets would touch the set still in use by the previous
@@ -350,7 +355,15 @@ void FSplatAssignKeysPass::setInputBuffers(
         if (m_prefixSum) ds->updateStorageBuffer(EAssignKeysBinding::PrefixSum, m_prefixSum, 0, 0);
         if (m_bbox)      ds->updateStorageBuffer(EAssignKeysBinding::BBox,      m_bbox,      0, 0);
         if (m_depth)     ds->updateStorageBuffer(EAssignKeysBinding::Depth,     m_depth,     0, 0);
+        // Valid dummy descriptors preserve standalone baseline callers (never read in mode 0/1).
+        ds->updateStorageBuffer(EAssignKeysBinding::ConicOpacity, m_conicOpacity ? m_conicOpacity : m_bbox, 0, 0);
+        ds->updateStorageBuffer(EAssignKeysBinding::PointsXY, m_pointsXY ? m_pointsXY : m_bbox, 0, 0);
     }
+}
+
+void FSplatAssignKeysPass::setTightTileCulling(uint32 mode, uint32 width, uint32 height) {
+    m_tightTileCulling = mode <= 2 ? mode : 0;
+    m_imageWidth = width; m_imageHeight = height;
 }
 
 void FSplatAssignKeysPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussianCount,
@@ -363,11 +376,13 @@ void FSplatAssignKeysPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     m_currentDsIndex = (m_currentDsIndex + 1) % kMaxFramesInFlight;
     auto& ds = m_descriptorSets[m_currentDsIndex];
 
-    FAssignKeysPushConstants pc;
+    FAssignKeysPushConstants pc{};
     pc.gaussianCount = m_gpuCount ? UINT32_MAX : gaussianCount;
     pc.gridX = gridX;
     pc.gridY = gridY;
     pc.maxSortElements = m_sortElementCount;
+    pc.tightTileCulling = m_tightTileCulling;
+    pc.imageWidth = m_imageWidth; pc.imageHeight = m_imageHeight;
 
     uint32 numGroups = (gaussianCount + 255u) / 256u;
 

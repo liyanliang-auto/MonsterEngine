@@ -145,6 +145,10 @@ private:
     std::map<uint64_t,double> m_readyFrameTimes;
     bool m_runFailed = false, m_loading = false, m_samplingStarted = false, m_benchmarkCompleted = false;
     bool m_firstUsableRecorded = false;
+    bool m_benchmarkSelectionFrozen = false, m_selectionSettled = false; ///< Settled target and explicit benchmark freeze state.
+    std::string m_selectionSHA256, m_cameraSHA256; ///< Exact ordered input and camera identities.
+    std::vector<uint32_t> m_identityNodes; ///< Detect changes without rehashing a resident source each frame.
+    uint64_t m_identityResidencyVersion = ~uint64_t(0); ///< Last hashed source mapping version.
     bool m_pendingSceneSwitch = false;
     String m_nextScenePath, m_nextSourcePLY;
     std::unique_ptr<Splat::FSplatLODRuntimeOptions> m_pendingRuntime, m_uiRuntime;

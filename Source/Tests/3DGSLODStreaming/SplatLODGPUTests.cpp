@@ -7,6 +7,7 @@
 #include <cmath>
 #include "SplatLODPoolExtraTests.h"
 #include "SplatLODRound3GPUTests.h"
+#include "SplatTightCullingTests.h"
 using namespace SplatVerification;
 int main(){fs::create_directories("TestFile/3DGSLODStreaming/verification/logs");InitializeLogging((ArtifactRoot()/"logs/gpu-engine.log").string().c_str(),false,true,ELogVerbosity::Warning);Suite suite;
     try{Device d;
@@ -33,6 +34,7 @@ int main(){fs::create_directories("TestFile/3DGSLODStreaming/verification/logs")
         });
         RunPoolExtra(suite,d);
         RunRound3GPU(suite,d);
+        RunTightCullingTests(suite,d);
     }catch(const std::exception& e){suite.Test("ENV real Vulkan prerequisites",[&]{throw std::runtime_error(e.what());});}
     int result=suite.Finish();ShutdownLogging();return result;
 }

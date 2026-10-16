@@ -82,6 +82,9 @@ bool FSplatLODRuntimeOptions::Validate(std::string& error) const {
     auto fail=[&](const char* message){error=message;return false;};
     if(fusionImplementation!="split"&&fusionImplementation!="scalar")return fail("Fusion implementation must be split or scalar");
     if(mode<'A'||mode>'E') return fail("Mode must be A, B, C, D or E");
+    if(tightTileCulling>2) return fail("tightTileCulling must be 0, 1 or 2");
+    if(!std::isfinite(benchmarkFixedCameraSeconds)||(benchmarkFixedCameraSeconds<0&&benchmarkFixedCameraSeconds!=-1)) return fail("Invalid fixed camera time");
+    if(benchmarkFreezeSelection&&benchmarkFixedCameraSeconds<0) return fail("Frozen benchmark selection requires a fixed camera");
     if(!std::isfinite(fusionRelativeRGBAError)||fusionRelativeRGBAError<=0||fusionRelativeRGBAError>1) return fail("Invalid projected fusion RGBA error tolerance");
     if(width<16||height<16||width>16384||height>16384||!activeCapacity||!sortCapacity||sortCapacity>65535u*8192u||displaySHDegree < -1||displaySHDegree>3) return fail("Invalid resolution, capacity or SH degree");
     if((renderWidth==0)!=(renderHeight==0)||(renderWidth&&(renderWidth<16||renderHeight<16||renderWidth>width||renderHeight>height))) return fail("Invalid internal render resolution");
@@ -113,6 +116,9 @@ bool FSplatLODRuntimeOptions::LoadConfig(const std::string& path,FSplatLODRuntim
             else if(k=="mode") { const auto m=text(v);if(m.size()!=1) throw std::runtime_error("Invalid mode");value.mode=m[0]; }
             else if(k=="functionalSmoke") value.functionalSmoke=boolean(v); else if(k=="benchmark") value.benchmark=boolean(v); else if(k=="captureOnly") value.captureOnly=boolean(v); else if(k=="validation") value.validation=boolean(v); else if(k=="vsync") value.vsync=boolean(v); else if(k=="fullLeaf") value.fullLeaf=boolean(v);
             else if(k=="fusionImplementation")value.fusionImplementation=text(v);
+            else if(k=="tightTileCulling") value.tightTileCulling=uint32_t(integer(v,2));
+            else if(k=="benchmarkFixedCameraSeconds") value.benchmarkFixedCameraSeconds=number(v);
+            else if(k=="benchmarkFreezeSelection") value.benchmarkFreezeSelection=boolean(v);
             else if(k=="projectedFusion") value.projectedFusion=boolean(v); else if(k=="fusionRelativeRGBAError") value.fusionRelativeRGBAError=float(number(v));
             else if(k=="width") value.width=uint32_t(integer(v,16384)); else if(k=="height") value.height=uint32_t(integer(v,16384));
             else if(k=="renderWidth") value.renderWidth=uint32_t(integer(v,16384)); else if(k=="renderHeight") value.renderHeight=uint32_t(integer(v,16384)); else if(k=="rounds") value.rounds=uint32_t(integer(v,100));
@@ -141,6 +147,7 @@ struct FSplatLODBenchmark::FImpl {
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> readback;
     uint64_t captureBytes=0,captureFrame=0;
     double captureTime=0;
+    std::string captureSelectionSHA256, captureCameraSHA256; // Snapshot the recorded submission, not later metadata.
     FCameraUniforms camera{};
     bool capturePending=false;
     bool TimingComplete(const Row& row) const {
@@ -165,7 +172,7 @@ struct FSplatLODBenchmark::FImpl {
         for(const char* stage:{"Pipeline","Upload","Presentation"}){frames<<',';auto sample=r.gpu.find(stage);if(sample!=r.gpu.end())frames<<sample->second;}
         frames<<','<<timing<<','<<r.count<<',';if(r.count)frames<<r.sort;
         frames<<','<<r.overflow<<','<<f.pipeline.sourceCapacity<<','<<f.pipeline.activeCount<<','<<f.pipeline.activeCapacity<<','<<f.pipeline.sortCapacity<<','<<f.pipeline.temporaryBytes<<','<<f.pipeline.outputImageBytes<<','<<f.pool.residentBytes<<','<<f.allocations.sourceReservedBytes<<','<<f.allocations.sourceBackingBytes<<','<<f.pool.stagingBytes<<','<<f.allocations.stagingReservedBytes<<','<<f.allocations.stagingBackingBytes<<','<<f.cpu.totalReservedBytes<<','<<f.cpu.encodedCacheBytes<<','<<f.cpu.inFlightReservedBytes<<','<<f.cpu.readyBytes<<','<<f.cpu.transferredBytes<<','<<f.cpu.metadataBytes<<','<<f.allocatorBytes<<','<<f.allocatorAvailableBytes<<','<<f.io.bytesRead<<','<<f.io.cacheHits<<','<<f.io.requests<<','<<f.io.retries<<','<<f.io.failed<<','<<f.io.cancelled<<','<<f.io.pendingReads<<','<<f.io.activeReads<<','<<f.pool.uploadedBytes<<','<<f.pool.uploadedPages<<','<<f.pool.evictedPages<<','<<f.pool.pendingUploads<<','<<f.pool.pinnedPages<<','<<f.pool.inFlightPages<<','<<f.pool.rejectedUploads<<','<<f.pipeline.telemetrySkippedFrames<<','<<f.allocatorPooledReservedBytes<<','<<f.allocatorPooledUsedBytes<<','<<f.allocatorDedicatedCommittedBytes;
-        frames<<','<<f.selectedLeafNodes<<','<<f.selectedProxyNodes<<','<<f.proxyGaussianCount<<','<<f.maxSelectedProxyErrorPixels<<','<<r.originalActive<<','<<r.rendered<<','<<r.fused<<','<<r.fusionApplied<<','<<r.fusionError<<'\n';
+        frames<<','<<f.selectedLeafNodes<<','<<f.selectedProxyNodes<<','<<f.proxyGaussianCount<<','<<f.maxSelectedProxyErrorPixels<<','<<r.originalActive<<','<<r.rendered<<','<<r.fused<<','<<r.fusionApplied<<','<<r.fusionError<<','<<f.pipeline.tightTileCullingRequested<<','<<f.pipeline.tightTileCullingEffective<<'\n';
         ++rows;pending.erase(it);
     }
 };
@@ -176,7 +183,7 @@ bool FSplatLODBenchmark::Begin(const FSplatLODRuntimeOptions& options,const std:
     try{std::filesystem::create_directories(std::filesystem::u8path(options.outputDirectory));auto& s=*Impl;s.options=options;s.metadata=metadata;
         s.frames.open(std::filesystem::u8path(options.outputDirectory)/"frames.csv",std::ios::trunc);s.gpu.open(std::filesystem::u8path(options.outputDirectory)/"gpu_samples.csv",std::ios::trunc);s.counts.open(std::filesystem::u8path(options.outputDirectory)/"gpu_counts.csv",std::ios::trunc);
         if(!s.frames||!s.gpu||!s.counts)throw std::runtime_error("Cannot open benchmark CSV files");
-        s.frames<<std::setprecision(17)<<"frame,elapsed_s,sequence_s,round,sampled,excluded,loading,degraded,frame_ms,cpu_ms,selection_ms,gpu_ms,preprocess_ms,scan_ms,assign_ms,radix_ms,bounds_ms,render_ms,pipeline_ms,upload_ms,presentation_ms,gpu_available,count_available,sort_count,overflow,source_capacity,active_count,active_capacity,sort_capacity,temporary_bytes,output_image_bytes,resident_bytes,source_reserved_bytes,source_backing_bytes,live_staging_bytes,staging_reserved_bytes,staging_backing_bytes,cpu_charged_bytes,encoded_cache_bytes,inflight_cpu_bytes,ready_cpu_bytes,transferred_cpu_bytes,metadata_cpu_bytes,allocator_bytes,allocator_available_bytes,disk_bytes,cache_hits,requests,retries,failures,cancellations,pending_reads,active_reads,uploaded_bytes,uploaded_pages,evicted_pages,pending_uploads,pinned_pages,inflight_pages,rejected_uploads,telemetry_skipped,allocator_pooled_reserved_bytes,allocator_pooled_used_bytes,allocator_dedicated_committed_bytes,selected_leaf_nodes,selected_proxy_nodes,proxy_gaussians,max_proxy_error_px,measured_source_active,rendered_primitives,fused_primitives,fusion_applied,max_fusion_rgba_l2\n";
+        s.frames<<std::setprecision(17)<<"frame,elapsed_s,sequence_s,round,sampled,excluded,loading,degraded,frame_ms,cpu_ms,selection_ms,gpu_ms,preprocess_ms,scan_ms,assign_ms,radix_ms,bounds_ms,render_ms,pipeline_ms,upload_ms,presentation_ms,gpu_available,count_available,sort_count,overflow,source_capacity,active_count,active_capacity,sort_capacity,temporary_bytes,output_image_bytes,resident_bytes,source_reserved_bytes,source_backing_bytes,live_staging_bytes,staging_reserved_bytes,staging_backing_bytes,cpu_charged_bytes,encoded_cache_bytes,inflight_cpu_bytes,ready_cpu_bytes,transferred_cpu_bytes,metadata_cpu_bytes,allocator_bytes,allocator_available_bytes,disk_bytes,cache_hits,requests,retries,failures,cancellations,pending_reads,active_reads,uploaded_bytes,uploaded_pages,evicted_pages,pending_uploads,pinned_pages,inflight_pages,rejected_uploads,telemetry_skipped,allocator_pooled_reserved_bytes,allocator_pooled_used_bytes,allocator_dedicated_committed_bytes,selected_leaf_nodes,selected_proxy_nodes,proxy_gaussians,max_proxy_error_px,measured_source_active,rendered_primitives,fused_primitives,fusion_applied,max_fusion_rgba_l2,tight_tile_culling_requested,tight_tile_culling_effective\n";
         s.gpu<<std::setprecision(17)<<"frame,stage,gpu_ms\n";s.counts<<"frame,sort_count,overflow,source_active,rendered_primitives,fused_primitives,fusion_applied,max_fusion_rgba_l2,fresh_queued,exact_queued,certificate_pass,certificate_fail,exact_checks,original_visible,queue_overflow,uses_certificates\n";s.begun=true;
         return s.WriteMetadata("RUNNING","Acceptance gates require downstream evaluation",error);
     }catch(const std::exception& e){error=e.what();return false;}
@@ -184,6 +191,10 @@ bool FSplatLODBenchmark::Begin(const FSplatLODRuntimeOptions& options,const std:
 bool FSplatLODBenchmark::Record(const FSplatLODBenchmarkFrame& frame,std::string& error){
     auto& s=*Impl;if(!s.begun||s.finished){error="Recorder is not open";return false;}
     try{
+        s.metadata["tightTileCulling"]=std::to_string(s.options.tightTileCulling);
+        s.metadata["tightTileCullingRequested"]=std::to_string(frame.pipeline.tightTileCullingRequested);
+        s.metadata["tightTileCullingEffective"]=std::to_string(frame.pipeline.tightTileCullingEffective);
+        s.metadata["tightTileCullingFallback"]=frame.pipeline.tightTileCullingFallback;
         auto copy=frame;copy.pipeline.timestampSamples.clear();copy.pipeline.countSamples.clear();if(!s.pending.emplace(frame.frame,FImpl::Row{std::move(copy),{},false,0,false}).second)throw std::runtime_error("Duplicate benchmark frame ID");
         for(const auto& sample:frame.pipeline.timestampSamples){s.gpu<<sample.frame<<','<<sample.label<<','<<sample.milliseconds<<'\n';auto found=s.pending.find(sample.frame);if(found!=s.pending.end())found->second.gpu[sample.label]=sample.milliseconds;else ++s.lateGPU;}
         for(const auto& sample:frame.pipeline.countSamples){s.counts<<sample.frame<<','<<sample.count<<','<<sample.overflow<<','<<sample.originalActiveCount<<','<<sample.renderedPrimitives<<','<<sample.fusedPrimitives<<','<<sample.fusionApplied<<','<<sample.maxFusionRelativeRGBAError<<','<<sample.fusionFreshQueued<<','<<sample.fusionExactQueued<<','<<sample.fusionCertificatePass<<','<<sample.fusionCertificateFail<<','<<sample.fusionExactChecks<<','<<sample.fusionOriginalVisible<<','<<sample.fusionQueueOverflow<<','<<sample.fusionUsesCertificates<<'\n';s.overflow=s.overflow||sample.overflow;auto found=s.pending.find(sample.frame);if(found!=s.pending.end()){found->second.count=true;found->second.sort=sample.count;found->second.overflow=sample.overflow;found->second.originalActive=sample.originalActiveCount;found->second.rendered=sample.renderedPrimitives;found->second.fused=sample.fusedPrimitives;found->second.fusionApplied=sample.fusionApplied;found->second.fusionError=sample.maxFusionRelativeRGBAError;}}
@@ -212,7 +223,9 @@ bool FSplatLODBenchmark::RecordCapture(RHI::IRHIDevice* device,RHI::IRHICommandL
     VkBufferImageCopy region{};region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={s.options.width,s.options.height,1};vkCmdCopyImageToBuffer(native,texture->getImage(),VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,buffer->getBuffer(),1,&region);
     auto after=before;after.srcAccessMask=VK_ACCESS_TRANSFER_READ_BIT;after.dstAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;after.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;after.newLayout=VK_IMAGE_LAYOUT_GENERAL;vkCmdPipelineBarrier(native,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,nullptr,0,nullptr,1,&after);
     VkBufferMemoryBarrier host{};host.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;host.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;host.dstAccessMask=VK_ACCESS_HOST_READ_BIT;host.srcQueueFamilyIndex=host.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;host.buffer=buffer->getBuffer();host.size=VK_WHOLE_SIZE;vkCmdPipelineBarrier(native,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&host,0,nullptr);
-    s.captureDevice=device;s.captureFrame=frame;s.captureTime=time;s.camera=camera;s.capturePending=true;error.clear();return true;
+    s.captureDevice=device;s.captureFrame=frame;s.captureTime=time;s.camera=camera;
+    s.captureSelectionSHA256=s.metadata["selectionSHA256"];s.captureCameraSHA256=s.metadata["cameraSHA256"];
+    s.capturePending=true;error.clear();return true;
 }
 bool FSplatLODBenchmark::FinishCapture(RHI::FGPUCompletionToken token,std::string& error){
     auto& s=*Impl;if(!s.capturePending||!token.value||!s.captureDevice){error="Capture has no actual submission token";return false;}
@@ -223,7 +236,7 @@ bool FSplatLODBenchmark::FinishCapture(RHI::FGPUCompletionToken token,std::strin
         std::ostringstream stem;stem<<"capture_"<<std::setw(3)<<std::setfill('0')<<s.captures;const auto root=std::filesystem::u8path(s.options.outputDirectory)/stem.str();
         std::ofstream rgba(root.string()+".rgba",std::ios::binary);rgba.write(reinterpret_cast<const char*>(pixels),std::streamsize(uint64_t(s.options.width)*s.options.height*4));rgba.close();
         std::ofstream ppm(root.string()+".ppm",std::ios::binary);ppm<<"P6\n"<<s.options.width<<' '<<s.options.height<<"\n255\n";for(uint64_t i=0;i<uint64_t(s.options.width)*s.options.height;++i)ppm.write(reinterpret_cast<const char*>(pixels+i*4),3);ppm.close();
-        std::ofstream meta(root.string()+".json");meta<<std::setprecision(17)<<"{\"frame\":"<<s.captureFrame<<",\"sequenceSeconds\":"<<s.captureTime<<",\"mode\":"<<Quote(std::string(1,s.options.mode))<<",\"width\":"<<s.options.width<<",\"height\":"<<s.options.height<<",\"format\":\"RGBA8_UNORM\",\"colorSpace\":\"linear shader output before sRGB present\",\"background\":\"black RGB with transparent alpha\",\"exposure\":1,\"shDegree\":"<<s.camera.shDegree<<",\"view\":[";
+        std::ofstream meta(root.string()+".json");meta<<std::setprecision(17)<<"{\"frame\":"<<s.captureFrame<<",\"sequenceSeconds\":"<<s.captureTime<<",\"mode\":"<<Quote(std::string(1,s.options.mode))<<",\"width\":"<<s.options.width<<",\"height\":"<<s.options.height<<",\"format\":\"RGBA8_UNORM\",\"colorSpace\":\"linear shader output before sRGB present\",\"background\":\"black RGB with transparent alpha\",\"exposure\":1,\"shDegree\":"<<s.camera.shDegree<<",\"selectionSHA256\":"<<Quote(s.captureSelectionSHA256)<<",\"cameraSHA256\":"<<Quote(s.captureCameraSHA256)<<",\"tightTileCullingRequested\":"<<Quote(s.metadata["tightTileCullingRequested"])<<",\"tightTileCullingEffective\":"<<Quote(s.metadata["tightTileCullingEffective"])<<",\"view\":[";
         for(size_t i=0;i<16;++i){if(i)meta<<',';meta<<s.camera.viewMatrix[i];}meta<<"],\"projection\":[";for(size_t i=0;i<16;++i){if(i)meta<<',';meta<<s.camera.projMatrix[i];}meta<<"],\"cameraPosition\":["<<s.camera.camPos[0]<<','<<s.camera.camPos[1]<<','<<s.camera.camPos[2]<<"],\"focal\":["<<s.camera.focalX<<','<<s.camera.focalY<<"],\"excludedFromPerformance\":true}\n";meta.close();
         if(!rgba||!ppm||!meta)throw std::runtime_error("Capture artifact write failed");++s.captures;success=true;error.clear();
     }catch(const std::exception& e){error=e.what();}

@@ -46,7 +46,7 @@ if(SPLAT_GLSLC)
             COMMAND "${CMAKE_COMMAND}" -E make_directory "${SPLAT_GENERATED_SHADER_DIR}"
             COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.2 ${stage}
                 -I "${PROJECT_SOURCE_DIR}/Shaders/Splat" -o "${output}" "${source}"
-            DEPENDS "${source}" "${PROJECT_SOURCE_DIR}/Shaders/Splat/splat_common.glsl" "${PROJECT_SOURCE_DIR}/Shaders/Splat/split_fusion_common.glsl"
+            DEPENDS "${source}" "${PROJECT_SOURCE_DIR}/Shaders/Splat/splat_common.glsl" "${PROJECT_SOURCE_DIR}/Shaders/Splat/split_fusion_common.glsl" "${PROJECT_SOURCE_DIR}/Shaders/Splat/splat_tight_culling.glsl"
             VERBATIM COMMENT "Compile splat shader ${shader}")
         list(APPEND SPLAT_SHADER_OUTPUTS "${output}")
     endforeach()
@@ -74,7 +74,16 @@ if(SPLAT_BUILD_GPU_TESTS OR SPLAT_BUILD_INTEGRATION_TESTS)
         COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.2 -fshader-stage=comp
             -o "${readbackOutput}" "${readbackSource}"
         DEPENDS "${readbackSource}" VERBATIM)
-    add_custom_target(SplatTestShaders DEPENDS "${readbackOutput}")
+    set(tightCullingProbeSource "${PROJECT_SOURCE_DIR}/Source/Tests/3DGSLODStreaming/Shaders/tight_culling_probe.comp")
+    set(tightCullingProbeOutput "${SPLAT_TEST_SHADER_DIR}/tight_culling_probe.spv")
+    add_custom_command(OUTPUT "${tightCullingProbeOutput}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${SPLAT_TEST_SHADER_DIR}"
+        COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.2 -fshader-stage=comp
+            "-I${PROJECT_SOURCE_DIR}/Shaders/Splat"
+            -o "${tightCullingProbeOutput}" "${tightCullingProbeSource}"
+        DEPENDS "${tightCullingProbeSource}" "${PROJECT_SOURCE_DIR}/Shaders/Splat/splat_tight_culling.glsl"
+        VERBATIM)
+    add_custom_target(SplatTestShaders DEPENDS "${readbackOutput}" "${tightCullingProbeOutput}")
 endif()
 set(SPLAT_CPU_TEST_SOURCES "${PROJECT_SOURCE_DIR}/Source/Tests/3DGSLODStreaming/SplatLODCPUTests.cpp" CACHE STRING "CPU suite source list")
 set(SPLAT_GPU_TEST_SOURCES "${PROJECT_SOURCE_DIR}/Source/Tests/3DGSLODStreaming/SplatLODGPUTests.cpp" CACHE STRING "GPU suite source list")

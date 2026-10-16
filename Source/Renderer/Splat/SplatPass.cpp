@@ -350,12 +350,13 @@ bool FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     inDs->updateStorageBuffer(EInputBinding::Opacities, m_input.opacities, 0, 0);
     inDs->updateStorageBuffer(EInputBinding::SHCoefficients, m_input.shCoefficients, 0, 0);
     // Set up push constants
-    FPreprocessPushConstants pc;
+    FPreprocessPushConstants pc{};
     pc.gaussianCount = gaussianCount;
     pc.nearPlane = m_nearPlane;
     pc.farPlane = m_farPlane;
     pc.culling = m_distanceCulling ? 1u : 0u;
     pc.gaussianScale = m_gaussianScale;
+    pc.tightTileCulling = m_tightTileCulling;
     pc.useActiveIndices = m_useActiveIndices ? 1u : 0u;
     pc.sourceCapacity = m_input.gaussianCount;
     pc.shStride = uint32((m_input.shDegree + 1) * (m_input.shDegree + 1));

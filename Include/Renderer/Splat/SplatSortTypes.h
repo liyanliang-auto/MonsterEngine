@@ -11,6 +11,7 @@
  */
 
 #include "Core/CoreTypes.h"
+#include <cstddef>
 
 namespace MonsterRender {
 namespace Splat {
@@ -41,16 +42,22 @@ namespace EPrefixSumBinding
 // Assign Keys Pass
 // ============================================================================
 
-/** Assign keys push constants (16 bytes) */
+/** Assign keys push constants (32-byte host range, 28-byte GLSL fields). */
 struct alignas(16) FAssignKeysPushConstants
 {
     uint32 gaussianCount;   // Number of Gaussians to process
     uint32 gridX;           // Tile grid width = ceil(imageWidth / 16)
     uint32 gridY;           // Tile grid height = ceil(imageHeight / 16)
     uint32 maxSortElements; // Sort buffer capacity (total entries) for bounds check
+    uint32 tightTileCulling = 0; ///< Identical to preprocess mode.
+    uint32 imageWidth = 0; ///< Exact framebuffer width, including partial tiles.
+    uint32 imageHeight = 0; ///< Exact framebuffer height.
+    uint32 pad = 0; ///< Push range padding.
 };
 
-static_assert(sizeof(FAssignKeysPushConstants) == 16, "FAssignKeysPushConstants must be 16 bytes");
+static_assert(sizeof(FAssignKeysPushConstants) == 32, "FAssignKeysPushConstants must be 32 bytes");
+static_assert(offsetof(FAssignKeysPushConstants, tightTileCulling) == 16, "Assign culling ABI offset");
+static_assert(offsetof(FAssignKeysPushConstants, imageHeight) == 24, "Assign framebuffer ABI offset");
 
 /** Descriptor set bindings for assign keys (Set 0) */
 namespace EAssignKeysBinding
@@ -58,7 +65,7 @@ namespace EAssignKeysBinding
     constexpr uint32 PrefixSum     = 0;  // storage buffer (read): uint[]
 
     // From preprocess output
-    constexpr uint32 BBox          = 1;  // storage buffer (read): uvec4[] (rectMinY, rectMinX, rectMaxY, rectMaxX)
+    constexpr uint32 BBox          = 1;  // storage buffer (read): uvec4[] (rectMinX, rectMinY, rectMaxX, rectMaxY)
     constexpr uint32 Depth         = 2;  // storage buffer (read): float[]
     constexpr uint32 TilesTouched  = 3;  // storage buffer (read): uint[]
 
@@ -66,7 +73,9 @@ namespace EAssignKeysBinding
     constexpr uint32 SortKeys      = 4;  // storage buffer (write): uint64_t[] (tile<<32 | depth)
     constexpr uint32 SortValues    = 5;  // storage buffer (write): uint32[] (Gaussian index)
     constexpr uint32 DispatchState = 6;
-    constexpr uint32 Count         = 7;
+    constexpr uint32 ConicOpacity = 7; ///< Projected FP32 conic and opacity.
+    constexpr uint32 PointsXY = 8; ///< Projected FP32 center.
+    constexpr uint32 Count         = 9;
 }
 
 // ============================================================================

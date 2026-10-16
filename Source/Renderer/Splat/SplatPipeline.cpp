@@ -283,6 +283,7 @@ uint64_t FSplatPipeline::ReserveFrameId() {
 }
 void FSplatPipeline::setRenderSettings(const FSplatRenderSettings& settings) {
     FSplatRenderSettings safe = settings;
+    if (safe.tightTileCulling > 2u) safe.tightTileCulling = 0;
     if (!std::isfinite(safe.nearPlane) || safe.nearPlane <= 0 || safe.nearPlane > 1e6f) safe.nearPlane = 0.1f;
     if (!std::isfinite(safe.farPlane) || safe.farPlane <= safe.nearPlane || safe.farPlane > 1e9f) safe.farPlane = std::max(1000.0f, safe.nearPlane + 1);
     if (!std::isfinite(safe.gaussianScale) || safe.gaussianScale <= 0) safe.gaussianScale = 1;
@@ -294,6 +295,14 @@ void FSplatPipeline::setRenderSettings(const FSplatRenderSettings& settings) {
     m_renderSettings = safe;
     m_preprocess.setClipPlanes(safe.nearPlane, safe.farPlane); m_preprocess.setDistanceCulling(safe.distanceCulling);
     m_preprocess.setGaussianScale(safe.gaussianScale); m_render.setWireframe(safe.wireframe);
+    // Experimental fusion rewrites projected attributes and rectangular counts.
+    // Keep its established semantics until it shares the count/emit predicate.
+    m_stats.tightTileCullingRequested = safe.tightTileCulling;
+    m_stats.tightTileCullingEffective = m_fusionEnabled ? 0u : safe.tightTileCulling;
+    m_stats.tightTileCullingFallback = m_fusionEnabled && safe.tightTileCulling != 0u
+        ? "Projected fusion uses baseline tile counts; tight culling falls back to mode 0" : "";
+    m_preprocess.setTightTileCulling(m_stats.tightTileCullingEffective);
+    m_assignKeys.setTightTileCulling(m_stats.tightTileCullingEffective, m_imageWidth, m_imageHeight);
 }
 void FSplatPipeline::PollTelemetry() {
     m_stats.countSamples.clear();
@@ -398,7 +407,7 @@ MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICom
     else if (!m_fusionGroups.empty()) { cmd->copyBuffer(m_dispatchState, m_fusionCounter, 16, 80, 0); cmd->resourceBarrier(); }
     cmd->writeGPUTimestamp(m_frame, "Scan", false);
     cmd->writeGPUTimestamp(m_frame, "AssignKeys", true);
-    m_assignKeys.setInputBuffers(m_prefixSum.getResultBuffer(), out.bbox, out.depth); m_assignKeys.execute(cmd, count, m_gridX, m_gridY);
+    m_assignKeys.setInputBuffers(m_prefixSum.getResultBuffer(), out.bbox, out.depth, out.conicOpacity, out.pointsXY); m_assignKeys.execute(cmd, count, m_gridX, m_gridY);
     cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "AssignKeys", false);
     cmd->writeGPUTimestamp(m_frame, "RadixSort", true); m_radixSort.execute(cmd, 0, uint64_t(m_gridX)*m_gridY<=65536 ? 48 : 64); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "RadixSort", false);
     cmd->writeGPUTimestamp(m_frame, "TileBounds", true); m_tileBoundaries.execute(cmd, 0); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "TileBounds", false);

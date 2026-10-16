@@ -21,6 +21,9 @@ struct FSplatLODRuntimeOptions {
     uint32_t width = 1920, height = 1080, rounds = 3; ///< Window/presentation dimensions and rounds.
     uint32_t renderWidth = 0, renderHeight = 0; ///< Optional internal 3DGS dimensions; zero uses the window policy.
     uint32_t activeCapacity = 1000000, sortCapacity = 8000000; ///< Explicit pipeline capacities.
+    uint32_t tightTileCulling = 0; ///< 0 baseline, 1 tight rectangle, 2 conservative tile culling.
+    double benchmarkFixedCameraSeconds = -1; ///< -1 moving sequence, otherwise fixed sequence sample.
+    bool benchmarkFreezeSelection = false; ///< Freeze the target only after full residency convergence.
     int32_t displaySHDegree = -1; ///< -1 means source degree; never changes source stride.
     double warmupSeconds = 10, sampleSeconds = 60, captureSettleSeconds = 2; ///< Fixed wall-clock protocol.
     std::vector<double> captureTimes = {0,15,30,45,60}; ///< Exact camera sampling times.
