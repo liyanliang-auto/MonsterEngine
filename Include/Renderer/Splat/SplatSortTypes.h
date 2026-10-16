@@ -89,13 +89,38 @@ constexpr uint32 RADIX_SORT_WORKGROUP = 256;
 /// Number of elements each thread processes per block
 constexpr uint32 RADIX_SORT_BLOCKS_PER_WG = 32;
 
+/** Supported exact-sort workloads; blocks32 remains the reference default. */
+constexpr bool IsValidRadixSortBlocks(uint32 blocks)
+{
+    return blocks == 4 || blocks == 8 || blocks == 16 || blocks == 32;
+}
+
+/** Overflow-safe ceiling division; invalid workloads have no dispatch groups. */
+constexpr uint32 RadixSortWorkgroupCount(uint32 elements, uint32 blocks)
+{
+    if (!IsValidRadixSortBlocks(blocks)) return 0;
+    return elements / (RADIX_SORT_WORKGROUP * blocks) +
+        (elements % (RADIX_SORT_WORKGROUP * blocks) != 0 ? 1u : 0u);
+}
+
+/** Prepare-dispatch ABI shared by regular and split-fusion producers. */
+struct FSplatPrepareDispatchPushConstants
+{
+    uint32 activeCount; ///< Inclusive scan input extent.
+    uint32 sortCapacity; ///< Key/value allocation capacity.
+    uint32 gridX, gridY; ///< Raster tile grid.
+    uint32 radixBlocks; ///< Validated blocks per radix workgroup.
+};
+static_assert(sizeof(FSplatPrepareDispatchPushConstants) == 20, "Prepare dispatch ABI size");
+static_assert(offsetof(FSplatPrepareDispatchPushConstants, radixBlocks) == 16, "Prepare radix ABI offset");
+
 /** Radix sort push constants (16 bytes) */
 struct alignas(16) FRadixSortPushConstants
 {
     uint32 numElements;           // Total sort entries
     uint32 shift;                 // Bit shift for this pass (0, 8, ..., 56)
-    uint32 numWorkgroups;         // Number of workgroups to dispatch
-    uint32 numBlocksPerWorkgroup; // Blocks processed per workgroup (= RADIX_SORT_BLOCKS_PER_WG)
+    uint32 numWorkgroups;         // Actual direct groups or allocated GPU-count group bound
+    uint32 numBlocksPerWorkgroup; // Validated blocks processed per workgroup (4, 8, 16 or 32)
 };
 
 static_assert(sizeof(FRadixSortPushConstants) == 16, "FRadixSortPushConstants must be 16 bytes");

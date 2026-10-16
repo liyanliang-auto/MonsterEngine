@@ -204,6 +204,9 @@ bool SplatSceneApplication::initializeBenchmark()
     metadata["gpuTimingScope"]="gpu_ms is WholeFrame hardware interval before Upload through fullscreen/UI draw and ending render-pass barriers; excludes queue presentation/compositor latency. Pipeline and its six overlapping subpasses, Upload and Presentation are separately reported; never sum overlapping scopes.";
     metadata["initialUploadStagingPeakBackingBytes"]=std::to_string(m_initialUploadStagingPeakBytes);
     metadata["tightTileCulling"]=std::to_string(m_runtime.tightTileCulling);
+    metadata["radixSortBlocksPerWorkgroupRequested"]=std::to_string(m_runtime.radixSortBlocksPerWorkgroup);
+    metadata["radixSortBlocksPerWorkgroupEffective"]=std::to_string(m_splatPipeline->GetFrameStats().radixSortBlocksPerWorkgroupEffective);
+    metadata["radixSortPhaseTimingRequested"]=m_runtime.radixSortPhaseTiming?"true":"false";
     std::ostringstream fixedTime;fixedTime<<std::setprecision(17)<<m_runtime.benchmarkFixedCameraSeconds;
     metadata["benchmarkFixedCameraSeconds"]=fixedTime.str();
     metadata["benchmarkFreezeSelection"]=m_runtime.benchmarkFreezeSelection?"true":"false";
@@ -214,7 +217,7 @@ bool SplatSceneApplication::initializeBenchmark()
     canonical<<'|'<<m_runtime.benchmarkFixedCameraSeconds<<'|'<<m_runtime.benchmarkFreezeSelection<<'|'<<m_runtime.lod.freeze<<'|'<<m_runtime.validation<<'|'<<m_runtime.captureOnly<<'|'<<m_runtime.functionalSmoke<<'|'<<m_runtime.captureSettleSeconds;
     for(double t:m_runtime.captureTimes)canonical<<'|'<<t;
     metadata["comparisonConfigurationSHA256"]=HashText(canonical.str());
-    canonical<<'|'<<m_runtime.tightTileCulling;metadata["configurationSHA256"]=HashText(canonical.str());
+    canonical<<'|'<<m_runtime.tightTileCulling<<'|'<<m_runtime.radixSortBlocksPerWorkgroup<<'|'<<m_runtime.radixSortPhaseTiming;metadata["configurationSHA256"]=HashText(canonical.str());
     const char* processor=std::getenv("PROCESSOR_IDENTIFIER");metadata["CPU"]=processor?processor:"unavailable";
     MEMORYSTATUSEX ram{};ram.dwLength=sizeof(ram);metadata["systemRAMBytes"]=GlobalMemoryStatusEx(&ram)?std::to_string(ram.ullTotalPhys):"unavailable";
     auto hash=[&](const std::string& name,const std::string& path){std::string value;if(!Splat::FSplatSceneFormat::SHA256File(path,value,error)){m_uiMessage=error;return false;}metadata[name]=value;return true;};
@@ -1465,6 +1468,8 @@ bool SplatSceneApplication::initSplatPipeline()
         return false;
 
     m_splatPipeline = MakeUnique<Splat::FSplatPipeline>();
+    if(!m_splatPipeline->SetRadixSortBlocksPerWorkgroup(m_runtime.radixSortBlocksPerWorkgroup)||
+        !m_splatPipeline->SetRadixPhaseTiming(m_runtime.benchmark&&!m_runtime.captureOnly&&m_runtime.radixSortPhaseTiming))return false;
     if(m_runtime.projectedFusion&&m_runtime.mode>='C'&&!m_runtime.fullLeaf&&!m_splatPipeline->EnableProjectedFusion(m_runtime.fusionImplementation=="split"))return false;
     // A configured original-scene run needs the same capacities as its
     // capture/benchmark run; legacy unconfigured PLY demos keep auto sizing.

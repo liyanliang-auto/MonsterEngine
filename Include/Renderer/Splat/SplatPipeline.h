@@ -8,6 +8,8 @@
 #include "RHI/SplatGPUPrimitives.h"
 #include <vector>
 #include <string>
+#include <array>
+#include <map>
 
 namespace MonsterRender::Splat {
 /** One actual completed asynchronous count readback. */
@@ -34,6 +36,7 @@ struct FSplatPipelineFrameStats {
     float maxFusionRelativeRGBAError = 0; ///< Measured maximum group error, joined by countFrame.
     uint64_t temporaryBytes = 0; ///< Reserved pipeline buffers/images/staging.
     uint64_t outputImageBytes = 0; ///< Physical output image bytes included in temporaryBytes.
+    uint64_t radixKeysBytes = 0, radixValuesBytes = 0, radixHistogramBytes = 0; ///< Physical dedicated radix allocations, included in temporaryBytes.
     uint64_t overflowFrames = 0; ///< Completed samples containing overflow.
     uint64_t telemetrySkippedFrames = 0; ///< Frames without a free asynchronous readback slot.
     bool overflow = false, degraded = false, countAvailable = false; ///< Delayed GPU sample.
@@ -41,6 +44,9 @@ struct FSplatPipelineFrameStats {
     std::string degradationReason; ///< Configuration/capacity failure.
     uint32 tightTileCullingRequested = 0, tightTileCullingEffective = 0; ///< Count/emit mode selected for this pipeline.
     std::string tightTileCullingFallback; ///< Explicit compatibility fallback reason, empty if none.
+    uint32 radixSortBlocksPerWorkgroupRequested = RADIX_SORT_BLOCKS_PER_WG; ///< Validated requested workload.
+    uint32 radixSortBlocksPerWorkgroupEffective = RADIX_SORT_BLOCKS_PER_WG; ///< Allocated and dispatched workload.
+    bool radixPhaseTimingEnabled = false; ///< Extra per-round queries; disabled for normal interactive rendering.
     std::vector<RHI::FRHIGPUTimestampSample> timestampSamples; ///< Resolved real GPU intervals.
     std::vector<FSplatGPUCountSample> countSamples; ///< Every resolved count since the preceding poll.
 };
@@ -54,6 +60,10 @@ public:
         uint32 sortCapacity, uint64_t temporaryBytes);
     /** Optional capability must be requested before initialize; no storage when disabled. */
     bool EnableProjectedFusion(bool split = false);
+    /** Validate before allocation; changing workload requires a new pipeline. */
+    bool SetRadixSortBlocksPerWorkgroup(uint32 blocks);
+    /** Opt in before initialize; parent and child timing scopes overlap. */
+    bool SetRadixPhaseTiming(bool enabled);
     /** Groups must exactly partition [0, originalActiveCount), each with 1..4 members.
      * Caller owns original-source residency and submission pins; empty disables fusion. */
     bool SetFusionGroups(const std::vector<FSplatFusionGroup>& groups);
@@ -133,5 +143,10 @@ private:
     FSplatActiveSet m_activeSet;
     FSplatRenderSettings m_renderSettings{};
     FSplatPipelineFrameStats m_stats;
+    struct FRadixTimingFrame {
+        std::array<double, 3> milliseconds{}; ///< Sums of complete phase rounds.
+        std::array<uint32, 3> masks{}; ///< Observed unique pass bits; missing queries remain unavailable.
+    };
+    std::map<uint64, FRadixTimingFrame> m_radixTimings;
 };
 } // namespace MonsterRender::Splat

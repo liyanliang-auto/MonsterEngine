@@ -31,6 +31,16 @@ RHI::TextureDesc OutputDesc(uint32 width, uint32 height) {
 }
 
 FSplatPipeline::~FSplatPipeline() = default;
+bool FSplatPipeline::SetRadixSortBlocksPerWorkgroup(uint32 blocks) {
+    if (m_bInitialized || !IsValidRadixSortBlocks(blocks)) return false;
+    m_stats.radixSortBlocksPerWorkgroupRequested = blocks;
+    m_stats.radixSortBlocksPerWorkgroupEffective = blocks;
+    return true;
+}
+bool FSplatPipeline::SetRadixPhaseTiming(bool enabled) {
+    if (m_bInitialized) return false;
+    m_stats.radixPhaseTimingEnabled = enabled; return true;
+}
 bool FSplatPipeline::EnableProjectedFusion(bool split) {
     if (m_bInitialized) return false;
     m_fusionEnabled = true; m_splitFusionEnabled = split; return true;
@@ -79,7 +89,7 @@ bool FSplatPipeline::PreflightTemporaryBuffers(uint64_t& bytes) {
         if (!add(16, StorageUsage) || !add(n * 16, StorageUsage)) return false;
     }
     for (uint32 width : {8u, 8u, 4u, 4u}) if (!add(s * width, StorageUsage)) return false;
-    if (!add(((s + 8191) / 8192) * RADIX_SORT_BINS * 4, StorageUsage) ||
+    if (!add(uint64(RadixSortWorkgroupCount(m_sortCapacity, m_stats.radixSortBlocksPerWorkgroupEffective)) * RADIX_SORT_BINS * 4, StorageUsage) ||
         !add(uint64_t(m_gridX) * m_gridY * 8, RHI::EResourceUsage::StorageBuffer | RHI::EResourceUsage::TransferDst) ||
         !add(ESplatDispatchState::Bytes, StateUsage)) return false;
     for (uint32 i = 0; i < 3; ++i)
@@ -129,7 +139,8 @@ bool FSplatPipeline::initialize(RHI::IRHIDevice* device, uint32 count, uint32 wi
         m_sortCapacity = uint32(std::max<uint64_t>(1, std::min<uint64_t>(uint64_t(count) * std::max(1u, estimateTiles), 16ull * 1024 * 1024)));
     }
     if (!m_sourceCapacity || m_sourceCapacity > UINT32_MAX / 192u || !m_activeCapacity || !m_sortCapacity || !m_temporaryBudget || count > m_sourceCapacity ||
-        uint64_t(m_activeCapacity) * 16 > UINT32_MAX || m_sortCapacity > 65535u * 8192u) return false;
+        uint64_t(m_activeCapacity) * 16 > UINT32_MAX ||
+        uint64(m_sortCapacity) > uint64(65535u) * RADIX_SORT_WORKGROUP * m_stats.radixSortBlocksPerWorkgroupEffective) return false;
     uint64_t bytes = 0;
     if (!m_explicitBudgets) while (!PreflightTemporaryBuffers(bytes) && m_sortCapacity > 1)
         m_sortCapacity = std::max(1u, m_sortCapacity / 2);
@@ -138,7 +149,7 @@ bool FSplatPipeline::initialize(RHI::IRHIDevice* device, uint32 count, uint32 wi
     }
     m_dispatchState = device->createBuffer(TemporaryDesc(ESplatDispatchState::Bytes, StateUsage));
     if (!m_dispatchState || !m_preprocess.initialize(device, m_activeCapacity) || !m_prefixSum.initialize(device, m_activeCapacity) ||
-        !m_radixSort.initialize(device, m_sortCapacity, m_dispatchState) ||
+        !m_radixSort.initialize(device, m_sortCapacity, m_dispatchState, m_stats.radixSortBlocksPerWorkgroupEffective) ||
         !m_assignKeys.initialize(device, m_sortCapacity, m_activeCapacity, m_radixSort.getKeysEven(), m_radixSort.getValuesEven(), m_dispatchState) ||
         !m_tileBoundaries.initialize(device, m_gridX * m_gridY, m_sortCapacity, m_dispatchState) ||
         !m_render.initialize(device, width, height, m_dispatchState) ||
@@ -148,6 +159,14 @@ bool FSplatPipeline::initialize(RHI::IRHIDevice* device, uint32 count, uint32 wi
         if (!slot.buffer) return false;
     }
     if (!MeasureTemporaryBuffers(m_stats.temporaryBytes)) return false;
+    const auto radixBuffers = m_radixSort.GetOwnedBuffers();
+    for (size_t i = 0; i < radixBuffers.size(); ++i) {
+        RHI::FBufferAllocationInfo info{};
+        if (!radixBuffers[i]->getAllocationInfo(info) || !info.backingBytes) return false;
+        if (i < 2) m_stats.radixKeysBytes += info.backingBytes;
+        else if (i < 4) m_stats.radixValuesBytes += info.backingBytes;
+        else m_stats.radixHistogramBytes += info.backingBytes;
+    }
     RHI::FBufferAllocationInfo image{};
     if (!m_render.getOutputTexture()->getAllocationInfo(image)) return false;
     m_stats.outputImageBytes = image.backingBytes;
@@ -172,7 +191,7 @@ bool FSplatPipeline::CreatePreparePass() {
     if(m_splitFusionEnabled)sets.bindings.Add(FDescriptorSetLayoutBinding(2, EDescriptorType::StorageBuffer, EShaderStage::Compute));
     m_prepareSetLayout = m_device->createDescriptorSetLayout(sets); if (!m_prepareSetLayout) return false;
     FPipelineLayoutDesc layout("SplatPrepareDispatch"); layout.setLayouts.Add(m_prepareSetLayout);
-    layout.pushConstantRanges.Add(FPushConstantRange(EShaderStage::Compute, 0, 16));
+    layout.pushConstantRanges.Add(FPushConstantRange(EShaderStage::Compute, 0, sizeof(FSplatPrepareDispatchPushConstants)));
     m_prepareLayout = m_device->createPipelineLayout(layout); if (!m_prepareLayout) return false;
     const auto bytes = ShaderCompiler::readFileBytes(SplatShaderPath(m_splitFusionEnabled?
         "Shaders/Splat/Sort/compiled/splat_prepare_split_dispatch.spv":"Shaders/Splat/Sort/compiled/splat_prepare_dispatch.spv"));
@@ -306,7 +325,37 @@ void FSplatPipeline::setRenderSettings(const FSplatRenderSettings& settings) {
 }
 void FSplatPipeline::PollTelemetry() {
     m_stats.countSamples.clear();
-    m_stats.timestampSamples = m_device->pollGPUTimestamps();
+    m_stats.timestampSamples.clear();
+    const char* phaseNames[] = {"RadixHistogram", "RadixOffsets", "RadixScatter"};
+    const uint32 passes = uint64(m_gridX) * m_gridY <= 65536 ? 6u : 8u;
+    const uint32 completeMask = (1u << passes) - 1u;
+    for (const auto& sample : m_device->pollGPUTimestamps()) {
+        bool child = false;
+        for (uint32 phase = 0; phase < 3; ++phase) {
+            const std::string prefix = std::string(phaseNames[phase]) + "/";
+            if (sample.label.compare(0, prefix.size(), prefix) != 0) continue;
+            child = true;
+            if (sample.label.size() != prefix.size() + 1 || sample.label.back() < '0' ||
+                sample.label.back() >= char('0' + passes)) break;
+            auto& timing = m_radixTimings[sample.frame];
+            const uint32 bit = 1u << (sample.label.back() - '0');
+            if (!(timing.masks[phase] & bit)) {
+                timing.masks[phase] |= bit; timing.milliseconds[phase] += sample.milliseconds;
+            }
+            break;
+        }
+        if (!child) m_stats.timestampSamples.push_back(sample);
+    }
+    for (auto it = m_radixTimings.begin(); it != m_radixTimings.end();) {
+        const auto& timing = it->second;
+        if (timing.masks[0] == completeMask && timing.masks[1] == completeMask && timing.masks[2] == completeMask) {
+            for (uint32 phase = 0; phase < 3; ++phase)
+                m_stats.timestampSamples.push_back({it->first, phaseNames[phase], timing.milliseconds[phase]});
+            it = m_radixTimings.erase(it);
+        } else ++it;
+    }
+    // Match the benchmark's bounded join window. Missing phases never become zero.
+    while (m_radixTimings.size() > 128) m_radixTimings.erase(m_radixTimings.begin());
     for (auto& slot : m_telemetry) {
         if (!slot.pending || !slot.token.value || !m_device->isSubmissionComplete(slot.token)) continue;
         void* mapped = slot.buffer->map(); if (!mapped) continue;
@@ -400,16 +449,18 @@ MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICom
     if (count) { cmd->copyBuffer(m_prefixSum.getBufferA(), out.tilesTouched, uint64_t(count) * 4); cmd->resourceBarrier(); m_prefixSum.execute(cmd, count); }
     cmd->resourceBarrier();
     auto& set = m_prepareSets[frameSlot]; set->updateStorageBuffer(0, m_prefixSum.getResultBuffer(), 0, 0);
-    const uint32 prepare[4] = {count, m_sortCapacity, m_gridX, m_gridY};
+    const FSplatPrepareDispatchPushConstants prepare{count, m_sortCapacity, m_gridX, m_gridY,
+        m_stats.radixSortBlocksPerWorkgroupEffective};
     cmd->setPipelineState(m_preparePipeline); cmd->bindDescriptorSet(m_prepareLayout, 0, set);
-    cmd->pushConstants(m_prepareLayout, EShaderStage::Compute, 0, sizeof(prepare), prepare); cmd->dispatch(1, 1, 1); cmd->resourceBarrier();
+    cmd->pushConstants(m_prepareLayout, EShaderStage::Compute, 0, sizeof(prepare), &prepare); cmd->dispatch(1, 1, 1); cmd->resourceBarrier();
     if(m_splitFusionEnabled){cmd->copyBuffer(m_dispatchState,m_splitFusion.GetCounter(),FSplatSplitFusionPass::CounterBytes,80,0);cmd->resourceBarrier();}
     else if (!m_fusionGroups.empty()) { cmd->copyBuffer(m_dispatchState, m_fusionCounter, 16, 80, 0); cmd->resourceBarrier(); }
     cmd->writeGPUTimestamp(m_frame, "Scan", false);
     cmd->writeGPUTimestamp(m_frame, "AssignKeys", true);
     m_assignKeys.setInputBuffers(m_prefixSum.getResultBuffer(), out.bbox, out.depth, out.conicOpacity, out.pointsXY); m_assignKeys.execute(cmd, count, m_gridX, m_gridY);
     cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "AssignKeys", false);
-    cmd->writeGPUTimestamp(m_frame, "RadixSort", true); m_radixSort.execute(cmd, 0, uint64_t(m_gridX)*m_gridY<=65536 ? 48 : 64); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "RadixSort", false);
+    cmd->writeGPUTimestamp(m_frame, "RadixSort", true); m_radixSort.execute(cmd, 0, uint64_t(m_gridX)*m_gridY<=65536 ? 48 : 64,
+        m_stats.radixPhaseTimingEnabled ? m_frame : UINT64_MAX); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "RadixSort", false);
     cmd->writeGPUTimestamp(m_frame, "TileBounds", true); m_tileBoundaries.execute(cmd, 0); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "TileBounds", false);
     cmd->writeGPUTimestamp(m_frame, "Render", true); m_render.execute(cmd); cmd->resourceBarrier(); cmd->writeGPUTimestamp(m_frame, "Render", false);
     cmd->writeGPUTimestamp(m_frame, "Pipeline", false);

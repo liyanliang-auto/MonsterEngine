@@ -487,21 +487,22 @@ bool FSplatRadixSortPass::createScatterPipeline(RHI::IRHIDevice* device)
 }
 
 bool FSplatRadixSortPass::initialize(RHI::IRHIDevice* device, uint32 maxSortElements,
-    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState)
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState, uint32 blocksPerWorkgroup)
 {
     using namespace RHI;
 
-    if (!device || maxSortElements == 0)
+    if (m_bInitialized || !device || maxSortElements == 0 || !IsValidRadixSortBlocks(blocksPerWorkgroup) ||
+        uint64(maxSortElements) > uint64(65535u) * RADIX_SORT_WORKGROUP * blocksPerWorkgroup)
     {
         MR_LOG(LogTemp, Error, "[RadixSort] Invalid parameters");
         return false;
     }
 
     m_maxElements = maxSortElements;
+    m_blocksPerWorkgroup = blocksPerWorkgroup;
 
     // Compute max workgroups
-    uint32 maxWorkgroups = (maxSortElements + RADIX_SORT_WORKGROUP * RADIX_SORT_BLOCKS_PER_WG - 1u)
-                         / (RADIX_SORT_WORKGROUP * RADIX_SORT_BLOCKS_PER_WG);
+    uint32 maxWorkgroups = RadixSortWorkgroupCount(maxSortElements, m_blocksPerWorkgroup);
     if (maxWorkgroups == 0) maxWorkgroups = 1;
 
     // Create pipelines
@@ -568,24 +569,23 @@ bool FSplatRadixSortPass::initialize(RHI::IRHIDevice* device, uint32 maxSortElem
     return true;
 }
 
-bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numElements, uint32 keyBits)
+bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numElements, uint32 keyBits,
+    uint64 timestampFrame)
 {
     using namespace RHI;
 
-    if (!m_bInitialized || !cmdList || (keyBits != 48 && keyBits != 64) || (!m_gpuCount && (numElements == 0 || numElements > m_maxElements)))
+    if (!m_bInitialized || !cmdList || (keyBits != 48 && keyBits != 64) || (!m_gpuCount && numElements > m_maxElements))
         return false;
 
     // Compute workgroups for this element count
-    uint32 numWGs = (numElements + RADIX_SORT_WORKGROUP * RADIX_SORT_BLOCKS_PER_WG - 1u)
-                  / (RADIX_SORT_WORKGROUP * RADIX_SORT_BLOCKS_PER_WG);
-    if (numWGs == 0) numWGs = 1;
+    uint32 numWGs = RadixSortWorkgroupCount(numElements, m_blocksPerWorkgroup);
 
     uint32 numHistWGs = numWGs;
 
     FRadixSortPushConstants pc;
     pc.numElements = m_gpuCount ? UINT32_MAX : numElements;
-    pc.numWorkgroups = numWGs;
-    pc.numBlocksPerWorkgroup = RADIX_SORT_BLOCKS_PER_WG;
+    pc.numWorkgroups = m_gpuCount ? RadixSortWorkgroupCount(m_maxElements, m_blocksPerWorkgroup) : numWGs;
+    pc.numBlocksPerWorkgroup = m_blocksPerWorkgroup;
 
     // Callers may certify the high 16 bits are zero (tile IDs below 65536).
     // Both supported pass counts end in the even buffer; all depth bits remain.
@@ -593,6 +593,13 @@ bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numEleme
     for (uint32 pass = 0; pass < passes; pass++)
     {
         pc.shift = pass * 8U;
+        // Unique names pair begin/end correctly even when queries resolve later.
+        // The pipeline publishes a phase sum only after all rounds resolve.
+        const std::string suffix = timestampFrame != UINT64_MAX ? "/" + std::to_string(pass) : std::string{};
+        auto stamp = [&](const char* phase, bool begin) {
+            if (timestampFrame != UINT64_MAX)
+                cmdList->writeGPUTimestamp(timestampFrame, std::string(phase) + suffix, begin);
+        };
 
         bool isEvenPass = (pass % 2 == 0);
 
@@ -607,35 +614,41 @@ bool FSplatRadixSortPass::execute(RHI::IRHICommandList* cmdList, uint32 numEleme
         auto histSet = isEvenPass ? m_histDescriptorSetEven : m_histDescriptorSetOdd;
         auto scatterSet = isEvenPass ? m_scatterDescriptorSetEven : m_scatterDescriptorSetOdd;
 
+        stamp("RadixHistogram", true);
         cmdList->setPipelineState(m_histPipeline);
         cmdList->bindDescriptorSet(m_histPipelineLayout, 0, histSet);
         cmdList->pushConstants(m_histPipelineLayout, EShaderStage::Compute, 0,
                                sizeof(FRadixSortPushConstants), &pc);
         if (m_gpuCount) cmdList->dispatchIndirect(m_dispatchState.Get(), ESplatDispatchState::RadixOffset);
-        else cmdList->dispatch(numHistWGs, 1, 1);
+        else if (numHistWGs) cmdList->dispatch(numHistWGs, 1, 1);
 
         // Barrier: histogram writes must be visible to scatter
         cmdList->resourceBarrier();
+        stamp("RadixHistogram", false);
 
         // Compute each bin/workgroup offset once, rather than having every
         // scatter workgroup rescan every histogram row (quadratic work).
+        stamp("RadixOffsets", true);
         cmdList->setPipelineState(m_offsetsPipeline);
         cmdList->bindDescriptorSet(m_offsetsPipelineLayout, 0, histSet);
         cmdList->pushConstants(m_offsetsPipelineLayout, EShaderStage::Compute, 0,
                                sizeof(FRadixSortPushConstants), &pc);
         cmdList->dispatch(1, 1, 1);
         cmdList->resourceBarrier();
+        stamp("RadixOffsets", false);
 
         // ---- Scatter Dispatch ----
+        stamp("RadixScatter", true);
         cmdList->setPipelineState(m_scatterPipeline);
         cmdList->bindDescriptorSet(m_scatterPipelineLayout, 0, scatterSet);
         cmdList->pushConstants(m_scatterPipelineLayout, EShaderStage::Compute, 0,
                                sizeof(FRadixSortPushConstants), &pc);
         if (m_gpuCount) cmdList->dispatchIndirect(m_dispatchState.Get(), ESplatDispatchState::RadixOffset);
-        else cmdList->dispatch(numWGs, 1, 1);
+        else if (numWGs) cmdList->dispatch(numWGs, 1, 1);
 
         // Barrier: scatter writes must be visible to next histogram
         cmdList->resourceBarrier();
+        stamp("RadixScatter", false);
     }
 
     // After an even number of LSD passes, final result is in even buffers.

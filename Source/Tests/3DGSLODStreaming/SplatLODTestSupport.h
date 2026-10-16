@@ -30,7 +30,7 @@ struct Device {
     Application app;
     IRHIDevice* rhi=nullptr;
     RHI::Vulkan::VulkanDevice* vk=nullptr;
-    Device():app([]{ApplicationConfig c;c.name="FormalSplatGPUVerification";c.preferredBackend=ERHIBackend::Vulkan;c.enableValidation=true;c.enableVSync=false;c.windowProperties.vsync=false;c.windowProperties.width=c.windowProperties.height=64;return c;}()){
+    Device(bool validation=true):app([validation]{ApplicationConfig c;c.name="FormalSplatGPUVerification";c.preferredBackend=ERHIBackend::Vulkan;c.enableValidation=validation;c.enableVSync=false;c.windowProperties.vsync=false;c.windowProperties.width=c.windowProperties.height=64;return c;}()){
         Require(app.initialize(),"ENV: actual Vulkan application initialization failed");rhi=app.getEngine()->getRHIDevice();vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(rhi);Require(vk&&rhi->supportsSubmissionCompletion()&&rhi->supportsDispatchIndirect(),"ENV: required real-device capabilities unavailable");
     }
     IRHICommandList* Begin(){vk->getCommandListContext()->refreshCommandBuffer();auto c=rhi->getImmediateCommandList();c->begin();return c;}

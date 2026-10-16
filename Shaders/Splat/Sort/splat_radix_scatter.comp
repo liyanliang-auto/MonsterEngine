@@ -15,7 +15,6 @@
 
 #define WORKGROUP_SIZE 256
 #define RADIX_SORT_BINS 256U
-#define SUBGROUP_SIZE 32U  // NVIDIA: 32, AMD: 64
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
@@ -69,6 +68,12 @@ void main() {
     uint numElements = gpuCount ? state[0] : pc.g_num_elements;
     uint numWorkgroups = gpuCount ? state[3] : pc.g_num_workgroups;
     if (gpuCount && state[1] != 0u) return;
+    if (pc.g_num_blocks_per_workgroup != 4u && pc.g_num_blocks_per_workgroup != 8u &&
+        pc.g_num_blocks_per_workgroup != 16u && pc.g_num_blocks_per_workgroup != 32u) return;
+    if (numWorkgroups > pc.g_num_workgroups || numWorkgroups > histograms.length() / RADIX_SORT_BINS ||
+        numElements > keys_in.length() || numElements > keys_out.length() ||
+        numElements > values_in.length() || numElements > values_out.length() ||
+        gl_WorkGroupID.x >= numWorkgroups) return;
 
     uint gID  = gl_GlobalInvocationID.x;
     uint lID  = gl_LocalInvocationID.x;
@@ -137,8 +142,8 @@ void main() {
             keys_out[binOffset + prefix]   = key_in;
             values_out[binOffset + prefix] = value_in;
 
-            // Last element to arrive updates the offset for next workgroup
-            // (atomic ensures correct accumulation across WGs)
+            // The last input lane in this bin advances the shared offset for
+            // the next block. Global workgroup order came from the offsets pass.
             if (prefix == count - 1u) {
                 atomicAdd(global_offsets[binID], count);
             }

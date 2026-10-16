@@ -9,12 +9,16 @@ layout(push_constant) uniform PushConstants {
     uint sortCapacity;
     uint gridX;
     uint gridY;
+    uint radixBlocks;
 } pc;
 void main() {
     uint count = pc.activeCount == 0u ? 0u : prefixSum[pc.activeCount - 1u];
-    bool overflow = count == 0xffffffffu || count > pc.sortCapacity;
+    bool validBlocks = pc.radixBlocks == 4u || pc.radixBlocks == 8u || pc.radixBlocks == 16u || pc.radixBlocks == 32u;
+    uint entriesPerGroup = 256u * (validBlocks ? pc.radixBlocks : 32u);
+    uint groups = count / entriesPerGroup + (count % entriesPerGroup != 0u ? 1u : 0u);
+    bool overflow = !validBlocks || count == 0xffffffffu || count > pc.sortCapacity || groups > 65535u;
     uint assignGroups = overflow ? 0u : (pc.activeCount + 255u) / 256u;
-    uint sortGroups = overflow ? 0u : (count + 8191u) / 8192u;
+    uint sortGroups = overflow ? 0u : groups;
     uint boundaryGroups = overflow ? 0u : (count + 255u) / 256u;
     state[0] = count;
     state[1] = overflow ? 1u : 0u;

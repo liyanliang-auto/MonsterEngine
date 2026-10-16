@@ -49,6 +49,10 @@ void main() {
     uint numElements = gpuCount ? state[0] : pc.g_num_elements;
     uint numWorkgroups = gpuCount ? state[3] : pc.g_num_workgroups;
     if (gpuCount && state[1] != 0u) return;
+    if (pc.g_num_blocks_per_workgroup != 4u && pc.g_num_blocks_per_workgroup != 8u &&
+        pc.g_num_blocks_per_workgroup != 16u && pc.g_num_blocks_per_workgroup != 32u) return;
+    if (numWorkgroups > pc.g_num_workgroups || numWorkgroups > histograms.length() / RADIX_SORT_BINS ||
+        numElements > keys.length() || gl_WorkGroupID.x >= numWorkgroups) return;
 
     uint gID = gl_GlobalInvocationID.x;
     uint lID = gl_LocalInvocationID.x;

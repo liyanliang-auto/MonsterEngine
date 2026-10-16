@@ -12,6 +12,7 @@ void main() {
     bool gpuCount = pc.numElements == 0xffffffffu;
     if (gpuCount && state[1] != 0u) return;
     uint groups = gpuCount ? state[3] : pc.numWorkgroups;
+    if (groups > pc.numWorkgroups || groups > histograms.length() / 256u) return;
     uint bin = gl_LocalInvocationID.x;
     uint sum = 0u;
     // Each invocation exclusively owns one column, so in-place writes do not

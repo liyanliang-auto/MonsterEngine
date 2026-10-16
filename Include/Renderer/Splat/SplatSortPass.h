@@ -191,9 +191,11 @@ public:
      * Initialize histogram/scatter pipelines, descriptor layouts, and buffers.
      * @param device RHI device
      * @param maxSortElements Upper bound on sort elements (from prefix sum total)
+     * @param blocksPerWorkgroup Validated workload, fixed before allocation.
      */
     bool initialize(RHI::IRHIDevice* device, uint32 maxSortElements,
-        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState = {});
+        MonsterEngine::TSharedPtr<RHI::IRHIBuffer> dispatchState = {},
+        uint32 blocksPerWorkgroup = RADIX_SORT_BLOCKS_PER_WG);
     void SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state);
     std::vector<MonsterEngine::TSharedPtr<RHI::IRHIBuffer>> GetOwnedBuffers() const {
         return {m_keysEven, m_keysOdd, m_valuesEven, m_valuesOdd, m_histogram};
@@ -207,9 +209,14 @@ public:
      * 
      * @param cmdList Command list
      * @param numElements Actual number of sort entries
+     * @param timestampFrame Optional original frame ID; UINT64_MAX disables child queries.
      * @return true if final result is in even buffers, false if in odd
      */
-    bool execute(RHI::IRHICommandList* cmdList, uint32 numElements, uint32 keyBits = 64);
+    bool execute(RHI::IRHICommandList* cmdList, uint32 numElements, uint32 keyBits = 64,
+        uint64 timestampFrame = UINT64_MAX);
+
+    /** Effective workload is immutable after buffer allocation. */
+    uint32 GetBlocksPerWorkgroup() const { return m_blocksPerWorkgroup; }
 
     /** Get the sorted key buffer */
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> getSortedKeys() const;
@@ -230,6 +237,7 @@ private:
 
     bool m_bInitialized = false;
     uint32 m_maxElements = 0;
+    uint32 m_blocksPerWorkgroup = RADIX_SORT_BLOCKS_PER_WG;
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_dispatchState;
     bool m_gpuCount = false;
 
