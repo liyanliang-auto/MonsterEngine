@@ -38,6 +38,9 @@ log/
 
 # IDE / tool config
 .windsurf/
+.windsurf/skills/
+.trae/skills/
+.github/superpowers/
 *.code-workspace
 
 # CMake
@@ -50,7 +53,8 @@ CMakeUserPresets.json
 Thumbs.db
 
 # Local agents, session notes and private configuration
-.workbuddy/memory/
+.workbuddy/
+/wind-monster-peoject-rule.md
 devDocument/3DGS/Anker*
 devDocument/3DGS/*会话*
 devDocument/3DGS/diagnostic_artifacts/
