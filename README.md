@@ -13,9 +13,7 @@ MonsterEngine 是使用 C++20 开发的 3D 渲染引擎，提供 Vulkan / OpenGL
 
 ### 3D Gaussian Splatting · Bicycle
 
-**全量画质：约 613.2 万个高斯 · SH3 · 1920×1080 内部渲染分辨率 · 约 12 FPS**
-
-以下截图来自 MonsterEngine 实际运行窗口，保留引擎标题栏并隐藏控制面板。展示使用原始全量模式，呈现模型的细节。
+**全量画质：约 613.2 万个高斯 · SH3 · 1920×1080 内部渲染分辨率 **
 
 ![MonsterEngine Bicycle 实际窗口](docs/images/samples/bicycle_monsterengine_window.png)
 
@@ -33,7 +31,11 @@ Bicycle 使用外部训练的 3DGS 模型。本项目实现模型加载、GPU �
 
 ![Vulkan 3DGS Bonsai](docs/images/samples/vulkan_3DGS_bonsai_30k.png)
 
-![Bonsai 交互漫游演示](docs/images/samples/vulkan_3DGS_bonsai_30k.gif)
+<a href="docs/images/samples/bonsai_monsterengine_path_window.mp4">
+  <img src="docs/images/samples/vulkan_3DGS_bonsai_30k.gif" alt="Bonsai 30 秒漫游：拉近、拉远、围绕盆景半周，点击观看高清视频" width="100%">
+</a>
+
+
 
 ### PBR · Helmet
 
@@ -43,7 +45,7 @@ Cook–Torrance BRDF、Metallic–Roughness 材质、基于图像的光照（IBL
 
 ### 场景与光照
 
-实际运行窗口截图，保留 `MonsterEngine - CubeScene [Vulkan]` 标题栏。笑脸立方体使用 2048×2048 Shadow Map 与 3×3 PCF，在木地板上投射阴影。
+笑脸立方体使用 2048×2048 Shadow Map 与 3×3 PCF，在木地板上投射阴影。
 
 ![Vulkan 立方体与地面场景](docs/images/samples/vulkan_smile_cube.jpg)
 
