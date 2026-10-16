@@ -13,7 +13,7 @@ MonsterEngine 是使用 C++20 开发的 3D 渲染引擎，提供 Vulkan / OpenGL
 
 ### 3D Gaussian Splatting · Bicycle
 
-**全量画质：约 613.2 万个高斯 · SH3 · 1920×1080 内部渲染分辨率 **
+全量画质：约 613.2 万个高斯 · SH3 · 1920×1080 内部渲染分辨率 
 
 ![MonsterEngine Bicycle 实际窗口](docs/images/samples/bicycle_monsterengine_window.png)
 
