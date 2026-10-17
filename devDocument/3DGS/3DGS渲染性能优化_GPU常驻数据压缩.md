@@ -17,10 +17,10 @@ SH3为16组RGB、48个标量：SH逻辑容量192→96 B/高斯；其余源属性
 | 部分 | 实现与约束 |
 | --- | --- |
 | 配置 | JSON `shStorageMode=0`为默认FP32，`1`为packed FP16；UI的`SH storage (reload on Apply)`在Apply重载时生效，并显示实际模式 |
-| CPU打包 | [SplatSHStorage.h](../../Include/Renderer/Splat/SplatSHStorage.h)提供容量计算、float→half及打包；保持Gaussian-major、系数/RGB顺序，两个binary16合成一个uint32，首标量在低16位 |
+| CPU打包 | [SplatSHStorage.h](../../../Include/Renderer/Splat/SplatSHStorage.h)提供容量计算、float→half及打包；保持Gaussian-major、系数/RGB顺序，两个binary16合成一个uint32，首标量在低16位 |
 | 数值策略 | 最近偶数舍入，保留有符号零和可表示subnormal；FP16请求遇到NaN、Infinity或绝对值大于65504时，在GPU分配和发布可用输出前明确拒绝，不静默钳位 |
-| 上传 | [SplatPLYLoader.cpp](../../Source/Renderer/Splat/SplatPLYLoader.cpp)按选定表示计算源属性预算、SH buffer、分块staging与上传字节；全局奇数尾项补零高半字，并处理分块word对齐 |
-| Shader | [splat_preprocess.comp](../../Shaders/Splat/splat_preprocess.comp)以`uint shWords[]`读取，FP16用`unpackHalf2x16`还原FP32，FP32用`uintBitsToFloat`；SH求值顺序不变，无FP16算术依赖 |
+| 上传 | [SplatPLYLoader.cpp](../../../Source/Renderer/Splat/SplatPLYLoader.cpp)按选定表示计算源属性预算、SH buffer、分块staging与上传字节；全局奇数尾项补零高半字，并处理分块word对齐 |
+| Shader | [splat_preprocess.comp](../../../Shaders/Splat/splat_preprocess.comp)以`uint shWords[]`读取，FP16用`unpackHalf2x16`还原FP32，FP32用`uintBitsToFloat`；SH求值顺序不变，无FP16算术依赖 |
 | ABI/边界 | 48 B Preprocess push constant复用offset 36 padding传模式，CPU静态断言；Pass及Pipeline核对SH模式、阶数、buffer容量与访问范围 |
 | 元数据 | 分别记录`shStorageModeRequested`、`shStorageModeEffective`、布局/非法输入策略、SH/source/staging字节及转换/上传成本；实际配置hash包含模式 |
 
@@ -133,13 +133,14 @@ GPU原始线性读回的无损PNG（仅为观看将GPU原始行序垂直翻转�
 
 ## 7. 复现方式
 
-先构建并隔离部署最终Release及对应生产SPIR-V，在仓库根目录执行[launcher与analyzer说明](./GPUResidentCompression/tools/README.md)，替换真实EXE/shader/output路径：
+先构建并隔离部署最终Release及对应生产SPIR-V，在仓库根目录执行[launcher与analyzer说明](./GPUResidentCompression/README.md#reproduction)，替换真实EXE/shader/output路径：
 
 ```powershell
 $exe = "<Release-executable>"
 $shaders = "<compiled-shader-directory>"
 $out = "<new-output-directory>"
-& ./devDocument/3DGS/GPUResidentCompression/tools/run_comparison.ps1 -Executable $exe -ShaderDirectory $shaders -OutputRoot $out
+$config = "<local-config.json>"
+& ./devDocument/3DGS/GPUResidentCompression/tools/run_comparison.ps1 -Executable $exe -ShaderDirectory $shaders -OutputRoot $out -Config $config
 python ./devDocument/3DGS/GPUResidentCompression/tools/analyze_comparison.py "$out/run-manifest.json" --output "<summary.json>"
 ```
 

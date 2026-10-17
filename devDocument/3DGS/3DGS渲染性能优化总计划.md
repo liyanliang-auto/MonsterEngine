@@ -26,7 +26,7 @@
 
 ### 2.1 参考资料
 
-- [前序分享聊天：移动端运行能力](https://chatgpt.com/share/6ad1986c-0bd4-83ec-82e8-ecc0dcdea9bd)。本次已读取；其中将 Adreno、Android NDK 当作当前平台的表述不能作为本项目已完成状态。
+- 前序移动端运行能力讨论仅作本地参考；其中将 Adreno、Android NDK 当作当前平台的表述不能作为本项目已完成状态。
 - [3DGS LOD 和流式加载开发文档](./3DGS%20LOD和流式加载开发文档.md)：优先参考后部更新章节，特别是第 29、30 章；早期“拟定/尚未实现”仅代表历史状态。
 - [Tight Tile Culling 开发文档](./3DGS渲染性能优化_Tight_Tile_Culling.md)：现有剔除实现、测试、桌面性能和证据边界。
 - [Vulkan 原生 3DGS Splat Pass 开发文档](./Vulkan原生3DGS_splat_pass开发文档.md)。
@@ -38,9 +38,7 @@
 
 岗位：**前线部署工程师（FDE）— 3D 高斯渲染方向**。
 
-图片复制自用户在本次会话上传的原始 JPG，未裁剪或改写。文档使用仓库内相对路径，不依赖会话附件缓存。
-
-![目标岗位 JD 原始截图](./PerformancePlan/images/3DGS-FDE-JD-20261016.jpg)
+原始岗位截图作为个人参考保留在本地，不随仓库发布；技术要求摘要见下节。
 
 ### 2.3 JD 要求摘要
 
@@ -71,7 +69,7 @@
 | Streaming | 本地分页、后台读取、上传、驻留、预算、回收及粗层兜底 | 真机 I/O、压缩解码、网络传输和生命周期 |
 | 性能证据 | Pass 时间戳、固定相机/回放、逐帧记录、截图与测试 | 硬件计数器、手机持续运行、跨设备证据 |
 
-当前Raster实现见[splat_render.comp](../../Shaders/Splat/Render/splat_render.comp)。P01第一轮已新增共享batch64与整组完成判定，保留原路径及其已有的逐像素提前终止；不能把原有Early Termination当作新增成果。
+当前Raster实现见[splat_render.comp](../../../Shaders/Splat/Render/splat_render.comp)。P01第一轮已新增共享batch64与整组完成判定，保留原路径及其已有的逐像素提前终止；不能把原有Early Termination当作新增成果。
 
 ### 3.2 Tight Culling 后的桌面数据
 
