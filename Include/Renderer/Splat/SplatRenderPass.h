@@ -16,6 +16,7 @@
 #include "RHI/IRHICommandList.h"
 #include "RHI/IRHIDevice.h"
 #include "RHI/IRHIDescriptorSet.h"
+#include <cstddef>
 
 namespace MonsterRender::Splat
 {
@@ -38,8 +39,10 @@ namespace MonsterRender::Splat
         uint32 imageHeight;
         uint32 wireframe;
         uint32 forceClear;
+        uint32 rasterSharedMemoryMode; ///< 0=original, 1=shared-memory batch64.
     };
-    static_assert(sizeof(FRenderPushConstants) == 16, "Render push constants must match GLSL");
+    static_assert(sizeof(FRenderPushConstants) == 20, "Render push constants must match GLSL");
+    static_assert(offsetof(FRenderPushConstants, rasterSharedMemoryMode) == 16, "Raster mode ABI offset");
 
     /**
      * FSplatRenderPass
@@ -76,6 +79,8 @@ namespace MonsterRender::Splat
         void setConicOpacity(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setPointsXY(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setWireframe(bool enabled) { m_wireframe = enabled; }
+        /** Select original Raster (0) or fixed batch64 shared Raster (1). */
+        void setRasterSharedMemoryMode(uint32 mode) { m_rasterSharedMemoryMode = mode == 1u ? 1u : 0u; }
         void SetGPUDispatchState(MonsterEngine::TSharedPtr<RHI::IRHIBuffer> state);
         void SelectFrameSlot(uint32 slot) { m_currentDsIndex = (slot + 1u) % kMaxFramesInFlight; }
 
@@ -102,6 +107,7 @@ namespace MonsterRender::Splat
         uint32 m_imageWidth  = 0;
         uint32 m_imageHeight = 0;
         bool m_wireframe = false;
+        uint32 m_rasterSharedMemoryMode = 0; ///< Original path remains the default.
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_dispatchState;
         bool m_gpuCount = false;
 

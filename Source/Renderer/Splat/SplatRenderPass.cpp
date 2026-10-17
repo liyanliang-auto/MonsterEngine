@@ -280,6 +280,7 @@ namespace MonsterRender::Splat
         pc.imageHeight = m_imageHeight;
         pc.wireframe = m_wireframe ? 1u : 0u;
         pc.forceClear = forceClear ? 1u : (m_gpuCount ? 0u : 2u);
+        pc.rasterSharedMemoryMode = m_rasterSharedMemoryMode;
 
         // Dispatch groups: one 16x16 workgroup per tile
         uint32 tilesX = (m_imageWidth  + 15u) / 16u;

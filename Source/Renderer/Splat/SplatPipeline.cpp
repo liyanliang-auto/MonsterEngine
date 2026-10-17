@@ -42,6 +42,7 @@ bool FSplatPipeline::SetRadixPhaseTiming(bool enabled) {
     m_stats.radixPhaseTimingEnabled = enabled; return true;
 }
 bool FSplatPipeline::EnableProjectedFusion(bool split) {
+    if (m_fusionSourceIdentity.shStorageMode != 0) return false;
     if (m_bInitialized) return false;
     m_fusionEnabled = true; m_splitFusionEnabled = split; return true;
 }
@@ -270,11 +271,11 @@ void FSplatPipeline::setGaussianData(const FSplatGPUData& data) {
         data.rotations!=m_fusionSourceIdentity.rotations||data.opacities!=m_fusionSourceIdentity.opacities||
         data.shCoefficients!=m_fusionSourceIdentity.shCoefficients||data.shDegree!=m_fusionSourceIdentity.shDegree))m_splitFusion.InvalidateCheckpoint();
     m_fusionSourceIdentity=data;
-    m_hasGaussianData = data.isValid() && data.gaussianCount <= m_sourceCapacity && data.shDegree >= 0 && data.shDegree <= 3;
+    m_hasGaussianData = data.shStorageMode <= 1 && !(m_fusionEnabled && data.shStorageMode != 0) && data.isValid() && data.gaussianCount <= m_sourceCapacity && data.shDegree >= 0 && data.shDegree <= 3;
     if (!m_hasGaussianData) return;
     const uint64_t n = data.gaussianCount, sh = uint64_t(data.shDegree + 1) * (data.shDegree + 1);
     m_hasGaussianData = data.positions->getSize() >= n * 16 && data.scales->getSize() >= n * 16 &&
-        data.rotations->getSize() >= n * 16 && data.opacities->getSize() >= n * 4 && data.shCoefficients->getSize() >= n * sh * 12;
+        data.rotations->getSize() >= n * 16 && data.opacities->getSize() >= n * 4 && data.shCoefficients->getSize() >= SplatSHStorageBytes(n * sh * 3, data.shStorageMode);
     if (m_hasGaussianData) { m_preprocess.setInputs(data); m_gaussianCount = data.gaussianCount; }
 }
 void FSplatPipeline::setCamera(const FCameraUniforms& camera) {
@@ -303,6 +304,7 @@ uint64_t FSplatPipeline::ReserveFrameId() {
 void FSplatPipeline::setRenderSettings(const FSplatRenderSettings& settings) {
     FSplatRenderSettings safe = settings;
     if (safe.tightTileCulling > 2u) safe.tightTileCulling = 0;
+    if (safe.rasterSharedMemoryMode > 1u) safe.rasterSharedMemoryMode = 0;
     if (!std::isfinite(safe.nearPlane) || safe.nearPlane <= 0 || safe.nearPlane > 1e6f) safe.nearPlane = 0.1f;
     if (!std::isfinite(safe.farPlane) || safe.farPlane <= safe.nearPlane || safe.farPlane > 1e9f) safe.farPlane = std::max(1000.0f, safe.nearPlane + 1);
     if (!std::isfinite(safe.gaussianScale) || safe.gaussianScale <= 0) safe.gaussianScale = 1;
@@ -314,6 +316,7 @@ void FSplatPipeline::setRenderSettings(const FSplatRenderSettings& settings) {
     m_renderSettings = safe;
     m_preprocess.setClipPlanes(safe.nearPlane, safe.farPlane); m_preprocess.setDistanceCulling(safe.distanceCulling);
     m_preprocess.setGaussianScale(safe.gaussianScale); m_render.setWireframe(safe.wireframe);
+    m_render.setRasterSharedMemoryMode(safe.rasterSharedMemoryMode);
     // Experimental fusion rewrites projected attributes and rectangular counts.
     // Keep its established semantics until it shares the count/emit predicate.
     m_stats.tightTileCullingRequested = safe.tightTileCulling;

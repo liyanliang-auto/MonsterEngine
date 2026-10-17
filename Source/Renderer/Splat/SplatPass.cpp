@@ -329,6 +329,9 @@ bool FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     auto& outDs = m_outputDescriptorSets[m_currentDsIndex];
 
     if (gaussianCount > m_gaussianCount || !m_input.isValid()) return false;
+    if (m_input.shStorageMode > 1 || m_input.shDegree < 0 || m_input.shDegree > 3 ||
+        m_input.shCoefficients->getSize() < SplatSHStorageBytes(uint64_t(m_input.gaussianCount) *
+            (m_input.shDegree + 1) * (m_input.shDegree + 1) * 3, m_input.shStorageMode)) return false;
     void* cameraData = m_cameraBuffers[m_currentDsIndex]->map();
     if (!cameraData) return false;
     FCameraUniforms camera = m_camera;
@@ -359,6 +362,7 @@ bool FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     pc.tightTileCulling = m_tightTileCulling;
     pc.useActiveIndices = m_useActiveIndices ? 1u : 0u;
     pc.sourceCapacity = m_input.gaussianCount;
+    pc.shStorageMode = m_input.shStorageMode;
     pc.shStride = uint32((m_input.shDegree + 1) * (m_input.shDegree + 1));
 
     // Dispatch

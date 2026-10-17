@@ -204,6 +204,32 @@ bool SplatSceneApplication::initializeBenchmark()
     metadata["gpuTimingScope"]="gpu_ms is WholeFrame hardware interval before Upload through fullscreen/UI draw and ending render-pass barriers; excludes queue presentation/compositor latency. Pipeline and its six overlapping subpasses, Upload and Presentation are separately reported; never sum overlapping scopes.";
     metadata["initialUploadStagingPeakBackingBytes"]=std::to_string(m_initialUploadStagingPeakBytes);
     metadata["tightTileCulling"]=std::to_string(m_runtime.tightTileCulling);
+    metadata["shStorageModeRequested"]=std::to_string(m_runtime.shStorageMode);
+    metadata["shStorageModeEffective"]=std::to_string(m_gpuData.shStorageMode);
+    metadata["shStoragePolicy"]="0=FP32; 1=two IEEE binary16 scalars per uint32 low-half first; decode/evaluation FP32; full-resident A only";
+    metadata["shInvalidInputPolicy"]="FP16 rejects nonfinite or abs(value)>65504 before GPU allocation; nearest-even rounding preserves signed zero and subnormals";
+    const uint64_t shScalars=uint64_t(m_gpuData.gaussianCount)*3*(m_gpuData.shDegree+1)*(m_gpuData.shDegree+1);
+    metadata["shLogicalBytes"]=std::to_string(Splat::SplatSHStorageBytes(shScalars,m_gpuData.shStorageMode));
+    metadata["shTailPaddingBytes"]=std::to_string(m_gpuData.shStorageMode==1?(shScalars%2)*2:0);
+    metadata["sourceLogicalBytes"]=std::to_string(uint64_t(m_gpuData.gaussianCount)*52+Splat::SplatSHStorageBytes(shScalars,m_gpuData.shStorageMode));
+    metadata["sourceReservedBytes"]=std::to_string(m_pagePool?m_pagePool->GetAllocationStats().sourceReservedBytes:m_legacyAllocations.sourceReservedBytes);
+    metadata["sourceBackingBytes"]=std::to_string(m_pagePool?m_pagePool->GetAllocationStats().sourceBackingBytes:m_legacyAllocations.sourceBackingBytes);
+    metadata["initialUploadPayloadBytes"]=m_pagePool?"unavailable":std::to_string(m_gpuData.uploadedBytes);
+    metadata["initialUploadStagingAlignmentBytes"]=m_pagePool?"unavailable":std::to_string(m_gpuData.stagingAlignmentBytes);
+    metadata["initialUploadStagingLogicalBytes"]=m_pagePool?"unavailable":std::to_string(m_gpuData.stagingLogicalBytes);
+    metadata["shConversionMilliseconds"]=m_pagePool?"unavailable":std::to_string(m_gpuData.shConversionMilliseconds);
+    metadata["initialUploadMilliseconds"]=m_pagePool?"unavailable":std::to_string(m_gpuData.uploadMilliseconds);
+    metadata["initialUploadTimingScope"]="CPU wall time for buffer creation/staging/copies/waits including packing; SH conversion separately includes validation and packing; excludes PLY parsing; no standalone GPU upload interval";
+    metadata["driverProcessVRAMBytes"]="unavailable";
+    if(m_gpuData.shCoefficients){
+        RHI::FBufferAllocationInfo info{};uint64_t required=0,alignment=0;
+        if(!m_gpuData.shCoefficients->getAllocationInfo(info)||!m_device->getBufferAllocationRequirements(m_gpuData.shCoefficients->getDesc(),required,alignment)){m_uiMessage="SH physical allocation requirements unavailable";return false;}
+        metadata["shReservedBytes"]=std::to_string(info.reservationBytes);
+        metadata["shBackingBytes"]=std::to_string(info.backingBytes);
+        metadata["shRequiredAllocationBytes"]=std::to_string(required);
+        metadata["shAllocationAlignmentBytes"]=std::to_string(alignment);
+    }
+    metadata["rasterSharedMemoryMode"]=std::to_string(m_runtime.rasterSharedMemoryMode);
     metadata["radixSortBlocksPerWorkgroupRequested"]=std::to_string(m_runtime.radixSortBlocksPerWorkgroup);
     metadata["radixSortBlocksPerWorkgroupEffective"]=std::to_string(m_splatPipeline->GetFrameStats().radixSortBlocksPerWorkgroupEffective);
     metadata["radixSortPhaseTimingRequested"]=m_runtime.radixSortPhaseTiming?"true":"false";
@@ -217,7 +243,7 @@ bool SplatSceneApplication::initializeBenchmark()
     canonical<<'|'<<m_runtime.benchmarkFixedCameraSeconds<<'|'<<m_runtime.benchmarkFreezeSelection<<'|'<<m_runtime.lod.freeze<<'|'<<m_runtime.validation<<'|'<<m_runtime.captureOnly<<'|'<<m_runtime.functionalSmoke<<'|'<<m_runtime.captureSettleSeconds;
     for(double t:m_runtime.captureTimes)canonical<<'|'<<t;
     metadata["comparisonConfigurationSHA256"]=HashText(canonical.str());
-    canonical<<'|'<<m_runtime.tightTileCulling<<'|'<<m_runtime.radixSortBlocksPerWorkgroup<<'|'<<m_runtime.radixSortPhaseTiming;metadata["configurationSHA256"]=HashText(canonical.str());
+    canonical<<'|'<<m_runtime.tightTileCulling<<'|'<<m_runtime.radixSortBlocksPerWorkgroup<<'|'<<m_runtime.radixSortPhaseTiming<<'|'<<m_runtime.rasterSharedMemoryMode<<'|'<<m_runtime.shStorageMode;metadata["configurationSHA256"]=HashText(canonical.str());
     const char* processor=std::getenv("PROCESSOR_IDENTIFIER");metadata["CPU"]=processor?processor:"unavailable";
     MEMORYSTATUSEX ram{};ram.dwLength=sizeof(ram);metadata["systemRAMBytes"]=GlobalMemoryStatusEx(&ram)?std::to_string(ram.ullTotalPhys):"unavailable";
     auto hash=[&](const std::string& name,const std::string& path){std::string value;if(!Splat::FSplatSceneFormat::SHA256File(path,value,error)){m_uiMessage=error;return false;}metadata[name]=value;return true;};
@@ -650,6 +676,7 @@ void SplatSceneApplication::onRender()
     renderSettings.gaussianScale = m_controls.GaussianScale;
     renderSettings.fusionRelativeRGBAError = m_runtime.fusionRelativeRGBAError;
     renderSettings.tightTileCulling = m_runtime.tightTileCulling;
+    renderSettings.rasterSharedMemoryMode = m_runtime.rasterSharedMemoryMode;
     m_splatPipeline->setRenderSettings(renderSettings);
     if(m_benchmark){
         const std::string cameraBytes(reinterpret_cast<const char*>(&camera),sizeof(camera));
@@ -1175,6 +1202,9 @@ void SplatSceneApplication::drawControlPanels()
         ImGui::Separator();ImGui::InputText("Scene manifest",m_scenePathUI,sizeof(m_scenePathUI));ImGui::InputText("Original PLY",m_sourcePathUI,sizeof(m_sourcePathUI));
         int mode=m_uiRuntime->mode-'A';if(ImGui::Combo("Requested mode",&mode,"A Original\0B Full leaf\0C Resident LOD\0D Streaming\0E Restricted\0"))m_uiRuntime->mode=char('A'+mode);
         ImGui::TextDisabled("GiB = 1024^3 bytes | M = 1,000,000 items");
+        int shStorage=int(m_uiRuntime->shStorageMode);
+        if(ImGui::Combo("SH storage (reload on Apply)",&shStorage,"FP32\0FP16 packed (A only)\0"))m_uiRuntime->shStorageMode=uint32_t(shStorage);
+        ImGui::Text("Effective SH storage: %s",m_gpuData.shStorageMode==1?"FP16 packed / FP32 compute":"FP32");
         budgetGiB("Scene GPU budget (GiB)",m_uiRuntime->streaming.sceneGPUBytes);
         budgetGiB("CPU cache budget (GiB)",m_uiRuntime->streaming.cpuCacheBytes);
         budgetGiB("Staging budget (GiB)",m_uiRuntime->streaming.stagingBytes);
@@ -1370,6 +1400,7 @@ void SplatSceneApplication::drawControlPanels()
 bool SplatSceneApplication::loadModel()
 {
     std::string error;
+    if(m_runtime.shStorageMode>1 || (m_runtime.shStorageMode==1 && (m_runtime.mode!='A'||m_runtime.fullLeaf||m_runtime.projectedFusion))){m_uiMessage="SH FP16 requires full-resident A without LOD/Streaming/fullLeaf/fusion";return false;}
     m_scene = {}; m_leafNodes.clear(); m_residentTargetPages.clear(); m_terminalPageErrors.clear();
     m_selector.Reset(); m_selection = {}; m_selectionCounter = 1;
     if (!m_runtime.scenePath.empty()) {
@@ -1425,7 +1456,7 @@ bool SplatSceneApplication::loadModel()
     MR_LOG(LogSplatScene, Log, "Loading PLY: %s", m_modelPath.c_str());
 
     Splat::FSplatPLYLoader loader;
-    if (!loader.loadAndUpload(m_device, m_modelPath, m_gpuData,m_runtime.streaming.sceneGPUBytes,m_runtime.streaming.stagingBytes))
+    if (!loader.loadAndUpload(m_device, m_modelPath, m_gpuData,m_runtime.streaming.sceneGPUBytes,m_runtime.streaming.stagingBytes,m_runtime.shStorageMode))
     {
         MR_LOG(LogSplatScene, Error, "Failed to load PLY file");
         return false;

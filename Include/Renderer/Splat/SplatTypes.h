@@ -45,6 +45,7 @@ struct FSplatRenderSettings
     bool wireframe = false;
     float32 gaussianScale = 1.0f;
     uint32 tightTileCulling = 0; ///< 0=baseline, 1=tight rectangle, 2=conservative tile test.
+    uint32 rasterSharedMemoryMode = 0; ///< 0=original Raster, 1=FP32 shared-memory batches of 64.
     float32 fusionRelativeRGBAError = 0.4f; ///< Explicit continuous per-channel L2 tolerance; image gates are separate.
 };
 
@@ -72,7 +73,7 @@ static_assert(alignof(FCameraUniforms) == 16, "FCameraUniforms must be 16-byte a
 
 // ============================================================================
 // Preprocess Push Constants (matches splat_preprocess.comp)
-// 48 bytes total (36 bytes of fields, padded to 16-byte alignment)
+// 48 bytes total (40 bytes of fields, padded to 16-byte alignment)
 // ============================================================================
 struct alignas(16) FPreprocessPushConstants
 {
@@ -86,10 +87,12 @@ struct alignas(16) FPreprocessPushConstants
     uint32 sourceCapacity = 0; ///< Source-buffer index bound.
     uint32 shStride = 0; ///< Coefficients per Gaussian, excluding RGB factor.
     uint32 tightTileCulling = 0; ///< Shared count/emit mode at offset 32.
-    uint32 pad[3] = {}; ///< Push range padding.
+    uint32 shStorageMode = 0; ///< 0=FP32, 1=packed binary16 pairs, offset 36.
+    uint32 pad[2] = {}; ///< Push range padding.
 };
 
 static_assert(sizeof(FPreprocessPushConstants) == 48, "FPreprocessPushConstants must be 48 bytes");
+static_assert(offsetof(FPreprocessPushConstants, shStorageMode) == 36, "Preprocess SH storage ABI offset");
 static_assert(offsetof(FPreprocessPushConstants, tightTileCulling) == 32, "Preprocess culling ABI offset");
 
 // ============================================================================

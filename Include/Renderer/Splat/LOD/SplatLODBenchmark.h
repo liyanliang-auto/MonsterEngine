@@ -22,6 +22,8 @@ struct FSplatLODRuntimeOptions {
     uint32_t renderWidth = 0, renderHeight = 0; ///< Optional internal 3DGS dimensions; zero uses the window policy.
     uint32_t activeCapacity = 1000000, sortCapacity = 8000000; ///< Explicit pipeline capacities.
     uint32_t tightTileCulling = 0; ///< 0 baseline, 1 tight rectangle, 2 conservative tile culling.
+    uint32_t shStorageMode = 0; ///< 0=FP32, 1=packed FP16; full-resident A only.
+    uint32_t rasterSharedMemoryMode = 0; ///< 0 original Raster, 1 FP32 shared-memory batch64.
     uint32 radixSortBlocksPerWorkgroup = RADIX_SORT_BLOCKS_PER_WG; ///< Exact radix workload: 4, 8, 16 or 32.
     bool radixSortPhaseTiming = true; ///< Extra GPU child queries in performance runs; controls overhead experiments.
     double benchmarkFixedCameraSeconds = -1; ///< -1 moving sequence, otherwise fixed sequence sample.
