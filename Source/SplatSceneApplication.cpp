@@ -175,8 +175,23 @@ bool SplatSceneApplication::initializeBenchmark()
     metadata["presentMode"]=vk->GetConfiguredPresentMode()==VK_PRESENT_MODE_IMMEDIATE_KHR?"IMMEDIATE":vk->GetConfiguredPresentMode()==VK_PRESENT_MODE_MAILBOX_KHR?"MAILBOX":"FIFO";
     metadata["presentModeImplications"]=vk->GetConfiguredPresentMode()==VK_PRESENT_MODE_MAILBOX_KHR?"Presentation is synchronized; mailbox can replace queued images and does not impose a software render cap":"Immediate presentation requested; no application render cap";
     metadata["colorSpace"]="linear RGBA8 shader output before sRGB present";metadata["background"]="black RGB with transparent alpha";metadata["exposure"]="1";
-    metadata["sourcePLY"]=m_modelPath;metadata["manifest"]=m_runtime.scenePath;metadata["sequence"]=m_runtime.sequencePath;metadata["sourceSHDegree"]=std::to_string(m_shDegree);
+    metadata["sourcePLY"]=m_modelPath;metadata["manifest"]=m_runtime.scenePath;metadata["sequence"]=m_runtime.sequencePath;metadata["sourceSHDegree"]=std::to_string(m_gpuData.sourceSHDegree);
     metadata["displaySHDegree"]=std::to_string(m_runtime.displaySHDegree<0?m_shDegree:m_runtime.displaySHDegree);
+    metadata["shStorageDegreeRequested"]=std::to_string(m_runtime.shStorageDegree);
+    metadata["projectionColorCompression"]=m_runtime.projectionColorCompression?"1":"0";
+    const auto& colorStats=m_splatPipeline->GetFrameStats();
+    metadata["projectionColorStorageModeRequested"]=m_runtime.projectionColorCompression?"1":"0";
+    metadata["projectionColorStorageModeEffective"]=std::to_string(colorStats.projectionColorStorageMode);
+    metadata["projectionColorEncoding"]=colorStats.projectionColorStorageMode==1?"RGB21F":"FP32_VEC4";
+    metadata["projectionColorStrideBytes"]=std::to_string(Splat::ESplatProjectionColor::Stride(colorStats.projectionColorStorageMode));
+    metadata["projectionColorCapacity"]=std::to_string(colorStats.activeCapacity);
+    metadata["projectionColorLogicalBytes"]=std::to_string(colorStats.projectionColorLogicalBytes);
+    metadata["projectionColorReservedBytes"]=std::to_string(colorStats.projectionColorReservedBytes);
+    metadata["projectionColorBackingBytes"]=std::to_string(colorStats.projectionColorBackingBytes);
+    metadata["projectionColorRequiredAllocationBytes"]=std::to_string(colorStats.projectionColorRequiredAllocationBytes);
+    metadata["projectionColorAllocationAlignmentBytes"]=std::to_string(colorStats.projectionColorAllocationAlignmentBytes);
+    metadata["projectionColorPolicy"]="RGB21F: sign1/exponent8/mantissa12 per channel, packed into two uint32; truncate 11 low FP32 mantissa bits; no upper color clamp; NaN canonicalized, Inf/signed zero preserved; FP32 blend";
+    metadata["projectionCenterConicStorage"]="unchanged FP32 vec2/vec4; quantization deferred";
     metadata["evidenceScope"]=m_runtime.functionalSmoke?"functional smoke; not formal performance/30-minute acceptance":"registered acceptance protocol";
     metadata["capturePolicy"]=m_runtime.functionalSmoke?"resident fallback may be captured during pending refinement":"wait for settled target";
     metadata["sourceSHA256"]=m_scene.sourceSHA256;metadata["sourceCount"]=std::to_string(m_runtime.scenePath.empty()?m_gpuData.gaussianCount:m_scene.sourceCount);
@@ -243,7 +258,7 @@ bool SplatSceneApplication::initializeBenchmark()
     canonical<<'|'<<m_runtime.benchmarkFixedCameraSeconds<<'|'<<m_runtime.benchmarkFreezeSelection<<'|'<<m_runtime.lod.freeze<<'|'<<m_runtime.validation<<'|'<<m_runtime.captureOnly<<'|'<<m_runtime.functionalSmoke<<'|'<<m_runtime.captureSettleSeconds;
     for(double t:m_runtime.captureTimes)canonical<<'|'<<t;
     metadata["comparisonConfigurationSHA256"]=HashText(canonical.str());
-    canonical<<'|'<<m_runtime.tightTileCulling<<'|'<<m_runtime.radixSortBlocksPerWorkgroup<<'|'<<m_runtime.radixSortPhaseTiming<<'|'<<m_runtime.rasterSharedMemoryMode<<'|'<<m_runtime.shStorageMode;metadata["configurationSHA256"]=HashText(canonical.str());
+    canonical<<'|'<<m_runtime.tightTileCulling<<'|'<<m_runtime.radixSortBlocksPerWorkgroup<<'|'<<m_runtime.radixSortPhaseTiming<<'|'<<m_runtime.rasterSharedMemoryMode<<'|'<<m_runtime.shStorageMode<<'|'<<m_runtime.shStorageDegree<<'|'<<m_runtime.projectionColorCompression;metadata["configurationSHA256"]=HashText(canonical.str());
     const char* processor=std::getenv("PROCESSOR_IDENTIFIER");metadata["CPU"]=processor?processor:"unavailable";
     MEMORYSTATUSEX ram{};ram.dwLength=sizeof(ram);metadata["systemRAMBytes"]=GlobalMemoryStatusEx(&ram)?std::to_string(ram.ullTotalPhys):"unavailable";
     auto hash=[&](const std::string& name,const std::string& path){std::string value;if(!Splat::FSplatSceneFormat::SHA256File(path,value,error)){m_uiMessage=error;return false;}metadata[name]=value;return true;};
@@ -1456,7 +1471,7 @@ bool SplatSceneApplication::loadModel()
     MR_LOG(LogSplatScene, Log, "Loading PLY: %s", m_modelPath.c_str());
 
     Splat::FSplatPLYLoader loader;
-    if (!loader.loadAndUpload(m_device, m_modelPath, m_gpuData,m_runtime.streaming.sceneGPUBytes,m_runtime.streaming.stagingBytes,m_runtime.shStorageMode))
+    if (!loader.loadAndUpload(m_device, m_modelPath, m_gpuData,m_runtime.streaming.sceneGPUBytes,m_runtime.streaming.stagingBytes,m_runtime.shStorageMode,m_runtime.shStorageDegree))
     {
         MR_LOG(LogSplatScene, Error, "Failed to load PLY file");
         return false;
@@ -1464,7 +1479,7 @@ bool SplatSceneApplication::loadModel()
 
     m_shDegree = m_gpuData.shDegree;
     m_initialUploadStagingPeakBytes=loader.GetStagingBackingBytes();
-    if(!m_runtime.scenePath.empty()&&m_runtime.mode=='A'&&(m_gpuData.gaussianCount!=m_scene.sourceCount||uint32_t(m_shDegree)!=m_scene.shDegree)){m_uiMessage="Original baseline count/SH degree differs from scene manifest";return false;}
+    if(!m_runtime.scenePath.empty()&&m_runtime.mode=='A'&&(m_gpuData.gaussianCount!=m_scene.sourceCount||uint32_t(m_gpuData.sourceSHDegree)!=m_scene.shDegree)){m_uiMessage="Original baseline count/SH degree differs from scene manifest";return false;}
     m_legacyAllocations={};std::set<uint64_t> backing;
     for(auto buffer:{m_gpuData.positions,m_gpuData.scales,m_gpuData.rotations,m_gpuData.opacities,m_gpuData.shCoefficients}){
         RHI::FBufferAllocationInfo info{};
@@ -1499,6 +1514,7 @@ bool SplatSceneApplication::initSplatPipeline()
         return false;
 
     m_splatPipeline = MakeUnique<Splat::FSplatPipeline>();
+    if(!m_splatPipeline->SetProjectionColorCompression(m_runtime.projectionColorCompression))return false;
     if(!m_splatPipeline->SetRadixSortBlocksPerWorkgroup(m_runtime.radixSortBlocksPerWorkgroup)||
         !m_splatPipeline->SetRadixPhaseTiming(m_runtime.benchmark&&!m_runtime.captureOnly&&m_runtime.radixSortPhaseTiming))return false;
     if(m_runtime.projectedFusion&&m_runtime.mode>='C'&&!m_runtime.fullLeaf&&!m_splatPipeline->EnableProjectedFusion(m_runtime.fusionImplementation=="split"))return false;

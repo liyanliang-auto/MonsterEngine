@@ -39,6 +39,7 @@ struct FSplatPreprocessOutput
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> radii;         // int[],    sizeof(int32)  * count
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> depth;         // float[],  sizeof(float32) * count
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> rgb;           // vec4[],   sizeof(float32) * count * 4
+    uint32 projectionColorStorageMode = ESplatProjectionColor::FP32; ///< Physical rgb record layout.
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> conicOpacity;  // vec4[],   sizeof(float32) * count * 4
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> pointsXY;      // vec2[],   sizeof(float32) * count * 2
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> tilesTouched;  // uint[],   sizeof(uint32)  * count
@@ -75,6 +76,11 @@ public:
      * @return true on success
      */
     bool initialize(RHI::IRHIDevice* device, uint32 gaussianCount);
+    /** Allocation-time option; initialized passes require recreation to change layout. */
+    bool SetProjectionColorStorageMode(uint32 mode) {
+        if (m_bInitialized || mode > ESplatProjectionColor::RGB21F) return false;
+        m_output.projectionColorStorageMode = mode; return true;
+    }
 
     /**
      * Set input buffers from loaded Gaussian data.

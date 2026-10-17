@@ -233,8 +233,10 @@ namespace MonsterRender::Splat
             m_descriptorSets[nextIndex]->updateStorageBuffer(ERenderBinding::SortedIds, m_sortedIdsBuf, 0, 0);
     }
 
-    void FSplatRenderPass::setColors(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer)
+    void FSplatRenderPass::setColors(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer, uint32 storageMode)
     {
+        if (storageMode > ESplatProjectionColor::RGB21F) return;
+        m_projectionColorStorageMode = storageMode;
         m_colorsBuf = buffer;
         uint32 nextIndex = (m_currentDsIndex + 1) % kMaxFramesInFlight;
         if (m_descriptorSets[nextIndex] && m_colorsBuf)
@@ -281,6 +283,7 @@ namespace MonsterRender::Splat
         pc.wireframe = m_wireframe ? 1u : 0u;
         pc.forceClear = forceClear ? 1u : (m_gpuCount ? 0u : 2u);
         pc.rasterSharedMemoryMode = m_rasterSharedMemoryMode;
+        pc.projectionColorStorageMode = m_projectionColorStorageMode;
 
         // Dispatch groups: one 16x16 workgroup per tile
         uint32 tilesX = (m_imageWidth  + 15u) / 16u;

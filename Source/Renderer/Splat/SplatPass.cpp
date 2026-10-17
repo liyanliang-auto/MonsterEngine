@@ -233,7 +233,7 @@ bool FSplatPreprocessPass::createOutputBuffers(RHI::IRHIDevice* device)
 
     m_output.radii        = createStorageBuf(n * sizeof(int32),   "Splat_Radii");
     m_output.depth        = createStorageBuf(n * sizeof(float32), "Splat_Depth");
-    m_output.rgb          = createStorageBuf(n * 4 * sizeof(float32), "Splat_RGB");
+    m_output.rgb          = createStorageBuf(ESplatProjectionColor::Bytes(n, m_output.projectionColorStorageMode), "Splat_RGB");
     m_output.conicOpacity = createStorageBuf(n * 4 * sizeof(float32), "Splat_ConicOpacity");
     m_output.pointsXY     = createStorageBuf(n * 2 * sizeof(float32), "Splat_PointsXY");
     m_output.tilesTouched = createStorageBuf(n * sizeof(uint32),  "Splat_TilesTouched");
@@ -363,6 +363,7 @@ bool FSplatPreprocessPass::execute(RHI::IRHICommandList* cmdList, uint32 gaussia
     pc.useActiveIndices = m_useActiveIndices ? 1u : 0u;
     pc.sourceCapacity = m_input.gaussianCount;
     pc.shStorageMode = m_input.shStorageMode;
+    pc.projectionColorStorageMode = m_output.projectionColorStorageMode;
     pc.shStride = uint32((m_input.shDegree + 1) * (m_input.shDegree + 1));
 
     // Dispatch

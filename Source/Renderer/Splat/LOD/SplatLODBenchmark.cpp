@@ -84,6 +84,8 @@ bool FSplatLODRuntimeOptions::Validate(std::string& error) const {
     if(mode<'A'||mode>'E') return fail("Mode must be A, B, C, D or E");
     if(tightTileCulling>2) return fail("tightTileCulling must be 0, 1 or 2");
     if(shStorageMode>1) return fail("shStorageMode must be 0 or 1");
+    if(shStorageDegree < -1 || shStorageDegree > 3) return fail("shStorageDegree must be -1 or 0..3");
+    if(projectionColorCompression && projectedFusion) return fail("Projection color compression requires projectedFusion=false");
     if(shStorageMode==1 && (mode!='A' || fullLeaf || projectedFusion)) return fail("SH FP16 supports full-resident A only; LOD/Streaming/fullLeaf/fusion are unsupported");
     if(rasterSharedMemoryMode>1) return fail("rasterSharedMemoryMode must be 0 or 1");
     if(!IsValidRadixSortBlocks(radixSortBlocksPerWorkgroup)) return fail("radixSortBlocksPerWorkgroup must be 4, 8, 16 or 32");
@@ -122,6 +124,8 @@ bool FSplatLODRuntimeOptions::LoadConfig(const std::string& path,FSplatLODRuntim
             else if(k=="fusionImplementation")value.fusionImplementation=text(v);
             else if(k=="tightTileCulling") value.tightTileCulling=uint32_t(integer(v,2));
             else if(k=="shStorageMode") value.shStorageMode=uint32_t(integer(v,1));
+            else if(k=="shStorageDegree") value.shStorageDegree=int32_t(integer(v,3));
+            else if(k=="projectionColorCompression") value.projectionColorCompression=boolean(v);
             else if(k=="rasterSharedMemoryMode") value.rasterSharedMemoryMode=uint32_t(integer(v,1));
             else if(k=="radixSortBlocksPerWorkgroup") value.radixSortBlocksPerWorkgroup=uint32(integer(v,32));
             else if(k=="radixSortPhaseTiming") value.radixSortPhaseTiming=boolean(v);

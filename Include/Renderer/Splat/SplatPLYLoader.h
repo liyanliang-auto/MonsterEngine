@@ -45,6 +45,7 @@ struct FSplatGPUData
     double uploadMilliseconds = 0; ///< Buffer creation, staging, copies and waits including packing.
     uint32 gaussianCount = 0;
     int32 shDegree = 0;
+    int32 sourceSHDegree = 0;
 
     bool isValid() const
     {
@@ -89,7 +90,7 @@ public:
      * @return true on success
      */
     bool loadAndUpload(RHI::IRHIDevice* device, const String& filePath, FSplatGPUData& outData,
-                       uint64_t sourceBudgetBytes = UINT64_MAX, uint64_t stagingBudgetBytes = 32ull << 20, uint32_t shStorageMode = ESplatSHStorage::FP32);
+                       uint64_t sourceBudgetBytes = UINT64_MAX, uint64_t stagingBudgetBytes = 32ull << 20, uint32_t shStorageMode = ESplatSHStorage::FP32, int32_t requestedSHDegree = -1);
     uint64_t GetStagingBackingBytes() const { return m_stagingBackingBytes; }
 
 private:

@@ -40,8 +40,10 @@ namespace MonsterRender::Splat
         uint32 wireframe;
         uint32 forceClear;
         uint32 rasterSharedMemoryMode; ///< 0=original, 1=shared-memory batch64.
+        uint32 projectionColorStorageMode; ///< Matches bound color buffer layout.
     };
-    static_assert(sizeof(FRenderPushConstants) == 20, "Render push constants must match GLSL");
+    static_assert(sizeof(FRenderPushConstants) == 24, "Render push constants must match GLSL");
+    static_assert(offsetof(FRenderPushConstants, projectionColorStorageMode) == 20, "Color mode ABI offset");
     static_assert(offsetof(FRenderPushConstants, rasterSharedMemoryMode) == 16, "Raster mode ABI offset");
 
     /**
@@ -75,7 +77,7 @@ namespace MonsterRender::Splat
          */
         void setTileRanges(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setSortedIds(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
-        void setColors(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
+        void setColors(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer, uint32 storageMode = 0);
         void setConicOpacity(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setPointsXY(const MonsterEngine::TSharedPtr<RHI::IRHIBuffer>& buffer);
         void setWireframe(bool enabled) { m_wireframe = enabled; }
@@ -108,6 +110,7 @@ namespace MonsterRender::Splat
         uint32 m_imageHeight = 0;
         bool m_wireframe = false;
         uint32 m_rasterSharedMemoryMode = 0; ///< Original path remains the default.
+        uint32 m_projectionColorStorageMode = 0; ///< Layout of m_colorsBuf, set together with its descriptor.
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> m_dispatchState;
         bool m_gpuCount = false;
 

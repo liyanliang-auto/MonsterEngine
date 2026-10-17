@@ -9,6 +9,8 @@
 
 #version 450
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+#extension GL_GOOGLE_include_directive : enable
+#include "../splat_projection_color.glsl"
 
 #define TILE_WIDTH  16
 #define TILE_HEIGHT 16
@@ -33,7 +35,7 @@ layout(std430, set = 0, binding = 1) readonly buffer SortedIdsBuf {
 
 // Pre-computed Gaussian color (SH evaluation result)
 layout(std430, set = 0, binding = 2) readonly buffer ColorBuf {
-    vec4 colors[];              // From preprocess output: rgb[idx].xyz = color, .w unused
+    uint colorWords[];          // FP32 vec4 (4 words) or RGB21F (2 words).
 };
 
 // Pre-computed conic + opacity: conicOpacity[idx] = vec4(conic.xy, conic.z, opacity)
@@ -59,7 +61,14 @@ layout(push_constant) uniform PushConstants {
     uint wireframe;             // Draw projected Gaussian ellipse contours
     uint forceClear;
     uint rasterSharedMemoryMode; // 0=original, 1=shared-memory batch64
+    uint projectionColorStorageMode;
 } pc;
+
+vec3 readProjectionColor(uint index) {
+    if (pc.projectionColorStorageMode == 1u)
+        return splatDecodeProjectionColor(uvec2(colorWords[index * 2u], colorWords[index * 2u + 1u]));
+    return uintBitsToFloat(uvec3(colorWords[index * 4u], colorWords[index * 4u + 1u], colorWords[index * 4u + 2u]));
+}
 
 // ============================================================================
 // Main
@@ -143,14 +152,14 @@ void renderOriginal() {
             float lineWidth = min(0.3, max(0.025, length(gradient) * 1.25));
             if (det > 0.0 && radius <= 48.0 && abs(power + 2.0) <= lineWidth) {
                 outlineWeight = max(outlineWeight, min(0.55, T * 0.55));
-                outlineColor = mix(colors[gaussIdx].rgb, vec3(1.0), 0.65);
+                outlineColor = mix(readProjectionColor(gaussIdx), vec3(1.0), 0.65);
             }
         }
 
         // Early exit: pixel is fully opaque
         float T_next = T * (1.0 - alpha);
         // Front-to-back alpha blending
-        C += colors[gaussIdx].rgb * alpha * T;
+        C += readProjectionColor(gaussIdx) * alpha * T;
         T = T_next;
         if (T < 0.0001) {
             break;
@@ -215,7 +224,7 @@ void renderShared() {
                     batchIds[lane] = gaussIdx;
                     batchXY[lane] = pointsXY[gaussIdx];
                     batchConicOpacity[lane] = conicOpacity[gaussIdx];
-                    batchRGB[lane] = colors[gaussIdx].rgb;
+                    batchRGB[lane] = readProjectionColor(gaussIdx);
                     batchValid[lane] = 1u;
                 }
             }

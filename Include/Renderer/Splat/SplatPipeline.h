@@ -36,6 +36,9 @@ struct FSplatPipelineFrameStats {
     float maxFusionRelativeRGBAError = 0; ///< Measured maximum group error, joined by countFrame.
     uint64_t temporaryBytes = 0; ///< Reserved pipeline buffers/images/staging.
     uint64_t outputImageBytes = 0; ///< Physical output image bytes included in temporaryBytes.
+    uint32 projectionColorStorageMode = 0; ///< Actual allocation and shader mode: FP32=0, RGB21F=1.
+    uint64_t projectionColorLogicalBytes = 0, projectionColorReservedBytes = 0, projectionColorBackingBytes = 0; ///< Actual color allocation sizes.
+    uint64_t projectionColorRequiredAllocationBytes = 0, projectionColorAllocationAlignmentBytes = 0; ///< Device allocation requirements.
     uint64_t radixKeysBytes = 0, radixValuesBytes = 0, radixHistogramBytes = 0; ///< Physical dedicated radix allocations, included in temporaryBytes.
     uint64_t overflowFrames = 0; ///< Completed samples containing overflow.
     uint64_t telemetrySkippedFrames = 0; ///< Frames without a free asynchronous readback slot.
@@ -60,6 +63,8 @@ public:
         uint32 sortCapacity, uint64_t temporaryBytes);
     /** Optional capability must be requested before initialize; no storage when disabled. */
     bool EnableProjectedFusion(bool split = false);
+    /** Allocation-time layout; rejects projected fusion and changes after initialization. */
+    bool SetProjectionColorCompression(bool enabled);
     /** Validate before allocation; changing workload requires a new pipeline. */
     bool SetRadixSortBlocksPerWorkgroup(uint32 blocks);
     /** Opt in before initialize; parent and child timing scopes overlap. */
@@ -92,6 +97,8 @@ public:
     uint32 getImageHeight() const { return m_imageHeight; }
     /** Read only after submitted completion in GPU verification fixtures. */
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> GetDispatchStateBuffer() const { return m_dispatchState; }
+    /** Production preprocess output; read only after submitted completion. */
+    const FSplatPreprocessOutput& GetPreprocessOutput() const { return m_preprocess.getOutput(); }
 private:
     bool CreatePreparePass();
     bool CreateFusionPass();

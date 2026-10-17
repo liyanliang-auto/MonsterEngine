@@ -1,0 +1,12 @@
+{
+  "scene": "Bicycle",
+  "resolution": [1920,1080],
+  "shDegrees": [3,2,1,0],
+  "storageModes": [0,1],
+  "singleVariableProjectionColor": true,
+  "deferCenterConicQuantization": true,
+  "warmupSeconds": 3,
+  "sampleSeconds": 8,
+  "captureRequirement": "native window with title bar live FPS",
+  "metrics": ["fps","frameMs","wholeFrameMs","sourceLogicalBytes","sourceBackingBytes","MAE","PSNR","maxError","changedPixels"]
+}

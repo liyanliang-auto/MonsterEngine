@@ -15,6 +15,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #include "splat_common.glsl"
 #include "splat_tight_culling.glsl"
+#include "splat_projection_color.glsl"
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -32,6 +33,7 @@ layout(push_constant) uniform PushConstants {
     uint shStride;
     uint tightTileCulling;
     uint shStorageMode; // offset 36, CPU range remains 48 bytes
+    uint projectionColorStorageMode; // offset 40
 } pc;
 
 // ============================================================================
@@ -86,7 +88,7 @@ layout(std430, set = 1, binding = 1) writeonly buffer OutputDepth {
 };
 
 layout(std430, set = 1, binding = 2) writeonly buffer OutputRGB {
-    vec4 rgb[];
+    uint rgbWords[];
 };
 
 layout(std430, set = 1, binding = 3) writeonly buffer OutputConicOpacity {
@@ -324,5 +326,14 @@ void main() {
     pointsXY[idx] = pointImage;
     conicOpacity[idx] = vec4(conic, opacities[sourceIdx]);
     tilesTouched[idx] = retained;
-    rgb[idx].xyz = color;
+    if (pc.projectionColorStorageMode == 1u) {
+        uvec2 packedColor = splatEncodeProjectionColor(color);
+        rgbWords[idx * 2u] = packedColor.x;
+        rgbWords[idx * 2u + 1u] = packedColor.y;
+    } else {
+        rgbWords[idx * 4u] = floatBitsToUint(color.r);
+        rgbWords[idx * 4u + 1u] = floatBitsToUint(color.g);
+        rgbWords[idx * 4u + 2u] = floatBitsToUint(color.b);
+        rgbWords[idx * 4u + 3u] = 0u;
+    }
 }

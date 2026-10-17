@@ -36,6 +36,13 @@ namespace ESplatDispatchState {
     constexpr uint32 AssignOffset = 32, RadixOffset = 44, BoundaryOffset = 56, RenderOffset = 68;
 }
 
+/** Projection RGB storage ABI. Packed RGB21F retains sign, 8 exponent and 12 mantissa bits per channel. */
+namespace ESplatProjectionColor {
+    constexpr uint32 FP32 = 0, RGB21F = 1;
+    constexpr uint32 Stride(uint32 mode) { return mode == RGB21F ? 8u : 16u; }
+    constexpr uint64_t Bytes(uint64_t capacity, uint32 mode) { return capacity * Stride(mode); }
+}
+
 /** Controls applied to both preprocess and blend passes each frame. */
 struct FSplatRenderSettings
 {
@@ -88,10 +95,12 @@ struct alignas(16) FPreprocessPushConstants
     uint32 shStride = 0; ///< Coefficients per Gaussian, excluding RGB factor.
     uint32 tightTileCulling = 0; ///< Shared count/emit mode at offset 32.
     uint32 shStorageMode = 0; ///< 0=FP32, 1=packed binary16 pairs, offset 36.
-    uint32 pad[2] = {}; ///< Push range padding.
+    uint32 projectionColorStorageMode = 0; ///< 0=FP32 vec4, 1=packed RGB21F; offset 40.
+    uint32 pad = 0; ///< Push range padding.
 };
 
 static_assert(sizeof(FPreprocessPushConstants) == 48, "FPreprocessPushConstants must be 48 bytes");
+static_assert(offsetof(FPreprocessPushConstants, projectionColorStorageMode) == 40, "Projection color storage ABI offset");
 static_assert(offsetof(FPreprocessPushConstants, shStorageMode) == 36, "Preprocess SH storage ABI offset");
 static_assert(offsetof(FPreprocessPushConstants, tightTileCulling) == 32, "Preprocess culling ABI offset");
 

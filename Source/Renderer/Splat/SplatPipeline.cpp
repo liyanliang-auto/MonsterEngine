@@ -42,9 +42,16 @@ bool FSplatPipeline::SetRadixPhaseTiming(bool enabled) {
     m_stats.radixPhaseTimingEnabled = enabled; return true;
 }
 bool FSplatPipeline::EnableProjectedFusion(bool split) {
+    if (m_stats.projectionColorStorageMode != ESplatProjectionColor::FP32) return false;
     if (m_fusionSourceIdentity.shStorageMode != 0) return false;
     if (m_bInitialized) return false;
     m_fusionEnabled = true; m_splitFusionEnabled = split; return true;
+}
+bool FSplatPipeline::SetProjectionColorCompression(bool enabled) {
+    if (m_bInitialized || (enabled && m_fusionEnabled)) return false;
+    const uint32 mode = enabled ? ESplatProjectionColor::RGB21F : ESplatProjectionColor::FP32;
+    if (!m_preprocess.SetProjectionColorStorageMode(mode)) return false;
+    m_stats.projectionColorStorageMode = mode; return true;
 }
 bool FSplatPipeline::SetFusionGroups(const std::vector<FSplatFusionGroup>& groups) {
     if (!groups.empty() && !m_fusionEnabled) return false;
@@ -75,7 +82,8 @@ bool FSplatPipeline::PreflightTemporaryBuffers(uint64_t& bytes) {
     };
     const uint64_t n = m_activeCapacity, s = m_sortCapacity;
     // Compact outputs and two inclusive scan arrays; no assign copy arrays.
-    for (uint32 width : {4u, 4u, 16u, 16u, 8u, 4u, 16u, 4u, 4u}) if (!add(n * width, StorageUsage)) return false;
+    for (uint32 width : {4u, 4u, ESplatProjectionColor::Stride(m_stats.projectionColorStorageMode), 16u, 8u, 4u, 16u, 4u, 4u})
+        if (!add(n * width, StorageUsage)) return false;
     for (uint32 i = 0; i < 2; ++i)
         if (!add(sizeof(FCameraUniforms), RHI::EResourceUsage::UniformBuffer, RHI::EMemoryUsage::Dynamic) ||
             !add(n * 4, RHI::EResourceUsage::StorageBuffer, RHI::EMemoryUsage::Dynamic)) return false;
@@ -174,12 +182,19 @@ bool FSplatPipeline::initialize(RHI::IRHIDevice* device, uint32 count, uint32 wi
     m_stats.sourceCapacity = m_sourceCapacity; m_stats.activeCapacity = m_activeCapacity; m_stats.sortCapacity = m_sortCapacity;
     m_stats.timingAvailable = device->supportsGPUTimestamps(); m_render.SetGPUDispatchState(m_dispatchState);
     const auto& out = m_preprocess.getOutput();
+    RHI::FBufferAllocationInfo colorAllocation{};
+    if (!out.rgb->getAllocationInfo(colorAllocation) ||
+        !m_device->getBufferAllocationRequirements(out.rgb->getDesc(),
+            m_stats.projectionColorRequiredAllocationBytes, m_stats.projectionColorAllocationAlignmentBytes)) return false;
+    m_stats.projectionColorLogicalBytes = out.rgb->getSize();
+    m_stats.projectionColorReservedBytes = colorAllocation.reservationBytes;
+    m_stats.projectionColorBackingBytes = colorAllocation.backingBytes;
     // Static bindings are baked before submission; scan result descriptors use
     // completion-protected slots when the number of scan steps changes.
     for (uint32 slot = 0; slot < 2; ++slot) {
         m_tileBoundaries.SelectFrameSlot(slot); m_tileBoundaries.setSortedKeys(m_radixSort.getSortedKeys());
         m_render.SelectFrameSlot(slot); m_render.setTileRanges(m_tileBoundaries.getTileRanges());
-        m_render.setSortedIds(m_radixSort.getSortedValues()); m_render.setColors(out.rgb);
+        m_render.setSortedIds(m_radixSort.getSortedValues()); m_render.setColors(out.rgb, out.projectionColorStorageMode);
         m_render.setConicOpacity(out.conicOpacity); m_render.setPointsXY(out.pointsXY);
     }
     setRenderSettings(m_renderSettings); m_bInitialized = true; return true;
@@ -209,6 +224,7 @@ bool FSplatPipeline::CreatePreparePass() {
     return true;
 }
 bool FSplatPipeline::CreateFusionPass() {
+    if (m_preprocess.getOutput().projectionColorStorageMode != ESplatProjectionColor::FP32) return false;
     if(m_splitFusionEnabled)return m_splitFusion.Initialize(m_device,m_activeCapacity,m_preprocess.getOutput());
     using namespace RHI;
     static_assert(sizeof(FSplatFusionGroup) == 8);

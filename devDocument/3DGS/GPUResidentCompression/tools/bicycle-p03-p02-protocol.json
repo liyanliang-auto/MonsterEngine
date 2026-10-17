@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "scene": "Bicycle",
+  "experimentOrder": ["baseline", "p03", "p02"],
+  "baseline": {"shStorageDegree": 3, "projectionColorCompression": false},
+  "p03": {"shStorageDegree": 2, "projectionColorCompression": false},
+  "p02": {"shStorageDegree": 2, "projectionColorCompression": true},
+  "deferred": {"centerQuantization": false, "conicQuantization": false},
+  "fixed": {"width": 1920, "height": 1080, "warmupSeconds": 3, "sampleSeconds": 8, "rounds": 1, "vsync": false, "tightTileCulling": 2, "rasterSharedMemoryMode": 1, "radixSortBlocksPerWorkgroup": 32},
+  "captures": {"format": "RGBA8_UNORM linear readback plus unmodified native window image", "titlebar": "live FPS must be visible", "pairedCaptureTimesSeconds": [0], "visualInspectionRequired": true},
+  "metrics": {"timing": ["sampleCount", "meanFrameTimeMs", "fps", "gpuRenderTimeMs"], "capacity": ["sourceLogicalBytes", "sourceBackingBytes", "shLogicalBytes", "shBackingBytes", "alignmentBytes"], "image": ["maximumAbsoluteError", "meanAbsoluteError", "changedPixels"]},
+  "unavailableEvidencePolicy": "Record UNAVAILABLE with the exact missing artifact; never infer GPU timing, capacity, image equivalence, or titlebar FPS from CPU/static evidence."
+}

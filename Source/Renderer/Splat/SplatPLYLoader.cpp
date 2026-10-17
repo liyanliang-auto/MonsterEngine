@@ -75,14 +75,15 @@ bool FSplatPLYLoader::LoadCPUWithAdmission(const std::string& path,std::vector<F
 }
 #ifndef SPLAT_CPU_ONLY
 bool FSplatPLYLoader::loadAndUpload(RHI::IRHIDevice* device,const String& path,FSplatGPUData& outData,
-    uint64_t sourceBudget,uint64_t stagingBudget,uint32_t storageMode) {
+    uint64_t sourceBudget,uint64_t stagingBudget,uint32_t storageMode,int32_t requestedSHDegree) {
     m_stagingBackingBytes=0;
     if(!device||storageMode>1)return false;
     std::vector<FSplatGaussian> gs;uint32_t degree=0,stagingBytes=0;std::string error;
     auto admission=[&](uint64_t count,uint32_t shDegree,std::string& failure){
         if(!count)return true;
         uint64_t total=0;
-        const uint64_t sizes[5]={count*16,count*16,count*16,count*4,SplatSHStorageBytes(count*3*(shDegree+1)*(shDegree+1),storageMode)};
+        const uint32_t effective=requestedSHDegree<0?shDegree:std::min<uint32_t>(shDegree,uint32_t(requestedSHDegree));
+        const uint64_t sizes[5]={count*16,count*16,count*16,count*4,SplatSHStorageBytes(count*3*(effective+1)*(effective+1),storageMode)};
         for(uint64_t bytes:sizes){
             if(bytes>UINT32_MAX){failure="Source exceeds RHI buffer size limit";return false;}
             RHI::BufferDesc d;d.size=uint32_t(bytes);d.usage=RHI::EResourceUsage::StorageBuffer|RHI::EResourceUsage::TransferDst;d.dedicatedAllocation=true;
@@ -91,7 +92,7 @@ bool FSplatPLYLoader::loadAndUpload(RHI::IRHIDevice* device,const String& path,F
             if(physical>sourceBudget||total>sourceBudget-physical){failure="Original source backing exceeds scene budget before allocation";return false;}
             total+=physical;
         }
-        const uint32_t scalars=3*(shDegree+1)*(shDegree+1);
+        const uint32_t scalars=3*(effective+1)*(effective+1);
         const uint32_t stride=52+uint32_t(SplatSHStorageBytes(scalars,storageMode));
         uint64_t lo=0,hi=std::min<uint64_t>({stagingBudget,UINT32_MAX,count*stride})/stride;
         while(lo<hi){uint64_t mid=lo+(hi-lo+1)/2;RHI::BufferDesc d;d.size=uint32_t(mid*stride);d.usage=RHI::EResourceUsage::TransferSrc;d.memoryUsage=RHI::EMemoryUsage::Upload;d.cpuAccessible=true;d.dedicatedAllocation=true;uint64_t required=0,alignment=0;
@@ -103,6 +104,7 @@ bool FSplatPLYLoader::loadAndUpload(RHI::IRHIDevice* device,const String& path,F
         stagingBytes=uint32_t(lo*stride);return true;
     };
     if(!LoadCPUWithAdmission(path,gs,degree,error,admission)){MR_LOG(LogTemp,Error,"[SplatPLYLoader] %s",error.c_str());return false;}
+    const uint32_t sourceDegree=degree; degree=requestedSHDegree<0?degree:std::min<uint32_t>(degree,uint32_t(requestedSHDegree));
     if(gs.empty()){outData.release();outData.shDegree=int32(degree);outData.shStorageMode=storageMode;return true;}
     FSplatGPUData result;
     const auto validationStart=std::chrono::steady_clock::now();
@@ -110,7 +112,7 @@ bool FSplatPLYLoader::loadAndUpload(RHI::IRHIDevice* device,const String& path,F
         uint16_t half;if(!SplatFloatToHalf(g.sh[i],half)){MR_LOG(LogTemp,Error,"[SplatPLYLoader] SH FP16 rejects nonfinite or abs(value)>65504 before GPU allocation");return false;}}
     result.shConversionMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-validationStart).count();
     if(!uploadBuffers(device,gs,degree,stagingBytes,storageMode,result))return false;
-    result.gaussianCount=uint32(gs.size());result.shDegree=int32(degree);outData=std::move(result);return true;
+    result.gaussianCount=uint32(gs.size());result.shDegree=int32(degree);result.sourceSHDegree=int32(sourceDegree);outData=std::move(result);return true;
 }
 bool FSplatPLYLoader::uploadBuffers(RHI::IRHIDevice* device,const std::vector<FSplatGaussian>& gs,
     uint32_t degree,uint32_t stagingBytes,uint32_t storageMode,FSplatGPUData& outData) {
