@@ -3,14 +3,7 @@
 #include "Core/CoreMinimal.h"
 #include "RHI/RHIDefinitions.h"
 
-// Vulkan headers
-#if PLATFORM_WINDOWS
-    #define VK_USE_PLATFORM_WIN32_KHR
-#elif PLATFORM_LINUX
-    #define VK_USE_PLATFORM_XLIB_KHR
-#endif
-
-#include <vulkan/vulkan.h>
+#include "Platform/Vulkan/VulkanRHI.h"
 
 namespace MonsterRender::RHI::Vulkan {
 
@@ -54,6 +47,10 @@ namespace MonsterRender::RHI::Vulkan {
          * Create platform-specific surface
          */
         VkResult createSurface(VkInstance instance, void* windowHandle, VkSurfaceKHR* surface);
+
+        /** Independent dispatch variant; windowHandle is a caller-owned ANativeWindow on Android. */
+        VkResult createSurface(const VulkanFunctions& functions, VkInstance instance,
+                               void* windowHandle, VkSurfaceKHR* surface);
         
         /**
          * Create Vulkan debug messenger

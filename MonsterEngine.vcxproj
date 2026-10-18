@@ -611,6 +611,7 @@
   <ItemGroup Label="SplatLODStreaming">
     <ClCompile Include="Source\RHI\SplatGPUPrimitives.cpp" />
     <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODBenchmark.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODRuntimeOptions.cpp" />
     <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODBuilder.cpp" />
     <ClCompile Include="Source\Renderer\Splat\LOD\SplatLODSelector.cpp" />
     <ClCompile Include="Source\Renderer\Splat\LOD\SplatSceneFormat.cpp" />
@@ -643,15 +644,48 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX20_U8PATH_DEPRECATION_WARNING;MONSTER_SPLAT_DEFAULT_SHADER_DIR=&quot;$(SplatGeneratedShaderDirCpp)&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
-  <Target Name="CompileSplatShaders" BeforeTargets="ClCompile" Condition="'$(Platform)'=='x64'"
-          Inputs="@(SplatShaderInput)" Outputs="$(SplatGeneratedShaderDir)\splat_preprocess.spv;$(SplatGeneratedShaderDir)\splat_prefix_sum.spv;$(SplatGeneratedShaderDir)\splat_prepare_dispatch.spv;$(SplatGeneratedShaderDir)\splat_assign_keys.spv;$(SplatGeneratedShaderDir)\splat_radix_histogram.spv;$(SplatGeneratedShaderDir)\splat_radix_offsets.spv;$(SplatGeneratedShaderDir)\splat_radix_scatter.spv;$(SplatGeneratedShaderDir)\splat_tile_boundaries.spv;$(SplatGeneratedShaderDir)\splat_render.spv;$(SplatGeneratedShaderDir)\splat_present.vert.spv;$(SplatGeneratedShaderDir)\splat_present.frag.spv">
-    <Exec Command="call &quot;$(ProjectDir)Shaders\Splat\compile_splat.bat&quot; &quot;$(SplatGeneratedShaderDir)&quot;" />
+  <Target Name="CompileSplatShaders" BeforeTargets="ClCompile" Condition="'$(Platform)'=='x64'">
+    <Error Condition="!Exists('$(SplatCMakeExe)')" Text="Set SplatCMakeExe to a host CMake executable" />
+    <Exec Command="&quot;$(SplatCMakeExe)&quot; -S &quot;$(ProjectDir).&quot; -B &quot;$(SplatBuilderBuildDir)&quot; -G &quot;Visual Studio 17 2022&quot; -A x64 -DMONSTER_BUILD_ENGINE=OFF -DSPLAT_BUILD_SHADERS=ON -DSPLAT_GENERATED_SHADER_DIR=&quot;$(SplatGeneratedShaderDir)&quot; $(SplatHostToolArguments)" />
+    <Exec Command="&quot;$(SplatCMakeExe)&quot; --build &quot;$(SplatBuilderBuildDir)&quot; --config $(Configuration) --target SplatShaders" />
   </Target>
   <Target Name="BuildSplatLODBuilder" AfterTargets="Build" Condition="'$(Platform)'=='x64' and '$(SplatSkipBuilder)'!='true'">
     <Error Condition="!Exists('$(SplatCMakeExe)')" Text="CMake is required for SplatLODBuilder; set SplatCMakeExe to cmake.exe" />
-    <Exec Command="&quot;$(SplatCMakeExe)&quot; -S &quot;$(ProjectDir).&quot; -B &quot;$(SplatBuilderBuildDir)&quot; -G &quot;Visual Studio 16 2019&quot; -A x64 -DMONSTER_BUILD_ENGINE=OFF" />
+    <Exec Command="&quot;$(SplatCMakeExe)&quot; -S &quot;$(ProjectDir).&quot; -B &quot;$(SplatBuilderBuildDir)&quot; -G &quot;Visual Studio 17 2022&quot; -A x64 -DMONSTER_BUILD_ENGINE=OFF -DSPLAT_BUILD_SHADERS=ON $(SplatHostToolArguments)" />
     <Exec Command="&quot;$(SplatCMakeExe)&quot; --build &quot;$(SplatBuilderBuildDir)&quot; --config $(Configuration) --target SplatLODBuilder" />
   </Target>
+  <ItemGroup>
+    <ClCompile Include="Source\Core\RuntimeLease.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatResourceProvider.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatPLYStream.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatProxyMath.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatBuildJournal.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatStreamingLODBuilder.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\LOD\SplatSceneValidation.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatStreamingController.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatViewerSession.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatViewerDiagnostics.cpp" />
+    <ClCompile Include="Source\Renderer\Splat\SplatBudgetCoordinator.cpp" />
+    <ClInclude Include="Include\Core\Platform.h" />
+    <ClInclude Include="Include\Core\MonsterEnginePCH.h" />
+    <ClInclude Include="Include\Core\FRunnableThread.h" />
+    <ClInclude Include="Include\Core\RuntimeLease.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatViewerTypes.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatResourceProvider.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatBudgetCoordinator.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatBuildTypes.h" />
+    <ClInclude Include="Include\RHI\RHIFrameResult.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatPLYStream.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatProxyMath.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatBuildJournal.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatStreamingLODBuilder.h" />
+    <ClInclude Include="Include\Renderer\Splat\LOD\SplatSceneValidation.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatStreamingController.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatViewerSession.h" />
+    <ClInclude Include="Include\Renderer\Splat\SplatViewerDiagnostics.h" />
+  </ItemGroup>
 </Project>
+
+
 
 

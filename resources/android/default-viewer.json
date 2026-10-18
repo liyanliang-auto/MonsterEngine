@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "generation": 1,
+  "configHash": "",
+  "shaderIdentity": "",
+  "maximumInternalEdge": 1280,
+  "maximumInternalPixels": 921600,
+  "runtime": {
+    "mode": "D",
+    "width": 1280,
+    "height": 720,
+    "renderWidth": 1280,
+    "renderHeight": 720,
+    "activeCapacity": 100000,
+    "sortCapacity": 2000000,
+    "benchmark": false,
+    "validation": false,
+    "vsync": true,
+    "projectedFusion": false,
+    "shStorageMode": 0,
+    "shStorageDegree": -1,
+    "displaySHDegree": -1,
+    "tightTileCulling": 0,
+    "projectionColorCompression": false,
+    "rasterSharedMemoryMode": 0,
+    "radixSortBlocksPerWorkgroup": 32,
+    "radixSortPhaseTiming": false,
+    "streaming": {
+      "sceneGPUBytes": 134217728,
+      "stagingBytes": 16777216,
+      "cpuCacheBytes": 67108864,
+      "temporaryGPUBytes": 268435456,
+      "maxUploadBytesPerFrame": 2097152,
+      "maxConcurrentReads": 2,
+      "retries": 2,
+      "retryDelayMilliseconds": 25
+    },
+    "lod": {
+      "qualityPixels": 3.0,
+      "hysteresis": 0.2,
+      "activeBudget": 100000,
+      "sortBudget": 2000000,
+      "freeze": false
+    }
+  },
+  "builtinScene": {
+    "asset": "scenes/builtin.ply",
+    "generator": "MonsterEngine-ProceduralBuiltin-1",
+    "gaussians": 49152,
+    "shDegree": 0,
+    "expectedWidth": 1280,
+    "expectedHeight": 720,
+    "camera": {
+      "eye": [0.0, 1.2, 5.5],
+      "target": [0.0, 0.0, 0.0],
+      "up": [0.0, 1.0, 0.0],
+      "verticalFovDegrees": 45.0,
+      "nearPlane": 0.05,
+      "farPlane": 100.0
+    }
+  }
+}

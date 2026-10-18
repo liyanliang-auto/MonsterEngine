@@ -69,6 +69,7 @@ private:
         uint32 Count[NUM_SMALL_BINS];
         uint64 Hits;
         uint64 Misses;
+        uint64 OwnerGeneration;
     };
 
     // Member variables
@@ -79,7 +80,8 @@ private:
     std::atomic<uint64> CacheHits{0};
     std::atomic<uint64> CacheMisses{0};
 
-    static thread_local FThreadCache* TLSCache;
+    static thread_local FThreadCache TLSCache;
+    const uint64 CacheGeneration;
 
     // Helper methods
     uint32 SelectBinIndex(SIZE_T Size);

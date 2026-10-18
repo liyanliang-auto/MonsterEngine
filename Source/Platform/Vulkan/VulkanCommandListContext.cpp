@@ -61,47 +61,17 @@ namespace MonsterRender::RHI::Vulkan {
         return true;
     }
 
-    void FVulkanCommandListContext::prepareForNewFrame() {
-        MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() START =====");
-        
-        // Step 1: Acquire next swapchain image BEFORE anything else.
-        // This waits on the in-flight fence, ensuring the previous frame's GPU
-        // work is complete before we reuse any resources (command buffers, descriptor pool, etc.)
-        if (m_device) {
-            acquireNextSwapchainImage();
-        }
-
-        // Step 2: Now safe to reset descriptor pool (all descriptor sets from previous
-        // frame are guaranteed completed by GPU thanks to the fence wait above)
-        if (m_descriptorPool) {
-            m_descriptorPool->reset();
-        }
-
-        // Step 3: Get next command buffer from ring buffer.
-        // The fence wait above guarantees the command buffer at this index has completed.
-        MR_LOG_INFO("  Calling prepareForNewActiveCommandBuffer()...");
-        m_manager->prepareForNewActiveCommandBuffer();
-        MR_LOG_INFO("  Getting active cmd buffer...");
+    bool FVulkanCommandListContext::prepareForNewFrame() {
+        if (!m_device || !acquireNextSwapchainImage()) { m_cmdBuffer = nullptr; return false; }
+        if (!m_manager->prepareForNewActiveCommandBuffer()) { m_cmdBuffer = nullptr; return false; }
         m_cmdBuffer = m_manager->getActiveCmdBuffer();
-        MR_LOG_INFO("  m_cmdBuffer: " + std::string(m_cmdBuffer ? "VALID" : "NULL"));
-        if (m_cmdBuffer) {
-            MR_LOG_INFO("    Handle: " + std::to_string(reinterpret_cast<uint64>(m_cmdBuffer->getHandle())));
-            MR_LOG_INFO("    hasBegun: " + std::string(m_cmdBuffer->hasBegun() ? "YES" : "NO"));
-            MR_LOG_INFO("    hasEnded: " + std::string(m_cmdBuffer->hasEnded() ? "YES" : "NO"));
-            MR_LOG_INFO("    isSubmitted: " + std::string(m_cmdBuffer->isSubmitted() ? "YES" : "NO"));
-        }
-
-        // Update pending state's command buffer reference
-        if (m_pendingState && m_cmdBuffer) {
-            m_pendingState->updateCommandBuffer(m_cmdBuffer);
-        }
-
-        // Reset pending state
+        if (!m_cmdBuffer) return false;
+        if (m_descriptorPool) m_descriptorPool->reset();
         if (m_pendingState) {
+            m_pendingState->updateCommandBuffer(m_cmdBuffer);
             m_pendingState->reset();
         }
-
-        MR_LOG_INFO("===== FVulkanCommandListContext::prepareForNewFrame() END =====");
+        return true;
     }
 
     void FVulkanCommandListContext::refreshCommandBuffer() {
@@ -109,7 +79,7 @@ namespace MonsterRender::RHI::Vulkan {
         // Unlike prepareForNewFrame(), this does NOT acquire swapchain image
         MR_LOG_DEBUG("FVulkanCommandListContext::refreshCommandBuffer()");
         // Get next command buffer from ring buffer
-        m_manager->prepareForNewActiveCommandBuffer();
+        if (!m_manager->prepareForNewActiveCommandBuffer()) { m_cmdBuffer = nullptr; return; }
         m_cmdBuffer = m_manager->getActiveCmdBuffer();
         // Update pending state's command buffer reference
         if (m_pendingState && m_cmdBuffer) {
@@ -119,72 +89,10 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     bool FVulkanCommandListContext::acquireNextSwapchainImage() {
-        // Reference: UE5 FVulkanDynamicRHI::RHIBeginDrawingViewport
-        // Acquire swapchain image at the beginning of frame, not during present
-        const auto& functions = VulkanAPI::getFunctions();
-        VkDevice device = m_device->getLogicalDevice();
-        VkSwapchainKHR swapchain = m_device->getSwapchain();
-        if (swapchain == VK_NULL_HANDLE) {
-            MR_LOG_WARNING("acquireNextSwapchainImage: No swapchain");
-            return false;
-        }
-
-        // Use frame-specific semaphore for synchronization
-        uint32 currentFrame = m_device->getCurrentFrame();
-        // Wait for this frame's in-flight fence before reusing its resources.
-        // Fences are created with VK_FENCE_CREATE_SIGNALED_BIT, so the very first
-        // frame's fence wait returns immediately. Subsequent frames use the fence
-        // from N-2 frames ago (which was submitted and will be signaled when GPU done).
-        VkFence inFlightFence = m_device->getInFlightFence(currentFrame);
-        if (inFlightFence != VK_NULL_HANDLE) {
-            VkResult waitResult = functions.vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-            if (waitResult != VK_SUCCESS && waitResult != VK_TIMEOUT) {
-                MR_LOG_ERROR("acquireNextSwapchainImage: Failed to wait for in-flight fence: " + std::to_string(waitResult));
-                return false;
-            }
-
-        }
-
-        VkSemaphore imageAvailableSemaphore = m_device->getImageAvailableSemaphore(currentFrame);
-        uint32 imageIndex = 0;
-        VkResult result = functions.vkAcquireNextImageKHR(
-            device,
-            swapchain,
-            UINT64_MAX,
-            imageAvailableSemaphore,
-            VK_NULL_HANDLE,
-            &imageIndex
-        );
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            MR_LOG_WARNING("acquireNextSwapchainImage: Swapchain out of date");
-            return false;
-        } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            MR_LOG_ERROR("acquireNextSwapchainImage: Failed to acquire image: " + std::to_string(result));
-            return false;
-        }
-
-        // Check if a previous frame is still using this image
-        // If so, wait for that frame's fence to complete
-        VkFence imageInFlightFence = m_device->getImageInFlightFence(imageIndex);
-        if (imageInFlightFence != VK_NULL_HANDLE) {
-            VkResult waitResult = functions.vkWaitForFences(device, 1, &imageInFlightFence, VK_TRUE, UINT64_MAX);
-            if (waitResult != VK_SUCCESS && waitResult != VK_TIMEOUT) {
-                MR_LOG_WARNING("acquireNextSwapchainImage: Failed to wait for image-in-flight fence");
-            }
-
-        }
-
-        // Mark this image as being used by the current frame's fence
-        m_device->setImageInFlightFence(imageIndex, inFlightFence);
-        // Reset the in-flight fence (the one we just waited on) for this frame's submit
-        if (inFlightFence != VK_NULL_HANDLE) {
-            if (!m_device->prepareSubmissionFenceReset(inFlightFence)) return false;
-            if (functions.vkResetFences(device, 1, &inFlightFence) != VK_SUCCESS) return false;
-        }
-
-        m_device->setCurrentImageIndex(imageIndex);
-        MR_LOG_DEBUG("acquireNextSwapchainImage: Acquired image index " + std::to_string(imageIndex));
-        return true;
+        if (!m_device) return false;
+        if (!m_device->getSwapchain()) return true; // CPU/headless resource operations.
+        const auto result = m_device->acquireFrame();
+        return result.status == EFrameResult::Success || result.status == EFrameResult::Suboptimal;
     }
 
     void FVulkanCommandListContext::beginRecording() {
@@ -196,7 +104,7 @@ namespace MonsterRender::RHI::Vulkan {
             MR_LOG_INFO("    m_cmdBuffer->begin() returned");
             // Execute texture layout transitions for this command buffer
             // This is needed because Vulkan validation layer tracks layout per-command-buffer
-            if (m_device && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
+            if (m_device && m_cmdBuffer->hasBegun() && m_cmdBuffer->getHandle() != VK_NULL_HANDLE) {
                 m_device->executeTextureLayoutTransitions(m_cmdBuffer->getHandle());
             }
 
@@ -304,7 +212,7 @@ namespace MonsterRender::RHI::Vulkan {
             {
                 uint32 depthWidth = depthStencil->getWidth();
                 uint32 depthHeight = depthStencil->getHeight();
-                MR_LOG_DEBUG("setRenderTargets: Depth-only mode, size=%ux%u", depthWidth, depthHeight);
+                MR_LOG(LogTemp, Verbose, "setRenderTargets: Depth-only mode, size=%ux%u", depthWidth, depthHeight);
             }
 
             {

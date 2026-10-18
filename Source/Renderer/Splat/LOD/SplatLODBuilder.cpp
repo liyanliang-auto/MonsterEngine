@@ -1,6 +1,7 @@
 // Copyright Monster Engine. All Rights Reserved.
 #include "Renderer/Splat/LOD/SplatLODBuilder.h"
 #include "Renderer/Splat/LOD/SplatSceneFormat.h"
+#include "Renderer/Splat/LOD/SplatProxyMath.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -14,96 +15,23 @@
 
 namespace MonsterRender::Splat {
 namespace {
-using Matrix = std::array<std::array<double,3>,3>;
 struct Proxy { FSplatGaussian g; double geometry=0, appearance=0; std::array<uint32_t,4> members{}; uint32_t memberCount=0; };
-Matrix Rotation(const FSplatGaussian& g) {
-    const double w=g.rotation[0],x=g.rotation[1],y=g.rotation[2],z=g.rotation[3];
-    return {{{1-2*(y*y+z*z),2*(x*y-z*w),2*(x*z+y*w)},
-             {2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w)},
-             {2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)}}};
-}
-Matrix Covariance(const FSplatGaussian& g) {
-    const auto r=Rotation(g); Matrix c{};
-    for(int i=0;i<3;++i)for(int j=0;j<3;++j)for(int k=0;k<3;++k)
-        c[i][j]+=r[i][k]*r[j][k]*double(g.scale[k])*g.scale[k];
-    return c;
-}
-Matrix CovarianceRoot(const FSplatGaussian& g) {
-    const auto r=Rotation(g); Matrix c{};
-    for(int i=0;i<3;++i)for(int j=0;j<3;++j)for(int k=0;k<3;++k)
-        c[i][j]+=r[i][k]*r[j][k]*double(g.scale[k]);
-    return c;
-}
-double Area(const FSplatGaussian& g) {
-    // Knud Thomsen ellipsoid surface-area approximation. The constant 4*pi
-    // cancels from both normalized weights and merged opacity.
-    constexpr double p=1.6075;
-    return std::max(1e-30,std::pow((std::pow(double(g.scale[0])*g.scale[1],p)+
-        std::pow(double(g.scale[1])*g.scale[2],p)+std::pow(double(g.scale[2])*g.scale[0],p))/3,1/p));
-}
-// Jacobi symmetric eigensolver, followed by a proper rotation/quaternion conversion.
-void SetCovariance(FSplatGaussian& g, Matrix a) {
-    Matrix v{{{1,0,0},{0,1,0},{0,0,1}}};
-    for(int sweep=0;sweep<32;++sweep) {
-        int p=0,q=1; for(int i=0;i<3;++i)for(int j=i+1;j<3;++j)if(std::abs(a[i][j])>std::abs(a[p][q])){p=i;q=j;}
-        if(std::abs(a[p][q])<=1e-14*std::max(1e-30,a[0][0]+a[1][1]+a[2][2]))break;
-        double t=0.5*std::atan2(2*a[p][q],a[q][q]-a[p][p]),c=std::cos(t),s=std::sin(t);
-        // Columns p,q rotate by [c,-s; s,c].
-        for(int k=0;k<3;++k){double ap=a[k][p],aq=a[k][q];a[k][p]=c*ap-s*aq;a[k][q]=s*ap+c*aq;}
-        for(int k=0;k<3;++k){double ap=a[p][k],aq=a[q][k];a[p][k]=c*ap-s*aq;a[q][k]=s*ap+c*aq;}
-        for(int k=0;k<3;++k){double vp=v[k][p],vq=v[k][q];v[k][p]=c*vp-s*vq;v[k][q]=s*vp+c*vq;}
-    }
-    for(int k=0;k<3;++k)g.scale[k]=float(std::sqrt(std::max(1e-30,a[k][k])));
-    double quat[4]; const double tr=v[0][0]+v[1][1]+v[2][2];
-    if(tr>0){double s=2*std::sqrt(tr+1);quat[0]=s/4;quat[1]=(v[2][1]-v[1][2])/s;quat[2]=(v[0][2]-v[2][0])/s;quat[3]=(v[1][0]-v[0][1])/s;}
-    else {int i=0;if(v[1][1]>v[i][i])i=1;if(v[2][2]>v[i][i])i=2;int j=(i+1)%3,k=(i+2)%3;double s=2*std::sqrt(std::max(1e-30,1+v[i][i]-v[j][j]-v[k][k]));quat[0]=(v[k][j]-v[j][k])/s;quat[i+1]=s/4;quat[j+1]=(v[j][i]+v[i][j])/s;quat[k+1]=(v[k][i]+v[i][k])/s;}
-    double n=0;for(double x:quat)n+=x*x;n=std::sqrt(n);for(int i=0;i<4;++i)g.rotation[i]=float(quat[i]/n);
-}
-FSplatBounds Support(const FSplatGaussian& g,double sigma) {
-    const auto c=Covariance(g); FSplatBounds b;
-    for(int k=0;k<3;++k){double r=sigma*std::sqrt(std::max(0.0,c[k][k]));
-        b.min[k]=std::nextafter(float(double(g.position[k])-r),-INFINITY);
-        b.max[k]=std::nextafter(float(double(g.position[k])+r),INFINITY);
-        if(!std::isfinite(b.min[k])||!std::isfinite(b.max[k]))throw std::runtime_error("Gaussian support exceeds finite FP32 bounds");}
-    return b;
-}
-void Extend(FSplatBounds& a,const FSplatBounds& b){for(int k=0;k<3;++k){a.min[k]=std::min(a.min[k],b.min[k]);a.max[k]=std::max(a.max[k],b.max[k]);}}
-double Appearance(const FSplatGaussian& a,const FSplatGaussian& b,uint32_t stride) {
-    double d=0;for(uint32_t k=0;k<stride;++k){double x=double(a.sh[k])-b.sh[k];d+=x*x;}return std::sqrt(d/std::max(1u,stride));
-}
+double Area(const FSplatGaussian& g) { return FSplatProxyMath::Area(g); }
+FSplatBounds Support(const FSplatGaussian& g,double sigma) { return FSplatProxyMath::Support(g,sigma); }
+void Extend(FSplatBounds& a,const FSplatBounds& b) { FSplatProxyMath::Extend(a,b); }
+double Appearance(const FSplatGaussian& a,const FSplatGaussian& b,uint32_t stride) { return FSplatProxyMath::Appearance(a,b,stride); }
+uint64_t Morton(const FSplatGaussian& g,const FSplatBounds& b) { return FSplatProxyMath::Morton(g,b); }
 Proxy Merge(const Proxy& a,const Proxy& b,uint32_t stride,double sigma,uint64_t id) {
     Proxy p;
-    if (a.memberCount && b.memberCount && a.memberCount + b.memberCount <= 4) {
-        p.memberCount = a.memberCount + b.memberCount;
-        for (uint32_t i=0;i<a.memberCount;++i) p.members[i]=a.members[i];
-        for (uint32_t i=0;i<b.memberCount;++i) p.members[a.memberCount+i]=b.members[i];
+    if (a.memberCount && b.memberCount && a.memberCount+b.memberCount<=4) {
+        p.memberCount=a.memberCount+b.memberCount;
+        for(uint32_t i=0;i<a.memberCount;++i)p.members[i]=a.members[i];
+        for(uint32_t i=0;i<b.memberCount;++i)p.members[a.memberCount+i]=b.members[i];
     }
-    double ma=std::max(1e-30,double(a.g.opacity)*Area(a.g)),mb=std::max(1e-30,double(b.g.opacity)*Area(b.g));double wa=ma/(ma+mb),wb=1-wa;
-    Matrix ca=Covariance(a.g),cb=Covariance(b.g),c{};
-    for(int k=0;k<3;++k)p.g.position[k]=float(wa*a.g.position[k]+wb*b.g.position[k]);
-    for(int i=0;i<3;++i)for(int j=0;j<3;++j){double ai=double(a.g.position[i])-p.g.position[i],aj=double(a.g.position[j])-p.g.position[j];double bi=double(b.g.position[i])-p.g.position[i],bj=double(b.g.position[j])-p.g.position[j];c[i][j]=wa*(ca[i][j]+ai*aj)+wb*(cb[i][j]+bi*bj);}
-    SetCovariance(p.g,c);p.g.opacity=float(std::min(1.0,(ma+mb)/Area(p.g)));p.g.originalId=(uint64_t(1)<<63)|id;
-    for(uint32_t k=0;k<stride;++k)p.g.sh[k]=float(wa*a.g.sh[k]+wb*b.g.sh[k]);
-    const Matrix actualRoot=CovarianceRoot(p.g);
-    double geometrySquared=0,appearanceSquared=0;
-    for(const auto* child:{&a,&b}){double dist=0,diff=0;auto cc=CovarianceRoot(child->g);for(int i=0;i<3;++i){double d=double(child->g.position[i])-p.g.position[i];dist+=d*d;for(int j=0;j<3;++j){double v=actualRoot[i][j]-cc[i][j];diff+=v*v;}}
-        // Coupling both Gaussians to one standard normal gives a transport RMS
-        // upper bound. Triangle inequality carries each child's prior error.
-        // This measures distribution discrepancy, not maximum support motion.
-        const double geometry=child->geometry+std::sqrt(dist+diff);
-        const double radius=sigma*std::sqrt(double(child->g.scale[0])*child->g.scale[0]+
-            double(child->g.scale[1])*child->g.scale[1]+double(child->g.scale[2])*child->g.scale[2]);
-        const double appearance=child->appearance+radius*(Appearance(child->g,p.g,stride)+
-            std::abs(double(child->g.opacity)-p.g.opacity));
-        const double weight=child==&a?wa:wb;
-        geometrySquared+=weight*geometry*geometry;
-        appearanceSquared+=weight*appearance*appearance;
-    }
-    p.geometry=std::sqrt(geometrySquared);p.appearance=std::sqrt(appearanceSquared);
+    FSplatProxyMath::MergeLegacy(a.g,b.g,a.geometry,a.appearance,b.geometry,b.appearance,
+        stride,sigma,id,p.g,p.geometry,p.appearance);
     return p;
 }
-uint64_t Morton(const FSplatGaussian& g,const FSplatBounds& b){uint32_t q[3];for(int k=0;k<3;++k){double extent=double(b.max[k])-b.min[k];double t=extent>0?(double(g.position[k])-b.min[k])/extent:0;q[k]=uint32_t(std::clamp(t,0.0,1.0)*2097151);}
-    uint64_t key=0;for(int bit=0;bit<21;++bit)for(int k=0;k<3;++k)key|=uint64_t((q[k]>>bit)&1)<<(3*bit+k);return key;}
 class Construction {
 public:
     const std::vector<FSplatGaussian>& source; const FSplatLODBuildConfig& cfg; uint32_t stride; std::filesystem::path dir; FSplatSceneManifest m;
@@ -157,8 +85,7 @@ public:
 }
 std::string FSplatLODBuilder::CanonicalConfig(const FSplatLODBuildConfig& c){std::ostringstream s;s.imbue(std::locale::classic());s<<std::setprecision(std::numeric_limits<float>::max_digits10)<<"{\"maxLeafGaussians\":"<<c.maxLeafGaussians<<",\"maxDepth\":"<<c.maxDepth<<",\"maxPageGaussians\":"<<c.maxPageGaussians<<",\"supportSigma\":"<<c.supportSigma<<",\"proxyReduction\":"<<c.proxyReduction<<",\"geometricErrorScale\":"<<c.geometricErrorScale<<",\"appearanceWeight\":"<<c.appearanceWeight<<",\"maxAppearanceError\":"<<c.maxAppearanceError<<",\"projectedFusionGroups\":"<<(c.projectedFusionGroups?1:0)<<"}";return s.str();}
 void FSplatLODBuilder::AccumulateCoverage(FSplatLODNode& node,const FSplatGaussian& g) {
-    const double products[3]={double(g.scale[1])*g.scale[2],double(g.scale[0])*g.scale[2],double(g.scale[0])*g.scale[1]};
-    node.coverageAreaUpper+=double(g.opacity)*std::max({products[0],products[1],products[2]});
+    node.coverageAreaUpper+=FSplatProxyMath::Coverage(g);
 }
 bool FSplatLODBuilder::BuildOriginalFusionGroups(const std::vector<FSplatGaussian>& originals,
     const FSplatBounds& centers,const FSplatLODBuildConfig& config,

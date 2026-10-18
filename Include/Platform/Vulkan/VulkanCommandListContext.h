@@ -37,7 +37,7 @@ namespace MonsterRender::RHI::Vulkan {
          * Prepare for new frame (UE5: PrepareForNewActiveCommandBuffer())
          * Called at the beginning of each frame
          */
-        void prepareForNewFrame();
+        bool prepareForNewFrame();
         
         /**
          * Refresh command buffer after synchronous operations

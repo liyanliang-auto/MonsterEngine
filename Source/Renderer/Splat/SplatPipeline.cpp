@@ -137,6 +137,19 @@ bool FSplatPipeline::MeasureTemporaryBuffers(uint64_t& bytes) const {
     RHI::FBufferAllocationInfo image{};
     return m_render.getOutputTexture()->getAllocationInfo(image) && add(image);
 }
+bool FSplatPipeline::QueryTemporaryBytes(RHI::IRHIDevice* device, uint32 count, uint32 width, uint32 height, uint64_t& bytes) {
+    if (m_bInitialized || !device || !width || !height || width > 65535u * 16u || height > 65535u * 16u ||
+        !device->supportsDispatchIndirect() || !device->supportsSubmissionCompletion()) return false;
+    m_device = device; m_gaussianCount = count; m_imageWidth = width; m_imageHeight = height;
+    m_gridX = (width + 15u) / 16u; m_gridY = (height + 15u) / 16u;
+    if (uint64_t(m_gridX) * m_gridY > UINT32_MAX / 8u) return false;
+    if (!m_explicitBudgets) {
+        m_sourceCapacity = m_activeCapacity = std::max(1u, count);
+        m_sortCapacity = uint32(std::max<uint64_t>(1, std::min<uint64_t>(uint64_t(count) * 64, 16ull * 1024 * 1024)));
+        while (!PreflightTemporaryBuffers(bytes) && m_sortCapacity > 1) m_sortCapacity = std::max(1u, m_sortCapacity / 2);
+    }
+    return PreflightTemporaryBuffers(bytes);
+}
 bool FSplatPipeline::initialize(RHI::IRHIDevice* device, uint32 count, uint32 width, uint32 height, uint32 estimateTiles) {
     if (m_bInitialized || !device || !width || !height || width > 65535u * 16u || height > 65535u * 16u ||
         !device->supportsDispatchIndirect() || !device->supportsSubmissionCompletion()) return false;

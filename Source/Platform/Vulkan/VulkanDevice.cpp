@@ -22,6 +22,9 @@
 #include <algorithm>
 #include <vector>
 #include <unordered_set>
+#if PLATFORM_ANDROID
+#include <android/native_window.h>
+#endif
 
 // GPU-Assisted Validation control:
 //   1 = enable GPU-AV (per-instruction shader validation, VERY slow on heavy workloads)
@@ -86,7 +89,7 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Step 2: Setup debug messenger (if validation enabled)
-        if (createInfo.enableValidation && !setupDebugMessenger()) {
+        if (m_validationEnabled && !setupDebugMessenger()) {
             MR_LOG_ERROR("Failed to setup debug messenger");
             return false;
         }
@@ -249,6 +252,10 @@ namespace MonsterRender::RHI::Vulkan {
                 m_submissions.clear();
             }
             
+            if (idleResult == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+            const VkResult presentation = waitPresentationCompletion(UINT64_MAX); // Final teardown only.
+            if (presentation != VK_SUCCESS) MR_LOG_WARNING("Presentation teardown completion unavailable");
+            destroyPresentationResources();
             destroyGPUTimestampResources();
             // Destroy synchronization objects
             // Destroy per-frame sync objects
@@ -366,7 +373,16 @@ namespace MonsterRender::RHI::Vulkan {
             functions.vkDestroyInstance(m_instance, nullptr);
         }
         
-        // Shutdown API
+        // Explicit shutdown followed by the destructor must be harmless.
+#if PLATFORM_ANDROID
+        if (m_externalWindow) ANativeWindow_release(static_cast<ANativeWindow*>(m_externalWindow));
+#endif
+        m_externalWindow = nullptr;
+        m_device = VK_NULL_HANDLE; m_instance = VK_NULL_HANDLE; m_surface = VK_NULL_HANDLE;
+        m_debugMessenger = VK_NULL_HANDLE; m_commandPool = VK_NULL_HANDLE;
+        m_imageAvailableSemaphores.clear(); m_inFlightFences.clear(); m_cancelCommandBuffers.clear();
+        m_swapchainImageViews.clear(); m_swapchainImages.clear();
+        m_enabledFeatures = {};
         VulkanAPI::shutdown();
     }
     
@@ -704,6 +720,7 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         const uint64_t value = ++m_lastSubmission;
+        m_lastSubmitResult = VK_SUCCESS;
         m_submissions.push_back({value, fence});
         for (auto& record : m_timestampRecords) {
             if (record.commandBuffer == commandBuffer && record.submission == 0)
@@ -827,86 +844,212 @@ namespace MonsterRender::RHI::Vulkan {
         }
     }
     
-    void VulkanDevice::present() {
-        MR_LOG_INFO("===== VulkanDevice::present() START =====");
-        // Reference: UE5 FVulkanDynamicRHI::RHIEndDrawingViewport
-        // Image acquisition is now done in FVulkanCommandListContext::prepareForNewFrame()
-        
-        if (m_swapchain == VK_NULL_HANDLE) {
-            MR_LOG_WARNING("Cannot present: no swapchain available");
-            return;
+    EFrameResult VulkanDevice::ClassifyFrameResult(VkResult result) {
+        switch (result) {
+            case VK_SUCCESS: return EFrameResult::Success;
+            case VK_NOT_READY: return EFrameResult::NotReady;
+            case VK_TIMEOUT: return EFrameResult::Timeout;
+            case VK_ERROR_OUT_OF_DATE_KHR: return EFrameResult::OutOfDate;
+            case VK_SUBOPTIMAL_KHR: return EFrameResult::Suboptimal;
+            case VK_ERROR_SURFACE_LOST_KHR: return EFrameResult::SurfaceLost;
+            case VK_ERROR_DEVICE_LOST: return EFrameResult::DeviceLost;
+            default: return EFrameResult::Error;
         }
-        
-        const auto& functions = VulkanAPI::getFunctions();
-        
-        // Submit command buffer using per-image semaphores (Vulkan best practice)
-        // Each swapchain image has its own render finished semaphore to avoid conflicts
-        MR_LOG_INFO("  Submitting command buffer...");
-        if (m_commandListContext && m_currentImageIndex < m_perImageRenderFinishedSemaphores.size()) {
-            VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
-            VkSemaphore signalSemaphores[] = {m_perImageRenderFinishedSemaphores[m_currentImageIndex]};
-            
-            if (!m_commandListContext->submitCommands(
-                waitSemaphores, 1,
-                signalSemaphores, 1
-            )) {
-                MR_LOG_ERROR("Present skipped: graphics submission failed");
-                return;
-            }
-            MR_LOG_INFO("  Command buffer submitted");
-        } else {
-            MR_LOG_WARNING("  Cannot submit: context or semaphore issue");
-            return;
-        }
-        
-        // Present using the per-image semaphore
-        VkPresentInfoKHR presentInfo{};
-        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        
-        VkSemaphore waitSemaphoresPresent[] = {m_perImageRenderFinishedSemaphores[m_currentImageIndex]};
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = waitSemaphoresPresent;
-        
-        VkSwapchainKHR swapChains[] = {m_swapchain};
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = swapChains;
-        presentInfo.pImageIndices = &m_currentImageIndex;
-        presentInfo.pResults = nullptr;
-        
-        VkResult result = functions.vkQueuePresentKHR(m_presentQueue, &presentInfo);
-        
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-            // Should recreate swapchain
-            MR_LOG_WARNING("Swapchain suboptimal or out of date");
-        } else if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to present swapchain image! Result: " + std::to_string(result));
-        }
-        
-        // Per-image fence tracking now handles synchronization
-        // No need for vkQueueWaitIdle - better parallelism achieved
-        
-        // Advance frame index AFTER present for next frame
-        m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-        
-        // Begin new frame for descriptor pool manager (for next frame)
-        if (m_descriptorPoolManager) {
-            m_descriptorPoolManager->beginFrame(m_currentFrame);
-        }
-        
-        // Reset descriptor set cache for new frame (UE5-style frame-local caching)
-        if (m_descriptorSetCache) {
-            m_descriptorSetCache->Reset(m_currentFrame);
-        }
-        
-        // Garbage collect stale descriptor set layouts
-        if (m_descriptorSetLayoutCache) {
-            m_descriptorSetLayoutCache->GarbageCollect(m_currentFrame, 120);
-        }
-        
-        // Process deferred resource destructions
-        processDeferredDestructions();
     }
-    
+
+    FFrameSubmitResult VulkanDevice::acquireFrame(uint64 timeoutNs) {
+        const auto& f = VulkanAPI::getFunctions();
+        timeoutNs = std::min<uint64>(timeoutNs, 5000000);
+        if (!m_frameAcquired) {
+            m_frameResult = {};
+            m_frameResult.surfaceGeneration = m_surfaceGeneration;
+            if (m_deviceLost) { m_frameResult.status = EFrameResult::DeviceLost; return m_frameResult; }
+            if (!m_swapchain || m_presentationStopped) return m_frameResult;
+            const VkFence frameFence = getInFlightFence(m_currentFrame);
+            const VkResult wait = f.vkWaitForFences(m_device, 1, &frameFence, VK_TRUE, timeoutNs);
+            if (wait != VK_SUCCESS) {
+                m_frameResult.acquireResult = wait;
+                m_frameResult.status = m_frameResult.acquireStatus = ClassifyFrameResult(wait);
+                if (wait == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+                return m_frameResult;
+            }
+            // Reset belongs immediately before submit, never before acquisition.
+            const VkResult acquire = f.vkAcquireNextImageKHR(m_device, m_swapchain, timeoutNs,
+                getImageAvailableSemaphore(m_currentFrame), VK_NULL_HANDLE, &m_currentImageIndex);
+            m_frameResult.acquireResult = acquire;
+            m_frameResult.status = m_frameResult.acquireStatus = ClassifyFrameResult(acquire);
+            if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR) {
+                if (acquire == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+                return m_frameResult;
+            }
+            m_frameAcquired = true;
+            m_frameResult.acquired = true;
+        }
+        // An acquired semaphore/image remains owned when this bounded wait times out.
+        if (m_currentImageIndex >= m_imagesInFlight.size()) {
+            m_frameResult.status = EFrameResult::Error; return m_frameResult;
+        }
+        const VkFence imageFence = m_imagesInFlight[m_currentImageIndex];
+        if (imageFence) {
+            const VkResult wait = f.vkWaitForFences(m_device, 1, &imageFence, VK_TRUE, timeoutNs);
+            if (wait != VK_SUCCESS) {
+                if (wait == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+                m_frameResult.status = ClassifyFrameResult(wait); return m_frameResult;
+            }
+        }
+        if (m_presentMaintenanceEnabled && m_currentImageIndex < m_presentFences.size() &&
+            m_presentFencePending[m_currentImageIndex]) {
+            const VkResult wait = f.vkWaitForFences(m_device, 1, &m_presentFences[m_currentImageIndex], VK_TRUE, timeoutNs);
+            if (wait != VK_SUCCESS) {
+                if (wait == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+                m_frameResult.status = ClassifyFrameResult(wait); return m_frameResult;
+            }
+            m_presentFencePending[m_currentImageIndex] = false;
+        }
+        m_frameResult.status = m_frameResult.acquireStatus;
+        // Only now is frame-local descriptor reuse safe.
+        if (m_descriptorPoolManager) m_descriptorPoolManager->beginFrame(m_currentFrame);
+        if (m_descriptorSetCache) m_descriptorSetCache->Reset(m_currentFrame);
+        return m_frameResult;
+    }
+
+    FFrameSubmitResult VulkanDevice::beginFrame(uint64 timeoutNs) {
+        const auto acquired = acquireFrame(timeoutNs);
+        if (acquired.status != EFrameResult::Success && acquired.status != EFrameResult::Suboptimal) return acquired;
+        if (!m_commandListContext || !m_commandListContext->prepareForNewFrame()) {
+            m_frameResult.status = EFrameResult::NotReady;
+        }
+        return m_frameResult;
+    }
+
+    void VulkanDevice::RecordSubmitFailure(VkResult result, VkFence fence) {
+        m_lastSubmitResult = result;
+        if (result == VK_ERROR_DEVICE_LOST) { m_deviceLost = true; m_presentationStopped = true; return; }
+        // A failed submit attaches no work to the reset fence. Replace frame fences
+        // with signaled fences, so a failed recording cannot strand a ring slot.
+        if (!fence || !prepareSubmissionFenceReset(fence)) return;
+        const auto& f = VulkanAPI::getFunctions();
+        for (size_t i = 0; i < m_inFlightFences.size(); ++i) {
+            if (m_inFlightFences[i] != fence) continue;
+            VkFence replacement = VK_NULL_HANDLE;
+            VkFenceCreateInfo info{}; info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+            if (f.vkCreateFence(m_device, &info, nullptr, &replacement) != VK_SUCCESS) { m_presentationStopped = true; return; }
+            for (auto& imageFence : m_imagesInFlight) if (imageFence == fence) imageFence = VK_NULL_HANDLE;
+            f.vkDestroyFence(m_device, fence, nullptr);
+            m_inFlightFences[i] = replacement;
+            return;
+        }
+    }
+
+    VkResult VulkanDevice::queueCurrentPresent() {
+        const auto& f = VulkanAPI::getFunctions();
+        const VkSemaphore signal = getRenderFinishedSemaphore(m_currentImageIndex);
+        VkPresentInfoKHR info{}; info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        info.waitSemaphoreCount = 1; info.pWaitSemaphores = &signal;
+        info.swapchainCount = 1; info.pSwapchains = &m_swapchain;
+        info.pImageIndices = &m_currentImageIndex;
+#ifdef VK_EXT_swapchain_maintenance1
+        VkSwapchainPresentFenceInfoEXT fenceInfo{};
+        if (m_presentMaintenanceEnabled) {
+            VkFence& fence = m_presentFences[m_currentImageIndex];
+            const VkResult reset = f.vkResetFences(m_device, 1, &fence);
+            if (reset != VK_SUCCESS) { m_presentationStopped = true; m_frameAcquired = false; return reset; }
+            fenceInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT;
+            fenceInfo.swapchainCount = 1; fenceInfo.pFences = &fence;
+            info.pNext = &fenceInfo;
+        }
+#endif
+        const VkResult result = f.vkQueuePresentKHR(m_presentQueue, &info);
+        // Even OUT_OF_DATE/SURFACE_LOST queue the semaphore wait as specified by WSI.
+        if (m_presentMaintenanceEnabled && (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR ||
+            result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_ERROR_SURFACE_LOST_KHR))
+            m_presentFencePending[m_currentImageIndex] = true;
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) m_presentationStopped = true;
+        if (result == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+        m_frameAcquired = false;
+        m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        return result;
+    }
+
+    void VulkanDevice::present() { (void)presentFrame(); }
+
+    FFrameSubmitResult VulkanDevice::presentFrame() {
+        if (!m_frameAcquired || m_deviceLost || m_presentationStopped || !m_commandListContext) {
+            m_frameResult.submitted = false; m_frameResult.token = {};
+            m_frameResult.status = m_deviceLost ? EFrameResult::DeviceLost : EFrameResult::NotReady;
+            return m_frameResult;
+        }
+        VkSemaphore wait = getImageAvailableSemaphore(m_currentFrame);
+        VkSemaphore signal = getRenderFinishedSemaphore(m_currentImageIndex);
+        const auto before = getLastSubmissionToken();
+        if (!m_commandListContext->submitCommands(&wait, 1, &signal, 1)) {
+            m_frameResult.submitted = false; m_frameResult.token = {};
+            m_frameResult.submitResult = m_lastSubmitResult;
+            m_frameResult.status = m_frameResult.submitStatus = ClassifyFrameResult(m_lastSubmitResult);
+            return m_frameResult;
+        }
+        const auto token = getLastSubmissionToken();
+        if (token.value <= before.value) { m_frameResult.status = EFrameResult::Error; return m_frameResult; }
+        m_lastSubmitResult = VK_SUCCESS;
+        m_frameResult.submitResult = VK_SUCCESS;
+        m_frameResult.submitStatus = EFrameResult::Success;
+        m_frameResult.submitted = true; m_frameResult.token = token;
+        m_imagesInFlight[m_currentImageIndex] = getInFlightFence(m_currentFrame);
+        const VkResult result = queueCurrentPresent();
+        m_frameResult.presentResult = result;
+        m_frameResult.status = m_frameResult.presentStatus = ClassifyFrameResult(result);
+        if (m_descriptorSetLayoutCache) m_descriptorSetLayoutCache->GarbageCollect(m_currentFrame, 120);
+        processDeferredDestructions();
+        return m_frameResult;
+    }
+
+    FFrameSubmitResult VulkanDevice::cancelFrame() {
+        if (!m_frameAcquired || m_deviceLost || m_cancelCommandBuffers.size() <= m_currentFrame) {
+            FFrameSubmitResult result; result.status = m_deviceLost ? EFrameResult::DeviceLost : EFrameResult::NotReady; return result;
+        }
+        const auto ready = acquireFrame(1000000);
+        if (ready.status != EFrameResult::Success && ready.status != EFrameResult::Suboptimal) return ready;
+        const auto& f = VulkanAPI::getFunctions();
+        const VkCommandBuffer command = m_cancelCommandBuffers[m_currentFrame];
+        VkResult result = f.vkResetCommandBuffer(command, 0);
+        VkCommandBufferBeginInfo begin{}; begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (result == VK_SUCCESS) result = f.vkBeginCommandBuffer(command, &begin);
+        if (result == VK_SUCCESS) {
+            VkImageMemoryBarrier barrier{}; barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = m_swapchainImages[m_currentImageIndex];
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            f.vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+            result = f.vkEndCommandBuffer(command);
+        }
+        VkFence fence = getInFlightFence(m_currentFrame);
+        if (result == VK_SUCCESS && !prepareSubmissionFenceReset(fence)) result = VK_NOT_READY;
+        VkSemaphore wait = getImageAvailableSemaphore(m_currentFrame), signal = getRenderFinishedSemaphore(m_currentImageIndex);
+        VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        VkSubmitInfo submit{}; submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.waitSemaphoreCount = 1; submit.pWaitSemaphores = &wait; submit.pWaitDstStageMask = &stage;
+        submit.commandBufferCount = 1; submit.pCommandBuffers = &command;
+        submit.signalSemaphoreCount = 1; submit.pSignalSemaphores = &signal;
+        if (result == VK_SUCCESS) result = f.vkResetFences(m_device, 1, &fence);
+        if (result == VK_SUCCESS) result = f.vkQueueSubmit(m_graphicsQueue, 1, &submit, fence);
+        m_frameResult.submitResult = result;
+        m_frameResult.submitStatus = ClassifyFrameResult(result);
+        m_frameResult.token = {}; m_frameResult.submitted = false;
+        if (result != VK_SUCCESS) {
+            RecordSubmitFailure(result, fence); m_frameResult.status = ClassifyFrameResult(result); return m_frameResult;
+        }
+        trackSubmission(command, fence);
+        m_frameResult.submitted = true; m_frameResult.token = getLastSubmissionToken();
+        m_imagesInFlight[m_currentImageIndex] = fence;
+        const VkResult presented = queueCurrentPresent();
+        m_frameResult.presentResult = presented;
+        m_frameResult.status = m_frameResult.presentStatus = ClassifyFrameResult(presented);
+        return m_frameResult;
+    }
     void VulkanDevice::getMemoryStats(uint64& usedBytes, uint64& availableBytes) {
         usedBytes = 0;
         availableBytes = 0;
@@ -961,140 +1104,56 @@ namespace MonsterRender::RHI::Vulkan {
     
     // Private implementation methods - full implementations
     bool VulkanDevice::createInstance(const RHICreateInfo& createInfo) {
-        MR_LOG_INFO("Creating Vulkan instance...");
-        
-        m_validationEnabled = createInfo.enableValidation;
-        
-        // ============================================================================
-        // RenderDoc Detection and Layer Conflict Prevention
-        // Disable problematic implicit layers that conflict with RenderDoc
-        // ============================================================================
-        
-        // Check if running under RenderDoc
-        bool runningUnderRenderDoc = false;
-        HMODULE renderDocModule = GetModuleHandleA("renderdoc.dll");
-        if (renderDocModule != nullptr) {
-            runningUnderRenderDoc = true;
-            MR_LOG_INFO("RenderDoc detected - using minimal layer configuration");
-        }
-        m_runningUnderRenderDoc = runningUnderRenderDoc;
-
-        // Validation layer is only actually loaded when not under RenderDoc.
-        // Gate GPU-Assisted Validation on this same condition (see createDevice).
-        bool useValidation = m_validationEnabled && !runningUnderRenderDoc;
-        
-        // Disable problematic implicit layers via environment variables
-        // These layers can conflict with RenderDoc's capture mechanism
-        const char* problematicLayers[] = {
-            "DISABLE_VK_LAYER_TENCENT_wegame_cross_overlay_1",
-            "DISABLE_VK_LAYER_VALVE_steam_overlay_1",
-            "DISABLE_VK_LAYER_VALVE_steam_fossilize_1",
-            "DISABLE_VK_LAYER_EOS_Overlay_1",
-            "DISABLE_VK_LAYER_ROCKSTAR_GAMES_social_club_1"
-        };
-        
-        for (const char* envVar : problematicLayers) {
-            _putenv_s(envVar, "1");
-        }
-        MR_LOG_INFO("Disabled problematic implicit Vulkan layers for RenderDoc compatibility");
-        
-        // Check validation layers if requested
-        if (m_validationEnabled && !checkValidationLayerSupport()) {
-            MR_LOG_ERROR("Validation layers requested, but not available!");
-            return false;
-        }
-        
-        // Application info
-        VkApplicationInfo appInfo{};
-        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName = createInfo.applicationName.c_str();
-        appInfo.applicationVersion = createInfo.applicationVersion;
-        appInfo.pEngineName = "MonsterRender";
-        appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_2;  // Vulkan 1.2 required for 3DGS shaders (int64, subgroups)
-        
-        // Instance create info
-        VkInstanceCreateInfo instanceCreateInfo{};
-        instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-        instanceCreateInfo.pApplicationInfo = &appInfo;
-        
-        // Get required extensions
-        auto extensions = getRequiredExtensions(useValidation);
-        instanceCreateInfo.enabledExtensionCount = static_cast<uint32>(extensions.size());
-        instanceCreateInfo.ppEnabledExtensionNames = extensions.data();
-        
-        // Set validation layers if enabled
-        // When running under RenderDoc, disable validation layer to reduce conflicts
-        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-        // Declared at function scope: it is referenced by instanceCreateInfo.pNext and
-        // must outlive the vkCreateInstance() call below (which is outside this block).
-        VkValidationFeaturesEXT validationFeatures{};
-
-        if (useValidation) {
-            instanceCreateInfo.enabledLayerCount = g_validationLayerCount;
-            instanceCreateInfo.ppEnabledLayerNames = g_validationLayers;
-
-            // Setup debug messenger for instance creation/destruction
-            debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-            debugCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                             VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-            debugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                                        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                                        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-            debugCreateInfo.pfnUserCallback = VulkanUtils::debugCallback;
-            debugCreateInfo.pUserData = nullptr;
-
-            // GPU-Assisted Validation (precise OOB buffer + shader line reporting).
-            // Per spec VkValidationFeaturesEXT belongs in VkInstanceCreateInfo.pNext
-            // (NOT VkDeviceCreateInfo.pNext) -> it is configured here at instance
-            // creation and the device inherits it. Configuring it on the device pNext
-            // makes the validation layer reject it as "unexpected"
-            // (VUID-VkDeviceCreateInfo-pNext-pNext), and GPU-AV never activates.
-            //
-            // GPU-AV inserts per-instruction validation into every shader, making
-            // the GPU frame time explode on heavy workloads (e.g. 1.15M Gaussians).
-            // Once all core validation errors are resolved, GPU-AV can be re-enabled
-            // for targeted debugging by setting MONSTER_GPU_AV_ENABLED to 1.
-#if MONSTER_GPU_AV_ENABLED
-            static const VkValidationFeatureEnableEXT kGpuAssistedFeatures[] = {
-                VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
-            };
-            validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
-            validationFeatures.pNext = &debugCreateInfo;
-            validationFeatures.enabledValidationFeatureCount = 1;
-            validationFeatures.pEnabledValidationFeatures = kGpuAssistedFeatures;
-            validationFeatures.disabledValidationFeatureCount = 0;
-            validationFeatures.pDisabledValidationFeatures = nullptr;
-
-            instanceCreateInfo.pNext = &validationFeatures;
-            MR_LOG_INFO("Validation layers enabled + GPU-Assisted Validation (instance-level)");
-#else
-            // GPU-AV disabled: retain only Core Check validation (fast path).
-            instanceCreateInfo.pNext = &debugCreateInfo;
-            MR_LOG_INFO("Validation layers enabled (Core Check only, GPU-AV disabled)");
-#endif
-        } else {
-            instanceCreateInfo.enabledLayerCount = 0;
-            instanceCreateInfo.pNext = nullptr;
-            if (runningUnderRenderDoc && m_validationEnabled) {
-                MR_LOG_INFO("Validation layers disabled for RenderDoc compatibility");
-            }
-        }
-        
-        // Create instance
         const auto& functions = VulkanAPI::getFunctions();
-        VkResult result = functions.vkCreateInstance(&instanceCreateInfo, nullptr, &m_instance);
-        
-        if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to create Vulkan instance! Result: " + std::to_string(result));
-            return false;
+        uint32 loaderVersion = VK_API_VERSION_1_0;
+        if (VulkanAPI::enumerateInstanceVersion(functions, loaderVersion) != VK_SUCCESS ||
+            loaderVersion < VK_API_VERSION_1_2) return false;
+        m_validationEnabled = createInfo.enableValidation;
+        m_runningUnderRenderDoc = false;
+#if PLATFORM_WINDOWS
+        m_runningUnderRenderDoc = GetModuleHandleA("renderdoc.dll") != nullptr;
+        for (const char* name : {"DISABLE_VK_LAYER_TENCENT_wegame_cross_overlay_1",
+             "DISABLE_VK_LAYER_VALVE_steam_overlay_1", "DISABLE_VK_LAYER_VALVE_steam_fossilize_1",
+             "DISABLE_VK_LAYER_EOS_Overlay_1", "DISABLE_VK_LAYER_ROCKSTAR_GAMES_social_club_1"})
+            _putenv_s(name, "1");
+#endif
+        const bool validation = m_validationEnabled && !m_runningUnderRenderDoc;
+        if (validation && !checkValidationLayerSupport()) return false;
+        m_validationEnabled = validation;
+        auto extensions = getRequiredExtensions(validation);
+        uint32 count = 0;
+        if (functions.vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr) != VK_SUCCESS || count > 4096) return false;
+        std::vector<VkExtensionProperties> available(count);
+        if (functions.vkEnumerateInstanceExtensionProperties(nullptr, &count, available.data()) != VK_SUCCESS) return false;
+        auto supported = [&](const char* name) {
+            return std::any_of(available.begin(), available.end(), [&](const auto& e) { return std::strcmp(e.extensionName, name) == 0; });
+        };
+        for (const char* extension : extensions) if (!supported(extension)) return false;
+#ifdef VK_EXT_surface_maintenance1
+        if (supported(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME) && supported(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME)) {
+            extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+            extensions.push_back(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
+            m_surfaceMaintenanceEnabled = true;
         }
-        
-        // Load instance-level functions
-        VulkanAPI::loadInstanceFunctions(m_instance);
-        
-        MR_LOG_INFO("Vulkan instance created successfully");
-        return true;
+#endif
+        VkApplicationInfo app{};
+        app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+        app.pApplicationName = createInfo.applicationName.c_str();
+        app.applicationVersion = createInfo.applicationVersion;
+        app.pEngineName = "MonsterRender";
+        app.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+        app.apiVersion = VK_API_VERSION_1_2;
+        VkInstanceCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        info.pApplicationInfo = &app;
+        info.enabledExtensionCount = static_cast<uint32>(extensions.size());
+        info.ppEnabledExtensionNames = extensions.data();
+        if (validation) {
+            info.enabledLayerCount = g_validationLayerCount;
+            info.ppEnabledLayerNames = g_validationLayers;
+        }
+        if (functions.vkCreateInstance(&info, nullptr, &m_instance) != VK_SUCCESS) return false;
+        return VulkanAPI::loadInstanceFunctions(m_instance);
     }
     
     bool VulkanDevice::setupDebugMessenger() {
@@ -1131,20 +1190,13 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     bool VulkanDevice::createSurface(const RHICreateInfo& createInfo) {
-        MR_LOG_INFO("Creating window surface...");
-        
-        // For now, create a mock surface since we don't have proper windowing yet
-        // In a real implementation, this would use the windowHandle parameter
-        VkResult result = VulkanUtils::createSurface(m_instance, createInfo.windowHandle, &m_surface);
-        
-        if (result != VK_SUCCESS) {
-            // For development, we'll skip surface creation and log a warning
-            MR_LOG_WARNING("Surface creation skipped (no proper windowing system yet)");
-            m_surface = VK_NULL_HANDLE;
-            return true; // Continue without surface for now
-        }
-        
-        MR_LOG_INFO("Window surface created successfully");
+        if (!createInfo.windowHandle) return true;
+        const VkResult result = VulkanUtils::createSurface(m_instance, createInfo.windowHandle, &m_surface);
+        if (result != VK_SUCCESS) return false;
+#if PLATFORM_ANDROID
+        m_externalWindow = createInfo.windowHandle;
+        ANativeWindow_acquire(static_cast<ANativeWindow*>(m_externalWindow));
+#endif
         return true;
     }
     
@@ -1222,234 +1274,65 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     bool VulkanDevice::createLogicalDevice() {
-        MR_LOG_INFO("Creating logical device...");
-        
-        const auto& functions = VulkanAPI::getFunctions();
-        
-        // Find queue families
-        m_graphicsQueueFamily = findQueueFamilies(m_physicalDevice, m_surface, VK_QUEUE_GRAPHICS_BIT);
-        if (m_surface != VK_NULL_HANDLE) {
-            // Note: Using VK_QUEUE_GRAPHICS_BIT here. Typically present queue should be queried
-            // using vkGetPhysicalDeviceSurfaceSupportKHR for proper surface support detection.
-            m_presentQueueFamily = findQueueFamilies(m_physicalDevice, m_surface, VK_QUEUE_GRAPHICS_BIT);
-        } else {
-            m_presentQueueFamily = m_graphicsQueueFamily; // Use graphics queue for present when no surface
+        const auto& f = VulkanAPI::getFunctions();
+        m_graphicsQueueFamily = findQueueFamilies(m_physicalDevice, VK_NULL_HANDLE, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
+        m_presentQueueFamily = m_surface ? findQueueFamilies(m_physicalDevice, m_surface, 0) : m_graphicsQueueFamily;
+        if (m_graphicsQueueFamily.familyIndex == VK_QUEUE_FAMILY_IGNORED ||
+            m_presentQueueFamily.familyIndex == VK_QUEUE_FAMILY_IGNORED || !m_deviceFeatures.shaderInt64) return false;
+        std::vector<VkDeviceQueueCreateInfo> queues;
+        const float priority = 1.0f;
+        for (uint32 family : std::set<uint32>{m_graphicsQueueFamily.familyIndex, m_presentQueueFamily.familyIndex}) {
+            VkDeviceQueueCreateInfo q{};
+            q.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            q.queueFamilyIndex = family; q.queueCount = 1; q.pQueuePriorities = &priority;
+            queues.push_back(q);
         }
-        
-        if (m_graphicsQueueFamily.familyIndex == VK_QUEUE_FAMILY_IGNORED) {
-            MR_LOG_ERROR("Failed to find graphics queue family!");
-            return false;
-        }
-        
-        // Create queue create infos
-        // Use std::vector for Vulkan API compatibility
-        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-        std::set<uint32> uniqueQueueFamilies = {m_graphicsQueueFamily.familyIndex};
-        
-        if (m_surface != VK_NULL_HANDLE && m_presentQueueFamily.familyIndex != m_graphicsQueueFamily.familyIndex) {
-            uniqueQueueFamilies.insert(m_presentQueueFamily.familyIndex);
-        }
-        
-        float queuePriority = 1.0f;
-        for (uint32 queueFamily : uniqueQueueFamilies) {
-            VkDeviceQueueCreateInfo queueCreateInfo{};
-            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-            queueCreateInfo.queueFamilyIndex = queueFamily;
-            queueCreateInfo.queueCount = 1;
-            queueCreateInfo.pQueuePriorities = &queuePriority;
-            queueCreateInfos.push_back(queueCreateInfo);
-        }
-        
-        // Device features (enable what we need)
-        VkPhysicalDeviceFeatures deviceFeatures{};
-        deviceFeatures.samplerAnisotropy = m_deviceFeatures.samplerAnisotropy;
-        deviceFeatures.fillModeNonSolid = m_deviceFeatures.fillModeNonSolid;
-        deviceFeatures.geometryShader = m_deviceFeatures.geometryShader;
-        deviceFeatures.tessellationShader = m_deviceFeatures.tessellationShader;
-        // 3DGS SplatPipeline requires shaderInt64 (uint64_t in compute shaders)
-        deviceFeatures.shaderInt64 = VK_TRUE;
-        
-        // ============================================================================
-        // Device Extension Handling (RenderDoc-compatible)
-        // Standard pattern: Query -> Filter -> Enable
-        // Reference: Vulkan best practice for extension handling
-        // ============================================================================
-        
-        // Step 1: Query supported device extensions
-        std::unordered_set<std::string> supportedExtensions;
-        uint32 extensionCount = 0;
-        functions.vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &extensionCount, nullptr);
-        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-        functions.vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &extensionCount, availableExtensions.data());
-        
-        MR_LOG_INFO("Available device extensions: " + std::to_string(extensionCount));
-        for (const auto& ext : availableExtensions) {
-            supportedExtensions.insert(ext.extensionName);
-        }
-        
-        // Step 2: Build list of extensions to enable (filter by support)
-        std::vector<const char*> enabledExtensions;
-        
-        // Helper lambda: enable extension only if supported
-        auto enableIfSupported = [&](const char* extensionName) -> bool {
-            if (supportedExtensions.count(extensionName)) {
-                enabledExtensions.push_back(extensionName);
-                return true;
+        VkPhysicalDeviceFeatures requested{};
+        requested.shaderInt64 = VK_TRUE;
+        requested.samplerAnisotropy = m_deviceFeatures.samplerAnisotropy;
+        requested.fillModeNonSolid = m_deviceFeatures.fillModeNonSolid;
+        requested.geometryShader = m_deviceFeatures.geometryShader;
+        requested.tessellationShader = m_deviceFeatures.tessellationShader;
+        uint32 count = 0;
+        if (f.vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &count, nullptr) != VK_SUCCESS || count > 4096) return false;
+        std::vector<VkExtensionProperties> available(count);
+        if (f.vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &count, available.data()) != VK_SUCCESS) return false;
+        std::vector<const char*> extensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        void* chain = nullptr;
+#ifdef VK_EXT_swapchain_maintenance1
+        VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance{};
+        maintenance.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT;
+        const bool extensionSupported = std::any_of(available.begin(), available.end(), [](const auto& e) {
+            return std::strcmp(e.extensionName, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME) == 0;
+        });
+        if (extensionSupported && f.vkGetPhysicalDeviceFeatures2) {
+            VkPhysicalDeviceFeatures2 query{};
+            query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+            query.pNext = &maintenance;
+            f.vkGetPhysicalDeviceFeatures2(m_physicalDevice, &query);
+            m_presentMaintenanceSupported = maintenance.swapchainMaintenance1 == VK_TRUE;
+            if (m_presentMaintenanceSupported && m_surfaceMaintenanceEnabled) {
+                extensions.push_back(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
+                chain = &maintenance;
             }
-            MR_LOG_WARNING("Device extension not supported: " + String(extensionName));
-            return false;
-        };
-        
-        // Required extensions (must be supported)
-        if (!enableIfSupported(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
-            MR_LOG_ERROR("Required extension VK_KHR_swapchain not supported!");
-            return false;
         }
-        
-        // ============================================================================
-        // Optional advanced extensions
-        // Note: In Vulkan 1.1+, many of these features are core and don't need extensions.
-        // We use API version 1.0 for maximum compatibility, so we need extensions.
-        // However, the dependency extensions (VK_KHR_get_physical_device_properties2, etc.)
-        // are INSTANCE extensions, not device extensions. They should be enabled at
-        // instance creation time, not device creation time.
-        // 
-        // For now, we only enable extensions that don't have complex dependencies,
-        // or we rely on Vulkan 1.1+ where these are core features.
-        // ============================================================================
-        
-        // Check Vulkan API version - if 1.1+, these features are core
-        uint32 apiVersion = m_deviceProperties.apiVersion;
-        bool isVulkan11OrHigher = VK_VERSION_MAJOR(apiVersion) > 1 || 
-                                   (VK_VERSION_MAJOR(apiVersion) == 1 && VK_VERSION_MINOR(apiVersion) >= 1);
-        bool isVulkan12OrHigher = VK_VERSION_MAJOR(apiVersion) > 1 || 
-                                   (VK_VERSION_MAJOR(apiVersion) == 1 && VK_VERSION_MINOR(apiVersion) >= 2);
-        
-        MR_LOG_INFO("Device Vulkan API version: " + std::to_string(VK_VERSION_MAJOR(apiVersion)) + "." +
-                   std::to_string(VK_VERSION_MINOR(apiVersion)) + "." +
-                   std::to_string(VK_VERSION_PATCH(apiVersion)));
-        MR_LOG_INFO("isVulkan11OrHigher: " + std::string(isVulkan11OrHigher ? "true" : "false"));
-        
-        // VK_KHR_maintenance1: core in Vulkan 1.1, required for negative viewport height
-        // This extension enables Y-axis flipping via negative viewport height
-        // IMPORTANT: Even for Vulkan 1.1+, we still try to enable the extension explicitly
-        // because some validation layers may require it to be in the enabled extensions list
-        if (enableIfSupported(VK_KHR_MAINTENANCE1_EXTENSION_NAME)) {
-            MR_LOG_INFO("VK_KHR_maintenance1: explicitly enabled (required for viewport Y-flip)");
-        } else if (isVulkan11OrHigher) {
-            MR_LOG_INFO("VK_KHR_maintenance1: using Vulkan 1.1+ core feature (extension not available)");
-        } else {
-            MR_LOG_WARNING("VK_KHR_maintenance1 not supported - viewport Y-flip may not work on Vulkan 1.0");
-        }
-        
-        // Timeline semaphores: core in Vulkan 1.2, extension in 1.1
-        if (isVulkan12OrHigher) {
-            MR_LOG_INFO("Timeline semaphores: using Vulkan 1.2 core feature");
-        } else if (isVulkan11OrHigher) {
-            enableIfSupported(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
-        }
-        
-        // Descriptor indexing: core in Vulkan 1.2
-        if (isVulkan12OrHigher) {
-            MR_LOG_INFO("Descriptor indexing: using Vulkan 1.2 core feature");
-        } else if (isVulkan11OrHigher) {
-            enableIfSupported(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-        }
-        
-        // Buffer device address: core in Vulkan 1.2
-        bool hasBufferDeviceAddress = false;
-        if (isVulkan12OrHigher) {
-            MR_LOG_INFO("Buffer device address: using Vulkan 1.2 core feature");
-            hasBufferDeviceAddress = true;
-        } else if (isVulkan11OrHigher) {
-            hasBufferDeviceAddress = enableIfSupported(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-        }
-        
-        // Suppress unused variable warning
-        (void)hasBufferDeviceAddress;
-        
-        // Step 3: Log all requested extensions before device creation
-        MR_LOG_INFO("=== Requested Device Extensions ===");
-        for (const auto& ext : enabledExtensions) {
-            MR_LOG_INFO("  Request Device Extension: " + String(ext));
-        }
-        MR_LOG_INFO("Total: " + std::to_string(enabledExtensions.size()) + " extensions");
-        
-        // ============================================================================
-        // Vulkan 1.1/1.2 features via pNext chain
-        // Required for 3DGS compute shaders: subgroup ops (1.1), int64 atomics (1.2)
-        // ============================================================================
-        VkPhysicalDeviceVulkan11Features vulkan11Features{};
-        vulkan11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-        
-        VkPhysicalDeviceVulkan12Features vulkan12Features{};
-        vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-        
-        void* pNextChain = nullptr;
-        if (isVulkan12OrHigher)
-        {
-            // Vulkan 1.2: enable both 1.1 and 1.2 features
-            vulkan12Features.shaderBufferInt64Atomics = VK_TRUE;
-            vulkan12Features.shaderSharedInt64Atomics = VK_TRUE;
-            vulkan12Features.subgroupBroadcastDynamicId = VK_TRUE;
-            // Chain: device → 1.1 → 1.2
-            vulkan11Features.pNext = &vulkan12Features;
-            pNextChain = &vulkan11Features;
-        }
-        else if (isVulkan11OrHigher)
-        {
-            // Vulkan 1.1: enable subgroup support
-            pNextChain = &vulkan11Features;
-        }
-
-        // NOTE: GPU-Assisted Validation (VkValidationFeaturesEXT) is configured at
-        // INSTANCE creation in createInstance(), not here. It is an instance-level
-        // validation feature that the device inherits. Configuring it on the device
-        // pNext triggers VUID-VkDeviceCreateInfo-pNext-pNext ("unexpected struct").
-
-        // Create device
-        VkDeviceCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        createInfo.pNext = pNextChain;
-        createInfo.queueCreateInfoCount = static_cast<uint32>(queueCreateInfos.size());
-        createInfo.pQueueCreateInfos = queueCreateInfos.data();
-        createInfo.pEnabledFeatures = &deviceFeatures;
-        
-        // Device extensions (filtered list)
-        createInfo.enabledExtensionCount = static_cast<uint32>(enabledExtensions.size());
-        createInfo.ppEnabledExtensionNames = enabledExtensions.data();
-        
-        // Validation layers (deprecated for devices, but needed for older Vulkan)
-        if (m_validationEnabled) {
-            createInfo.enabledLayerCount = g_validationLayerCount;
-            createInfo.ppEnabledLayerNames = g_validationLayers;
-        } else {
-            createInfo.enabledLayerCount = 0;
-        }
-        
-        VkResult result = functions.vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device);
-        
-        if (result != VK_SUCCESS) {
-            MR_LOG_ERROR("Failed to create logical device! Result: " + std::to_string(result));
-            return false;
-        }
-        
-        // Load device-level functions
-        VulkanAPI::loadDeviceFunctions(m_device);
-        
-        // Get queue handles
-        functions.vkGetDeviceQueue(m_device, m_graphicsQueueFamily.familyIndex, 0, &m_graphicsQueue);
-        if (m_surface != VK_NULL_HANDLE) {
-            functions.vkGetDeviceQueue(m_device, m_presentQueueFamily.familyIndex, 0, &m_presentQueue);
-        } else {
-            m_presentQueue = m_graphicsQueue;
-        }
-        
-        MR_LOG_INFO("Logical device created successfully");
-        MR_LOG_INFO("Graphics queue family: " + std::to_string(m_graphicsQueueFamily.familyIndex));
-        MR_LOG_INFO("Present queue family: " + std::to_string(m_presentQueueFamily.familyIndex));
-        
-        return true;
+#endif
+        VkDeviceCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        info.pNext = chain;
+        info.queueCreateInfoCount = static_cast<uint32>(queues.size());
+        info.pQueueCreateInfos = queues.data();
+        info.pEnabledFeatures = &requested;
+        info.enabledExtensionCount = static_cast<uint32>(extensions.size());
+        info.ppEnabledExtensionNames = extensions.data();
+        m_requestedFeatures = requested;
+        if (f.vkCreateDevice(m_physicalDevice, &info, nullptr, &m_device) != VK_SUCCESS) return false;
+        m_enabledFeatures = requested;
+        m_presentMaintenanceEnabled = chain != nullptr;
+        if (!VulkanAPI::loadDeviceFunctions(m_device)) return false;
+        f.vkGetDeviceQueue(m_device, m_graphicsQueueFamily.familyIndex, 0, &m_graphicsQueue);
+        f.vkGetDeviceQueue(m_device, m_presentQueueFamily.familyIndex, 0, &m_presentQueue);
+        return m_graphicsQueue && m_presentQueue;
     }
     
     bool VulkanDevice::createSwapchain(const RHICreateInfo& createInfo) {
@@ -1467,19 +1350,19 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         
         // Query swapchain support
-        VkSurfaceCapabilitiesKHR capabilities;
-        functions.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities);
+        VkSurfaceCapabilitiesKHR capabilities{};
+        if (functions.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities) != VK_SUCCESS) return false;
         
         // Use std::vector for Vulkan API compatibility
-        uint32 formatCount;
-        functions.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr);
+        uint32 formatCount = 0;
+        if (functions.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr) != VK_SUCCESS || !formatCount || formatCount > 4096) return false;
         std::vector<VkSurfaceFormatKHR> formats(formatCount);
-        functions.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data());
+        if (functions.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data()) != VK_SUCCESS) return false;
         
-        uint32 presentModeCount;
-        functions.vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr);
+        uint32 presentModeCount = 0;
+        if (functions.vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr) != VK_SUCCESS || !presentModeCount || presentModeCount > 4096) return false;
         std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-        functions.vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
+        if (functions.vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data()) != VK_SUCCESS) return false;
         
         if (formats.empty() || presentModes.empty()) {
             MR_LOG_ERROR("Swapchain support is inadequate!");
@@ -1497,9 +1380,10 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Choose present mode (prefer mailbox for reduced latency)
-        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR; // Guaranteed to be available
+        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+        if (!m_presentationVSync && std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end()) presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
         for (const auto& availablePresentMode : presentModes) {
-            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+            if (presentMode != VK_PRESENT_MODE_IMMEDIATE_KHR && availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
                 presentMode = availablePresentMode;
                 break;
             }
@@ -1517,6 +1401,7 @@ namespace MonsterRender::RHI::Vulkan {
                     ", maxExtent: " + std::to_string(capabilities.maxImageExtent.width) + "x" + std::to_string(capabilities.maxImageExtent.height));
         MR_LOG_INFO("Requested window size: " + std::to_string(createInfo.windowWidth) + "x" + std::to_string(createInfo.windowHeight));
         
+        if (capabilities.currentExtent.width != UINT32_MAX) extent = capabilities.currentExtent;
         // Clamp to valid range
         extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
         extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
@@ -1554,8 +1439,19 @@ namespace MonsterRender::RHI::Vulkan {
             createInfoSwapchain.pQueueFamilyIndices = nullptr;
         }
         
-        createInfoSwapchain.preTransform = capabilities.currentTransform;
+        MR_LOG_INFO("Surface transform: current=" + std::to_string(capabilities.currentTransform) + ", supported=" + std::to_string(capabilities.supportedTransforms));
+        // The renderer records upright pixels. Ask WSI to apply the Surface's
+        // display rotation instead of claiming the app already pre-rotated them.
+        if (!(capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)) {
+            MR_LOG_ERROR("Surface does not support upright identity presentation; renderer pre-rotation unavailable");
+            return false;
+        }
+        createInfoSwapchain.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
         createInfoSwapchain.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        for (auto alpha : {VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR}) {
+            if (capabilities.supportedCompositeAlpha & alpha) { createInfoSwapchain.compositeAlpha = alpha; break; }
+        }
+        m_configuredPresentMode = presentMode;
         createInfoSwapchain.presentMode = presentMode;
         createInfoSwapchain.clipped = VK_TRUE;
         createInfoSwapchain.oldSwapchain = VK_NULL_HANDLE;
@@ -1568,9 +1464,15 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Get swapchain images
-        functions.vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr);
+        if (functions.vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr) != VK_SUCCESS || !imageCount || imageCount > 64) return false;
+        if (m_presentationBudget && imageCount > m_presentationReservedImages) {
+            MR_LOG_ERROR("WSI image count exceeds admitted policy: actual=" + std::to_string(imageCount) + ", reserved=" + std::to_string(m_presentationReservedImages));
+            functions.vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+            m_swapchain = VK_NULL_HANDLE;
+            return false;
+        }
         m_swapchainImages.resize(imageCount);
-        functions.vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_swapchainImages.data());
+        if (functions.vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_swapchainImages.data()) != VK_SUCCESS) return false;
         
         m_swapchainImageFormat = surfaceFormat.format;
         m_swapchainExtent = extent;
@@ -1969,22 +1871,13 @@ namespace MonsterRender::RHI::Vulkan {
             }
         }
         
-        // Create per-image render finished semaphores (one per swapchain image)
-        // This ensures each image has its own semaphore to avoid conflicts
-        m_perImageRenderFinishedSemaphores.resize(m_swapchainImages.size());
-        for (size_t i = 0; i < m_swapchainImages.size(); i++) {
-            VkResult result = functions.vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_perImageRenderFinishedSemaphores[i]);
-            if (result != VK_SUCCESS) {
-                MR_LOG_ERROR("Failed to create per-image render finished semaphore! Result: " + std::to_string(result));
-                return false;
-            }
-        }
-        
-        // Initialize per-image fence tracking array
-        m_imagesInFlight.resize(m_swapchainImages.size(), VK_NULL_HANDLE);
-        
-        MR_LOG_INFO("Synchronization objects created successfully");
-        return true;
+        VkCommandBufferAllocateInfo allocate{};
+        allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocate.commandPool = m_commandPool; allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocate.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+        m_cancelCommandBuffers.assign(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
+        if (functions.vkAllocateCommandBuffers(m_device, &allocate, m_cancelCommandBuffers.data()) != VK_SUCCESS) return false;
+        return createImageSynchronization();
     }
     
     bool VulkanDevice::checkValidationLayerSupport() {
@@ -2027,7 +1920,10 @@ namespace MonsterRender::RHI::Vulkan {
         std::vector<const char*> extensions;
         
         // Surface extensions (platform-specific)
-        #if PLATFORM_WINDOWS
+        #if PLATFORM_ANDROID
+            extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+            extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+        #elif PLATFORM_WINDOWS
             extensions.push_back("VK_KHR_surface");
             extensions.push_back("VK_KHR_win32_surface");
         #elif PLATFORM_LINUX
@@ -2041,7 +1937,7 @@ namespace MonsterRender::RHI::Vulkan {
             // VK_EXT_validation_features is REQUIRED to request GPU-Assisted Validation
             // (VkValidationFeaturesEXT) at device creation. It is provided by the validation
             // layer, so we only add it when the validation layer will actually be loaded.
-            extensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+
         }
         
         // Log extensions
@@ -2065,8 +1961,10 @@ namespace MonsterRender::RHI::Vulkan {
         functions.vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
         
         // Check queue families
-        QueueFamily graphicsFamily = findQueueFamilies(device, m_surface, VK_QUEUE_GRAPHICS_BIT);
+        QueueFamily graphicsFamily = findQueueFamilies(device, VK_NULL_HANDLE, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
         bool queueFamilySupport = graphicsFamily.familyIndex != VK_QUEUE_FAMILY_IGNORED;
+        if (m_surface) queueFamilySupport = queueFamilySupport &&
+            findQueueFamilies(device, m_surface, 0).familyIndex != VK_QUEUE_FAMILY_IGNORED;
         
         // Check device extension support
         bool extensionSupport = checkDeviceExtensionSupport(device);
@@ -2085,7 +1983,15 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_DEBUG("  Extension support: " + String(extensionSupport ? "YES" : "NO"));
         MR_LOG_DEBUG("  Swapchain adequate: " + String(swapChainAdequate ? "YES" : "NO"));
         
-        return queueFamilySupport && extensionSupport && swapChainAdequate;
+        VkFormatProperties rgba{};
+        functions.vkGetPhysicalDeviceFormatProperties(device, VK_FORMAT_R8G8B8A8_UNORM, &rgba);
+        const VkFormatFeatureFlags requiredFormat = VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+        const auto& limits = deviceProperties.limits;
+        return deviceProperties.apiVersion >= VK_API_VERSION_1_2 && deviceFeatures.shaderInt64 &&
+            limits.maxComputeWorkGroupInvocations >= 256 && limits.maxComputeWorkGroupSize[0] >= 256 &&
+            limits.maxComputeWorkGroupSize[1] >= 16 &&
+            (rgba.optimalTilingFeatures & requiredFormat) == requiredFormat &&
+            queueFamilySupport && extensionSupport && swapChainAdequate;
     }
     
     QueueFamily VulkanDevice::findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface, VkQueueFlags flags) {
@@ -2104,7 +2010,7 @@ namespace MonsterRender::RHI::Vulkan {
             const auto& queueFamilyProperties = queueFamilies[i];
             
             // Check if this family supports the required flags
-            if ((queueFamilyProperties.queueFlags & flags) == flags) {
+            if (queueFamilyProperties.queueCount > 0 && (queueFamilyProperties.queueFlags & flags) == flags) {
                 family.familyIndex = i;
                 family.queueCount = queueFamilyProperties.queueCount;
                 family.flags = queueFamilyProperties.queueFlags;
@@ -2112,8 +2018,9 @@ namespace MonsterRender::RHI::Vulkan {
                 // Check present support if we have a surface
                 if (surface != VK_NULL_HANDLE) {
                     VkBool32 presentSupport = false;
-                    functions.vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-                    family.supportsPresentToSurface = presentSupport == VK_TRUE;
+                    const VkResult supported = functions.vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+                    family.supportsPresentToSurface = supported == VK_SUCCESS && presentSupport == VK_TRUE;
+                    if (!family.supportsPresentToSurface) { family = {}; continue; }
                 } else {
                     family.supportsPresentToSurface = true; // No surface, so present support is not relevant
                 }
@@ -2223,7 +2130,7 @@ namespace MonsterRender::RHI::Vulkan {
         m_capabilities.supportsGeometryShader = m_deviceFeatures.geometryShader == VK_TRUE;
         m_capabilities.supportsTessellation = m_deviceFeatures.tessellationShader == VK_TRUE;
         m_capabilities.supportsComputeShader = true; // Vulkan 1.0 core feature
-        m_capabilities.supportsMultiDrawIndirect = m_deviceFeatures.multiDrawIndirect == VK_TRUE;
+        m_capabilities.supportsMultiDrawIndirect = m_enabledFeatures.multiDrawIndirect == VK_TRUE;
         uint32_t queueCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueCount, nullptr);
         std::vector<VkQueueFamilyProperties> queues(queueCount);
@@ -2459,6 +2366,9 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Get max supported sample count
         m_msaaSampleCount = getMaxUsableSampleCount();
+#if PLATFORM_ANDROID
+        m_msaaSampleCount = VK_SAMPLE_COUNT_1_BIT; // Mobile splat resolve does not require multisampling.
+#endif
         
         if (m_msaaSampleCount == VK_SAMPLE_COUNT_1_BIT) {
             MR_LOG_INFO("MSAA not supported or disabled");

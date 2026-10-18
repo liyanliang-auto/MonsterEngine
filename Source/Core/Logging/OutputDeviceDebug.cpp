@@ -3,12 +3,15 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <ctime>
 
 #if PLATFORM_WINDOWS
     #ifndef WIN32_LEAN_AND_MEAN
         #define WIN32_LEAN_AND_MEAN
     #endif
     #include <Windows.h>
+#elif PLATFORM_ANDROID
+    #include <android/log.h>
 #endif
 
 namespace MonsterRender {
@@ -33,6 +36,12 @@ void FOutputDeviceDebug::Serialize(const char* Message, ELogVerbosity::Type Verb
 #if PLATFORM_WINDOWS
     // Output to Visual Studio Output window
     OutputDebugStringA(formattedLine.c_str());
+#elif PLATFORM_ANDROID
+    const auto Level = Verbosity & ELogVerbosity::VerbosityMask;
+    const int Priority = Level <= ELogVerbosity::Error ? ANDROID_LOG_ERROR :
+        Level == ELogVerbosity::Warning ? ANDROID_LOG_WARN :
+        Level >= ELogVerbosity::Verbose ? ANDROID_LOG_DEBUG : ANDROID_LOG_INFO;
+    __android_log_write(Priority, Category ? Category : "MonsterEngine", formattedLine.c_str());
 #else
     // On non-Windows platforms, we could use syslog or just skip
     // For now, we do nothing as console output is handled by FOutputDeviceConsole
@@ -48,7 +57,7 @@ String FOutputDeviceDebug::FormatLogLine(const char* Message, ELogVerbosity::Typ
     auto time_t = std::chrono::system_clock::to_time_t(now);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
-    std::tm tm_buf;
+    std::tm tm_buf{};
 #if PLATFORM_WINDOWS
     localtime_s(&tm_buf, &time_t);
 #else
@@ -64,11 +73,11 @@ String FOutputDeviceDebug::FormatLogLine(const char* Message, ELogVerbosity::Typ
     }
 
     // Category and verbosity: [LogTemp][LOG ]
-    oss << "[" << Category << "]";
+    oss << "[" << (Category ? Category : "Unknown") << "]";
     oss << "[" << ToShortString(Verbosity) << "] ";
 
     // Message
-    oss << Message;
+    oss << (Message ? Message : "");
 
     if (GetAutoEmitLineTerminator()) {
         oss << "\n";

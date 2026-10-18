@@ -14,6 +14,7 @@
 #include "RHI/RHI.h"
 #include "Math/MonsterMath.h"
 #include "Renderer/Splat/SplatPipeline.h"
+#include "Renderer/Splat/SplatViewerSession.h"
 #include "Renderer/Splat/SplatPLYLoader.h"
 #include "Renderer/Splat/SplatTypes.h"
 #include "Renderer/Splat/SplatControlState.h"
@@ -123,15 +124,20 @@ private:
     RHI::IRHIDevice* m_device = nullptr;
 
     // Splat pipeline
-    MonsterEngine::TUniquePtr<MonsterRender::Splat::FSplatPipeline> m_splatPipeline;
+    Splat::FSplatPipeline* m_splatPipeline = nullptr; // borrowed from shared session
+    std::unique_ptr<Splat::FSplatViewerSession> m_session;
+    std::unique_ptr<Splat::FFileResourceProvider> m_resourceProvider;
+    Splat::FViewerConfig m_sessionConfig;
     MonsterRender::Splat::FSplatGPUData m_gpuData;
     String m_modelPath;
     Splat::FSplatLODRuntimeOptions m_runtime;
     Splat::FSplatSceneManifest m_scene;
     Splat::FSplatLODSelector m_selector;
     Splat::FSplatLODSelection m_selection;
-    std::unique_ptr<Splat::FSplatPageStreamer> m_streamer;
-    std::unique_ptr<Splat::FSplatGPUPagePool> m_pagePool;
+    std::unique_ptr<Splat::FSplatPageStreamer> m_legacyStreamer;
+    Splat::FSplatPageStreamer* m_streamer = nullptr;
+    std::unique_ptr<Splat::FSplatGPUPagePool> m_legacyPagePool;
+    Splat::FSplatGPUPagePool* m_pagePool = nullptr;
     std::unique_ptr<Splat::FSplatLODBenchmark> m_benchmark;
     std::vector<uint32_t> m_leafNodes, m_residentTargetPages;
     Splat::FSplatGPUPagePoolAllocationStats m_legacyAllocations;
@@ -188,25 +194,6 @@ private:
     float m_memoryPollSeconds = 0.0f;
     uint64 m_gpuUsedBytes = 0;
     uint64 m_gpuAvailableBytes = 0;
-
-    // Present pass (fullscreen triangle → swapchain)
-    struct FPresentPass
-    {
-        MonsterEngine::TSharedPtr<class RHI::IRHIVertexShader>  vertexShader;
-        MonsterEngine::TSharedPtr<class RHI::IRHIPixelShader>  fragmentShader;
-        MonsterEngine::TSharedPtr<RHI::IRHIPipelineState>       pipelineState;
-        MonsterEngine::TSharedPtr<RHI::IRHIPipelineLayout>      pipelineLayout;
-        MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSetLayout> setLayout;
-        // Per-frame descriptor sets to avoid updating while command buffer is pending
-        static constexpr uint32 kMaxFramesInFlight = 2;
-        MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSet>       descriptorSets[kMaxFramesInFlight];
-        // Convenience accessor for current frame
-        MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSet> getDescriptorSet(uint32 frameIndex) const {
-            return frameIndex < kMaxFramesInFlight ? descriptorSets[frameIndex] : nullptr;
-        }
-        MonsterEngine::TSharedPtr<RHI::IRHISampler>             sampler;
-    };
-    FPresentPass m_present;
 
     // ================================================================
     // Window / Input state

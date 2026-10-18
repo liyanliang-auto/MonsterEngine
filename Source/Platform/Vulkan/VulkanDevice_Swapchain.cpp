@@ -1,267 +1,199 @@
-// Copyright Monster Engine. All Rights Reserved.
-
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanRHI.h"
+#include "Platform/Vulkan/VulkanUtils.h"
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include "Core/Logging/LogMacros.h"
 #include <algorithm>
+#if PLATFORM_ANDROID
+#include <android/native_window.h>
+#endif
 
-DEFINE_LOG_CATEGORY_STATIC(LogVulkanSwapchain, Log, All);
-
-namespace MonsterRender {
-namespace RHI {
-namespace Vulkan {
-
-    bool VulkanDevice::ConfigurePresentationVSync(bool enabled)
-    {
+namespace MonsterRender::RHI::Vulkan {
+    bool VulkanDevice::ConfigurePresentationVSync(bool enabled) {
         m_presentationVSync = enabled;
         return recreateSwapchain(m_swapchainExtent.width, m_swapchainExtent.height);
     }
-    bool VulkanDevice::DrainCompletedDestructions()
-    {
-        if(m_device==VK_NULL_HANDLE)return false;
-        const VkResult completion=VulkanAPI::getFunctions().vkDeviceWaitIdle(m_device);
-        if(completion!=VK_SUCCESS){MR_LOG(LogVulkanSwapchain,Error,"Teardown completion proof failed: %d",completion);return false;}
+
+    bool VulkanDevice::DrainCompletedDestructions() {
+        if (!m_device) return false;
+        const VkResult result = VulkanAPI::getFunctions().vkDeviceWaitIdle(m_device);
+        if (result != VK_SUCCESS) { if (result == VK_ERROR_DEVICE_LOST) m_deviceLost = true; return false; }
         {
             std::lock_guard<std::mutex> lock(m_submissionMutex);
-            m_completedSubmission=m_lastSubmission;m_submissions.clear();
+            m_completedSubmission = m_lastSubmission;
+            m_submissions.clear();
         }
-        // The proof above makes every queued destruction safe now. Drain the
-        // existing retirement counters without allocating replacement slabs.
-        for(uint32 i=0;i<=DEFERRED_DESTRUCTION_FRAMES;++i)processDeferredDestructions();
+        for (uint32 i = 0; i <= DEFERRED_DESTRUCTION_FRAMES; ++i) processDeferredDestructions();
         return true;
     }
 
-    bool VulkanDevice::recreateSwapchain(uint32 newWidth, uint32 newHeight)
-    {
-        // Reference: UE5 FVulkanDynamicRHI::RecreateSwapChain
-        MR_LOG(LogVulkanSwapchain, Log, "Recreating swapchain for new size: %ux%u", newWidth, newHeight);
-        
-        // Handle minimization - don't recreate with 0 size
-        if (newWidth == 0 || newHeight == 0)
-        {
-            MR_LOG(LogVulkanSwapchain, Warning, "Window minimized, skipping swapchain recreation");
-            return false;
-        }
-        
-        // Wait for device to finish all operations
-        waitForIdle();
-        
-        const auto& functions = VulkanAPI::getFunctions();
-        
-        // ============================================================================
-        // Step 1: Destroy old framebuffers
-        // Reference: UE5 FVulkanSwapChain::Destroy
-        // ============================================================================
-        for (auto framebuffer : m_swapchainFramebuffers)
-        {
-            if (framebuffer != VK_NULL_HANDLE)
-            {
-                functions.vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    VkResult VulkanDevice::waitPresentationCompletion(uint64 timeoutNs) {
+        const auto& f = VulkanAPI::getFunctions();
+        if (!m_device || m_deviceLost) return m_deviceLost ? VK_ERROR_DEVICE_LOST : VK_SUCCESS;
+        if (m_presentMaintenanceEnabled) {
+            for (size_t i = 0; i < m_presentFences.size(); ++i) {
+                if (!m_presentFencePending[i]) continue;
+                const VkResult result = f.vkWaitForFences(m_device, 1, &m_presentFences[i], VK_TRUE, timeoutNs);
+                if (result != VK_SUCCESS) return result;
+                m_presentFencePending[i] = false;
             }
+            return VK_SUCCESS;
         }
+        // Unextended WSI has no spec-level presentation completion primitive.
+        // This is a teardown-only platform assumption, never a normal frame wait.
+        MR_LOG_WARNING("Present teardown uses queue/device idle fallback; precise presentation completion unavailable");
+        return m_presentQueue ? f.vkQueueWaitIdle(m_presentQueue) : VK_SUCCESS;
+    }
+
+    bool VulkanDevice::createImageSynchronization() {
+        const auto& f = VulkanAPI::getFunctions();
+        m_perImageRenderFinishedSemaphores.assign(m_swapchainImages.size(), VK_NULL_HANDLE);
+        m_imagesInFlight.assign(m_swapchainImages.size(), VK_NULL_HANDLE);
+        m_presentFences.assign(m_swapchainImages.size(), VK_NULL_HANDLE);
+        m_presentFencePending.assign(m_swapchainImages.size(), false);
+        VkSemaphoreCreateInfo semaphore{}; semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        VkFenceCreateInfo fence{}; fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        for (size_t i = 0; i < m_swapchainImages.size(); ++i) {
+            if (f.vkCreateSemaphore(m_device, &semaphore, nullptr, &m_perImageRenderFinishedSemaphores[i]) != VK_SUCCESS) return false;
+            if (m_presentMaintenanceEnabled &&
+                f.vkCreateFence(m_device, &fence, nullptr, &m_presentFences[i]) != VK_SUCCESS) return false;
+        }
+        return true;
+    }
+
+    void VulkanDevice::destroyPresentationResources() {
+        const auto& f = VulkanAPI::getFunctions();
+        for (auto framebuffer : m_swapchainFramebuffers) if (framebuffer) f.vkDestroyFramebuffer(m_device, framebuffer, nullptr);
         m_swapchainFramebuffers.clear();
-        
-        // ============================================================================
-        // Step 2: Destroy old depth resources
-        // ============================================================================
         destroyDepthResources();
-        
-        // ============================================================================
-        // Step 3: Destroy old image views
-        // ============================================================================
-        for (auto imageView : m_swapchainImageViews)
-        {
-            if (imageView != VK_NULL_HANDLE)
-            {
-                functions.vkDestroyImageView(m_device, imageView, nullptr);
-            }
-        }
+        destroyMSAAResources();
+        for (auto view : m_swapchainImageViews) if (view) f.vkDestroyImageView(m_device, view, nullptr);
         m_swapchainImageViews.clear();
-        
-        // ============================================================================
-        // Step 4: Query new swapchain capabilities
-        // Reference: UE5 FVulkanSwapChain::Create
-        // ============================================================================
-        VkSurfaceCapabilitiesKHR capabilities;
-        functions.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities);
-        
-        // Get surface formats
-        uint32 formatCount;
-        functions.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr);
-        std::vector<VkSurfaceFormatKHR> formats(formatCount);
-        functions.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data());
-        
-        // Get present modes
-        uint32 presentModeCount;
-        functions.vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr);
-        std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-        functions.vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
-        
-        // Choose surface format (prefer SRGB)
-        VkSurfaceFormatKHR surfaceFormat = formats[0];
-        for (const auto& availableFormat : formats)
-        {
-            if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && 
-                availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-            {
-                surfaceFormat = availableFormat;
-                break;
-            }
+        m_swapchainImages.clear();
+        for (auto semaphore : m_perImageRenderFinishedSemaphores) if (semaphore) f.vkDestroySemaphore(m_device, semaphore, nullptr);
+        m_perImageRenderFinishedSemaphores.clear();
+        for (auto fence : m_presentFences) if (fence) f.vkDestroyFence(m_device, fence, nullptr);
+        m_presentFences.clear(); m_presentFencePending.clear(); m_imagesInFlight.clear();
+        if (m_swapchain) f.vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+        m_swapchain = VK_NULL_HANDLE;
+        if (m_renderPass) f.vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+        if (m_rttRenderPass) f.vkDestroyRenderPass(m_device, m_rttRenderPass, nullptr);
+        m_renderPass = m_rttRenderPass = VK_NULL_HANDLE;
+        m_frameAcquired = false;
+        m_swapchainExtent = {0, 0};
+        m_presentationLease.reset(); m_presentationReservationEstimate = 0; m_presentationReservedImages = 0;
+    }
+
+    FFrameSubmitResult VulkanDevice::DetachExternalSurface(uint64 generation) {
+        FFrameSubmitResult result;
+        result.surfaceGeneration = m_surfaceGeneration;
+        if (generation && generation != m_surfaceGeneration) { result.status = EFrameResult::OutOfDate; return result; }
+        if (m_frameAcquired && !m_deviceLost) {
+            result = cancelFrame();
+            if (!result.submitted && !m_deviceLost) return result;
         }
-        
-        // Preserve the ordinary mailbox preference. Benchmark presentation first
-        // requests IMMEDIATE, then reports the actual mailbox/FIFO fallback.
-        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-        if (!m_presentationVSync && std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end())
-            presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
-        for (const auto& availablePresentMode : presentModes)
-        {
-            if (presentMode != VK_PRESENT_MODE_IMMEDIATE_KHR && availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
-            {
-                presentMode = availablePresentMode;
-                break;
-            }
+        m_presentationStopped = true;
+        if (m_device && !m_deviceLost && !DrainCompletedDestructions() && !m_deviceLost) {
+            result.status = EFrameResult::Error; return result;
         }
-        
-        // Choose swap extent
-        VkExtent2D extent;
-        if (capabilities.currentExtent.width != UINT32_MAX)
-        {
-            extent = capabilities.currentExtent;
+        const VkResult completed = waitPresentationCompletion(5000000);
+        if (completed != VK_SUCCESS && completed != VK_ERROR_DEVICE_LOST) {
+            result.status = ClassifyFrameResult(completed);
+            return result; // Still owns window; caller must retry before acknowledging detach.
         }
-        else
-        {
-            extent = {newWidth, newHeight};
-            extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-            extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+        if (m_device) destroyPresentationResources();
+        const auto& f = VulkanAPI::getFunctions();
+        if (m_surface) f.vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+        m_surface = VK_NULL_HANDLE;
+#if PLATFORM_ANDROID
+        if (m_externalWindow) ANativeWindow_release(static_cast<ANativeWindow*>(m_externalWindow));
+#endif
+        m_externalWindow = nullptr;
+        result.status = m_deviceLost ? EFrameResult::DeviceLost : EFrameResult::Success;
+        return result;
+    }
+
+    bool VulkanDevice::AttachExternalSurface(void* window, uint64 generation, uint32 width, uint32 height, String& error) {
+        error.clear();
+        if (!window || !generation || !width || !height || !m_device || m_deviceLost) {
+            error = "External Surface requires a live device, nonzero generation and extent"; return false;
         }
-        
-        // Choose image count
-        uint32 imageCount = capabilities.minImageCount + 1;
-        if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount)
-        {
-            imageCount = capabilities.maxImageCount;
+        if (m_surface && m_externalWindow == window && m_surfaceGeneration == generation)
+            return recreateSwapchain(width, height);
+        if (m_surface) {
+            const auto detached = DetachExternalSurface(m_surfaceGeneration);
+            if (detached.status != EFrameResult::Success) { error = "Previous Surface is still retiring"; return false; }
         }
-        
-        // ============================================================================
-        // Step 5: Create new swapchain with old swapchain as reference
-        // Reference: UE5 FVulkanSwapChain::Create with oldSwapchain parameter
-        // ============================================================================
-        VkSwapchainKHR oldSwapchain = m_swapchain;
-        
-        VkSwapchainCreateInfoKHR createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        createInfo.surface = m_surface;
-        createInfo.minImageCount = imageCount;
-        createInfo.imageFormat = surfaceFormat.format;
-        createInfo.imageColorSpace = surfaceFormat.colorSpace;
-        createInfo.imageExtent = extent;
-        createInfo.imageArrayLayers = 1;
-        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        
-        uint32 queueFamilyIndices[] = {m_graphicsQueueFamily.familyIndex, m_presentQueueFamily.familyIndex};
-        
-        if (m_graphicsQueueFamily.familyIndex != m_presentQueueFamily.familyIndex)
-        {
-            createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-            createInfo.queueFamilyIndexCount = 2;
-            createInfo.pQueueFamilyIndices = queueFamilyIndices;
+        VkSurfaceKHR surface = VK_NULL_HANDLE;
+        const auto& f = VulkanAPI::getFunctions();
+        VkResult created = VulkanUtils::createSurface(m_instance, window, &surface);
+        if (created != VK_SUCCESS) { error = "External Surface creation failed: " + std::to_string(created); return false; }
+        VkBool32 present = VK_FALSE;
+        created = f.vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, m_presentQueueFamily.familyIndex, surface, &present);
+        if (created != VK_SUCCESS || !present) {
+            f.vkDestroySurfaceKHR(m_instance, surface, nullptr);
+            error = "New Surface is unsupported by the enabled presentation queue"; return false;
         }
-        else
-        {
-            createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            createInfo.queueFamilyIndexCount = 0;
-            createInfo.pQueueFamilyIndices = nullptr;
-        }
-        
-        createInfo.preTransform = capabilities.currentTransform;
-        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        createInfo.presentMode = presentMode;
-        createInfo.clipped = VK_TRUE;
-        createInfo.oldSwapchain = oldSwapchain;  // Reuse old swapchain for efficiency
-        
-        VkResult result = functions.vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain);
-        
-        // Destroy old swapchain after new one is created
-        if (oldSwapchain != VK_NULL_HANDLE)
-        {
-            functions.vkDestroySwapchainKHR(m_device, oldSwapchain, nullptr);
-        }
-        
-        if (result != VK_SUCCESS)
-        {
-            MR_LOG(LogVulkanSwapchain, Error, "Failed to recreate swapchain! Result: %d", result);
-            return false;
-        }
-        m_configuredPresentMode = presentMode;
-        
-        // ============================================================================
-        // Step 6: Get new swapchain images
-        // ============================================================================
-        functions.vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr);
-        m_swapchainImages.resize(imageCount);
-        functions.vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_swapchainImages.data());
-        
-        m_swapchainImageFormat = surfaceFormat.format;
-        m_swapchainExtent = extent;
-        
-        // ============================================================================
-        // Step 7: Create new image views
-        // ============================================================================
-        m_swapchainImageViews.resize(m_swapchainImages.size());
-        for (size_t i = 0; i < m_swapchainImages.size(); i++)
-        {
-            VkImageViewCreateInfo viewInfo{};
-            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            viewInfo.image = m_swapchainImages[i];
-            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            viewInfo.format = m_swapchainImageFormat;
-            viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-            viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-            viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-            viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-            viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            viewInfo.subresourceRange.baseMipLevel = 0;
-            viewInfo.subresourceRange.levelCount = 1;
-            viewInfo.subresourceRange.baseArrayLayer = 0;
-            viewInfo.subresourceRange.layerCount = 1;
-            
-            result = functions.vkCreateImageView(m_device, &viewInfo, nullptr, &m_swapchainImageViews[i]);
-            
-            if (result != VK_SUCCESS)
-            {
-                MR_LOG(LogVulkanSwapchain, Error, "Failed to create image view! Result: %d", result);
-                return false;
-            }
-        }
-        
-        // ============================================================================
-        // Step 8: Recreate depth resources with new extent
-        // ============================================================================
-        if (!createDepthResources())
-        {
-            MR_LOG(LogVulkanSwapchain, Error, "Failed to recreate depth resources");
-            return false;
-        }
-        
-        // ============================================================================
-        // Step 9: Recreate framebuffers with new extent
-        // ============================================================================
-        if (!createFramebuffers())
-        {
-            MR_LOG(LogVulkanSwapchain, Error, "Failed to recreate framebuffers");
-            return false;
-        }
-        
-        // Reset per-image fence tracking
-        m_imagesInFlight.resize(m_swapchainImages.size(), VK_NULL_HANDLE);
-        
-        MR_LOG(LogVulkanSwapchain, Log, "Swapchain recreated successfully: %ux%u, %u images", 
-               m_swapchainExtent.width, m_swapchainExtent.height, imageCount);
-        
+#if PLATFORM_ANDROID
+        ANativeWindow_acquire(static_cast<ANativeWindow*>(window));
+#endif
+        m_surface = surface; m_externalWindow = window; m_surfaceGeneration = generation;
+        m_presentationStopped = false;
+        if (!recreateSwapchain(width, height)) { error = "External Surface swapchain creation failed"; return false; }
         return true;
     }
 
-} // namespace Vulkan
-} // namespace RHI
-} // namespace MonsterRender
+    bool VulkanDevice::recreateSwapchain(uint32 width, uint32 height) {
+        if (!width || !height || !m_device || !m_surface || m_deviceLost) return false;
+        std::shared_ptr<void> nextLease;
+        uint64 envelope = 0;
+        uint32 reservedImages = 0;
+        if (m_presentationBudget) {
+            VkSurfaceCapabilitiesKHR caps{};
+            if (VulkanAPI::getFunctions().vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice,m_surface,&caps) != VK_SUCCESS) return false;
+            const uint64 w = caps.currentExtent.width != UINT32_MAX ? caps.currentExtent.width : std::clamp(width,caps.minImageExtent.width,caps.maxImageExtent.width);
+            const uint64 h = caps.currentExtent.height != UINT32_MAX ? caps.currentExtent.height : std::clamp(height,caps.minImageExtent.height,caps.maxImageExtent.height);
+            uint64 images = uint64(caps.minImageCount) + 1;
+            if (caps.maxImageCount) images = std::min(images,uint64(caps.maxImageCount));
+            // WSI can return more than the requested minimum. Admit two spare
+            // images; reject a larger actual count before views/attachments.
+            images += 2;
+            if (caps.maxImageCount) images = std::min(images,uint64(caps.maxImageCount));
+            if(images>64)return false;
+            reservedImages=uint32(images);
+            uint32 formatCount=0;const auto& f=VulkanAPI::getFunctions();
+            if(f.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice,m_surface,&formatCount,nullptr)!=VK_SUCCESS||!formatCount||formatCount>4096)return false;
+            std::vector<VkSurfaceFormatKHR> formats(formatCount);
+            if(f.vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice,m_surface,&formatCount,formats.data())!=VK_SUCCESS)return false;
+            auto format=formats.front().format;
+            for(const auto& candidate:formats)if(candidate.format==VK_FORMAT_B8G8R8A8_SRGB&&candidate.colorSpace==VK_COLOR_SPACE_SRGB_NONLINEAR_KHR){format=candidate.format;break;}
+            uint64 colorBytes=16; // Unknown formats retain a conservative 128-bit upper envelope.
+            switch(format){
+            case VK_FORMAT_R8G8B8A8_UNORM:case VK_FORMAT_R8G8B8A8_SRGB:case VK_FORMAT_B8G8R8A8_UNORM:case VK_FORMAT_B8G8R8A8_SRGB:
+            case VK_FORMAT_A2B10G10R10_UNORM_PACK32:case VK_FORMAT_A2R10G10B10_UNORM_PACK32:colorBytes=4;break;
+            case VK_FORMAT_R16G16B16A16_SFLOAT:case VK_FORMAT_R16G16B16A16_UNORM:colorBytes=8;break;
+            }
+            const uint64 samples=uint64(m_msaaSampleCount);
+            const uint64 depthBytes=m_depthFormat==VK_FORMAT_D32_SFLOAT_S8_UINT?8:4;
+            // Count each WSI image and depth/MSAA attachment once. Double their
+            // byte upper bound for opaque driver/alignment overhead, plus 16 MiB
+            // metadata. This remains a policy estimate, never measured WSI backing.
+            const uint64 bytesPerPixel=2*(colorBytes*images+depthBytes*samples+(samples>1?colorBytes*samples:0));
+            if (!w || !h || images > 1024 || !bytesPerPixel || w > UINT64_MAX / h || w*h > (UINT64_MAX-(16ull<<20))/bytesPerPixel) return false;
+            envelope = w*h*bytesPerPixel+(16ull<<20);
+            nextLease = m_presentationBudget(envelope);
+            if (!nextLease) { MR_LOG_ERROR("Presentation budget admission rejected estimate bytes="+std::to_string(envelope)); return false; } // old+new overlap is admitted first
+        }
+        if (m_frameAcquired && !cancelFrame().submitted) return false;
+        m_presentationStopped = true;
+        if (!DrainCompletedDestructions() || waitPresentationCompletion(5000000) != VK_SUCCESS) return false;
+        destroyPresentationResources();
+        m_presentationLease = std::move(nextLease); m_presentationReservationEstimate = envelope; m_presentationReservedImages = reservedImages;
+        RHICreateInfo info;
+        info.windowWidth = width; info.windowHeight = height;
+        if (!createSwapchain(info) || !createDepthResources() || !createMSAAResources() ||
+            !createRenderPass() || !createFramebuffers() || !createImageSynchronization()) return false;
+        m_presentationStopped = false;
+        return true;
+    }
+}

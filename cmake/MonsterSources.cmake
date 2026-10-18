@@ -1,0 +1,246 @@
+# Explicit production inventory. Do not glob or infer sources from IDE metadata.
+# Frozen future job sources must exist before configure; verification follows all coding jobs.
+set(MONSTER_MEMORY_SOURCES
+    Source/Core/Memory.cpp
+    Source/Core/HAL/FMemory.cpp
+    Source/Core/HAL/FMemoryManager.cpp
+    Source/Core/HAL/FMallocBinned2.cpp
+    Source/Core/RuntimeLease.cpp
+    Source/Core/Log.cpp
+    Source/Core/Logging/Logging.cpp
+    Source/Core/Logging/LogCategories.cpp
+    Source/Core/Logging/OutputDevice.cpp
+    Source/Core/Logging/OutputDeviceRedirector.cpp
+    Source/Core/Logging/OutputDeviceFile.cpp
+    Source/Core/Logging/OutputDeviceConsole.cpp
+    Source/Core/Logging/OutputDeviceDebug.cpp
+)
+
+set(MONSTER_CORE_SOURCES
+    Source/Core/IO/FAsyncFileIO.cpp
+    Source/Core/ShaderCompiler.cpp
+    Source/Core/FGraphEvent.cpp
+    Source/Core/FRunnableThread.cpp
+    Source/Core/FTaskGraph.cpp
+    Source/Core/Color.cpp
+    Source/Containers/Text.cpp
+)
+
+set(MONSTER_VULKAN_SOURCES
+    Source/Platform/Vulkan/FVulkanMemoryManager.cpp
+    Source/Platform/Vulkan/FVulkanResourceManager.cpp
+    Source/RHI/IRHIResource.cpp
+    Source/RHI/IRHICommandList.cpp
+    Source/RHI/RHI.cpp
+    Source/RHI/RHIBarriers.cpp
+    Source/RHI/FRHIThread.cpp
+    Source/RHI/FRHICommandListExecutor.cpp
+    Source/RHI/FRHICommandListPool.cpp
+    Source/RHI/FRHICommandListParallelTranslator.cpp
+    Source/RHI/FTranslatedCommandBufferCollection.cpp
+    Source/Platform/Vulkan/VulkanAPI.cpp
+    Source/Platform/Vulkan/VulkanBuffer.cpp
+    Source/Platform/Vulkan/VulkanRHICommandList.cpp
+    Source/Platform/Vulkan/VulkanRHICommandListRecorder.cpp
+    Source/Platform/Vulkan/VulkanResourceStateTracker.cpp
+    Source/Platform/Vulkan/VulkanCommandBuffer.cpp
+    Source/Platform/Vulkan/VulkanCommandBufferPool.cpp
+    Source/Platform/Vulkan/VulkanCommandListContext.cpp
+    Source/Platform/Vulkan/VulkanContextManager.cpp
+    Source/Platform/Vulkan/VulkanPendingState.cpp
+    Source/Platform/Vulkan/VulkanDevice.cpp
+    Source/Platform/Vulkan/VulkanDevice_Swapchain.cpp
+    Source/Platform/Vulkan/VulkanShader.cpp
+    Source/Platform/Vulkan/VulkanTexture.cpp
+    Source/Platform/Vulkan/VulkanSampler.cpp
+    Source/Platform/Vulkan/VulkanUtils.cpp
+    Source/Platform/Vulkan/VulkanPipelineState.cpp
+    Source/RHI/ShaderPreprocessor.cpp
+    Source/Platform/Vulkan/VulkanDescriptorSet.cpp
+    Source/Platform/Vulkan/VulkanDescriptorSetLayout.cpp
+    Source/Platform/Vulkan/VulkanDescriptorPoolManager.cpp
+    Source/Platform/Vulkan/VulkanDescriptorSetLayoutCache.cpp
+    Source/Platform/Vulkan/VulkanRenderTargetCache.cpp
+    Source/RHI/SplatGPUPrimitives.cpp
+)
+
+set(MONSTER_SPLAT_SOURCES
+    Source/Renderer/Splat/SplatPLYLoader.cpp
+    Source/Renderer/Splat/SplatPipeline.cpp
+    Source/Renderer/Splat/SplatSplitFusionPass.cpp
+    Source/Renderer/Splat/SplatPass.cpp
+    Source/Renderer/Splat/SplatSortPass.cpp
+    Source/Renderer/Splat/SplatRenderPass.cpp
+    Source/Renderer/Splat/LOD/SplatLODBuilder.cpp
+    Source/Renderer/Splat/LOD/SplatLODSelector.cpp
+    Source/Renderer/Splat/LOD/SplatLODRuntimeOptions.cpp
+    Source/Renderer/Splat/LOD/SplatSceneFormat.cpp
+    Source/Renderer/Splat/Streaming/SplatGPUPagePool.cpp
+    Source/Renderer/Splat/Streaming/SplatPageStreamer.cpp
+    Source/Renderer/Splat/SplatResourceProvider.cpp
+    Source/Renderer/Splat/SplatPLYStream.cpp
+    Source/Renderer/Splat/LOD/SplatProxyMath.cpp
+    Source/Renderer/Splat/LOD/SplatBuildJournal.cpp
+    Source/Renderer/Splat/LOD/SplatStreamingLODBuilder.cpp
+    Source/Renderer/Splat/LOD/SplatSceneValidation.cpp
+    Source/Renderer/Splat/SplatStreamingController.cpp
+    Source/Renderer/Splat/SplatViewerSession.cpp
+    Source/Renderer/Splat/SplatViewerDiagnostics.cpp
+    Source/Renderer/Splat/SplatBudgetCoordinator.cpp
+)
+
+set(MONSTER_CPU_SPLAT_SOURCES
+    Source/Renderer/Splat/SplatPLYLoader.cpp
+    Source/Renderer/Splat/SplatPLYStream.cpp
+    Source/Renderer/Splat/LOD/SplatSceneFormat.cpp
+    Source/Renderer/Splat/LOD/SplatLODBuilder.cpp
+    Source/Renderer/Splat/LOD/SplatLODSelector.cpp
+    Source/Renderer/Splat/Streaming/SplatPageStreamer.cpp
+    Source/Renderer/Splat/LOD/SplatProxyMath.cpp
+    Source/Renderer/Splat/LOD/SplatBuildJournal.cpp
+    Source/Renderer/Splat/LOD/SplatStreamingLODBuilder.cpp
+    Source/Renderer/Splat/LOD/SplatSceneValidation.cpp
+)
+
+set(MONSTER_WINDOWS_SOURCES
+    main.cpp
+    Source/Core/Application.cpp
+    Source/Core/Window.cpp
+    Source/Engine.cpp
+    Source/MemorySystemTest.cpp
+    Source/Platform/GLFW/GLFWWindow.cpp
+    Source/Renderer/FTexturePool.cpp
+    Source/Renderer/FTextureStreamingManager.cpp
+    Source/Renderer/FTextureLoader.cpp
+    Source/Renderer/FVirtualTexturePhysicalSpace.cpp
+    Source/Renderer/FVirtualTextureSystem.cpp
+    Source/Tests/FMemorySystemTest.cpp
+    Source/Tests/TextureStreamingSystemTest.cpp
+    Source/Tests/TextureStreamingTest.cpp
+    Source/Tests/VirtualTextureSystemTest.cpp
+    Source/Tests/VulkanMemoryManagerTest.cpp
+    Source/Tests/VulkanMemoryTest.cpp
+    Source/Tests/VulkanResourceManagerTest.cpp
+    Source/TriangleApplication.cpp
+    Source/TriangleRenderer.cpp
+    Source/CubeRenderer.cpp
+    Source/TestCommandListPool.cpp
+    Source/TestParallelTranslator.cpp
+    Source/TestParallelCommandBufferExecution.cpp
+    Source/ParallelRenderingIntegrationExample.cpp
+    Source/RunParallelRenderingTest.cpp
+    Source/ParallelRenderingTestMain.cpp
+    Source/TestVulkanParallelRendering.cpp
+    Source/TestMain.cpp
+    Source/BenchmarkParallelRendering.cpp
+    Source/RHI/ShaderPreprocessorTest.cpp
+    Source/RHI/SlotConversionTest.cpp
+    Source/Tests/LoggingSystemTest.cpp
+    Source/Tests/MathLibraryTest.cpp
+    Source/Tests/ContainerTest.cpp
+    Source/Tests/ColorAndContainerTest.cpp
+    Source/Tests/SmartPointerTest.cpp
+    Source/Tests/ZFightingTest.cpp
+    Source/Tests/ProjectionMatrixTest.cpp
+    Source/Platform/OpenGL/OpenGLFunctions.cpp
+    Source/Platform/OpenGL/OpenGLContext.cpp
+    Source/Platform/OpenGL/OpenGLResources.cpp
+    Source/Platform/OpenGL/OpenGLShaders.cpp
+    Source/Platform/OpenGL/OpenGLPipeline.cpp
+    Source/Platform/OpenGL/OpenGLDevice.cpp
+    Source/Platform/OpenGL/OpenGLDescriptorPoolManager.cpp
+    Source/Platform/OpenGL/OpenGLCommandList.cpp
+    Source/Platform/OpenGL/OpenGLSwapChain.cpp
+    Source/Engine/Scene.cpp
+    Source/Engine/PrimitiveSceneInfo.cpp
+    Source/Engine/PrimitiveSceneProxy.cpp
+    Source/Engine/LightSceneInfo.cpp
+    Source/Engine/LightSceneProxy.cpp
+    Source/Engine/LightPrimitiveInteraction.cpp
+    Source/Engine/Components/SceneComponent.cpp
+    Source/Engine/Components/PrimitiveComponent.cpp
+    Source/Engine/Components/LightComponent.cpp
+    Source/Engine/Components/MeshComponent.cpp
+    Source/Engine/ConvexVolume.cpp
+    Source/Engine/SceneView.cpp
+    Source/Engine/SceneVisibility.cpp
+    Source/Engine/SceneRenderer.cpp
+    Source/Engine/SceneOctree.cpp
+    Source/Engine/Mesh/StaticMesh.cpp
+    Source/Engine/Mesh/MeshBuilder.cpp
+    Source/Engine/Mesh/MeshLoader.cpp
+    Source/Engine/Mesh/OBJMeshLoader.cpp
+    Source/Engine/Mesh/GLTFMeshLoader.cpp
+    Source/Renderer/LightUniformBuffer.cpp
+    Source/Renderer/RenderPass.cpp
+    Source/Renderer/RenderPasses.cpp
+    Source/Renderer/ForwardRenderPasses.cpp
+    Source/Renderer/ForwardShaderCompiler.cpp
+    Source/Engine/Camera/CameraTypes.cpp
+    Source/Engine/Camera/CameraComponent.cpp
+    Source/Engine/Camera/CameraModifier.cpp
+    Source/Engine/Camera/CameraManager.cpp
+    Source/Engine/Camera/CameraSceneViewHelper.cpp
+    Source/Engine/Camera/FPSCameraController.cpp
+    Source/Engine/Actor.cpp
+    Source/Engine/Actors/CubeActor.cpp
+    Source/Engine/Actors/FloorActor.cpp
+    Source/Engine/Components/CubeMeshComponent.cpp
+    Source/Engine/Components/FloorMeshComponent.cpp
+    Source/Engine/Deferred/FDeferredRenderer.cpp
+    Source/Engine/Proxies/CubeSceneProxy.cpp
+    Source/Engine/Proxies/FloorSceneProxy.cpp
+    Source/CubeSceneApplication.cpp
+    Source/SplatSceneApplication.cpp
+    Source/Renderer/Splat/SplatCameraSequence.cpp
+    Source/Renderer/Splat/SplatVideoExporter.cpp
+    Source/Tests/3DGSControl/SplatCameraSequenceTests.cpp
+    Source/Engine/Material/Material.cpp
+    Source/Engine/Material/MaterialInstance.cpp
+    Source/Engine/Material/MaterialInstanceDynamic.cpp
+    Source/Engine/Material/MaterialInterface.cpp
+    Source/Engine/Material/MaterialRenderProxy.cpp
+    Source/Engine/Shader/ShaderManager.cpp
+    Source/Engine/Shader/Shader.cpp
+    Source/Renderer/RendererScene.cpp
+    Source/Renderer/RendererSceneView.cpp
+    Source/Renderer/RendererSceneRenderer.cpp
+    Source/Renderer/RendererSceneVisibility.cpp
+    Source/Renderer/ParallelSceneRenderer.cpp
+    Source/Renderer/MeshDrawCommand.cpp
+    Source/Renderer/RenderQueue.cpp
+    Source/Renderer/ShadowRendering.cpp
+    Source/Renderer/ShadowDepthPass.cpp
+    Source/Renderer/PBR/PBRDescriptorSetLayouts.cpp
+    Source/Renderer/PBR/PBRMaterial.cpp
+    Source/Renderer/PBR/PBRRenderer.cpp
+    Source/Renderer/PBR/PBRDefaultTextures.cpp
+    Source/Engine/Texture/Texture2D.cpp
+    Source/Engine/Asset/GLTFLoader.cpp
+    Source/CubeSceneApplicationPBR.cpp
+    Source/Tests/CubeSceneRendererTest.cpp
+    Source/Tests/CubeSceneRendererTestApp.cpp
+    3rd-party/imgui/imgui.cpp
+    3rd-party/imgui/imgui_demo.cpp
+    3rd-party/imgui/imgui_draw.cpp
+    3rd-party/imgui/imgui_tables.cpp
+    3rd-party/imgui/imgui_widgets.cpp
+    Source/Editor/ImGui/ImGuiContext.cpp
+    Source/Editor/ImGui/ImGuiRenderer.cpp
+    Source/Editor/ImGui/ImGuiInputHandler.cpp
+    Source/Editor/EditorApplication.cpp
+    Source/ImGuiTestApplication.cpp
+    Source/RDG/RDGResource.cpp
+    Source/RDG/RDGBuilder.cpp
+    Source/Renderer/Splat/LOD/SplatLODBenchmark.cpp
+)
+
+set(MONSTER_ANDROID_SOURCES
+    Source/Platform/Android/AndroidResourceProvider.cpp
+    Source/Platform/Android/AndroidCapabilities.cpp
+    Source/Platform/Android/AndroidRenderHost.cpp
+    Source/Platform/Android/AndroidBuildJobHost.cpp
+    Source/Platform/Android/AndroidPerformancePolicy.cpp
+    Source/Platform/Android/AndroidJNI.cpp
+)
+

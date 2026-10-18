@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monsterengine.local/schemas/scene-package-v1.json",
+  "title": "MonsterEngine .monsterlod package.json inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "format", "manifest", "files"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "format": {"const": "monsterlod"},
+    "manifest": {"const": "scene.mgs"},
+    "files": {
+      "type": "array", "minItems": 1, "maxItems": 65533,
+      "description": "Every regular ZIP file except package.json exactly once; names also unique under ASCII case folding. Includes unchanged binary scene.mgs and all referenced page files.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "bytes", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "bytes": {"type": "integer", "minimum": 0, "maximum": 268435456},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  },
+  "$comment": "Only STORED/DEFLATED, regular files, portable ASCII relative components. No encrypted, ZIP64, multidisk, links, duplicate normalized names, traversal or directory entries. Archive <= 4294967295 bytes, actual expanded <= 16 GiB; metadata admission is 16 MiB and disk reserve 256 MiB. Native validation is mandatory before publication; this JSON does not replace the binary scene protocol."
+}

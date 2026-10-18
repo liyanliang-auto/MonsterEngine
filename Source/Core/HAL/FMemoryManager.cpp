@@ -3,10 +3,11 @@
 
 #include "Core/HAL/FMemoryManager.h"
 #include "Core/Log.h"
+#include "Core/RuntimeLease.h"
 
 #if PLATFORM_WINDOWS
     #include <Windows.h>
-#elif PLATFORM_LINUX
+#elif PLATFORM_LINUX || PLATFORM_ANDROID
     #include <sys/sysinfo.h>
     #include <unistd.h>
 #endif
@@ -27,6 +28,7 @@ FMemoryManager::~FMemoryManager() {
 }
 
 bool FMemoryManager::Initialize() {
+    std::lock_guard<std::mutex> Lock(LifecycleMutex);
     if (bInitialized) {
         MR_LOG_WARNING("FMemoryManager already initialized");
         return true;
@@ -46,6 +48,8 @@ bool FMemoryManager::Initialize() {
 }
 
 void FMemoryManager::Shutdown() {
+    std::lock_guard<std::mutex> Lock(LifecycleMutex);
+    if (FProcessRuntimeLease::ActiveCount() != 0) return;
     if (!bInitialized) return;
 
     MR_LOG_INFO("Shutting down FMemoryManager...");
@@ -58,6 +62,11 @@ void FMemoryManager::Shutdown() {
 }
 
 void FMemoryManager::SetAllocator(TUniquePtr<FMalloc> NewAllocator) {
+    std::lock_guard<std::mutex> Lock(LifecycleMutex);
+    if (FProcessRuntimeLease::ActiveCount() != 0) {
+        MR_LOG_ERROR("Cannot replace allocator while process owners are active");
+        return;
+    }
     if (!NewAllocator) {
         MR_LOG_ERROR("Cannot set null allocator");
         return;
@@ -68,6 +77,7 @@ void FMemoryManager::SetAllocator(TUniquePtr<FMalloc> NewAllocator) {
 }
 
 void FMemoryManager::GetGlobalMemoryStats(FGlobalMemoryStats& OutStats) {
+    OutStats = {};
 #if PLATFORM_WINDOWS
     MEMORYSTATUSEX memStatus;
     memStatus.dwLength = sizeof(memStatus);
@@ -86,17 +96,24 @@ void FMemoryManager::GetGlobalMemoryStats(FGlobalMemoryStats& OutStats) {
     SIZE_T largePageMin = GetLargePageMinimum();
     OutStats.LargePageSize = largePageMin;
 
-#elif PLATFORM_LINUX
+#elif PLATFORM_LINUX || PLATFORM_ANDROID
     struct sysinfo info;
     if (sysinfo(&info) == 0) {
-        OutStats.TotalPhysicalMemory = info.totalram * info.mem_unit;
-        OutStats.AvailablePhysicalMemory = info.freeram * info.mem_unit;
-        OutStats.TotalVirtualMemory = info.totalswap * info.mem_unit;
-        OutStats.AvailableVirtualMemory = info.freeswap * info.mem_unit;
+        OutStats.TotalPhysicalMemory = uint64(info.totalram) * info.mem_unit;
+        OutStats.AvailablePhysicalMemory = uint64(info.freeram) * info.mem_unit;
+        OutStats.TotalVirtualMemory = uint64(info.totalswap) * info.mem_unit;
+        OutStats.AvailableVirtualMemory = uint64(info.freeswap) * info.mem_unit;
     }
 
-    OutStats.PageSize = sysconf(_SC_PAGESIZE);
+    const long PageSize = sysconf(_SC_PAGESIZE);
+    OutStats.PageSize = PageSize > 0 ? uint64(PageSize) : 0;
+#if PLATFORM_LINUX
     OutStats.LargePageSize = 2 * 1024 * 1024;  // 2MB typical
+#elif PLATFORM_ANDROID
+    // Android's huge-page allocation path is intentionally disabled. Report
+    // only the actual base OS page size rather than a guessed large page.
+    OutStats.LargePageSize = 0;
+#endif
 
 #else
     OutStats = FGlobalMemoryStats{};
@@ -110,6 +127,12 @@ void FMemoryManager::GetGlobalMemoryStats(FGlobalMemoryStats& OutStats) {
 }
 
 bool FMemoryManager::EnableHugePages(bool bEnable) {
+#if PLATFORM_ANDROID
+    if (bEnable) {
+        MR_LOG_WARNING("Huge pages are disabled on Android");
+        return false;
+    }
+#endif
     if (!bHugePagesAvailable) {
         MR_LOG_WARNING("Huge pages not available on this system");
         return false;

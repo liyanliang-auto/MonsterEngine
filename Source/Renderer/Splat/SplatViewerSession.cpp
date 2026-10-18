@@ -1,0 +1,360 @@
+// Copyright Monster Engine. All Rights Reserved.
+#include "Renderer/Splat/SplatViewerSession.h"
+#include "Renderer/Splat/SplatPLYStream.h"
+#include "Core/ShaderCompiler.h"
+#include "Platform/Vulkan/VulkanDevice.h"
+#include "Platform/Vulkan/VulkanCommandListContext.h"
+#include "Platform/Vulkan/VulkanPendingState.h"
+#include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanSampler.h"
+#include "Platform/Vulkan/VulkanShader.h"
+#include "RHI/IRHICommandList.h"
+#include <algorithm>
+#include <atomic>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <future>
+#include <iomanip>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
+
+namespace MonsterRender::Splat {
+namespace {
+FViewerStatus Good(const char* code="ready") { return {true,code,{}}; }
+FViewerStatus Bad(const char* code,const std::string& message) { return {false,code,message}; }
+uint64_t Sum(uint64_t a,uint64_t b) { if(a>UINT64_MAX-b)throw std::runtime_error("Budget overflow");return a+b; }
+uint64_t Now() {return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();}
+void CheckCancel(FSplatBuildControl& c) {if(c.Poll()!=ESplatBuildSignal::Continue)throw std::runtime_error("cancelled");}
+struct HashState {
+    uint32_t h[8]={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    uint8_t block[64]{}; size_t used=0; uint64_t total=0;
+    static uint32_t R(uint32_t x,int n){return (x>>n)|(x<<(32-n));}
+    void Transform() {
+        static constexpr uint32_t k[64]={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
+        uint32_t w[64];for(int i=0;i<16;++i)w[i]=(uint32_t(block[4*i])<<24)|(uint32_t(block[4*i+1])<<16)|(uint32_t(block[4*i+2])<<8)|block[4*i+3];
+        for(int i=16;i<64;++i)w[i]=w[i-16]+(R(w[i-15],7)^R(w[i-15],18)^(w[i-15]>>3))+w[i-7]+(R(w[i-2],17)^R(w[i-2],19)^(w[i-2]>>10));
+        uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],z=h[7];
+        for(int i=0;i<64;++i){uint32_t t=z+(R(e,6)^R(e,11)^R(e,25))+((e&f)^(~e&g))+k[i]+w[i];uint32_t u=(R(a,2)^R(a,13)^R(a,22))+((a&b)^(a&c)^(b&c));z=g;g=f;f=e;e=d+t;d=c;c=b;b=a;a=t+u;}
+        h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=z;
+    }
+    void Add(const uint8_t* p,size_t n){total+=n;while(n){size_t s=std::min(n,64-used);std::memcpy(block+used,p,s);used+=s;p+=s;n-=s;if(used==64){Transform();used=0;}}}
+    std::string Finish(){uint64_t bits=total*8;uint8_t one=0x80;Add(&one,1);uint8_t zero=0;while(used!=56)Add(&zero,1);uint8_t tail[8];for(int i=0;i<8;++i)tail[i]=uint8_t(bits>>(56-8*i));Add(tail,8);std::ostringstream s;s<<std::hex<<std::setfill('0');for(auto x:h)s<<std::setw(8)<<x;return s.str();}
+};
+
+bool VerifyHash(const std::string& path,const std::string& expected,FSplatBuildControl& control) {
+    if(expected.empty())return true; // desktop legacy descriptors have no store identity
+    if(expected.size()!=64||expected.find_first_not_of("0123456789abcdef")!=std::string::npos)return false;
+    std::ifstream stream(std::filesystem::u8path(path),std::ios::binary);if(!stream)return false;
+    HashState hash;std::array<uint8_t,65536> buffer{};
+    while(stream){CheckCancel(control);stream.read(reinterpret_cast<char*>(buffer.data()),buffer.size());hash.Add(buffer.data(),size_t(stream.gcount()));}
+    CheckCancel(control);return stream.eof()&&hash.Finish()==expected;
+}
+struct FPrepared {
+    FViewerStatus status;
+    FSplatSceneManifest manifest;
+    std::vector<FSplatGaussian> records;
+    uint32_t degree=0;
+};
+}
+struct FSplatViewerSession::FImpl {
+    RHI::IRHIDevice* device=nullptr;
+    IResourceProvider* provider=nullptr;
+    FViewerConfig config;
+    FSceneDescriptor scene;
+    std::unique_ptr<FSplatBudgetCoordinator> localBudget;
+    FSplatBudgetCoordinator* budget=nullptr;
+    std::optional<FSplatBudgetCoordinator::FReservation> cpu,source,stagingLease,temporary,metadata;
+    std::unique_ptr<FSplatPipeline> pipeline;
+    std::unique_ptr<FSplatStreamingController> streaming;
+    FSplatGPUData gpu;
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> upload;
+    std::vector<FSplatGaussian> records;
+    std::shared_ptr<FSplatBuildControl> control;
+    std::future<FPrepared> preparation;
+    FSplatViewerDiagnostics diagnostics;
+    std::shared_ptr<const FViewerDiagnosticsSnapshot> snapshot=std::make_shared<FViewerDiagnosticsSnapshot>();
+    FViewerStatus status=Bad("not_initialized","");
+    FCameraUniforms camera{};
+    FSplatRenderSettings settings;
+    bool initialized=false,suspended=false,shaderRead=false,committedShaderRead=false,pendingRecording=false,externalCamera=false,explicitCaps=true;
+    uint32_t width=1280,height=720,uploaded=0,recordedRows=0,uploadRows=0;
+    uint64_t highestScene=0,surface=0,streamedFrame=0,recordNanos=0;
+    RHI::FGPUCompletionToken uploadToken{},lastSubmission{},baseline{};
+    float yaw=0,pitch=0.215f,distance=5.63f,target[3]{};
+    MonsterEngine::TSharedPtr<RHI::IRHIVertexShader> vertex;
+    MonsterEngine::TSharedPtr<RHI::IRHIPixelShader> fragment;
+    MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSetLayout> setLayout;
+    MonsterEngine::TSharedPtr<RHI::IRHIPipelineLayout> presentLayout;
+    MonsterEngine::TSharedPtr<RHI::IRHIPipelineState> presentPipeline;
+    MonsterEngine::TSharedPtr<RHI::IRHISampler> sampler;
+    MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSet> sets[2];
+    std::optional<FSplatBudgetCoordinator::FReservation> Reserve(ESplatBudgetComponent tag,uint64_t bytes) {
+        std::string error;auto result=budget->TryReserve(tag,bytes,error);if(!result)throw std::runtime_error(error);return result;
+    }
+    void Publish(uint64_t frame=0) {
+        auto next=std::make_shared<FViewerDiagnosticsSnapshot>();next->frameId=frame;
+        next->sceneGeneration=scene.generation;next->surfaceGeneration=surface;next->configGeneration=config.generation;
+        next->sceneId=scene.sceneId;next->contentHash=scene.contentHash;next->requestedConfig=config;
+        if(initialized)next->effectiveConfig=config;next->budget=budget?budget->Snapshot():FSplatBudgetSnapshot{};next->status=status;
+        if(pipeline){const auto& p=pipeline->GetFrameStats();next->counters.activeGaussians=p.activeCount;
+            if(p.countAvailable){next->counters.sortEntries=p.actualSortCount;next->counters.sortCountFrame=p.countFrame;}
+            // Android's viewer records the complete Gaussian compute/raster workload
+            // as the Vulkan timestamp interval named Pipeline. Keep WholeFrame for
+            // desktop callers that provide an enclosing scope, and export the
+            // measured GPU interval instead of leaving Android timing unavailable.
+            for(const auto& sample:p.timestampSamples)if(sample.label=="WholeFrame"||sample.label=="Pipeline") {next->counters.gpuMilliseconds=sample.milliseconds;next->counters.gpuTimingFrame=sample.frame;}
+            next->degraded=p.degraded||p.overflow;next->degradationReason=p.overflow?"sort_capacity_overflow_previous_complete_image_retained":p.degradationReason;
+        }
+        if(streaming){const auto s=streaming->Snapshot();next->counters.residentBytes=s.pool.residentBytes;next->counters.cpuLeaseBytes=s.cpu.totalReservedBytes;next->degraded|=s.degraded;if(s.degraded)next->degradationReason=s.degradationReason;}
+        else if(gpu.isValid()){next->counters.residentBytes=gpu.sourceLogicalBytes;next->counters.uploadedBytes=gpu.uploadedBytes;}
+        std::shared_ptr<const FViewerDiagnosticsSnapshot> immutable=std::move(next);
+        std::atomic_store_explicit(&snapshot,std::move(immutable),std::memory_order_release);
+    }
+    bool MakePresent() {
+        if(presentPipeline)return true;
+        auto v=ShaderCompiler::readFileBytes(SplatShaderPath("Shaders/Splat/compiled/splat_present.vert.spv"));
+        auto f=ShaderCompiler::readFileBytes(SplatShaderPath("Shaders/Splat/compiled/splat_present.frag.spv"));
+        if(v.empty()||f.empty())return false;
+        vertex=device->createVertexShader(MonsterEngine::TSpan<const uint8>(v.data(),v.size()));
+        fragment=device->createPixelShader(MonsterEngine::TSpan<const uint8>(f.data(),f.size()));if(!vertex||!fragment)return false;
+        RHI::FDescriptorSetLayoutDesc ds(0,"SharedSplatPresentSet");ds.bindings.Add(RHI::FDescriptorSetLayoutBinding(0,RHI::EDescriptorType::CombinedTextureSampler,RHI::EShaderStage::Fragment));
+        setLayout=device->createDescriptorSetLayout(ds);if(!setLayout)return false;
+        RHI::FPipelineLayoutDesc layout("SharedSplatPresentLayout");layout.setLayouts.Add(setLayout);presentLayout=device->createPipelineLayout(layout);if(!presentLayout)return false;
+        RHI::PipelineStateDesc desc;desc.vertexShader=vertex;desc.pixelShader=fragment;desc.rasterizerState.cullMode=RHI::ECullMode::None;
+        desc.depthStencilState.depthEnable=false;desc.depthStencilState.depthWriteEnable=false;desc.primitiveTopology=RHI::EPrimitiveTopology::TriangleList;desc.renderTargetFormats.Add(device->getSwapChainFormat());
+        desc.vkVertexShaderModule=reinterpret_cast<uint64>(static_cast<RHI::Vulkan::VulkanVertexShader*>(vertex.get())->getShaderModule());
+        desc.vkPixelShaderModule=reinterpret_cast<uint64>(static_cast<RHI::Vulkan::VulkanPixelShader*>(fragment.get())->getShaderModule());
+        presentPipeline=device->createPipelineState(desc);if(!presentPipeline)return false;
+        RHI::SamplerDesc sd;sd.filter=RHI::ESamplerFilter::Bilinear;sd.addressU=sd.addressV=sd.addressW=RHI::ESamplerAddressMode::Clamp;sampler=device->createSampler(sd);if(!sampler)return false;
+        for(auto& set:sets){set=device->allocateDescriptorSet(setLayout);if(!set)return false;}return true;
+    }
+    bool MakePipeline(uint32_t w,uint32_t h) {
+        if(pipeline){device->waitForIdle();if(auto* command=device->getImmediateCommandList())command->reset();for(auto& set:sets)set.Reset();}
+        auto next=std::make_unique<FSplatPipeline>();const auto& r=config.runtime;
+        if(!next->SetProjectionColorCompression(r.projectionColorCompression)||!next->SetRadixSortBlocksPerWorkgroup(r.radixSortBlocksPerWorkgroup)||!next->SetRadixPhaseTiming(r.benchmark&&!r.captureOnly&&r.radixSortPhaseTiming))return false;
+        if(r.projectedFusion&&r.mode>='C'&&!r.fullLeaf&&!next->EnableProjectedFusion(r.fusionImplementation=="split"))return false;
+        if(explicitCaps)next->SetCapacityBudgets(gpu.gaussianCount,r.activeCapacity,r.sortCapacity,r.streaming.temporaryGPUBytes);
+        uint64_t bytes=0;if(!next->QueryTemporaryBytes(device,gpu.gaussianCount,w,h,bytes))return false;
+        auto lease=Reserve(ESplatBudgetComponent::TemporaryGPU,bytes); // old+new overlap stays charged
+        const auto discard=[&] {next.reset();device->waitForIdle();if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(device))vk->DrainCompletedDestructions();};
+        if(!next->initialize(device,gpu.gaussianCount,w,h)){discard();return false;}
+        if(next->GetFrameStats().temporaryBytes>bytes){discard();return false;}
+        next->setGaussianData(gpu);device->waitForIdle();pipeline=std::move(next);
+        if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(device))vk->DrainCompletedDestructions();
+        temporary=std::move(lease);width=w;height=h;shaderRead=committedShaderRead=false;return true;
+    }
+    void Clamp(uint32_t& w,uint32_t& h) {
+        const double scale=std::min({1.0,double(config.maximumInternalEdge)/std::max(w,h),std::sqrt(double(config.maximumInternalPixels)/(double(w)*h))});
+        w=std::max(1u,uint32_t(w*scale));h=std::max(1u,uint32_t(h*scale));
+    }
+    void OrbitCamera() {
+        const float cp=std::cos(pitch),sp=std::sin(pitch),sy=std::sin(yaw),cy=std::cos(yaw);
+        float eye[3]={target[0]+distance*cp*sy,target[1]+distance*sp,target[2]+distance*cp*cy};
+        float forward[3]={-cp*sy,-sp,-cp*cy},right[3]={cy,0,-sy},up[3]={-sp*sy,cp,-sp*cy};
+        camera=FSplatViewerSession::BuildCamera(eye,right,up,forward,45,settings.nearPlane,settings.farPlane,width,height,config.runtime.displaySHDegree<0?gpu.shDegree:std::min(config.runtime.displaySHDegree,gpu.shDegree));
+    }
+};
+FSplatViewerSession::FSplatViewerSession():Impl(std::make_unique<FImpl>()){}
+FSplatViewerSession::~FSplatViewerSession(){Shutdown();}
+void FSplatViewerSession::SetBudgetCoordinator(FSplatBudgetCoordinator& b){if(Impl->initialized)throw std::logic_error("Inject budget before initialize");Impl->budget=&b;}
+FViewerStatus FSplatViewerSession::Initialize(RHI::IRHIDevice& d,IResourceProvider& p,const FViewerConfig& c) {
+    auto& i=*Impl;if(i.initialized)return Bad("already_initialized","");
+    if(!c.maximumInternalEdge||!c.maximumInternalPixels||!c.runtime.activeCapacity||!c.runtime.sortCapacity||!d.supportsSubmissionCompletion())return Bad("invalid_config","Invalid extent/capacity or missing completion support");
+    try {i.config=c;i.device=&d;i.provider=&p;i.settings.tightTileCulling=c.runtime.tightTileCulling;i.settings.rasterSharedMemoryMode=c.runtime.rasterSharedMemoryMode;
+        if(!i.budget){uint64_t total=65536;for(uint64_t bytes:{c.runtime.streaming.cpuCacheBytes,c.runtime.streaming.sceneGPUBytes,c.runtime.streaming.stagingBytes,c.runtime.streaming.temporaryGPUBytes})total=Sum(total,bytes);i.localBudget=std::make_unique<FSplatBudgetCoordinator>(total);i.budget=i.localBudget.get();}
+#if PLATFORM_ANDROID
+        ShaderCompiler::setResourceProvider(std::shared_ptr<IResourceProvider>(&p,[](IResourceProvider*){}));
+#endif
+        i.metadata=i.Reserve(ESplatBudgetComponent::Metadata,65536);
+        i.width=1280;i.height=720;i.Clamp(i.width,i.height);i.initialized=true;i.status=Good();i.Publish();return i.status;
+    }catch(const std::exception& e){
+#if PLATFORM_ANDROID
+        ShaderCompiler::setResourceProvider({});
+#endif
+        i.metadata.reset();i.device=nullptr;i.provider=nullptr;return i.status=Bad("initialize_failed",e.what());}
+}
+FViewerStatus FSplatViewerSession::OpenScene(const FSceneDescriptor& scene) {
+    auto& i=*Impl;if(!i.initialized)return Bad("not_initialized","");
+    if(!scene.generation||scene.generation<=i.highestScene)return Bad("stale_scene","");
+    ReleaseScene();i.highestScene=scene.generation;i.scene=scene;i.suspended=false;
+    try {
+        i.cpu=i.Reserve(ESplatBudgetComponent::CPUCache,i.config.runtime.streaming.cpuCacheBytes);
+        i.control=std::make_shared<FSplatBuildControl>();auto control=i.control;const auto runtime=i.config.runtime;
+        i.preparation=std::async(std::launch::async,[scene,runtime,control] {
+            FPrepared prepared;try {
+                CheckCancel(*control);const auto path=scene.kind==EViewerSceneKind::PLY?scene.sourcePLY:scene.manifestPath;
+                if(!VerifyHash(path,scene.contentHash,*control))throw std::runtime_error("Scene content identity mismatch");
+                if(scene.kind==EViewerSceneKind::LOD){std::string error;if(!FSplatStreamingController::PrepareScene(scene,runtime,prepared.manifest,error))throw std::runtime_error(error);}
+                else {
+                    FSplatPLYLimits limits;limits.maxRecords=runtime.activeCapacity;limits.maxFileBytes=runtime.streaming.cpuCacheBytes;
+                    FSplatPLYHeader header;std::string error;if(!FSplatPLYStream::Probe(path,header,error,limits,control.get()))throw std::runtime_error(error);
+                    const auto work=FSplatPLYStream::ParserWorkingBytes(header,256);
+                    if(header.recordCount>(runtime.streaming.cpuCacheBytes-std::min(work,runtime.streaming.cpuCacheBytes))/sizeof(FSplatGaussian))throw std::runtime_error("PLY exceeds bounded native path; build LOD first");
+                    prepared.records.reserve(size_t(header.recordCount));prepared.degree=header.shDegree;
+                    if(!FSplatPLYStream::StreamRecords(path,header,256,*control,[&](std::span<const FSplatGaussian> rows,const FSplatBuildSourceCursor&,std::string&){prepared.records.insert(prepared.records.end(),rows.begin(),rows.end());return true;},error))throw std::runtime_error(error);
+                    if(prepared.records.empty())throw std::runtime_error("Empty Gaussian source");
+                }
+                CheckCancel(*control);prepared.status=Good("prepared");
+            }catch(const std::exception& e){prepared.status=Bad("prepare_failed",e.what());}return prepared;
+        });i.status=Good("loading");
+    }catch(const std::exception& e){i.status=Bad("open_failed",e.what());}i.Publish();return i.status;
+}
+FViewerStatus FSplatViewerSession::OpenPreparedLOD(const FSceneDescriptor& scene,FSplatSceneManifest manifest) {
+    auto& i=*Impl;if(!i.initialized)return Bad("not_initialized","");
+    if(!scene.generation||(scene.generation<=i.highestScene&&scene.generation!=i.scene.generation)||i.streaming||i.pipeline)return Bad("stale_scene","");
+    try {
+        if(!i.cpu)i.cpu=i.Reserve(ESplatBudgetComponent::CPUCache,i.config.runtime.streaming.cpuCacheBytes);
+        i.source=i.Reserve(ESplatBudgetComponent::SourceGPU,i.config.runtime.streaming.sceneGPUBytes);
+        i.stagingLease=i.Reserve(ESplatBudgetComponent::StagingGPU,i.config.runtime.streaming.stagingBytes);
+        auto controller=std::make_unique<FSplatStreamingController>();std::string error;
+        if(!controller->InitializePrepared(i.device,scene,i.config.runtime,std::move(manifest),error))throw std::runtime_error(error);
+        i.streaming=std::move(controller);i.scene=scene;i.highestScene=std::max(i.highestScene,scene.generation);i.gpu=i.streaming->GetGPUData();i.explicitCaps=true;
+        if(!i.MakePipeline(i.width,i.height))throw std::runtime_error("Pipeline admission/allocation failed");
+        i.suspended=false;i.status=Good("loading");
+    }catch(const std::exception& e){i.status=Bad("lod_admission_failed",e.what());}i.Publish();return i.status;
+}
+FViewerStatus FSplatViewerSession::AdoptDesktopGPUData(const FSplatGPUData& data,const FSceneDescriptor& scene,uint32_t w,uint32_t h,bool explicitCaps) {
+    auto& i=*Impl;try {
+        uint64_t bytes=0;for(auto b:{data.positions,data.scales,data.rotations,data.opacities,data.shCoefficients}){RHI::FBufferAllocationInfo info{};if(!b||!b->getAllocationInfo(info))throw std::runtime_error("Source allocation info unavailable");bytes=Sum(bytes,info.backingBytes);}
+        i.source=i.Reserve(ESplatBudgetComponent::SourceGPU,bytes);i.gpu=data;i.scene=scene;i.highestScene=std::max(i.highestScene,scene.generation);i.explicitCaps=explicitCaps;
+        if(!i.MakePipeline(w,h))throw std::runtime_error("Desktop pipeline allocation failed");i.status=Good();i.suspended=false;
+    }catch(const std::exception& e){i.status=Bad("adopt_failed",e.what());}i.Publish();return i.status;
+}
+void FSplatViewerSession::ApplyCameraInput(const FCameraInputState& input) {
+    auto& i=*Impl;if(input.surfaceGeneration!=i.surface&&i.surface)return;
+    if(input.phase==EViewerPointerPhase::Cancel)return;
+    if(input.reset){i.yaw=0;i.pitch=0.215f;i.distance=5.63f;std::fill(std::begin(i.target),std::end(i.target),0);}
+    if(!std::isfinite(input.orbitX)||!std::isfinite(input.orbitY)||!std::isfinite(input.panX)||!std::isfinite(input.panY)||!std::isfinite(input.pinchScale)||input.pinchScale<=0)return;
+    i.yaw+=input.orbitX*6.2831853f;i.pitch=std::clamp(i.pitch+input.orbitY*3.1415927f,-1.5f,1.5f);
+    i.distance=std::clamp(i.distance/input.pinchScale,0.1f,100000.0f);i.target[0]-=input.panX*i.distance;i.target[1]+=input.panY*i.distance;i.externalCamera=false;
+}
+void FSplatViewerSession::ApplySettings(const FViewerConfig& c) {
+    auto& i=*Impl;if(c.generation<i.config.generation)return;
+    // Allocation-time settings are immutable until explicit scene release/re-admission.
+    if(c.runtime.activeCapacity!=i.config.runtime.activeCapacity||c.runtime.sortCapacity!=i.config.runtime.sortCapacity||
+       c.runtime.streaming.sceneGPUBytes!=i.config.runtime.streaming.sceneGPUBytes||c.runtime.streaming.cpuCacheBytes!=i.config.runtime.streaming.cpuCacheBytes||
+       c.runtime.streaming.stagingBytes!=i.config.runtime.streaming.stagingBytes||c.runtime.streaming.temporaryGPUBytes!=i.config.runtime.streaming.temporaryGPUBytes||
+       c.runtime.shStorageMode!=i.config.runtime.shStorageMode||c.runtime.projectionColorCompression!=i.config.runtime.projectionColorCompression||
+       c.runtime.radixSortBlocksPerWorkgroup!=i.config.runtime.radixSortBlocksPerWorkgroup){i.status=Bad("readmission_required","Capacity/layout changes require scene release");i.Publish();return;}
+    i.config=c;if(i.streaming){std::string error;if(!i.streaming->ApplySettings(c.runtime.lod,error))i.status=Bad("settings_failed",error);}i.Publish();
+}
+FSplatStreamingFrameResult FSplatViewerSession::UpdateStreaming(RHI::IRHICommandList* command,const FSplatLODView& view,uint64_t frame) {
+    auto& i=*Impl;if(!i.streaming)return {};auto result=i.streaming->UpdateAndRecord(command,view,frame);i.streamedFrame=frame;
+    if(i.pipeline)i.pipeline->SetActiveSet(result.activeSet);i.status=result.status;return result;
+}
+void FSplatViewerSession::SetCameraUniforms(const FCameraUniforms& c){Impl->camera=c;Impl->externalCamera=true;if(Impl->pipeline)Impl->pipeline->setCamera(c);}
+void FSplatViewerSession::SetRenderSettings(const FSplatRenderSettings& s){Impl->settings=s;if(Impl->pipeline)Impl->pipeline->setRenderSettings(s);}
+void FSplatViewerSession::PrepareOutputForCompute(RHI::IRHICommandList& command){auto& i=*Impl;if(i.shaderRead&&i.pipeline){command.transitionResource(i.pipeline->getOutputTexture(),RHI::EResourceUsage::ShaderResource,RHI::EResourceUsage::UnorderedAccess);i.shaderRead=false;}}
+FViewerFrameResult FSplatViewerSession::RecordCompute(const FViewerFrameRequest& request,bool frameAlreadyReserved) {
+    auto& i=*Impl;FViewerFrameResult result;
+    if(!i.initialized||!request.commandList||!request.viewportWidth||!request.viewportHeight){result.status=Bad("not_drawable","");return result;}
+    if(request.sceneGeneration!=i.scene.generation||request.configGeneration!=i.config.generation||
+       (i.surface&&request.surfaceGeneration<i.surface)){result.status=Bad("stale_generation","");return result;}
+    if(i.suspended&&request.surfaceGeneration<=i.surface){result.status=Bad("suspended","");return result;}
+    i.surface=request.surfaceGeneration;i.suspended=false;i.shaderRead=i.committedShaderRead;i.pendingRecording=false;i.recordNanos=request.monotonicNanoseconds;i.baseline=i.device->getLastSubmissionToken();
+    try {
+        if(!i.pipeline&&!i.gpu.gaussianCount){i.width=request.viewportWidth;i.height=request.viewportHeight;i.Clamp(i.width,i.height);}
+        if(i.preparation.valid()&&i.preparation.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
+            auto prepared=i.preparation.get();if(!prepared.status.ok)throw std::runtime_error(prepared.status.message);
+            if(i.scene.kind==EViewerSceneKind::LOD){auto status=OpenPreparedLOD(i.scene,std::move(prepared.manifest));if(!status.ok)throw std::runtime_error(status.message);}
+            else {
+                i.records=std::move(prepared.records);i.gpu.gaussianCount=uint32_t(i.records.size());i.gpu.shDegree=i.gpu.sourceSHDegree=int32_t(prepared.degree);
+                const uint32_t scalars=3*(prepared.degree+1)*(prepared.degree+1);const uint32_t widths[5]={16,16,16,4,scalars*4};
+                RHI::BufferDesc descs[6];uint64_t expected[6]{},total=0;
+                for(int k=0;k<5;++k){auto& d=descs[k];d.size=i.gpu.gaussianCount*widths[k];d.usage=RHI::EResourceUsage::StorageBuffer|RHI::EResourceUsage::TransferDst;d.dedicatedAllocation=true;
+                    uint64_t alignment=0;if(!i.device->getBufferAllocationRequirements(d,expected[k],alignment)||expected[k]<d.size)throw std::runtime_error("Source preflight unavailable");total=Sum(total,expected[k]);}
+                if(total>i.config.runtime.streaming.sceneGPUBytes)throw std::runtime_error("Source physical cap exceeded");
+                i.uploadRows=uint32_t(std::min<uint64_t>({i.config.runtime.streaming.maxUploadBytesPerFrame,i.config.runtime.streaming.stagingBytes/2,UINT32_MAX})/(52+scalars*4));
+                i.uploadRows=std::min(i.uploadRows,i.gpu.gaussianCount);if(!i.uploadRows)throw std::runtime_error("Upload budget cannot hold one row");
+                auto& stage=descs[5];stage.size=i.uploadRows*(52+scalars*4);stage.usage=RHI::EResourceUsage::TransferSrc;stage.memoryUsage=RHI::EMemoryUsage::Upload;stage.cpuAccessible=true;stage.dedicatedAllocation=true;
+                uint64_t alignment=0;if(!i.device->getBufferAllocationRequirements(stage,expected[5],alignment)||expected[5]>i.config.runtime.streaming.stagingBytes)throw std::runtime_error("Upload backing cap exceeded");
+                i.source=i.Reserve(ESplatBudgetComponent::SourceGPU,total);i.stagingLease=i.Reserve(ESplatBudgetComponent::StagingGPU,expected[5]);
+                MonsterEngine::TSharedPtr<RHI::IRHIBuffer>* buffers[6]={&i.gpu.positions,&i.gpu.scales,&i.gpu.rotations,&i.gpu.opacities,&i.gpu.shCoefficients,&i.upload};
+                for(int k=0;k<6;++k){*buffers[k]=i.device->createBuffer(descs[k]);RHI::FBufferAllocationInfo actual{};if(!*buffers[k]||!(*buffers[k])->getAllocationInfo(actual)||actual.backingBytes!=expected[k]||actual.reservationBytes!=expected[k])throw std::runtime_error("Allocation diverged from admission");}
+                i.gpu.sourceLogicalBytes=uint64_t(i.gpu.gaussianCount)*(52+scalars*4);i.gpu.shLogicalBytes=uint64_t(i.gpu.gaussianCount)*scalars*4;
+            }
+        }
+        if(!i.records.empty()) {
+            if(i.uploadToken.value&&!i.device->isSubmissionComplete(i.uploadToken)){result.status=Good("upload_pending");return result;}
+            i.uploadToken={};
+            if(i.uploaded==i.gpu.gaussianCount){
+                i.records.clear();i.records.shrink_to_fit();i.upload.Reset();if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(i.device))vk->DrainCompletedDestructions();i.stagingLease.reset();i.cpu.reset();
+                if(!i.MakePipeline(i.width,i.height))throw std::runtime_error("Pipeline admission failed");
+            }else {
+                const uint32_t rows=std::min(i.uploadRows,i.gpu.gaussianCount-i.uploaded),scalars=3*(i.gpu.shDegree+1)*(i.gpu.shDegree+1),widths[5]={16,16,16,4,scalars*4};
+                auto* memory=static_cast<uint8_t*>(i.upload->map());if(!memory)throw std::runtime_error("Upload map failed");
+                uint32_t offset=0;MonsterEngine::TSharedPtr<RHI::IRHIBuffer> buffers[5]={i.gpu.positions,i.gpu.scales,i.gpu.rotations,i.gpu.opacities,i.gpu.shCoefficients};
+                for(int k=0;k<5;++k){for(uint32_t r=0;r<rows;++r){const auto& g=i.records[i.uploaded+r];const void* fields[5]={g.position,g.scale,g.rotation,&g.opacity,g.sh};std::memcpy(memory+offset+r*widths[k],fields[k],widths[k]);}offset+=rows*widths[k];}i.upload->unmap();offset=0;
+                for(int k=0;k<5;++k){request.commandList->copyBuffer(buffers[k],i.upload,rows*widths[k],uint64_t(i.uploaded)*widths[k],offset);offset+=rows*widths[k];}
+                request.commandList->resourceBarrier();i.recordedRows=rows;i.pendingRecording=true;result.recorded=true;result.status=Good("uploading");i.status=result.status;i.Publish();result.diagnostics=i.snapshot;return result;
+            }
+        }
+        if(!i.pipeline){result.status=i.status.ok?Good("loading"):i.status;return result;}
+        const auto frame=frameAlreadyReserved?i.pipeline->GetFrameStats().frame:i.pipeline->ReserveFrameId();
+        if(!i.externalCamera)i.OrbitCamera();i.pipeline->setCamera(i.camera);i.pipeline->setRenderSettings(i.settings);
+        if(i.streaming&&i.streamedFrame!=frame){FSplatLODView view;std::copy_n(i.camera.viewMatrix,16,view.view);std::copy_n(i.camera.projMatrix,16,view.projection);std::copy_n(i.camera.camPos,3,view.cameraPosition);view.width=i.width;view.height=i.height;view.nearPlane=i.settings.nearPlane;view.farPlane=i.settings.farPlane;view.gaussianScale=i.settings.gaussianScale;UpdateStreaming(request.commandList,view,frame);}
+        PrepareOutputForCompute(*request.commandList);result.outputTexture=i.pipeline->execute(request.commandList);result.recorded=bool(result.outputTexture);i.pendingRecording=result.recorded;result.pipelineFrameId=frame;
+        i.status=result.outputTexture?Good():Bad("compute_failed",i.pipeline->GetFrameStats().degradationReason);i.Publish(frame);result.counters=i.snapshot->counters;result.diagnostics=i.snapshot;result.status=i.status;
+    }catch(const std::exception& e){i.status=Bad("record_failed",e.what());i.Publish();result.status=i.status;result.diagnostics=i.snapshot;}return result;
+}
+FViewerStatus FSplatViewerSession::RecordPresent(RHI::IRHICommandList& command,MonsterEngine::TSharedPtr<RHI::IRHITexture> output,uint32_t w,uint32_t h) {
+    auto& i=*Impl;if(!output||!w||!h)return Bad("not_drawable","");if(!i.MakePresent())return Bad("present_pipeline_failed","");
+    command.transitionResource(output,RHI::EResourceUsage::UnorderedAccess,RHI::EResourceUsage::ShaderResource);i.shaderRead=true;
+    MonsterEngine::TArray<MonsterEngine::TSharedPtr<RHI::IRHITexture>> targets;command.setRenderTargets(MonsterEngine::TSpan<MonsterEngine::TSharedPtr<RHI::IRHITexture>>(targets),nullptr);
+    RHI::Viewport viewport;viewport.width=float(w);viewport.height=float(h);viewport.minDepth=0;viewport.maxDepth=1;command.setViewport(viewport);
+    RHI::ScissorRect scissor;scissor.left=scissor.top=0;scissor.right=int32_t(w);scissor.bottom=int32_t(h);command.setScissorRect(scissor);command.setPipelineState(i.presentPipeline);
+    auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(i.device);if(!vk)return Bad("backend_unavailable","");
+    auto* pending=vk->getCommandListContext()->getPendingState();auto* texture=static_cast<RHI::Vulkan::VulkanTexture*>(output.get());auto* sampler=static_cast<RHI::Vulkan::VulkanSampler*>(i.sampler.get());
+    if(pending)pending->setTexture(0,0,texture->getImageView(),sampler->getSampler(),texture->getImage(),texture->getVulkanFormat());
+    auto& set=i.sets[vk->getCurrentFrame()%2];if(!set)set=i.device->allocateDescriptorSet(i.setLayout);if(!set)return Bad("present_descriptor_failed","");set->updateCombinedTextureSampler(0,output,i.sampler);command.bindDescriptorSet(i.presentLayout,0,set);command.draw(3,0);return Good();
+}
+FViewerFrameResult FSplatViewerSession::TickAndRecord(const FViewerFrameRequest& request) {
+    auto result=RecordCompute(request);if(result.outputTexture){auto status=RecordPresent(*request.commandList,result.outputTexture,request.viewportWidth,request.viewportHeight);if(!status.ok)result.status=status;}return result;
+}
+void FSplatViewerSession::OnSubmitted(RHI::FGPUCompletionToken token) {
+    auto& i=*Impl;if(!i.pendingRecording||!token.value||token.value==i.lastSubmission.value||token.value==i.baseline.value)return;
+    // Tokens are accepted only if observed on this device, never synthesized frame IDs.
+    if(i.device->getLastSubmissionToken().value!=token.value)return;i.lastSubmission=token;i.pendingRecording=false;i.committedShaderRead=i.shaderRead;
+    if(i.recordedRows){i.uploaded+=i.recordedRows;i.gpu.uploadedBytes=uint64_t(i.uploaded)*(52+3*(i.gpu.shDegree+1)*(i.gpu.shDegree+1)*4);i.recordedRows=0;i.uploadToken=token;}
+    if(i.pipeline)i.pipeline->MarkFrameSubmitted(token);if(i.streaming)i.streaming->OnSubmitted(token);
+    i.diagnostics.OnScreenshotSubmitted(token);i.diagnostics.PollScreenshot();i.Publish(i.pipeline?i.pipeline->GetFrameStats().frame:0);
+    const auto stream=i.streaming?std::optional<FSplatStreamingControllerSnapshot>(i.streaming->Snapshot()):std::nullopt;i.diagnostics.Record(*i.snapshot,stream?&*stream:nullptr,token,Now());
+}
+FViewerStatus FSplatViewerSession::ResizeInternal(uint32_t w,uint32_t h) {
+    auto& i=*Impl;if(!w||!h)return Bad("not_drawable","");i.suspended=false;i.Clamp(w,h);if(w==i.width&&h==i.height)return Good();
+    try {if(i.pipeline&&!i.MakePipeline(w,h))return Bad("resize_failed","Old output retained");i.width=w;i.height=h;i.status=Good();}catch(const std::exception& e){i.status=Bad("resize_failed",e.what());}i.Publish();return i.status;
+}
+void FSplatViewerSession::Suspend(){Impl->suspended=true;}
+void FSplatViewerSession::ReleaseScene() {
+    if(!Impl)return;auto& i=*Impl;if(i.control)i.control->RequestCancel();if(i.preparation.valid()){i.preparation.wait();i.preparation.get();}i.control.reset();
+    if(i.device){i.device->waitForIdle();if(auto* command=i.device->getImmediateCommandList())command->reset();for(auto& set:i.sets)set.Reset();i.diagnostics.Shutdown();}if(i.streaming)i.streaming->Shutdown();i.streaming.reset();i.pipeline.reset();i.gpu.release();i.upload.Reset();
+    i.records.clear();i.records.shrink_to_fit();if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(i.device))vk->DrainCompletedDestructions();
+    i.cpu.reset();i.source.reset();i.stagingLease.reset();i.temporary.reset();i.scene={};i.uploaded=i.recordedRows=0;i.uploadToken={};i.shaderRead=i.committedShaderRead=i.pendingRecording=false;i.streamedFrame=0;i.status=Good("scene_released");i.Publish();
+}
+void FSplatViewerSession::Shutdown() {
+    if(!Impl||!Impl->initialized)return;ReleaseScene();auto& i=*Impl;i.device->waitForIdle();for(auto& set:i.sets)set.Reset();i.sampler.Reset();i.presentPipeline.Reset();i.presentLayout.Reset();i.setLayout.Reset();i.vertex.Reset();i.fragment.Reset();
+    if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(i.device))vk->DrainCompletedDestructions();i.metadata.reset();i.initialized=false;i.device=nullptr;i.provider=nullptr;
+#if PLATFORM_ANDROID
+    ShaderCompiler::setResourceProvider({});
+#endif
+}
+void FSplatViewerSession::OnMemoryPressure(){if(Impl->streaming)Impl->streaming->OnMemoryPressure();Impl->Publish();}
+std::shared_ptr<const FViewerDiagnosticsSnapshot> FSplatViewerSession::Snapshot()const{return std::atomic_load_explicit(&Impl->snapshot,std::memory_order_acquire);}
+FSplatViewerDiagnostics& FSplatViewerSession::Diagnostics(){return Impl->diagnostics;}
+FSplatBudgetCoordinator& FSplatViewerSession::Budget(){return *Impl->budget;}
+FSplatPipeline* FSplatViewerSession::Pipeline()const{return Impl->pipeline.get();}
+FSplatStreamingController* FSplatViewerSession::Streaming()const{return Impl->streaming.get();}
+const FSplatGPUData& FSplatViewerSession::GPUData()const{return Impl->gpu;}
+FCameraUniforms FSplatViewerSession::BuildCamera(const float eye[3],const float right[3],const float up[3],const float forward[3],float fov,float nearPlane,float farPlane,uint32_t w,uint32_t h,int32_t degree) {
+    FCameraUniforms out{};if(!w||!h||!std::isfinite(fov)||fov<=0||fov>=179||nearPlane<=0||farPlane<=nearPlane)return out;
+    for(int axis=0;axis<3;++axis){out.viewMatrix[axis*4]=right[axis];out.viewMatrix[axis*4+1]=up[axis];out.viewMatrix[axis*4+2]=-forward[axis];out.viewMatrix[12]-=right[axis]*eye[axis];out.viewMatrix[13]-=up[axis]*eye[axis];out.viewMatrix[14]+=forward[axis]*eye[axis];out.camPos[axis]=eye[axis];}
+    out.viewMatrix[15]=out.camPos[3]=1;out.tanFovY=std::tan(fov*3.14159265358979323846f/360);out.tanFovX=out.tanFovY*float(w)/float(h);
+    out.projMatrix[0]=1/out.tanFovX;out.projMatrix[5]=1/out.tanFovY;out.projMatrix[10]=farPlane/(nearPlane-farPlane);out.projMatrix[11]=-1;out.projMatrix[14]=-(farPlane*nearPlane)/(farPlane-nearPlane);
+    out.focalX=w/(2*out.tanFovX);out.focalY=h/(2*out.tanFovY);out.imageWidth=int32_t(w);out.imageHeight=int32_t(h);out.shDegree=degree;return out;
+}
+} // namespace MonsterRender::Splat

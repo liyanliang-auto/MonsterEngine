@@ -164,6 +164,8 @@ private:
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
     TArray<VkFramebuffer> m_framebuffers;
     
+    // Legacy shell declaration. Production WSI lives in VulkanDevice; new users
+    // use its observable frame API and image-owned presentation semaphores.
     // Synchronization
     static constexpr uint32 MaxFramesInFlight = 2;
     TArray<VkSemaphore> m_imageAvailableSemaphores;

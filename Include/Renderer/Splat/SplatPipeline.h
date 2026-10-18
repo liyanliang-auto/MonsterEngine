@@ -75,6 +75,9 @@ public:
     /** Compatibility entrypoint; legacy defaults are capped before allocating. */
     bool initialize(RHI::IRHIDevice* device, uint32 gaussianCount, uint32 imageWidth,
         uint32 imageHeight, uint32 maxTilesPerGaussian = 64);
+    /** Owner preflight for aggregate admission before creating pipeline backing.
+     * Uses the exact same capacity/default sizing and allocation requirements. */
+    bool QueryTemporaryBytes(RHI::IRHIDevice*, uint32 count, uint32 width, uint32 height, uint64_t& bytes);
     void setGaussianData(const FSplatGPUData& data);
     void setCamera(const FCameraUniforms& camera);
     void setRenderSettings(const FSplatRenderSettings& settings);

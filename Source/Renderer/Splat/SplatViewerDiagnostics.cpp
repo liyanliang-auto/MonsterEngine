@@ -1,0 +1,337 @@
+// Copyright Monster Engine. All Rights Reserved.
+#include "Renderer/Splat/SplatViewerDiagnostics.h"
+#include "RHI/IRHIDevice.h"
+#include "Platform/Vulkan/VulkanBuffer.h"
+#include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanRHICommandList.h"
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <deque>
+#include <future>
+#include <iomanip>
+#include <locale>
+#include <mutex>
+#include <sstream>
+#include <stdexcept>
+#include <type_traits>
+
+namespace MonsterRender::Splat {
+namespace {
+std::string Quote(const std::string& text) {
+    std::string out = "\"";
+    for (unsigned char c : text) {
+        if (c == '"' || c == '\\') { out += '\\'; out += char(c); }
+        else if (c >= 32 && c < 127) out += char(c);
+        else { const char* h = "0123456789abcdef"; out += "\\u00"; out += h[c >> 4]; out += h[c & 15]; }
+    }
+    return out + '"';
+}
+std::string Code(const std::string& value) {
+    if (value.empty() || value.size() > 96) return "redacted";
+    for (unsigned char c : value) if (!(c >= 'a' && c <= 'z') &&
+        !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_') return "redacted";
+    return value;
+}
+std::string Hash(const std::string& value) {
+    if (value.size() != 64 && value.size() != 40) return "null";
+    for (char c : value) if (!(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f')) return "null";
+    return Quote(value);
+}
+template<class T> std::string Number(T value) {
+    std::ostringstream out; out.imbue(std::locale::classic());
+    if constexpr (std::is_floating_point_v<T>) { if (!std::isfinite(value)) return "null"; out << std::setprecision(17); }
+    out << value; return out.str();
+}
+template<class T> std::string Optional(const std::optional<T>& value) { return value ? Number(*value) : "null"; }
+struct Object {
+    std::string text = "{";
+    void Add(const char* key, const std::string& value) { if (text.size() > 1) text += ','; text += Quote(key) + ':' + value; }
+    std::string End() const { return text + '}'; }
+};
+std::string Config(const FViewerConfig& c) {
+    Object o; const auto& r = c.runtime; const auto& s = r.streaming;
+#define FIELD(name, value) o.Add(name, Number(value))
+    FIELD("generation", c.generation); o.Add("configHash", Hash(c.configHash)); o.Add("shaderIdentity", Hash(c.shaderIdentity));
+    FIELD("maximumInternalEdge", c.maximumInternalEdge); FIELD("maximumInternalPixels", c.maximumInternalPixels);
+    FIELD("width", r.width); FIELD("height", r.height); FIELD("renderWidth", r.renderWidth); FIELD("renderHeight", r.renderHeight);
+    o.Add("mode", Quote(std::string(1, r.mode))); o.Add("vsync", r.vsync ? "true" : "false");
+    FIELD("activeCapacity", r.activeCapacity); FIELD("sortCapacity", r.sortCapacity);
+    FIELD("sceneGPUBytes", s.sceneGPUBytes); FIELD("stagingBytes", s.stagingBytes); FIELD("cpuCacheBytes", s.cpuCacheBytes);
+    FIELD("temporaryGPUBytes", s.temporaryGPUBytes); FIELD("maxUploadBytesPerFrame", s.maxUploadBytesPerFrame);
+    FIELD("maxConcurrentReads", s.maxConcurrentReads); FIELD("retries", s.retries); FIELD("retryDelayMilliseconds", s.retryDelayMilliseconds);
+    FIELD("qualityPixels", r.lod.qualityPixels); FIELD("hysteresis", r.lod.hysteresis);
+    FIELD("activeBudget", r.lod.activeBudget); FIELD("sortBudget", r.lod.sortBudget); FIELD("sourceBudget", r.lod.sourceBudget);
+    o.Add("freeze", r.lod.freeze ? "true" : "false");
+    FIELD("tightTileCulling", r.tightTileCulling); FIELD("shStorageMode", r.shStorageMode); FIELD("shStorageDegree", r.shStorageDegree);
+    FIELD("displaySHDegree", r.displaySHDegree); FIELD("rasterSharedMemoryMode", r.rasterSharedMemoryMode);
+    FIELD("radixSortBlocksPerWorkgroup", r.radixSortBlocksPerWorkgroup);
+    o.Add("radixSortPhaseTiming", r.radixSortPhaseTiming ? "true" : "false");
+    o.Add("projectedFusion", r.projectedFusion ? "true" : "false");
+    o.Add("projectionColorCompression", r.projectionColorCompression ? "true" : "false");
+    o.Add("fusionImplementation", Quote(r.fusionImplementation == "split" ? "split" : "scalar"));
+    FIELD("fusionRelativeRGBAError", r.fusionRelativeRGBAError);
+#undef FIELD
+    return o.End();
+}
+std::string Observation(EViewerObservation value) {
+    return value == EViewerObservation::Unknown ? "null" : value == EViewerObservation::Yes ? "true" : "false";
+}
+std::string Snapshot(const FViewerDiagnosticsSnapshot& s, const FSplatStreamingControllerSnapshot* stream,
+                     RHI::FGPUCompletionToken token, std::optional<double> cadence) {
+    Object o;
+    o.Add("schemaVersion", "1"); o.Add("frameId", Number(s.frameId));
+    o.Add("sceneGeneration", Number(s.sceneGeneration)); o.Add("surfaceGeneration", Number(s.surfaceGeneration));
+    o.Add("configGeneration", Number(s.configGeneration)); o.Add("contentHash", Hash(s.contentHash));
+    o.Add("buildIdentity", Hash(s.buildIdentity)); o.Add("requestedConfig", Config(s.requestedConfig));
+    o.Add("effectiveConfig", s.effectiveConfig ? Config(*s.effectiveConfig) : "null");
+    o.Add("submissionToken", token.value ? Number(token.value) : "null");
+    o.Add("degraded", s.degraded ? "true" : "false");
+    o.Add("degradationReason", Quote(Code(s.degradationReason)));
+    Object status; status.Add("ok", s.status.ok ? "true" : "false"); status.Add("code", Quote(Code(s.status.code)));
+    status.Add("detail", "\"omitted_for_privacy\""); o.Add("status", status.End());
+    Object counters; const auto& c = s.counters;
+#define COUNT(name) counters.Add(#name, Optional(c.name))
+    COUNT(activeGaussians); COUNT(sortEntries); COUNT(sortCountFrame); COUNT(residentBytes);
+    COUNT(uploadedBytes); COUNT(cpuLeaseBytes); COUNT(cpuFrameMilliseconds); COUNT(gpuMilliseconds); COUNT(gpuTimingFrame);
+#undef COUNT
+    o.Add("counters", counters.End());
+    Object timing; timing.Add("presentReturnCadenceMilliseconds", Optional(cadence));
+    timing.Add("displayCadenceMilliseconds", "null"); timing.Add("videoEncodingFPS", "null");
+    timing.Add("unavailableReason", "\"not_measured\"");
+    timing.Add("cpuMeaning", "\"owner_cpu_interval_not_gpu\"");
+    timing.Add("gpuMeaning", "\"completed_interval_original_gpuTimingFrame\"");
+    timing.Add("nestedIntervalsAdditive", "false"); o.Add("timing", timing.End());
+    Object budget; budget.Add("limitBytes", Number(s.budget.limitBytes)); budget.Add("reservedBytes", Number(s.budget.reservedBytes));
+    budget.Add("peakBytes", Number(s.budget.peakBytes)); budget.Add("exclusiveBuild", s.budget.exclusiveBuild ? "true" : "false");
+    std::string components = "["; for (auto n : s.budget.components) { if (components.size() > 1) components += ','; components += Number(n); }
+    budget.Add("components", components + ']'); o.Add("budget", budget.End());
+    std::string caps = "[";
+    for (size_t i = 0; i < std::min<size_t>(s.capabilities.size(), 64); ++i) {
+        const auto& c = s.capabilities[i]; Object item;
+        item.Add("name", Quote(Code(c.name))); item.Add("supported", Observation(c.supported));
+        item.Add("enabled", Observation(c.enabled)); item.Add("executed", Observation(c.executed));
+        item.Add("reason", Quote(Code(c.reason))); if (i) caps += ','; caps += item.End();
+    }
+    o.Add("capabilities", caps + ']');
+    if (stream && stream->frameId == s.frameId && stream->sceneGeneration == s.sceneGeneration) {
+        Object t;
+#define STREAM(name, value) t.Add(name, Number(stream->value))
+        STREAM("frameId", frameId); STREAM("sceneGeneration", sceneGeneration); STREAM("submittedFrameId", submittedFrameId);
+        t.Add("submissionToken", stream->lastSubmission.value ? Number(stream->lastSubmission.value) : "null");
+        STREAM("activeCount", activeCount); STREAM("selectedLeafNodes", selectedLeafNodes); STREAM("selectedProxyNodes", selectedProxyNodes);
+        STREAM("selectionVersion", selectionVersion); STREAM("residencyVersion", residencyVersion);
+        STREAM("residentBytes", pool.residentBytes); STREAM("uploadedBytes", pool.uploadedBytes); STREAM("uploadedPages", pool.uploadedPages);
+        STREAM("evictedPages", pool.evictedPages); STREAM("pendingUploads", pool.pendingUploads); STREAM("rejectedUploads", pool.rejectedUploads);
+        STREAM("sourceBackingBytes", allocations.sourceBackingBytes); STREAM("stagingBackingBytes", allocations.stagingBackingBytes);
+        STREAM("cpuReservedBytes", cpu.totalReservedBytes); STREAM("cpuLeaseBytes", cpu.transferredBytes);
+        STREAM("cpuReadyBytes", cpu.readyBytes); STREAM("bytesRead", io.bytesRead); STREAM("requests", io.requests);
+        STREAM("pendingReads", io.pendingReads); STREAM("activeReads", io.activeReads); STREAM("failedReads", io.failed);
+        STREAM("terminalPageFailures", terminalPageFailures); STREAM("deferredPages", deferredPages);
+#undef STREAM
+        t.Add("rootReady", stream->rootReady ? "true" : "false"); t.Add("loading", stream->loading ? "true" : "false");
+        o.Add("streaming", t.End());
+    } else o.Add("streaming", "null");
+    o.Add("unavailableReason", "\"not_observed_or_identity_not_supplied\"");
+    return o.End();
+}
+void U32(std::vector<uint8_t>& bytes, uint32_t n) { for (int shift = 24; shift >= 0; shift -= 8) bytes.push_back(uint8_t(n >> shift)); }
+uint32_t CRC(const uint8_t* data, size_t count) {
+    uint32_t crc = ~0u;
+    for (size_t i = 0; i < count; ++i) { crc ^= data[i]; for (unsigned b = 0; b < 8; ++b) crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u))); }
+    return ~crc;
+}
+void Chunk(std::vector<uint8_t>& out, const char* name, const std::vector<uint8_t>& payload) {
+    U32(out, uint32_t(payload.size())); const size_t begin = out.size();
+    out.insert(out.end(), name, name + 4); out.insert(out.end(), payload.begin(), payload.end());
+    U32(out, CRC(out.data() + begin, payload.size() + 4));
+}
+FViewerScreenshot Encode(std::vector<uint8_t> rgba, uint32_t width, uint32_t height, std::string metadata) {
+    FViewerScreenshot result; result.metadataJSON = std::move(metadata);
+    try {
+        // PNG with filter 0 and bounded uncompressed DEFLATE blocks; no external codec.
+        std::vector<uint8_t> raw; raw.reserve(rgba.size() + height);
+        // Compute rows run bottom-to-top (positive NDC Y); presentation's negative
+        // viewport height and the desktop video exporter flip this same axis.
+        for (uint32_t y = 0; y < height; ++y) { raw.push_back(0); const size_t start = size_t(height - 1 - y) * width * 4;
+            raw.insert(raw.end(), rgba.begin() + start, rgba.begin() + start + size_t(width) * 4); }
+        std::vector<uint8_t> deflate{0x78, 0x01}; deflate.reserve(raw.size() + raw.size() / 65535 * 5 + 16);
+        for (size_t at = 0; at < raw.size();) {
+            const uint16_t n = uint16_t(std::min<size_t>(65535, raw.size() - at));
+            deflate.push_back(at + n == raw.size() ? 1 : 0); deflate.push_back(uint8_t(n)); deflate.push_back(uint8_t(n >> 8));
+            deflate.push_back(uint8_t(~n)); deflate.push_back(uint8_t((~n) >> 8));
+            deflate.insert(deflate.end(), raw.begin() + at, raw.begin() + at + n); at += n;
+        }
+        uint32_t a = 1, b = 0; for (auto c : raw) { a = (a + c) % 65521; b = (b + a) % 65521; } U32(deflate, b << 16 | a);
+        result.png.reserve(deflate.size() + 128); result.png = {137,80,78,71,13,10,26,10};
+        std::vector<uint8_t> header; U32(header, width); U32(header, height); header.insert(header.end(), {8,6,0,0,0});
+        Chunk(result.png, "IHDR", header); Chunk(result.png, "IDAT", deflate); Chunk(result.png, "IEND", {});
+        result.status = {true, "screenshot_completed", {}};
+    } catch (const std::exception&) { result.png.clear(); result.status = {false, "screenshot_encoding_failed", {}}; }
+    return result;
+}
+constexpr const char* CSVHeader = "frameId,sceneGeneration,surfaceGeneration,configGeneration,submissionToken,activeGaussians,sortEntries,sortCountFrame,residentBytes,uploadedBytes,cpuLeaseBytes,cpuFrameMilliseconds,gpuMilliseconds,gpuTimingFrame,presentReturnCadenceMilliseconds,degraded,streamBytesRead,streamPendingReads,streamActiveReads,streamUploadedPages,streamEvictedPages\n";
+}
+struct FSplatViewerDiagnostics::FImpl {
+    struct Row { std::string json, csv; };
+    std::mutex mutex;
+    std::deque<Row> frames;
+    size_t maximumFrames;
+    uint64_t dropped = 0, previousPresent = 0, previousSurface = 0;
+    RHI::IRHIDevice* captureDevice = nullptr;
+    MonsterEngine::TSharedPtr<RHI::IRHIBuffer> readback;
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> sourceImage;
+    std::optional<FSplatBudgetCoordinator::FReservation> gpuLease, cpuLease;
+    RHI::FGPUCompletionToken token{}, before{};
+    uint32_t width = 0, height = 0;
+    std::string metadata;
+    std::future<FViewerScreenshot> encoding;
+    std::optional<FViewerScreenshot> ready;
+};
+FSplatViewerDiagnostics::FSplatViewerDiagnostics(size_t count) : Impl(std::make_unique<FImpl>()) {
+    Impl->maximumFrames = std::clamp<size_t>(count, 1, 512);
+}
+FSplatViewerDiagnostics::~FSplatViewerDiagnostics() { Shutdown(); }
+void FSplatViewerDiagnostics::Record(const FViewerDiagnosticsSnapshot& s, const FSplatStreamingControllerSnapshot* stream,
+                                    RHI::FGPUCompletionToken token, uint64_t present) {
+    auto& p = *Impl; std::lock_guard lock(p.mutex);
+    std::optional<double> cadence;
+    if (present && p.previousPresent && p.previousSurface == s.surfaceGeneration && present > p.previousPresent)
+        cadence = double(present - p.previousPresent) / 1000000.0;
+    if (present) { p.previousPresent = present; p.previousSurface = s.surfaceGeneration; }
+    std::ostringstream csv; csv.imbue(std::locale::classic());
+    csv << s.frameId << ',' << s.sceneGeneration << ',' << s.surfaceGeneration << ',' << s.configGeneration << ',';
+    auto cell = [&](const auto& value) { auto n = Optional(value); if (n != "null") csv << n; csv << ','; };
+    cell(token.value ? std::optional<uint64_t>(token.value) : std::nullopt);
+    const auto& c = s.counters; cell(c.activeGaussians); cell(c.sortEntries); cell(c.sortCountFrame); cell(c.residentBytes);
+    cell(c.uploadedBytes); cell(c.cpuLeaseBytes); cell(c.cpuFrameMilliseconds); cell(c.gpuMilliseconds); cell(c.gpuTimingFrame);
+    cell(cadence); csv << (s.degraded ? 1 : 0) << ',';
+    if (stream && stream->frameId == s.frameId && stream->sceneGeneration == s.sceneGeneration)
+        csv << stream->io.bytesRead << ',' << stream->io.pendingReads << ',' << stream->io.activeReads << ','
+            << stream->pool.uploadedPages << ',' << stream->pool.evictedPages;
+    else csv << ",,,,";
+    csv << '\n';
+    if (p.frames.size() == p.maximumFrames) { p.frames.pop_front(); ++p.dropped; }
+    p.frames.push_back({Snapshot(s, stream, token, cadence), csv.str()});
+}
+std::string FSplatViewerDiagnostics::SnapshotJSON() const {
+    auto& p = *Impl; std::lock_guard lock(p.mutex); Object o;
+    o.Add("schemaVersion", "1"); o.Add("kind", "\"viewer_diagnostics\""); o.Add("privacy", "\"paths_and_source_omitted\"");
+    o.Add("droppedFrames", Number(p.dropped)); o.Add("capacity", Number(p.maximumFrames));
+    o.Add("latest", p.frames.empty() ? "null" : p.frames.back().json);
+    std::string frames = "["; for (const auto& row : p.frames) { if (frames.size() > 1) frames += ','; frames += row.json; }
+    o.Add("frames", frames + ']'); o.Add("unavailableReason", "\"not_observed\""); return o.End();
+}
+std::string FSplatViewerDiagnostics::FramesCSV() const {
+    auto& p = *Impl; std::lock_guard lock(p.mutex); std::string out = CSVHeader;
+    for (const auto& row : p.frames) out += row.csv; return out;
+}
+std::string FSplatViewerDiagnostics::BuildReportJSON(const FSplatBuildIdentity& i, const FSplatBuildProgress& p) {
+    Object o; o.Add("schemaVersion", "1"); o.Add("kind", "\"build_report\"");
+    o.Add("sourceSHA256", Hash(i.sourceSHA256)); o.Add("builderHash", Hash(i.builderHash)); o.Add("configHash", Hash(i.configHash));
+    // Only recognized public algorithm strings may cross the privacy boundary.
+    o.Add("builderVersion", i.builderVersion == SplatBoundedBuilderVersion ? Quote(SplatBoundedBuilderVersion) : "null");
+    o.Add("parserVersion", i.parserVersion == SplatBuildParserVersion ? Quote(SplatBuildParserVersion) : "null");
+    o.Add("buildSchemaVersion", Number(i.schemaVersion)); o.Add("sourceBytes", Number(i.sourceBytes));
+    o.Add("sourceRecords", Number(i.sourceRecords)); o.Add("stage", Number(static_cast<uint32_t>(p.stage)));
+#define PROGRESS(name) o.Add(#name, Number(p.name))
+    PROGRESS(processedBytes); PROGRESS(processedRecords); PROGRESS(totalBytes); PROGRESS(totalRecords);
+    PROGRESS(workingBytes); PROGRESS(metadataBytes); PROGRESS(peakWorkingBytes); PROGRESS(diskBytes); PROGRESS(checkpointGeneration);
+#undef PROGRESS
+    o.Add("hasError", p.error.empty() ? "false" : "true"); o.Add("detail", "\"omitted_for_privacy\""); return o.End();
+}
+bool FSplatViewerDiagnostics::RecordScreenshot(RHI::IRHIDevice& device, RHI::IRHICommandList& command,
+    MonsterEngine::TSharedPtr<RHI::IRHITexture> image, const FViewerDiagnosticsSnapshot& snapshot,
+    FSplatBudgetCoordinator& budget, std::string& error) {
+    auto& p = *Impl;
+    auto fail = [&](const char* reason) { error = reason; return false; };
+    if (p.readback || p.encoding.valid() || p.ready) return fail("screenshot_busy");
+    if (!device.supportsSubmissionCompletion() || !image || !snapshot.frameId) return fail("screenshot_unavailable");
+    const uint32_t width = image->getWidth(), height = image->getHeight();
+    const uint64_t bytes = uint64_t(width) * height * 4;
+    if (!width || !height || width > 8192 || height > 8192 || bytes > (16ull << 20) ||
+        image->getDesc().format != RHI::EPixelFormat::R8G8B8A8_UNORM) return fail("screenshot_extent_or_format");
+    auto* list = dynamic_cast<RHI::Vulkan::FVulkanRHICommandListImmediate*>(&command);
+    auto* texture = dynamic_cast<RHI::Vulkan::VulkanTexture*>(image.Get());
+    if (!list || !texture || !list->GetVulkanCommandBuffer() || !list->GetVulkanCommandBuffer()->getHandle()) return fail("screenshot_backend_unavailable");
+    RHI::BufferDesc desc; desc.size = bytes; desc.usage = RHI::EResourceUsage::TransferDst;
+    desc.memoryUsage = RHI::EMemoryUsage::Readback; desc.cpuAccessible = true;
+    desc.dedicatedAllocation = true; desc.debugName = "ViewerScreenshotReadback";
+    uint64 required = 0, alignment = 0;
+    if (!device.getBufferAllocationRequirements(desc, required, alignment)) return fail("screenshot_allocation_unknown");
+    auto gpu = budget.TryReserve(ESplatBudgetComponent::TemporaryGPU, required, error); if (!gpu) return false;
+    // RGBA, filtered input, DEFLATE and final PNG coexist. Account capacity/row overhead.
+    auto cpu = budget.TryReserve(ESplatBudgetComponent::Metadata, bytes * 6 + (1ull << 20), error); if (!cpu) return false;
+    auto buffer = device.createBuffer(desc); RHI::FBufferAllocationInfo allocation;
+    if (!buffer || !buffer->getAllocationInfo(allocation) || allocation.backingBytes > required) return fail("screenshot_allocation_failed");
+    auto* nativeBuffer = dynamic_cast<RHI::Vulkan::VulkanBuffer*>(buffer.Get()); if (!nativeBuffer) return fail("screenshot_buffer_backend");
+    // Allocate metadata before recording: after the copy is recorded its resources
+    // cannot retire until the actual submission or explicit owner idle/cancellation.
+    Object meta; meta.Add("schemaVersion", "1"); meta.Add("frameId", Number(snapshot.frameId));
+    meta.Add("sceneGeneration", Number(snapshot.sceneGeneration)); meta.Add("surfaceGeneration", Number(snapshot.surfaceGeneration));
+    meta.Add("configGeneration", Number(snapshot.configGeneration)); meta.Add("contentHash", Hash(snapshot.contentHash));
+    meta.Add("configHash", snapshot.effectiveConfig ? Hash(snapshot.effectiveConfig->configHash) : "null");
+    meta.Add("shaderIdentity", snapshot.effectiveConfig ? Hash(snapshot.effectiveConfig->shaderIdentity) : "null");
+    meta.Add("buildIdentity", Hash(snapshot.buildIdentity)); meta.Add("width", Number(width)); meta.Add("height", Number(height));
+    meta.Add("format", "\"RGBA8_UNORM\""); meta.Add("colorSpace", "\"linear_shader_output_before_srgb_present\"");
+    meta.Add("origin", "\"internal_offscreen_output\""); meta.Add("rowOrigin", "\"top_left\""); p.metadata = meta.End();
+    p.before = device.getLastSubmissionToken(); p.captureDevice = &device; p.width = width; p.height = height;
+    p.readback = std::move(buffer); p.sourceImage = std::move(image); p.gpuLease = std::move(gpu); p.cpuLease = std::move(cpu); p.token = {};
+    auto native = list->GetVulkanCommandBuffer()->getHandle();
+    VkImageMemoryBarrier before{}; before.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    before.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT; before.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    before.oldLayout = VK_IMAGE_LAYOUT_GENERAL; before.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    before.srcQueueFamilyIndex = before.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    before.image = texture->getImage(); before.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+    vkCmdPipelineBarrier(native, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,nullptr,0,nullptr,1,&before);
+    VkBufferImageCopy region{}; region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1}; region.imageExtent = {width,height,1};
+    vkCmdCopyImageToBuffer(native, texture->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, nativeBuffer->getBuffer(), 1, &region);
+    auto after = before; after.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT; after.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    after.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; after.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    vkCmdPipelineBarrier(native,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,nullptr,0,nullptr,1,&after);
+    VkBufferMemoryBarrier host{}; host.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    host.srcQueueFamilyIndex = host.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; host.buffer = nativeBuffer->getBuffer(); host.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(native,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&host,0,nullptr);
+    error.clear(); return true;
+}
+void FSplatViewerDiagnostics::OnScreenshotSubmitted(RHI::FGPUCompletionToken token) {
+    auto& p = *Impl; if (p.readback && !p.token.value && token.value > p.before.value) p.token = token;
+}
+void FSplatViewerDiagnostics::PollScreenshot() {
+    auto& p = *Impl;
+    if (p.encoding.valid() && p.encoding.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try { p.ready = p.encoding.get(); } catch (const std::exception&) { p.ready = FViewerScreenshot{{},{},{false,"screenshot_worker_failed",{}}}; }
+    }
+    if (!p.readback || !p.token.value || !p.captureDevice->isSubmissionComplete(p.token)) return;
+    void* mapped = p.readback->map();
+    if (!mapped) { p.ready = FViewerScreenshot{{}, p.metadata, {false,"screenshot_map_failed",{}}}; }
+    else {
+        try {
+            std::vector<uint8_t> rgba(size_t(p.width) * p.height * 4);
+            std::memcpy(rgba.data(), mapped, rgba.size()); p.readback->unmap(); mapped = nullptr;
+            // Final metadata retains the actual readback completion token.
+            auto metadata = p.metadata; metadata.pop_back(); metadata += ",\"submissionToken\":" + Number(p.token.value) + ",\"gpuCompleted\":true}";
+            p.encoding = std::async(std::launch::async, Encode, std::move(rgba), p.width, p.height, std::move(metadata));
+        } catch (const std::exception&) {
+            if (mapped) p.readback->unmap(); p.ready = FViewerScreenshot{{},p.metadata,{false,"screenshot_worker_failed",{}}};
+        }
+    }
+    p.readback.Reset(); p.sourceImage.Reset(); p.gpuLease.reset(); p.captureDevice = nullptr;
+}
+bool FSplatViewerDiagnostics::TakeScreenshot(FViewerScreenshot& result) {
+    PollScreenshot(); auto& p = *Impl; if (!p.ready) return false;
+    result = std::move(*p.ready); result.memoryLease = std::move(p.cpuLease); p.ready.reset(); return true;
+}
+void FSplatViewerDiagnostics::Shutdown() {
+    if (!Impl) return; auto& p = *Impl;
+    // This is the explicit teardown path, never normal frame processing.
+    if (p.readback && p.captureDevice) p.captureDevice->waitForIdle();
+    if (p.readback && p.token.value) PollScreenshot();
+    p.readback.Reset(); p.sourceImage.Reset(); p.gpuLease.reset(); p.captureDevice = nullptr;
+    if (p.encoding.valid()) { try { p.ready = p.encoding.get(); } catch (const std::exception&) { p.ready.reset(); } }
+    p.ready.reset(); p.cpuLease.reset();
+}
+}

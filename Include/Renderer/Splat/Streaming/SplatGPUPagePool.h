@@ -49,6 +49,9 @@ public:
     uint64_t GetPendingCPUBytes() const;
     /** Deduplicate source work across queued, uploading and ready mappings. */
     bool HasPage(uint32_t pageId, uint64_t sceneGeneration) const;
+    /** Poll real completion and retire unprotected pages, including partial uploads
+     * with no outstanding commands. Call ProtectSelection first; never waits. */
+    void TrimUnprotected();
     /** Optional verification/diagnostic gate can delay actual completion only.
      * Empty gate preserves real device completion. Never grants early completion. */
     void SetCompletionGate(std::function<bool(RHI::FGPUCompletionToken)> gate);

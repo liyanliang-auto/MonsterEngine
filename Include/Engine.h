@@ -2,6 +2,7 @@
 
 #include "Core/CoreMinimal.h"
 #include "RHI/RHI.h"
+#include "Core/RuntimeLease.h"
 
 namespace MonsterRender {
     
@@ -27,6 +28,8 @@ namespace MonsterRender {
          * Run the main engine loop
          */
         void run();
+        /** Return the actual backend transaction; no inferred frame/token success. */
+        RHI::FFrameSubmitResult PresentFrame();
         
         /**
          * Get the RHI device
@@ -49,6 +52,7 @@ namespace MonsterRender {
         uint32 getWindowHeight() const { return m_windowHeight; }
         
     private:
+        FProcessRuntimeLease m_runtimeLease; // outlives device and runtime allocations
         // RHI system
         TUniquePtr<RHI::IRHIDevice> m_rhiDevice;
         

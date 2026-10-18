@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monsterengine.local/schemas/android/capabilities-v1.json",
+  "title": "MonsterEngine Android partial Vulkan capability report",
+  "type": "object",
+  "required": ["schemaVersion", "identity", "diagnosticsOnly", "renderEligible", "stages", "devices", "required", "shaderIdentity", "graphicsSmokePassed", "splatSmokePassed", "streamingPassed", "failureStage", "vkResult", "controlledFault"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "identity": {
+      "type": "object",
+      "required": ["application", "build", "workspace", "abi", "apkSHA256", "nativeSHA256", "configSHA256", "emulator", "translated"],
+      "properties": {
+        "application": {"type": "string"}, "build": {"type": "string"},
+        "workspace": {"type": "string"}, "abi": {"type": "string"},
+        "apkSHA256": {"$ref": "#/$defs/optionalHash"},
+        "nativeSHA256": {"$ref": "#/$defs/optionalHash"},
+        "configSHA256": {"$ref": "#/$defs/optionalHash"},
+        "emulator": {"type": ["boolean", "null"]},
+        "translated": {"type": ["boolean", "null"]}
+      }
+    },
+    "diagnosticsOnly": {"type": "boolean"}, "renderEligible": {"type": "boolean"},
+    "graphicsSmokePassed": {"type": ["boolean", "null"]},
+    "splatSmokePassed": {"type": ["boolean", "null"]},
+    "streamingPassed": {"type": ["boolean", "null"]},
+    "shaderIdentity": {"$ref": "#/$defs/optionalHash"},
+    "controlledFault": {"type": "integer", "minimum": 0, "maximum": 4},
+    "failureStage": {"type": ["string", "null"]},
+    "vkResult": {"type": ["integer", "null"]},
+    "loaderVersion": {"type": "integer", "minimum": 0},
+    "instanceVersion": {"type": "integer", "minimum": 0},
+    "loaderVersionEnumerationAvailable": {"type": "boolean"},
+    "required": {
+      "type": "object",
+      "required": ["apiVersion", "shaderInt64", "maxInvocations", "sharedMemoryBytes", "localSize", "capabilities"],
+      "properties": {
+        "apiVersion": {"type": "integer"}, "shaderInt64": {"const": true},
+        "maxInvocations": {"type": "integer", "minimum": 1},
+        "sharedMemoryBytes": {"type": "integer", "minimum": 0},
+        "localSize": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "integer", "minimum": 1}},
+        "capabilities": {"type": "array", "items": {"type": "integer", "minimum": 0}, "uniqueItems": true}
+      }
+    },
+    "stages": {"type": "object", "additionalProperties": {"$ref": "#/$defs/stage"}},
+    "physicalDeviceCount": {"type": "integer", "minimum": 0, "maximum": 64},
+    "devices": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/device"}}
+  },
+  "$defs": {
+    "optionalHash": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^[a-f0-9]{64}$"}]},
+    "stage": {
+      "type": "object", "required": ["state", "reason", "vkResult"],
+      "properties": {
+        "state": {"enum": ["pending", "passed", "failed", "unavailable"]},
+        "reason": {"type": "string", "maxLength": 4096}, "vkResult": {"type": ["integer", "null"]},
+        "frameId": {"type": "integer", "minimum": 0}, "submissionToken": {"type": "integer", "minimum": 0},
+        "surfaceGeneration": {"type": "integer", "minimum": 0}, "sceneGeneration": {"type": "integer", "minimum": 0},
+        "submissionCompleted": {"type": "boolean"}, "readbackValidated": {"type": "boolean"}
+      }
+    },
+    "device": {
+      "type": "object", "required": ["index", "name", "vendorID", "deviceID", "driverVersion", "apiVersion"],
+      "description": "Later fields may be absent when an enumeration fails; previously obtained fields remain available.",
+      "properties": {
+        "index": {"type": "integer", "minimum": 0}, "name": {"type": "string"},
+        "vendorID": {"type": "integer"}, "deviceID": {"type": "integer"}, "driverVersion": {"type": "integer"}, "apiVersion": {"type": "integer"},
+        "diagnosticsOnly": {"type": "boolean"}, "renderEligible": {"type": "boolean"},
+        "requestedFeatures": {"type": ["array", "null"], "items": {"type": "string"}},
+        "enabledFeatures": {"type": ["array", "null"], "items": {"type": "string"}},
+        "supportedFeatures": {"type": "object", "additionalProperties": {"type": ["boolean", "null"]}},
+        "capabilities": {"type": "array", "items": {"type": "object", "required": ["id", "required", "supported", "requested", "enabled", "executed"], "properties": {"id": {"type": "integer"}, "required": {"type": "boolean"}, "supported": {"type": ["boolean", "null"]}, "requested": {"type": ["boolean", "null"]}, "enabled": {"type": ["boolean", "null"]}, "executed": {"type": ["boolean", "null"]}}}},
+        "limits": {"type": "object"}, "queues": {"type": "array"}, "formats": {"type": "array"},
+        "surface": {"type": "object"}, "memory": {"type": "object"}, "timestamps": {"type": "object"},
+        "executed": {"type": "object", "additionalProperties": {"$ref": "#/$defs/stage"}},
+        "reasons": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

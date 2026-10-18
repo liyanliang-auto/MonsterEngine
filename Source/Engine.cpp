@@ -3,7 +3,7 @@
 
 namespace MonsterRender {
     
-    Engine::Engine() {
+    Engine::Engine() : m_runtimeLease(FProcessRuntimeLease::Acquire()) {
         MR_LOG_INFO("MonsterRender Engine created");
     }
     
@@ -19,8 +19,7 @@ namespace MonsterRender {
         }
         
         MR_LOG_INFO("Initializing MonsterRender Engine...");
-        // Initialize memory system first
-        MemorySystem::get().initialize();
+        m_windowWidth=rhiCreateInfo.windowWidth;m_windowHeight=rhiCreateInfo.windowHeight;
         
         // Initialize RHI system
         MR_LOG_INFO("Available RHI backends:");
@@ -65,10 +64,11 @@ namespace MonsterRender {
         m_initialized = false;
         MR_LOG_INFO("MonsterRender Engine shutdown complete");
 
-        // Shutdown memory system last
-        MemorySystem::get().shutdown();
+        // Allocators stay pinned through destruction of all engine members.
     }
     
+    RHI::FFrameSubmitResult Engine::PresentFrame() { return m_rhiDevice ? m_rhiDevice->presentFrame() : RHI::FFrameSubmitResult{}; }
+
     void Engine::run() {
         if (!m_initialized) {
             MR_LOG_ERROR("Engine not initialized - cannot run");

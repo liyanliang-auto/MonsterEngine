@@ -14,6 +14,7 @@
 #include "Containers/String.h"
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHIResource.h"
+#include "RHI/RHIFrameResult.h"
 
 namespace MonsterRender::RHI {
 
@@ -60,7 +61,11 @@ enum class ESwapChainStatus : uint8
     OK,             // SwapChain is valid and ready
     OutOfDate,      // SwapChain needs to be recreated (window resized)
     Suboptimal,     // SwapChain works but may not be optimal
-    Error           // SwapChain error
+    Error,          // SwapChain error
+    NotReady,
+    Timeout,
+    SurfaceLost,
+    DeviceLost
 };
 
 /**
@@ -117,6 +122,9 @@ public:
      * @return Status of the present operation
      */
     virtual ESwapChainStatus Present() = 0;
+    /** Legacy implementations never fabricate native completion tokens. */
+    virtual FFrameSubmitResult AcquireFrame(uint64 = 1000000) { return {}; }
+    virtual FFrameSubmitResult PresentFrame() { return {}; }
     
     /**
      * Resize the swapchain

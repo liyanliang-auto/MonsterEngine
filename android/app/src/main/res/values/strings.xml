@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MonsterEngine</string>
+    <string name="build_channel_name">Scene building</string>
+    <string name="build_channel_description">Progress and controls for scene import and LOD builds</string>
+    <string name="native_unavailable">Native rendering is unavailable. Open diagnostics for details.</string>
+</resources>

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:monsterengine:viewer-diagnostics:1",
+  "title": "MonsterEngine private diagnostic archive schema 1",
+  "description": "report.json has Kotlin fallback observations, viewer native ring and build reports; manifest.json lists SHA256 of each actual exported artifact. Screenshot metadata joins original frame/generations/config/SPIR-V/scene/build identities. No source models, arbitrary text, filenames or private paths are exported. CSV null values are empty cells. GPU counts/timing join via sortCountFrame/gpuTimingFrame, never the delivery frame. presentReturnCadenceMilliseconds is a CPU timestamp interval, not measured display cadence. Nested GPU intervals must not be summed.",
+  "oneOf": [
+    { "$ref": "#/$defs/viewer" },
+    { "$ref": "#/$defs/build" },
+    { "$ref": "#/$defs/screenshot" },
+    { "$ref": "#/$defs/bundle" }
+  ],
+  "$defs": {
+    "hash": { "type": ["string", "null"], "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$" },
+    "uint": { "type": "integer", "minimum": 0 },
+    "observedCount": { "type": ["integer", "null"], "minimum": 0 },
+    "observedMilliseconds": { "type": ["number", "null"], "minimum": 0 },
+    "generations": {
+      "type": "object",
+      "required": ["frameId", "sceneGeneration", "surfaceGeneration", "configGeneration"],
+      "properties": {
+        "frameId": { "$ref": "#/$defs/uint" },
+        "sceneGeneration": { "$ref": "#/$defs/uint" },
+        "surfaceGeneration": { "$ref": "#/$defs/uint" },
+        "configGeneration": { "$ref": "#/$defs/uint" }
+      }
+    },
+    "config": {
+      "type": ["object", "null"],
+      "description": "Path-free requested/effective numeric settings, independent admission generations and canonical config/shader identities; null effective config means not admitted.",
+      "properties": {
+        "configHash": { "$ref": "#/$defs/hash" },
+        "shaderIdentity": { "$ref": "#/$defs/hash" },
+        "generation": { "$ref": "#/$defs/uint" }
+      }
+    },
+    "frame": {
+      "allOf": [{ "$ref": "#/$defs/generations" }],
+      "type": "object",
+      "required": ["schemaVersion", "counters", "requestedConfig", "effectiveConfig", "timing", "streaming", "status", "unavailableReason"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "contentHash": { "$ref": "#/$defs/hash" },
+        "buildIdentity": { "$ref": "#/$defs/hash" },
+        "requestedConfig": { "$ref": "#/$defs/config" },
+        "effectiveConfig": { "$ref": "#/$defs/config" },
+        "submissionToken": { "$ref": "#/$defs/observedCount" },
+        "counters": {
+          "type": "object",
+          "properties": {
+            "activeGaussians": { "$ref": "#/$defs/observedCount" },
+            "sortEntries": { "$ref": "#/$defs/observedCount" },
+            "sortCountFrame": { "$ref": "#/$defs/observedCount" },
+            "residentBytes": { "$ref": "#/$defs/observedCount" },
+            "uploadedBytes": { "$ref": "#/$defs/observedCount" },
+            "cpuLeaseBytes": { "$ref": "#/$defs/observedCount" },
+            "cpuFrameMilliseconds": { "$ref": "#/$defs/observedMilliseconds" },
+            "gpuMilliseconds": { "$ref": "#/$defs/observedMilliseconds" },
+            "gpuTimingFrame": { "$ref": "#/$defs/observedCount" }
+          },
+          "additionalProperties": false
+        },
+        "timing": {
+          "type": "object",
+          "required": ["unavailableReason", "nestedIntervalsAdditive"],
+          "properties": {
+            "presentReturnCadenceMilliseconds": { "$ref": "#/$defs/observedMilliseconds" },
+            "displayCadenceMilliseconds": { "type": "null" },
+            "videoEncodingFPS": { "type": "null" },
+            "nestedIntervalsAdditive": { "const": false }
+          }
+        },
+        "capabilities": {
+          "type": "array", "maxItems": 64,
+          "items": { "type": "object", "properties": {
+            "supported": { "type": ["boolean", "null"] },
+            "enabled": { "type": ["boolean", "null"] },
+            "executed": { "type": ["boolean", "null"] }
+          } }
+        },
+        "streaming": { "type": ["object", "null"], "description": "Only included for matching original frame and scene generations. CPU lease is a subset of CPU reservations. Backing, logical residency and cumulative uploadedBytes are separate counters." },
+        "unavailableReason": { "const": "not_observed_or_identity_not_supplied" }
+      }
+    },
+    "viewer": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "privacy", "capacity", "droppedFrames", "latest", "frames"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "kind": { "const": "viewer_diagnostics" },
+        "privacy": { "const": "paths_and_source_omitted" },
+        "capacity": { "type": "integer", "minimum": 1, "maximum": 512 },
+        "droppedFrames": { "$ref": "#/$defs/uint" },
+        "latest": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/frame" }] },
+        "frames": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/frame" } }
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "sourceSHA256", "configHash", "builderHash", "checkpointGeneration", "stage", "hasError"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "kind": { "const": "build_report" },
+        "sourceSHA256": { "$ref": "#/$defs/hash" }, "configHash": { "$ref": "#/$defs/hash" }, "builderHash": { "$ref": "#/$defs/hash" },
+        "checkpointGeneration": { "$ref": "#/$defs/uint" },
+        "stage": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "hasError": { "type": "boolean" }
+      }
+    },
+    "screenshot": {
+      "allOf": [{ "$ref": "#/$defs/generations" }],
+      "type": "object",
+      "required": ["schemaVersion", "gpuCompleted", "submissionToken", "width", "height", "format", "colorSpace", "origin"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "gpuCompleted": { "const": true },
+        "submissionToken": { "type": "integer", "minimum": 1 },
+        "width": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "format": { "const": "RGBA8_UNORM" }, "colorSpace": { "const": "linear_shader_output_before_srgb_present" },
+        "origin": { "const": "internal_offscreen_output" },
+        "contentHash": { "$ref": "#/$defs/hash" }, "configHash": { "$ref": "#/$defs/hash" },
+        "shaderIdentity": { "$ref": "#/$defs/hash" }, "buildIdentity": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "bundle": {
+      "type": "object", "required": ["schemaVersion", "kind", "privacy"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "kind": { "const": "diagnostic_bundle" },
+        "privacy": { "const": "paths_and_source_omitted" },
+        "viewer": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/viewer" }] },
+        "buildReports": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/build" } },
+        "artifacts": { "type": "array", "maxItems": 5, "items": {
+          "type": "object", "required": ["name", "bytes", "sha256"],
+          "properties": {
+            "name": { "enum": ["report.json", "frames.csv", "screenshot.png", "screenshot.json"] },
+            "bytes": { "$ref": "#/$defs/uint" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }, "additionalProperties": false
+        } }
+      }
+    }
+  }
+}

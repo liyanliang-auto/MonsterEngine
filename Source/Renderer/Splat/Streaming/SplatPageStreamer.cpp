@@ -90,7 +90,7 @@ struct FSplatPageStreamer::FImpl {
     std::filesystem::path directory;
     std::atomic<bool> stopping{true}, hasGeneration{false}, hasCancellation{false};
     std::atomic<uint64_t> generation{0}, cancelledThrough{0};
-    bool opened = false;
+    bool opened = false, memoryPressure = false;
     uint64_t used = 0, peak = 0, cacheBytes = 0, order = 0;
     FSplatStreamingStats stats;
     std::string lastError;
@@ -251,7 +251,7 @@ struct FSplatPageStreamer::FImpl {
                     uint64_t(hit->second.bytes->capacity()) + CacheCharge : 0;
                 cached = hit != cache.end() && payload <= config.cpuCacheBytes - used + evictable - cachePin ?
                     hit->second.bytes : nullptr; // Pins only when the hit can fit.
-                reserveCache = !cached && MakeRoom(payload + page.byteSize + CacheCharge);
+                reserveCache = !memoryPressure && !cached && MakeRoom(payload + page.byteSize + CacheCharge);
                 const uint64_t extra = payload + (reserveCache ? page.byteSize + CacheCharge : 0);
                 if (!reserveCache && !MakeRoom(extra)) {
                     cached.reset();
@@ -464,7 +464,7 @@ bool FSplatPageStreamer::Open(const FSplatSceneManifest& manifest, const std::st
         s.manifest = manifest; s.directory = std::move(root); s.config = config;
         s.stats = {}; s.lastError.clear(); s.used = s.peak = s.cacheBytes = s.order = 0;
         s.generation = 0; s.hasGeneration = false;
-        s.stopping = false; s.opened = true;
+        s.stopping = false; s.opened = true; s.memoryPressure = false;
         s.workers.reserve(config.maxConcurrentReads);
         for (uint32_t i = 0; i < config.maxConcurrentReads; ++i)
             s.workers.emplace_back([&s] { s.Worker(); });
@@ -603,6 +603,24 @@ void FSplatPageStreamer::CancelGeneration(uint64_t generation) {
         if (!s.hasCancellation.load() || generation > s.cancelledThrough.load()) s.cancelledThrough = generation;
         s.hasCancellation = true;
         s.RemoveCancelledOwned();
+    }
+    s.wake.notify_all();
+}
+
+void FSplatPageStreamer::OnMemoryPressure() {
+    auto& s = *m_impl;
+    {
+        std::lock_guard<std::mutex> lock(s.mutex);
+        s.memoryPressure = true;
+        // A worker's shared cache reference cannot be freed here. It remains
+        // charged and is evicted when that reference retires on a later trim.
+        for (auto it = s.cache.begin(); it != s.cache.end();) {
+            if (it->second.bytes.use_count() != 1) { ++it; continue; }
+            const auto bytes = uint64_t(it->second.bytes->capacity());
+            it = s.cache.erase(it);
+            s.used -= bytes + CacheCharge;
+            s.cacheBytes -= bytes;
+        }
     }
     s.wake.notify_all();
 }

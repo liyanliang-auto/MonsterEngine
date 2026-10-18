@@ -14,6 +14,9 @@
 #include "MathUtility.h"
 #include <cmath>
 #include <algorithm>
+#include <cstring>
+#include <cstdint>
+#include <limits>
 
 namespace MonsterEngine
 {
@@ -657,6 +660,59 @@ FORCEINLINE VectorRegister4Double VectorReplicateZ(const VectorRegister4Double& 
 FORCEINLINE VectorRegister4Double VectorReplicateW(const VectorRegister4Double& Vec)
 {
     return VectorRegister4Double(Vec.V[3], Vec.V[3], Vec.V[3], Vec.V[3]);
+}
+
+// Preserve SSE mask semantics: true lanes contain all bits set, not 1.0f.
+FORCEINLINE uint32_t VectorLaneBits(float Value)
+{
+    uint32_t Bits;
+    std::memcpy(&Bits, &Value, sizeof(Bits));
+    return Bits;
+}
+
+FORCEINLINE float VectorLaneFromBits(uint32_t Bits)
+{
+    float Value;
+    std::memcpy(&Value, &Bits, sizeof(Value));
+    return Value;
+}
+
+#define MR_FPU_COMPARE(Name, Op) \
+FORCEINLINE VectorRegister4Float Name(const VectorRegister4Float& A, const VectorRegister4Float& B) \
+{ \
+    VectorRegister4Float Result; \
+    for (int I = 0; I < 4; ++I) Result.V[I] = VectorLaneFromBits(A.V[I] Op B.V[I] ? std::numeric_limits<uint32_t>::max() : 0u); \
+    return Result; \
+}
+MR_FPU_COMPARE(VectorCompareEQ, ==)
+MR_FPU_COMPARE(VectorCompareNE, !=)
+MR_FPU_COMPARE(VectorCompareGT, >)
+MR_FPU_COMPARE(VectorCompareGE, >=)
+MR_FPU_COMPARE(VectorCompareLT, <)
+MR_FPU_COMPARE(VectorCompareLE, <=)
+#undef MR_FPU_COMPARE
+
+#define MR_FPU_BITWISE(Name, Op) \
+FORCEINLINE VectorRegister4Float Name(const VectorRegister4Float& A, const VectorRegister4Float& B) \
+{ \
+    VectorRegister4Float Result; \
+    for (int I = 0; I < 4; ++I) Result.V[I] = VectorLaneFromBits(VectorLaneBits(A.V[I]) Op VectorLaneBits(B.V[I])); \
+    return Result; \
+}
+MR_FPU_BITWISE(VectorBitwiseAnd, &)
+MR_FPU_BITWISE(VectorBitwiseOr, |)
+MR_FPU_BITWISE(VectorBitwiseXor, ^)
+#undef MR_FPU_BITWISE
+
+FORCEINLINE VectorRegister4Float VectorSelect(const VectorRegister4Float& Mask,
+    const VectorRegister4Float& A, const VectorRegister4Float& B)
+{
+    VectorRegister4Float Result;
+    for (int I = 0; I < 4; ++I) {
+        const uint32_t Bits = VectorLaneBits(Mask.V[I]);
+        Result.V[I] = VectorLaneFromBits((Bits & VectorLaneBits(A.V[I])) | (~Bits & VectorLaneBits(B.V[I])));
+    }
+    return Result;
 }
 
 } // namespace Math

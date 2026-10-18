@@ -61,6 +61,9 @@ public:
     /** Call only after consumer destroys/frees encoded and decoded result vectors.
      * Safe for an old generation; duplicate/unknown release returns false. */
     bool ReleaseTransferred(uint32_t pageId, uint64_t generation);
+    /** Drop idle encoded cache entries; workers/transferred payloads stay charged.
+     * Stops producing cache copies until the next Open, without cancelling required reads. */
+    void OnMemoryPressure();
     /** Stops/cancels workers, joins them and releases owned cache/results. Outstanding
      * transferred reservations survive Shutdown. Release them before reopening. */
     void Shutdown();

@@ -1,0 +1,59 @@
+MonsterEngine original procedural builtin 3DGS scene
+Generator identity: MonsterEngine-ProceduralBuiltin-1
+Source: Tools/Android/generate_builtin_scene.py in this repository.
+
+Provenance
+All positions, colors and Gaussian parameters are generated from mathematical
+surface equations. No photographs, trained model, private dataset, texture,
+third-party mesh or external download is incorporated. The scene contains a
+colored vertical torus, an orange striped sphere and a tiled floor. Colors bake
+a simple directional diffuse term into degree-zero spherical harmonics.
+
+Permission
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this procedural scene, its generator and associated default configuration, to
+use, copy, modify, merge, publish, distribute, sublicense and/or sell copies,
+and to permit persons to whom these materials are furnished to do so, subject
+to including this permission notice with substantial copies of these materials.
+This grant concerns these original procedural materials and does not change
+the license of the engine or other dependencies.
+
+THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM USE OF THESE MATERIALS.
+
+Reproduction and semantic contract
+Run Python 3.9 or newer:
+  python Tools/Android/generate_builtin_scene.py --output <generated>/scenes/builtin.ply
+The output contains exactly 49,152 Gaussian records, in deterministic order,
+as binary little-endian PLY with fourteen float32 fields per record. Degree is
+SH0; no f_rest fields exist. f_dc=(linearRGB-0.5)/0.28209479177387814.
+Scales are log standard deviations, opacity is a logit, and rotation is the
+identity unit quaternion in wxyz order. The loader activates these parameters.
+Numeric values are quantized to seven decimal places before float32 packing.
+No timestamp, user path or random state enters the generated asset.
+The generator prints the actual byte count and SHA256 after successful output.
+The APK asset manifest additionally hashes every staged scene/config/license.
+
+Camera and starting budgets
+Right-handed world, +Y up. Eye [0,1.2,5.5], target [0,0,0], up [0,1,0].
+Vertical FOV 45 degrees; near 0.05; far 100; initial Gaussian scale 1.
+Expected landscape internal output is 1280x720, with longest edge <=1280 and
+pixels <=921600; portrait/smaller Surfaces must respect both same hard limits.
+The camera is also stored in PLY comments and default-viewer.json builtinScene.
+ViewerConfig consumers read the settings envelope; builtinScene is additive
+asset/camera metadata, not an FSplatLODRuntimeOptions field.
+
+Starting capacities: active 100,000; sort entries 2,000,000. Requested source
+GPU budget 128 MiB; staging 16 MiB; CPU cache 64 MiB; temporary GPU 256 MiB;
+upload limit 2 MiB/frame; two I/O workers; quality 3 pixels; hysteresis 0.2.
+SH storage FP32, original raster, radix32, projected fusion disabled.
+Raw PLY payload is 2,752,512 bytes plus its header. The SH0 source arrays contain
+3,145,728 logical bytes before physical allocation alignment/backing overhead.
+These are starting admission limits, not measured device usage or performance.
+
+Scope of demonstration
+This is a small-scene rendering asset. It does not by itself prove LOD streaming,
+large-model support, completed GPU rendering or any image/performance acceptance.
+No fixed preview image replaces the 3DGS renderer.

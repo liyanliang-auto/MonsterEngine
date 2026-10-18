@@ -19,6 +19,7 @@
 #include "RHI/RHIDefinitions.h"
 #include "RHI/IRHISwapChain.h"
 #include "Core/Log.h"
+#include <stdexcept>
 
 DEFINE_LOG_CATEGORY_STATIC(LogVulkanRHI, Log, All);
 
@@ -94,6 +95,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::submitAndWait() {
+        m_lastSynchronousResult = VK_NOT_READY;
         MR_LOG_INFO("===== FVulkanRHICommandListImmediate::submitAndWait() START =====");
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::submitAndWait: No active context");
@@ -105,7 +107,7 @@ namespace MonsterRender::RHI::Vulkan {
             return;
         }
         FVulkanCmdBuffer* cmdBuffer = mgr->getActiveCmdBuffer();
-        if (!cmdBuffer || !cmdBuffer->hasEnded()) {
+        if (!cmdBuffer || cmdBuffer != m_context->getCmdBuffer() || !cmdBuffer->hasEnded()) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::submitAndWait: Active command buffer not ended/ready");
             return;
         }
@@ -121,12 +123,19 @@ namespace MonsterRender::RHI::Vulkan {
         MR_LOG_INFO("  Submitting active command buffer with its own fence for readback...");
         if (!mgr->submitActiveCmdBufferWithFence(nullptr, 0, nullptr, 0, fence)) {
             MR_LOG_ERROR("submitAndWait: submission failed; no wait performed");
-            return;
+            m_lastSynchronousResult = m_device->getLastSubmitResult();
+            throw std::runtime_error("Synchronous Vulkan submission failed");
         }
 
-        VkResult waitRes = functions.vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+        // Desktop imports retain their synchronous slow-path budget. Android owners
+        // use a short bound and surface failure before any CPU readback consumption.
+        constexpr uint64 waitBudget = PLATFORM_ANDROID ? 5000000ULL : 5000000000ULL;
+        VkResult waitRes = functions.vkWaitForFences(device, 1, &fence, VK_TRUE, waitBudget);
+        m_lastSynchronousResult = waitRes;
         if (waitRes != VK_SUCCESS) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::submitAndWait: vkWaitForFences failed: " + std::to_string(waitRes));
+            // Never let a synchronous readback caller consume unfinished GPU data.
+            throw std::runtime_error("Synchronous Vulkan completion unavailable: " + std::to_string(waitRes));
         } else {
             MR_LOG_INFO("  Readback command buffer completed (fence signaled)");
         }
@@ -150,6 +159,7 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
     
     void FVulkanRHICommandListImmediate::setPipelineState(TSharedPtr<IRHIPipelineState> pipelineState) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::setPipelineState: No active context");
             return;
@@ -226,6 +236,7 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanRHICommandListImmediate::setVertexBuffers(uint32 startSlot, 
                                                          TSpan<TSharedPtr<IRHIBuffer>> vertexBuffers) {
+        if (!isRecording()) return;
         if (!m_context || !m_context->getPendingState()) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::setVertexBuffers: No active context or pending state");
             return;
@@ -266,6 +277,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::setIndexBuffer(TSharedPtr<IRHIBuffer> indexBuffer, bool is32Bit) {
+        if (!isRecording()) return;
         if (!m_context || !m_context->getPendingState()) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::setIndexBuffer: No active context or pending state");
             return;
@@ -303,6 +315,7 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
     
     void FVulkanRHICommandListImmediate::setConstantBuffer(uint32 slot, TSharedPtr<IRHIBuffer> buffer) {
+        if (!isRecording()) return;
         if (!buffer) {
             MR_LOG_WARNING("FVulkanRHICommandListImmediate::setConstantBuffer: Null buffer for slot " + 
                           std::to_string(slot));
@@ -356,6 +369,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::setShaderResource(uint32 slot, TSharedPtr<IRHITexture> texture) {
+        if (!isRecording()) return;
         if (!texture) {
             MR_LOG_WARNING("FVulkanRHICommandListImmediate::setShaderResource: Null texture for slot " + 
                           std::to_string(slot));
@@ -422,6 +436,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::setSampler(uint32 slot, TSharedPtr<IRHISampler> sampler) {
+        if (!isRecording()) return;
         // Convert slot to (set, binding)
         uint32 set, binding;
         RHI::GetSetAndBinding(slot, set, binding);
@@ -465,6 +480,7 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
     
     void FVulkanRHICommandListImmediate::setViewport(const Viewport& viewport) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::setViewport: No active context");
             return;
@@ -480,6 +496,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::setScissorRect(const ScissorRect& scissorRect) {
+        if (!isRecording()) return;
         if (!m_context || !m_context->getPendingState()) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::setScissorRect: No active context or pending state");
             return;
@@ -501,6 +518,7 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanRHICommandListImmediate::setRenderTargets(TSpan<TSharedPtr<IRHITexture>> renderTargets, 
                                                          TSharedPtr<IRHITexture> depthStencil) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::setRenderTargets: No active context");
             return;
@@ -517,6 +535,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::endRenderPass() {
+        if (!isRecording()) return;
         MR_LOG_INFO("===== FVulkanRHICommandListImmediate::endRenderPass() START =====");
         if (!m_context) {
             MR_LOG_WARNING("FVulkanRHICommandListImmediate::endRenderPass: No active context");
@@ -537,6 +556,7 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
     
     void FVulkanRHICommandListImmediate::draw(uint32 vertexCount, uint32 startVertexLocation) {
+        if (!isRecording()) return;
         MR_LOG(LogTemp, Log, "[CMD_LIST_TRACE] FVulkanRHICommandListImmediate::draw(%u, %u) BEGIN",
                vertexCount, startVertexLocation);
         if (!m_context) {
@@ -554,6 +574,7 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanRHICommandListImmediate::drawIndexed(uint32 indexCount, uint32 startIndexLocation, 
                                                      int32 baseVertexLocation) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::drawIndexed: No active context");
             return;
@@ -571,6 +592,7 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanRHICommandListImmediate::drawInstanced(uint32 vertexCountPerInstance, uint32 instanceCount,
                                                        uint32 startVertexLocation, uint32 startInstanceLocation) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::drawInstanced: No active context");
             return;
@@ -590,6 +612,7 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanRHICommandListImmediate::drawIndexedInstanced(uint32 indexCountPerInstance, uint32 instanceCount,
                                                               uint32 startIndexLocation, int32 baseVertexLocation,
                                                               uint32 startInstanceLocation) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::drawIndexedInstanced: No active context");
             return;
@@ -612,6 +635,7 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanRHICommandListImmediate::clearRenderTarget(TSharedPtr<IRHITexture> renderTarget, 
                                                           const float32 clearColor[4]) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::clearRenderTarget: No active context");
             return;
@@ -634,6 +658,7 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanRHICommandListImmediate::clearDepthStencil(TSharedPtr<IRHITexture> depthStencil, 
                                                           bool clearDepth, bool clearStencil,
                                                           float32 depth, uint8 stencil) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::clearDepthStencil: No active context");
             return;
@@ -660,6 +685,7 @@ namespace MonsterRender::RHI::Vulkan {
     
     void FVulkanRHICommandListImmediate::transitionResource(TSharedPtr<IRHIResource> resource, 
                                                            EResourceUsage stateBefore, EResourceUsage stateAfter) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG(LogVulkanRHI, Error, "transitionResource: No active context");
             return;
@@ -809,6 +835,7 @@ namespace MonsterRender::RHI::Vulkan {
     void FVulkanRHICommandListImmediate::transitionResource(TSharedPtr<IRHIResource> resource, 
                                                            MonsterRender::RDG::ERHIAccess stateBefore, 
                                                            MonsterRender::RDG::ERHIAccess stateAfter) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG(LogVulkanRHI, Error, "transitionResource: No active context");
             return;
@@ -921,6 +948,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::resourceBarrier() {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_WARNING("FVulkanRHICommandListImmediate::resourceBarrier: No active context");
             return;
@@ -962,6 +990,7 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
     
     void FVulkanRHICommandListImmediate::beginEvent(const String& name) {
+        if (!isRecording()) return;
         if (!m_context) {
             return;
         }
@@ -979,6 +1008,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::endEvent() {
+        if (!isRecording()) return;
         if (!m_context) {
             return;
         }
@@ -994,6 +1024,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::setMarker(const String& name) {
+        if (!isRecording()) return;
         if (!m_context) {
             return;
         }
@@ -1032,6 +1063,7 @@ namespace MonsterRender::RHI::Vulkan {
         TSharedPtr<IRHITexture> texture,
         VkImageLayout oldLayout,
         VkImageLayout newLayout) {
+        if (!isRecording()) return;
         
         // Determine access masks and pipeline stages based on layouts
         // Reference: UE5 VulkanRHI::GetVkStageFlagsForLayout
@@ -1108,6 +1140,7 @@ namespace MonsterRender::RHI::Vulkan {
         VkAccessFlags dstAccessMask,
         VkPipelineStageFlags srcStageMask,
         VkPipelineStageFlags dstStageMask) {
+        if (!isRecording()) return;
         
         if (!texture) {
             MR_LOG_ERROR("transitionTextureLayout: texture is null");
@@ -1188,6 +1221,7 @@ namespace MonsterRender::RHI::Vulkan {
         uint32 width,
         uint32 height,
         uint32 depth) {
+        if (!isRecording()) return;
         
         if (!srcBuffer || !dstTexture) {
             MR_LOG_ERROR("copyBufferToTexture: Invalid buffer or texture");
@@ -1287,6 +1321,7 @@ namespace MonsterRender::RHI::Vulkan {
     // ============================================================================
 
     void FVulkanRHICommandListImmediate::dispatch(uint32 groupCountX, uint32 groupCountY, uint32 groupCountZ) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("FVulkanRHICommandListImmediate::dispatch: No active context");
             return;
@@ -1305,6 +1340,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
     
     void FVulkanRHICommandListImmediate::dispatchIndirect(IRHIBuffer* arguments, uint64_t byteOffset) {
+        if (!isRecording()) return;
         auto* buffer = dynamic_cast<VulkanBuffer*>(arguments);
         auto* command = m_context ? m_context->getCmdBuffer() : nullptr;
         if (!buffer || !command || !command->hasBegun() || !m_bComputePipelineActive ||
@@ -1318,6 +1354,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     void FVulkanRHICommandListImmediate::writeGPUTimestamp(uint64_t frame, const std::string& label, bool begin) {
+        if (!isRecording()) return;
         auto* command = m_context ? m_context->getCmdBuffer() : nullptr;
         if (!command || !command->hasBegun() || m_context->getPendingState()->isInsideRenderPass()) return;
         m_device->recordGPUTimestamp(command->getHandle(), frame, label, begin);
@@ -1325,6 +1362,7 @@ namespace MonsterRender::RHI::Vulkan {
 
     void FVulkanRHICommandListImmediate::copyBuffer(TSharedPtr<IRHIBuffer> dst, TSharedPtr<IRHIBuffer> src,
                                                      uint32 size, uint32 dstOffset, uint32 srcOffset) {
+        if (!isRecording()) return;
         if (!m_context) {
             MR_LOG_ERROR("copyBuffer: No active context");
             return;
@@ -1372,6 +1410,7 @@ namespace MonsterRender::RHI::Vulkan {
         TSharedPtr<IRHIPipelineLayout> pipelineLayout,
         uint32 firstSet,
         TSpan<TSharedPtr<IRHIDescriptorSet>> descriptorSets) {
+        if (!isRecording()) return;
         
         if (!m_context) {
             MR_LOG(LogVulkanRHI, Warning, "bindDescriptorSets: No active context");
@@ -1434,6 +1473,7 @@ namespace MonsterRender::RHI::Vulkan {
         TSharedPtr<IRHIPipelineLayout> pipelineLayout,
         uint32 setIndex,
         TSharedPtr<IRHIDescriptorSet> descriptorSet) {
+        if (!isRecording()) return;
         
         // Use the multi-set version
         TArray<TSharedPtr<IRHIDescriptorSet>> sets = { descriptorSet };
@@ -1446,6 +1486,7 @@ namespace MonsterRender::RHI::Vulkan {
         uint32 offset,
         uint32 size,
         const void* data) {
+        if (!isRecording()) return;
         
         if (!m_context) {
             MR_LOG(LogVulkanRHI, Warning, "pushConstants: No active context");

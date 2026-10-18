@@ -12,6 +12,7 @@
  */
 
 #include "MathFwd.h"
+#include "Core/Platform.h"
 #include "MathUtility.h"
 
 // ============================================================================
@@ -19,7 +20,7 @@
 // ============================================================================
 
 // Detect platform and set appropriate flags
-#if defined(_MSC_VER)
+#if PLATFORM_WINDOWS
     #define MR_PLATFORM_WINDOWS 1
 #else
     #define MR_PLATFORM_WINDOWS 0
@@ -58,11 +59,8 @@
 #endif
 
 // ARM NEON detection
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-    #define MR_PLATFORM_ENABLE_VECTORINTRINSICS_NEON 1
-#else
-    #define MR_PLATFORM_ENABLE_VECTORINTRINSICS_NEON 0
-#endif
+// No NEON backend is shipped yet. ARM intentionally uses the scalar backend.
+#define MR_PLATFORM_ENABLE_VECTORINTRINSICS_NEON 0
 
 // DirectXMath availability (Windows only, optional)
 #if MR_PLATFORM_WINDOWS && defined(WITH_DIRECTXMATH)
@@ -77,8 +75,6 @@
 
 #if MR_WITH_DIRECTXMATH
     #include "MonsterMathDirectX.h"
-#elif MR_PLATFORM_ENABLE_VECTORINTRINSICS_NEON
-    #include "MonsterMathNeon.h"
 #elif MR_PLATFORM_ENABLE_VECTORINTRINSICS
     #include "MonsterMathSSE.h"
 #else

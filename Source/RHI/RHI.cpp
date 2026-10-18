@@ -2,8 +2,10 @@
 #include "RHI/RHI.h"
 
 // Platform-specific includes
-#if PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS || PLATFORM_ANDROID || PLATFORM_LINUX
     #include "Platform/Vulkan/VulkanDevice.h"
+#endif
+#if PLATFORM_WINDOWS
     #include "Platform/OpenGL/OpenGLDevice.h"
 #endif
 
@@ -176,6 +178,8 @@ namespace MonsterRender::RHI {
             ERHIBackend::D3D11,
             ERHIBackend::OpenGL
         };
+        #elif PLATFORM_ANDROID
+        TArray<ERHIBackend> preferredOrder = { ERHIBackend::Vulkan };
         #elif PLATFORM_LINUX
         // On Linux, prefer Vulkan > OpenGL
         TArray<ERHIBackend> preferredOrder = {

@@ -7,6 +7,7 @@
 #include "Core/HAL/FMallocBinned2.h"
 #include "Core/Templates/UniquePtr.h"
 #include <memory>
+#include <mutex>
 
 namespace MonsterRender {
 
@@ -66,6 +67,7 @@ private:
     void DetectSystemCapabilities();
 
     TUniquePtr<FMalloc> Allocator;
+    std::mutex LifecycleMutex;
     bool bInitialized = false;
     bool bHugePagesAvailable = false;
     bool bHugePagesEnabled = false;

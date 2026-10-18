@@ -2,6 +2,9 @@
 
 #include "Core/CoreMinimal.h"
 #include <vector>
+#include <memory>
+
+namespace MonsterRender::Splat { class IResourceProvider; }
 
 namespace MonsterRender {
 
@@ -25,8 +28,8 @@ namespace MonsterRender {
     };
 
     /**
-     * Lightweight shader compiler that shells out to glslc/dxc to produce SPIR-V.
-     * Follows UE-like tool abstraction but minimal for now.
+     * Desktop compiler plus packaged-byte loading. Android uses precompiled
+     * resources exclusively and never launches a runtime compiler.
      */
     class ShaderCompiler {
     public:
@@ -35,6 +38,13 @@ namespace MonsterRender {
 
         /** Read a binary file from disk. */
         static std::vector<uint8> readFileBytes(const String& filePath);
+
+        /** Bind immutable resources on the current rendering owner thread.
+         * The shared provider stays alive until replaced/cleared on that thread.
+         * Android requires this binding before initializing shared Splat passes;
+         * pass nullptr after session shutdown to release provider ownership.
+         * Desktop callers without a binding retain ordinary filesystem loading. */
+        static void setResourceProvider(std::shared_ptr<Splat::IResourceProvider> provider);
 
         /** Get last write time (seconds since epoch). Returns 0 on failure. */
         static uint64 getLastWriteTime(const String& filePath);

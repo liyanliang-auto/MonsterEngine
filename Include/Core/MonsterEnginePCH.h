@@ -12,17 +12,7 @@
 // ============================================================================
 // Platform Detection
 // ============================================================================
-#if defined(_WIN32)
-    #define PLATFORM_WINDOWS 1
-#else
-    #define PLATFORM_WINDOWS 0
-#endif
-
-#if defined(__linux__)
-    #define PLATFORM_LINUX 1
-#else
-    #define PLATFORM_LINUX 0
-#endif
+#include "Core/Platform.h"
 
 // ============================================================================
 // C++ Standard Library Headers (rarely change, expensive to parse)

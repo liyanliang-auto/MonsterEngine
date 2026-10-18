@@ -4,6 +4,11 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <algorithm>
+#include <ctime>
+#if PLATFORM_ANDROID
+#include <android/log.h>
+#endif
 
 #if PLATFORM_WINDOWS
     #ifndef WIN32_LEAN_AND_MEAN
@@ -15,7 +20,7 @@
 namespace MonsterRender {
 
 FOutputDeviceConsole::FOutputDeviceConsole()
-    : m_bColorEnabled(true)
+    : m_bColorEnabled(!PLATFORM_ANDROID)
     , m_bShown(true)
 #if PLATFORM_WINDOWS
     , m_consoleHandle(nullptr)
@@ -55,6 +60,14 @@ void FOutputDeviceConsole::Serialize(const char* Message, ELogVerbosity::Type Ve
     // Format and output the log line
     String formattedLine = FormatLogLine(Message, Verbosity, Category, Time, File, Line);
 
+    // Android has no terminal; route the console sink to logcat.
+#if PLATFORM_ANDROID
+    const auto Level = Verbosity & ELogVerbosity::VerbosityMask;
+    const int Priority = Level <= ELogVerbosity::Error ? ANDROID_LOG_ERROR :
+        Level == ELogVerbosity::Warning ? ANDROID_LOG_WARN :
+        Level >= ELogVerbosity::Verbose ? ANDROID_LOG_DEBUG : ANDROID_LOG_INFO;
+    __android_log_write(Priority, Category ? Category : "MonsterEngine", formattedLine.c_str());
+#else
     // Use stderr for errors and warnings, stdout for everything else
     if ((Verbosity & ELogVerbosity::VerbosityMask) <= ELogVerbosity::Warning) {
         std::cerr << formattedLine;
@@ -62,6 +75,7 @@ void FOutputDeviceConsole::Serialize(const char* Message, ELogVerbosity::Type Ve
     } else {
         std::cout << formattedLine;
     }
+#endif
 
     // Reset color
     if (m_bColorEnabled) {
@@ -206,24 +220,24 @@ String FOutputDeviceConsole::FormatLogLine(const char* Message, ELogVerbosity::T
     
     // Format: [timestamp:ms] file(line): [category][verbosity] message
     int written = snprintf(ptr, end - ptr, "[%s:%03d] ", timeStr, static_cast<int>(ms.count()));
-    if (written > 0) ptr += written;
+    if (written > 0) ptr += std::min<std::ptrdiff_t>(written, end - ptr);
 
     // File and line: filename.cpp(123):
     if (File && Line > 0 && ptr < end) {
         written = snprintf(ptr, end - ptr, "%s(%d): ", File, Line);
-        if (written > 0) ptr += written;
+        if (written > 0) ptr += std::min<std::ptrdiff_t>(written, end - ptr);
     }
 
     // Category and verbosity: [LogTemp][LOG ]
     if (ptr < end) {
         written = snprintf(ptr, end - ptr, "[%s][%s] ", Category ? Category : "Unknown", ToShortString(Verbosity));
-        if (written > 0) ptr += written;
+        if (written > 0) ptr += std::min<std::ptrdiff_t>(written, end - ptr);
     }
 
     // Message
     if (ptr < end && Message) {
         written = snprintf(ptr, end - ptr, "%s", Message);
-        if (written > 0) ptr += written;
+        if (written > 0) ptr += std::min<std::ptrdiff_t>(written, end - ptr);
     }
 
     // Line terminator

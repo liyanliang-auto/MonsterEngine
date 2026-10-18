@@ -183,7 +183,7 @@ namespace MonsterRender::RHI::Vulkan {
          * Prepare for next frame (UE5: PrepareForNewActiveCommandBuffer())
          * Advances to the next frame in the ring buffer
          */
-        void prepareForNewActiveCommandBuffer();
+        bool prepareForNewActiveCommandBuffer();
         
         /**
          * Get the command pool handle

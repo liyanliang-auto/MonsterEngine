@@ -10,6 +10,7 @@
 namespace MonsterRender {
 
 namespace {
+std::atomic<uint64> GAllocatorGeneration{1};
 struct FLargeAllocationHeader {
     void* Base;
     SIZE_T Size;
@@ -17,9 +18,9 @@ struct FLargeAllocationHeader {
 }
 
 // Static TLS cache
-thread_local FMallocBinned2::FThreadCache* FMallocBinned2::TLSCache = nullptr;
+thread_local FMallocBinned2::FThreadCache FMallocBinned2::TLSCache{};
 
-FMallocBinned2::FMallocBinned2() {
+FMallocBinned2::FMallocBinned2() : CacheGeneration(GAllocatorGeneration.fetch_add(1, std::memory_order_relaxed)) {
     // Initialize bins with power-of-2 sizes
     uint32 size = 16;
     for (uint32 i = 0; i < NUM_SMALL_BINS; ++i) {
@@ -47,8 +48,8 @@ FMallocBinned2::~FMallocBinned2() {
 void* FMallocBinned2::Malloc(SIZE_T Size, uint32 Alignment) {
     if (Size == 0) Size = 1;
 
+    if (!Alignment || (Alignment & (Alignment - 1)) != 0) return nullptr;
     Alignment = std::max<uint32>(Alignment, 16);
-    if ((Alignment & (Alignment - 1)) != 0) return nullptr;
 
     // Keep the original allocation and size immediately before the aligned address.
     if (Size > SMALL_BIN_MAX_SIZE || Alignment > SMALL_BIN_MAX_SIZE) {
@@ -346,43 +347,38 @@ void FMallocBinned2::FreeToBin(FBin& Bin, void* Ptr, FThreadCache* Cache) {
 }
 
 FMallocBinned2::FThreadCache* FMallocBinned2::GetTLSCache() {
-    if (!TLSCache) {
-        // Use system malloc for internal structures to avoid circular dependency
-        TLSCache = static_cast<FThreadCache*>(::malloc(sizeof(FThreadCache)));
-        new(TLSCache) FThreadCache();
-        for (uint32 i = 0; i < NUM_SMALL_BINS; ++i) {
-            TLSCache->Count[i] = 0;
-            for (uint32 j = 0; j < TLS_CACHE_SIZE; ++j) {
-                TLSCache->Cache[i][j] = nullptr;
-            }
-        }
-        TLSCache->Hits = 0;
-        TLSCache->Misses = 0;
+#if PLATFORM_ANDROID
+    return nullptr;
+#else
+    // Cache storage belongs to the thread, entries belong to one allocator generation.
+    if (TLSCache.OwnerGeneration != CacheGeneration) {
+        TLSCache = FThreadCache{};
+        TLSCache.OwnerGeneration = CacheGeneration;
     }
-    return TLSCache;
+    return &TLSCache;
+#endif
 }
 
 void FMallocBinned2::ReleaseTLSCache(FThreadCache* Cache) {
-    if (!Cache) return;
-
-    // Flush all cached items back to bins
+    if (!Cache || Cache->OwnerGeneration != CacheGeneration) return;
     for (uint32 binIdx = 0; binIdx < NUM_SMALL_BINS; ++binIdx) {
         auto& bin = SmallBins[binIdx];
         std::scoped_lock lock(bin.Mutex);
         for (uint32 i = 0; i < Cache->Count[binIdx]; ++i) {
             void* ptr = Cache->Cache[binIdx][i];
-            // Return to first page's freelist (simplified)
-            if (!bin.Pages.empty()) {
-                auto* page = bin.Pages[0];
-                *reinterpret_cast<void**>(ptr) = page->FreeList;
-                page->FreeList = ptr;
-                ++page->FreeCount;
+            const auto address = reinterpret_cast<uintptr_t>(ptr);
+            for (auto* page : bin.Pages) {
+                const auto base = reinterpret_cast<uintptr_t>(page);
+                if (address >= base && address - base < PAGE_SIZE) {
+                    *static_cast<void**>(ptr) = page->FreeList;
+                    page->FreeList = ptr;
+                    ++page->FreeCount;
+                    break;
+                }
             }
         }
     }
-    Cache->~FThreadCache();
-    ::free(Cache);
+    *Cache = FThreadCache{};
 }
 
 } // namespace MonsterRender
-

@@ -38,7 +38,7 @@ public:
      * 
      * @param InRunnable - The runnable object to execute
      * @param ThreadName - Name of the thread
-     * @param InStackSize - The size of the stack to create (0 = default)
+     * @param InStackSize - Reserved; std::thread uses the platform default stack
      * @param InThreadPri - Thread priority
      * @return The newly created thread or nullptr if it failed
      */
@@ -60,7 +60,7 @@ public:
     virtual ~FRunnableThread();
     
     /**
-     * Changes the thread priority of the currently running thread
+     * Changes native priority on Windows; other platforms retain the requested value
      * 
      * @param NewPriority - The thread priority to change to
      */

@@ -8,6 +8,7 @@
 #include "RHI/IRHISwapChain.h"
 #include "RHI/IRHIDescriptorSet.h"
 #include "RHI/SplatGPUPrimitives.h"
+#include "RHI/RHIFrameResult.h"
 #include <vector>
 
 namespace MonsterRender::RHI {
@@ -232,6 +233,22 @@ namespace MonsterRender::RHI {
          * Present the current frame
          */
         virtual void present() = 0;
+        /** Optional observable acquisition; legacy backends report NotReady. */
+        virtual FFrameSubmitResult beginFrame(uint64 = 1000000) { return {}; }
+        /** Compatibility path reports a submission only when its real token advances. */
+        virtual FFrameSubmitResult presentFrame() {
+            const auto before = getLastSubmissionToken();
+            present();
+            FFrameSubmitResult result;
+            const auto after = getLastSubmissionToken();
+            if (after.value > before.value) {
+                result.submitted = true; result.token = after;
+                result.status = result.submitStatus = EFrameResult::Success;
+            }
+            return result;
+        }
+        /** Retire acquisition without executing the caller's incomplete recording. */
+        virtual FFrameSubmitResult cancelFrame() { return {}; }
         
         // Memory management
         /**

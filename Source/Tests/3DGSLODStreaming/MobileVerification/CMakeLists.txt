@@ -1,0 +1,21 @@
+cmake_minimum_required(VERSION 3.20)
+project(MonsterMobileVerification LANGUAGES CXX)
+get_filename_component(MONSTER_VERIFICATION_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
+set(MONSTER_BUILD_ENGINE OFF CACHE BOOL "CPU verification" FORCE)
+set(SPLAT_BUILD_SHADERS OFF CACHE BOOL "CPU verification" FORCE)
+set(SPLAT_BUILD_CPU_TESTS ON CACHE BOOL "Existing CPU verification" FORCE)
+set(SPLAT_BUILD_GPU_TESTS OFF CACHE BOOL "CPU verification" FORCE)
+set(SPLAT_BUILD_INTEGRATION_TESTS OFF CACHE BOOL "CPU verification" FORCE)
+enable_testing()
+add_subdirectory("${MONSTER_VERIFICATION_ROOT}" monster)
+add_executable(SplatMobileBehaviorTests SplatMobileBehaviorTests.cpp
+    "${MONSTER_VERIFICATION_ROOT}/Source/Renderer/Splat/SplatBudgetCoordinator.cpp"
+    "${MONSTER_VERIFICATION_ROOT}/Source/Renderer/Splat/SplatResourceProvider.cpp"
+    "${MONSTER_VERIFICATION_ROOT}/Source/Platform/Android/AndroidPerformancePolicy.cpp")
+target_link_libraries(SplatMobileBehaviorTests PRIVATE SplatLODCoreCPU)
+target_compile_features(SplatMobileBehaviorTests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(SplatMobileBehaviorTests PRIVATE /utf-8 /EHsc /W3)
+endif()
+add_test(NAME SplatMobileBehaviorTests COMMAND SplatMobileBehaviorTests)
+set_tests_properties(SplatMobileBehaviorTests PROPERTIES TIMEOUT 600)

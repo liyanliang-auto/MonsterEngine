@@ -1,5 +1,6 @@
 // Copyright Monster Engine. All Rights Reserved.
 #include "Renderer/Splat/LOD/SplatSceneFormat.h"
+#include "Renderer/Splat/LOD/SplatBuildTypes.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -78,7 +79,12 @@ bool FSplatSceneFormat::ValidateManifest(const FSplatSceneManifest& m,std::strin
     auto fail=[&](const char* s){error=s;return false;};
     if(!std::isfinite(m.supportSigma)||m.supportSigma<3)return fail("Scene supportSigma must be at least three for the renderer");
     if((m.version!=1&&m.version!=2&&m.version!=3&&m.version!=4&&m.version!=5)||m.shDegree>3||m.endian!="little"||m.coordinates!="source-world"||m.quaternion!="wxyz"||m.shLayout!="coefficient-major-rgb")return fail("Unsupported scene convention/version");
-    if((m.version==2)!=(m.builderVersion==SplatRMSErrorBuilderVersion)||(m.version==3)!=(m.builderVersion==SplatCenterErrorBuilderVersion)||(m.version==4)!=(m.builderVersion==SplatFusionBuilderVersion)||(m.version==5)!=(m.builderVersion==SplatLeafFusionBuilderVersion))return fail("Unsupported selection metadata policy/version");
+    const bool centerPolicy=m.builderVersion==SplatCenterErrorBuilderVersion||m.builderVersion==SplatBoundedBuilderVersion;
+    if((m.version==2)!=(m.builderVersion==SplatRMSErrorBuilderVersion)||(m.version==3)!=centerPolicy||(m.version==4)!=(m.builderVersion==SplatFusionBuilderVersion)||(m.version==5)!=(m.builderVersion==SplatLeafFusionBuilderVersion))return fail("Unsupported selection metadata policy/version");
+    if(m.builderVersion==SplatBoundedBuilderVersion&&
+       (m.buildConfig.find("\"partitionPolicy\":\"stable-octants-original-id-rank-fallback-1\"")==std::string::npos||
+        m.buildConfig.find("\"reductionPolicy\":\"weighted-cumulative-rms-morton-1\"")==std::string::npos||
+        SHA256(std::vector<uint8_t>(m.buildConfig.begin(),m.buildConfig.end()))!=m.configHash))return fail("Unsupported mobile build configuration identity");
     if(!HashValid(m.sourceSHA256)||!HashValid(m.builderHash)||!HashValid(m.configHash)||!std::isfinite(m.supportSigma)||m.supportSigma<=0)return fail("Invalid scene identity or support");
     if(m.nodes.size()>MaxEntries||m.pages.size()>MaxEntries)return fail("Scene index limit exceeded");
     if(m.nodes.empty()){if(m.rootNode!=SplatInvalidId||!m.pages.empty()||m.sourceCount||m.leafCount||m.proxyCount||m.totalDataBytes)return fail("Invalid empty scene");error.clear();return true;}

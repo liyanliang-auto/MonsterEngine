@@ -1,5 +1,6 @@
 // Copyright Monster Engine. All Rights Reserved.
 #include "Renderer/Splat/LOD/SplatLODSelector.h"
+#include "Renderer/Splat/LOD/SplatBuildTypes.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -285,10 +286,15 @@ FSplatLODSelection FSplatLODSelector::Select(const FSplatSceneManifest& manifest
     std::vector<uint32_t> parents, order;
     if (!Validate(manifest, parents, order)) { Degrade(out, "invalid hierarchy or representation"); return finish(); }
     projected.resize(manifest.nodes.size());
+    const bool mobileRMS = manifest.builderVersion == SplatBoundedBuilderVersion;
+    const bool centerError = mobileRMS || manifest.builderVersion == SplatCenterErrorBuilderVersion ||
+        manifest.builderVersion == SplatFusionBuilderVersion || manifest.builderVersion == SplatLeafFusionBuilderVersion;
+    const bool rmsError = centerError || manifest.builderVersion == SplatRMSErrorBuilderVersion ||
+        manifest.builderVersion == SplatRMSLegacyErrorBuilderVersion;
     for (auto id : order) projected[id] = Project(manifest.nodes[id], view,
-        manifest.builderVersion == SplatRMSErrorBuilderVersion||manifest.builderVersion==SplatRMSLegacyErrorBuilderVersion||manifest.builderVersion==SplatCenterErrorBuilderVersion||manifest.builderVersion==SplatFusionBuilderVersion||manifest.builderVersion==SplatLeafFusionBuilderVersion,
-        (manifest.version==2&&manifest.builderVersion==SplatRMSErrorBuilderVersion)||(manifest.version>=3&&(manifest.builderVersion==SplatCenterErrorBuilderVersion||manifest.builderVersion==SplatFusionBuilderVersion||manifest.builderVersion==SplatLeafFusionBuilderVersion)),manifest.supportSigma,
-        manifest.version>=3&&(manifest.builderVersion==SplatCenterErrorBuilderVersion||manifest.builderVersion==SplatFusionBuilderVersion||manifest.builderVersion==SplatLeafFusionBuilderVersion));
+        rmsError, (manifest.version == 2 && manifest.builderVersion == SplatRMSErrorBuilderVersion) ||
+            (manifest.version >= 3 && centerError), manifest.supportSigma,
+        manifest.version >= 3 && centerError);
     const auto root = manifest.rootNode;
     if (!projected[root].visible) return finish();
     std::vector<uint32_t> rootCut{root};

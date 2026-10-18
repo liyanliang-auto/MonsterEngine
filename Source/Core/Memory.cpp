@@ -3,17 +3,37 @@
 #include <malloc.h>
 #include <new>
 #include <algorithm>
+#include <limits>
+#include "Core/RuntimeLease.h"
 
 // Platform-specific includes for huge pages
 #if PLATFORM_WINDOWS
 	#include <Windows.h>
-#elif PLATFORM_LINUX
+	#elif PLATFORM_LINUX
 	#include <sys/mman.h>
 	#include <unistd.h>
 	#include <fcntl.h>
 #endif
 
 namespace MonsterRender {
+    namespace {
+    struct FAlignedAllocation { void* Base; };
+    bool ValidAlignment(size_t Alignment) { return Alignment && !(Alignment & (Alignment - 1)); }
+    void* AllocateAligned(size_t Size, size_t Alignment) {
+        if (!ValidAlignment(Alignment)) return nullptr;
+        Alignment = std::max(Alignment, alignof(FAlignedAllocation));
+        if (Alignment - 1 > SIZE_MAX - sizeof(FAlignedAllocation)) return nullptr;
+        const size_t Extra = Alignment - 1 + sizeof(FAlignedAllocation);
+        if (Size > std::numeric_limits<size_t>::max() - Extra) return nullptr;
+        void* Base = std::malloc(Size + Extra);
+        if (!Base) return nullptr;
+        const size_t Address = (reinterpret_cast<size_t>(Base) + Extra) & ~(Alignment - 1);
+        (reinterpret_cast<FAlignedAllocation*>(Address) - 1)->Base = Base;
+        return reinterpret_cast<void*>(Address);
+    }
+    void FreeAligned(void* Ptr) { if (Ptr) std::free((static_cast<FAlignedAllocation*>(Ptr) - 1)->Base); }
+    }
+
 
 	static constexpr size_t kSmallPageSize = 64ull * 1024ull; // 64KB pages for small bins
 	static constexpr uint32 kEmptyPageThreshold = 4;  // Trim if this many empty pages exist
@@ -24,7 +44,7 @@ namespace MonsterRender {
 	}
 
 	// Thread-local cache (initialized lazily per thread)
-	thread_local MemorySystem::ThreadLocalCache* MemorySystem::t_tlsCache = nullptr;
+	thread_local MemorySystem::ThreadLocalCache MemorySystem::t_tlsCache{};
 
 	MemorySystem& MemorySystem::get() {
 		static MemorySystem instance;
@@ -32,6 +52,10 @@ namespace MonsterRender {
 	}
 
 	bool MemorySystem::initialize(uint64 frameScratchSizeBytes, uint64 texturePoolBlockSizeBytes) {
+        std::lock_guard<std::mutex> Lock(m_lifecycleMutex);
+        if (m_initialized) return true;
+        ++m_cacheGeneration;
+        if (!frameScratchSizeBytes || !texturePoolBlockSizeBytes) return false;
 		// Detect huge pages support
 		m_hugePagesAvailable = detectHugePagesSupport();
 		if (m_hugePagesAvailable) {
@@ -67,10 +91,14 @@ namespace MonsterRender {
 		m_smallCacheMisses.store(0, std::memory_order_relaxed);
 
 		MR_LOG_INFO("MemorySystem initialized: frameScratch=" + std::to_string(frameScratchSizeBytes / 1024 / 1024) + "MB, textureBlock=" + std::to_string(texturePoolBlockSizeBytes / 1024 / 1024) + "MB");
+		m_initialized = true;
 		return true;
 	}
 
 	void MemorySystem::shutdown() {
+        std::lock_guard<std::mutex> Lock(m_lifecycleMutex);
+        if (!m_initialized || FProcessRuntimeLease::ActiveCount() != 0) return;
+        m_initialized = false;
 		// Release small bin pages (per-bin locks)
 		for (uint32 i = 0; i < kNumSmallBins; ++i) {
 			auto& bin = m_smallBins[i];
@@ -160,42 +188,40 @@ namespace MonsterRender {
 	}
 
 	// TLS cache management
-	MemorySystem::ThreadLocalCache* MemorySystem::getTLSCache() {
-		if (!t_tlsCache) {
-			// Use system malloc for internal structures to avoid circular dependency
-			t_tlsCache = static_cast<ThreadLocalCache*>(::malloc(sizeof(ThreadLocalCache)));
-			new(t_tlsCache) ThreadLocalCache();
-			// Zero-initialize cache
-			for (uint32 i = 0; i < kNumSmallBins; ++i) {
-				t_tlsCache->count[i] = 0;
-				for (uint32 j = 0; j < ThreadLocalCache::kCacheSize; ++j) {
-					t_tlsCache->cache[i][j] = nullptr;
-				}
-			}
-		}
-		return t_tlsCache;
-	}
+    MemorySystem::ThreadLocalCache* MemorySystem::getTLSCache() {
+#if PLATFORM_ANDROID
+        // Mobile worker lifetimes are short; return freed slots directly to pages.
+        return nullptr;
+#else
+        if (t_tlsCache.generation != m_cacheGeneration) {
+            t_tlsCache = ThreadLocalCache{};
+            t_tlsCache.generation = m_cacheGeneration;
+        }
+        return &t_tlsCache;
+#endif
+    }
 
-	void MemorySystem::releaseTLSCache(ThreadLocalCache* cache) {
-		if (!cache) return;
-		// Flush all cached items back to bins
-		for (uint32 binIdx = 0; binIdx < kNumSmallBins; ++binIdx) {
-			auto& bin = m_smallBins[binIdx];
-			std::scoped_lock lock(bin.mutex);
-			for (uint32 i = 0; i < cache->count[binIdx]; ++i) {
-				void* ptr = cache->cache[binIdx][i];
-				// Return to bin (simplified - just add to first page's freelist)
-				if (!bin.pages.empty()) {
-					auto* page = bin.pages[0];
-					*reinterpret_cast<void**>(ptr) = page->header.freeList;
-					page->header.freeList = ptr;
-					++page->header.freeCount;
-				}
-			}
-		}
-		cache->~ThreadLocalCache();
-		::free(cache);
-	}
+    void MemorySystem::releaseTLSCache(ThreadLocalCache* cache) {
+        if (!cache || cache->generation != m_cacheGeneration) return;
+        for (uint32 binIdx = 0; binIdx < kNumSmallBins; ++binIdx) {
+            auto& bin = m_smallBins[binIdx];
+            std::scoped_lock lock(bin.mutex);
+            for (uint32 i = 0; i < cache->count[binIdx]; ++i) {
+                void* ptr = cache->cache[binIdx][i];
+                const auto address = reinterpret_cast<uintptr_t>(ptr);
+                for (auto* page : bin.pages) {
+                    const auto base = reinterpret_cast<uintptr_t>(page);
+                    if (address >= base && address - base < kSmallPageSize) {
+                        *static_cast<void**>(ptr) = page->header.freeList;
+                        page->header.freeList = ptr;
+                        ++page->header.freeCount;
+                        break;
+                    }
+                }
+            }
+        }
+        *cache = ThreadLocalCache{};
+    }
 
 	void* MemorySystem::allocateFromBin(SmallBin& bin, size_t alignment, ThreadLocalCache* tlsCache) {
 		const uint32 binIdx = selectSmallBin(bin.elementSize);
@@ -211,7 +237,7 @@ namespace MonsterRender {
 		}
 
 		// Cache miss - acquire lock and allocate from bin
-		++tlsCache->misses;
+		if (tlsCache) ++tlsCache->misses;
 		m_smallCacheMisses.fetch_add(1, std::memory_order_relaxed);
 		std::scoped_lock lock(bin.mutex);
 
@@ -273,73 +299,70 @@ namespace MonsterRender {
 		MR_LOG_WARNING("freeToBin: pointer not found in bin page range");
 	}
 
-	void* MemorySystem::allocateSmall(size_t size, size_t alignment) {
-		if (size == 0) size = 1;
-		const uint32 binIndex = selectSmallBin(size);
-		ThreadLocalCache* tlsCache = getTLSCache();
-		auto& bin = m_smallBins[binIndex];
-		return allocateFromBin(bin, alignment, tlsCache);
-	}
+    void* MemorySystem::allocateSmall(size_t size, size_t alignment) {
+        if (!ValidAlignment(alignment)) return nullptr;
+        if (size == 0) size = 1;
+        const size_t binSize = std::max(size, alignment);
+        if (binSize > 1024) return AllocateAligned(size, alignment);
+        return allocateFromBin(m_smallBins[selectSmallBin(binSize)], alignment, getTLSCache());
+    }
 
-	void MemorySystem::freeSmall(void* ptr, size_t size) {
-		if (!ptr) return;
-		const uint32 binIndex = selectSmallBin(size);
-		ThreadLocalCache* tlsCache = getTLSCache();
-		freeToBin(m_smallBins[binIndex], ptr, tlsCache);
-	}
+    void MemorySystem::freeSmall(void* ptr, size_t size) {
+        if (!ptr) return;
+        (void)size;
+        const auto address = reinterpret_cast<uintptr_t>(ptr);
+        for (auto& bin : m_smallBins) {
+            bool owns = false;
+            {
+                std::lock_guard<std::mutex> lock(bin.mutex);
+                for (auto* page : bin.pages) {
+                    const auto base = reinterpret_cast<uintptr_t>(page);
+                    if (address >= base && address - base < kSmallPageSize) { owns = true; break; }
+                }
+            }
+            if (owns) { freeToBin(bin, ptr, getTLSCache()); return; }
+        }
+        FreeAligned(ptr);
+    }
 
-	void* MemorySystem::allocate(size_t size, size_t alignment) {
-		if (size <= 1024) {
-			return allocateSmall(size, alignment);
-		}
-		// Use standard malloc for debug heap compatibility
-		(void)alignment; // Alignment ignored for large allocations with malloc
-		return std::malloc(size);
-	}
+    void* MemorySystem::allocate(size_t size, size_t alignment) {
+        return allocateSmall(size, alignment);
+    }
 
-	void MemorySystem::free(void* ptr, size_t size) {
-		if (!ptr) return;
-		if (size <= 1024) {
-			freeSmall(ptr, size);
-			return;
-		}
-		// Use standard free for debug heap compatibility
-		std::free(ptr);
-	}
+    void MemorySystem::free(void* ptr, size_t size) {
+        freeSmall(ptr, size);
+    }
 
-	void* MemorySystem::frameAllocate(size_t size, size_t alignment) {
-		if (size == 0) return nullptr;
-		m_frameScratch.allocations.fetch_add(1, std::memory_order_relaxed);
-
-		// Fast path: try to bump allocate
-		uint64 current = m_frameScratch.offset.load(std::memory_order_relaxed);
-		while (true) {
-			uint64 aligned = static_cast<uint64>(alignUp(static_cast<size_t>(current), alignment));
-			uint64 next = aligned + size;
-			if (next <= m_frameScratch.capacity) {
-				if (m_frameScratch.offset.compare_exchange_weak(current, next, std::memory_order_acq_rel)) {
-					// Update peak
-					uint64 currentPeak = m_frameScratch.peak.load(std::memory_order_relaxed);
-					while (next > currentPeak) {
-						if (m_frameScratch.peak.compare_exchange_weak(currentPeak, next, std::memory_order_relaxed)) {
-							break;
-						}
-					}
-					return m_frameScratch.buffer.get() + aligned;
-				}
-				continue;
-			}
-			// Need to grow buffer (single-threaded growth assumption)
-			uint64 newCap = std::max<uint64>(m_frameScratch.capacity * 2, alignUp(size, 4096));
-			auto newBuf = MakeUnique<uint8[]>(static_cast<size_t>(newCap));
-			if (!newBuf) return nullptr;
-			// Swap in
-			m_frameScratch.buffer.swap(newBuf);
-			m_frameScratch.capacity = newCap;
-			m_frameScratch.offset.store(0, std::memory_order_relaxed);
-			current = 0;
-		}
-	}
+    void* MemorySystem::frameAllocate(size_t size, size_t alignment) {
+        if (!size || !ValidAlignment(alignment) || !m_frameScratch.buffer) return nullptr;
+        uint64 current = m_frameScratch.offset.load(std::memory_order_relaxed);
+        while (true) {
+            const auto base = reinterpret_cast<size_t>(m_frameScratch.buffer.get());
+            if (current > SIZE_MAX - base || base + current > SIZE_MAX - (alignment - 1)) return nullptr;
+            const uint64 aligned = alignUp(base + static_cast<size_t>(current), alignment) - base;
+            if (aligned > m_frameScratch.capacity || size > m_frameScratch.capacity - aligned) {
+#if PLATFORM_ANDROID
+                return nullptr;
+#else
+                // Preserve the desktop grow-on-exhaustion policy (owner-thread only).
+                if (m_frameScratch.capacity > SIZE_MAX / 2 || size > SIZE_MAX - alignment) return nullptr;
+                const size_t newCapacity = std::max<size_t>(m_frameScratch.capacity * 2, size + alignment);
+                auto newBuffer = MakeUnique<uint8[]>(newCapacity);
+                m_frameScratch.buffer.swap(newBuffer);
+                m_frameScratch.capacity = newCapacity;
+                m_frameScratch.offset.store(0, std::memory_order_relaxed);
+                current = 0;
+                continue;
+#endif
+            }
+            const uint64 next = aligned + size;
+            if (!m_frameScratch.offset.compare_exchange_weak(current, next, std::memory_order_acq_rel)) continue;
+            uint64 peak = m_frameScratch.peak.load(std::memory_order_relaxed);
+            while (peak < next && !m_frameScratch.peak.compare_exchange_weak(peak, next, std::memory_order_relaxed)) {}
+            m_frameScratch.allocations.fetch_add(1, std::memory_order_relaxed);
+            return m_frameScratch.buffer.get() + aligned;
+        }
+    }
 
 	void MemorySystem::frameReset() {
 		m_frameScratch.offset.store(0, std::memory_order_relaxed);
@@ -353,7 +376,9 @@ namespace MonsterRender {
 		uint8* basePtr = block.usesHugePages ? block.rawHugePagePtr : block.buffer.get();
 		
 		while (region) {
-			uint64 alignedOffset = static_cast<uint64>(alignUp(static_cast<size_t>(region->offset), alignment));
+			const size_t base = reinterpret_cast<size_t>(basePtr);
+            if (base > SIZE_MAX - region->offset || base + region->offset > SIZE_MAX - (alignment - 1)) return nullptr;
+            uint64 alignedOffset = alignUp(base + static_cast<size_t>(region->offset), alignment) - base;
 			if (alignedOffset + size <= region->offset + region->size) {
 				// Found a suitable region
 				void* ptr = basePtr + alignedOffset;
@@ -387,6 +412,7 @@ namespace MonsterRender {
 		uint64 offset = static_cast<uint8*>(ptr) - basePtr;
 		// Use system malloc for internal structures to avoid circular dependency
 		auto* newRegion = static_cast<TextureFreeRegion*>(::malloc(sizeof(TextureFreeRegion)));
+        if (!newRegion) throw std::bad_alloc();
 		newRegion->offset = offset;
 		newRegion->size = size;
 		newRegion->next = nullptr;
@@ -424,7 +450,9 @@ namespace MonsterRender {
 	}
 
 	void* MemorySystem::textureAllocate(size_t size, size_t alignment) {
-		const size_t alignedSize = alignUp(size, alignment);
+        if (!size || !ValidAlignment(alignment) || size > SIZE_MAX - (alignment - 1)) return nullptr;
+        std::scoped_lock poolLock(m_textureBlocksMutex);
+        const size_t alignedSize = alignUp(size, alignment);
 		m_textureAllocations.fetch_add(1, std::memory_order_relaxed);
 
 		// Try to allocate from free-lists first
@@ -436,8 +464,11 @@ namespace MonsterRender {
 		// Try bump allocation
 		for (auto& block : m_textureBlocks) {
 			uint64 off = block->offset.load(std::memory_order_relaxed);
-			uint64 alignedOff = static_cast<uint64>(alignUp(static_cast<size_t>(off), alignment));
-			uint64 next = alignedOff + alignedSize;
+			const size_t base = reinterpret_cast<size_t>(block->usesHugePages ? block->rawHugePagePtr : block->buffer.get());
+            if (base > SIZE_MAX - off || base + off > SIZE_MAX - (alignment - 1)) continue;
+            uint64 alignedOff = alignUp(base + static_cast<size_t>(off), alignment) - base;
+            if (alignedOff > block->capacity || alignedSize > block->capacity - alignedOff) continue;
+            uint64 next = alignedOff + alignedSize;
 			if (next <= block->capacity) {
 				if (block->offset.compare_exchange_weak(off, next, std::memory_order_acq_rel)) {
 					block->usedBytes.fetch_add(alignedSize, std::memory_order_relaxed);
@@ -449,13 +480,13 @@ namespace MonsterRender {
 		}
 
 		// Allocate new block
-		std::scoped_lock lock(m_textureBlocksMutex);
 		uint64 blockSize = std::max<uint64>(m_textureBlockSize, alignedSize);
+        if (blockSize > SIZE_MAX - (alignment - 1)) return nullptr;
 		
 		// Try huge pages first if enabled and size >= 2MB
 		void* hugePagePtr = nullptr;
 		bool usedHugePages = false;
-		if (m_useHugePagesForTextures && blockSize >= MR_HUGE_PAGE_SIZE) {
+		if (m_useHugePagesForTextures && blockSize >= MR_HUGE_PAGE_SIZE && alignment <= MR_HUGE_PAGE_SIZE) {
 			hugePagePtr = allocateHugePages(static_cast<size_t>(blockSize));
 			if (hugePagePtr) {
 				usedHugePages = true;
@@ -471,7 +502,9 @@ namespace MonsterRender {
 			// Store huge page pointer
 			block->rawHugePagePtr = reinterpret_cast<uint8*>(hugePagePtr);
 		} else {
-			// Standard allocation
+			// Include padding so the first allocation can satisfy any admitted alignment.
+            blockSize += alignment - 1;
+            block->capacity = blockSize;
 			block->buffer = MakeUnique<uint8[]>(static_cast<size_t>(blockSize));
 		}
 		
@@ -479,8 +512,10 @@ namespace MonsterRender {
 		block->usedBytes.store(0, std::memory_order_relaxed);
 		block->freeList = nullptr;
 		
-		void* ptr = block->usesHugePages ? block->rawHugePagePtr : block->buffer.get();
-		block->offset.store(alignedSize, std::memory_order_relaxed);
+		auto* basePtr = block->usesHugePages ? block->rawHugePagePtr : block->buffer.get();
+        void* ptr = alignPtr(basePtr, alignment);
+        const uint64 padding = static_cast<uint8*>(ptr) - basePtr;
+        block->offset.store(padding + alignedSize, std::memory_order_relaxed);
 		block->usedBytes.store(alignedSize, std::memory_order_relaxed);
 		m_textureReservedBytes.fetch_add(blockSize, std::memory_order_relaxed);
 		m_textureUsedBytes.fetch_add(alignedSize, std::memory_order_relaxed);
@@ -706,13 +741,18 @@ namespace MonsterRender {
 		fclose(fp);
 		return found;
 
+#elif PLATFORM_ANDROID
+		// Android does not expose a supported huge-page allocation contract for
+		// this allocator. Keep the capability false even though __linux__ is set.
+		return false;
+
 #else
 		return false;
 #endif
 	}
 
 	void* MemorySystem::allocateHugePages(size_t size) {
-		if (!m_hugePagesAvailable || !m_hugePagesEnabled) {
+		if (!m_hugePagesAvailable || !m_hugePagesEnabled || PLATFORM_ANDROID) {
 			return nullptr;  // Fallback to normal allocation
 		}
 
@@ -737,7 +777,7 @@ namespace MonsterRender {
 			return nullptr;
 		}
 
-#elif PLATFORM_LINUX
+	#elif PLATFORM_LINUX
 		// Linux: Use mmap with MAP_HUGETLB
 		void* ptr = mmap(
 			nullptr,
@@ -767,9 +807,12 @@ namespace MonsterRender {
 #if PLATFORM_WINDOWS
 		VirtualFree(ptr, 0, MEM_RELEASE);
 
-#elif PLATFORM_LINUX
+	#elif PLATFORM_LINUX
 		size = alignUp(size, MR_HUGE_PAGE_SIZE);
 		munmap(ptr, size);
+
+#elif PLATFORM_ANDROID
+		(void)size;
 
 #endif
 	}

@@ -3,23 +3,33 @@
 
 #include "Core/HAL/FMemory.h"
 #include "Core/HAL/FMemoryManager.h"
+#include <stdexcept>
+#include <cstdlib>
 
 namespace MonsterRender {
+namespace {
+FMalloc& RequireAllocator() {
+    FMalloc* Allocator = FMemoryManager::Get().GetAllocator();
+    if (!Allocator) throw std::logic_error("FMemory requires initialized process runtime");
+    return *Allocator;
+}
+}
 
 void* FMemory::Malloc(SIZE_T Count, uint32 Alignment) {
-    return FMemoryManager::Get().GetAllocator()->Malloc(Count, Alignment);
+    return RequireAllocator().Malloc(Count, Alignment);
 }
 
 void* FMemory::Realloc(void* Original, SIZE_T Count, uint32 Alignment) {
-    return FMemoryManager::Get().GetAllocator()->Realloc(Original, Count, Alignment);
+    return RequireAllocator().Realloc(Original, Count, Alignment);
 }
 
 void FMemory::Free(void* Original) {
-    FMemoryManager::Get().GetAllocator()->Free(Original);
+    if (!Original) return;
+    RequireAllocator().Free(Original);
 }
 
 SIZE_T FMemory::GetAllocSize(void* Original) {
-    return FMemoryManager::Get().GetAllocator()->GetAllocationSize(Original);
+    return RequireAllocator().GetAllocationSize(Original);
 }
 
 void* FMemory::SystemMalloc(SIZE_T Size) {
@@ -33,12 +43,12 @@ void FMemory::SystemFree(void* Ptr) {
 }
 
 uint64 FMemory::GetTotalAllocatedMemory() {
-    return FMemoryManager::Get().GetAllocator()->GetTotalAllocatedMemory();
+    return RequireAllocator().GetTotalAllocatedMemory();
 }
 
 void FMemory::GetMemoryStats(FMemoryStats& OutStats) {
     FMalloc::FMemoryStats allocatorStats;
-    FMemoryManager::Get().GetAllocator()->GetMemoryStats(allocatorStats);
+    RequireAllocator().GetMemoryStats(allocatorStats);
     // Copy the stats to our structure
     OutStats.TotalAllocated = allocatorStats.TotalAllocated;
     OutStats.TotalReserved = allocatorStats.TotalReserved;

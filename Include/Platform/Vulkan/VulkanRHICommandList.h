@@ -53,6 +53,8 @@ using MonsterEngine::TMap;
         // Submit the recorded commands and block until the GPU finishes.
         // Used for one-off readback (3DGS sort-element count) inside the frame.
         void submitAndWait() override;
+        /** Latest explicit synchronous submission/wait result. */
+        VkResult getLastSynchronousResult() const { return m_lastSynchronousResult; }
         
         void setPipelineState(TSharedPtr<IRHIPipelineState> pipelineState) override;
         void setVertexBuffers(uint32 startSlot, TSpan<TSharedPtr<IRHIBuffer>> vertexBuffers) override;
@@ -173,6 +175,7 @@ using MonsterEngine::TMap;
         
     private:
         VulkanDevice* m_device;
+        VkResult m_lastSynchronousResult = VK_NOT_READY;
         FVulkanCommandListContext* m_context;  // Reference to the current context (not owned)
         
         // Helper to get the current context

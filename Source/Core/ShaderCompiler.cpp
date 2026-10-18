@@ -1,5 +1,6 @@
 #include "Core/ShaderCompiler.h"
 #include "Core/Log.h"
+#include "Renderer/Splat/SplatResourceProvider.h"
 
 #if PLATFORM_WINDOWS
     #include <Windows.h>
@@ -7,10 +8,19 @@
 
 #include <fstream>
 #include <filesystem>
+#include <limits>
 
 namespace fs = std::filesystem;
 
 namespace MonsterRender {
+
+    // Bind on the session owner rather than changing a process-global path that
+    // could redirect a different renderer or outlive the AssetManager lease.
+    static thread_local std::shared_ptr<Splat::IResourceProvider> resourceProvider;
+
+    void ShaderCompiler::setResourceProvider(std::shared_ptr<Splat::IResourceProvider> provider) {
+        resourceProvider = std::move(provider);
+    }
 
     static String joinArgs(const TArray<String>& args) {
         String s;
@@ -22,6 +32,13 @@ namespace MonsterRender {
     }
 
     std::vector<uint8> ShaderCompiler::compileFromFile(const String& filePath, const ShaderCompileOptions& options) {
+#if PLATFORM_ANDROID
+        (void)options;
+        if (filePath.size() >= 4 && filePath.compare(filePath.size() - 4, 4, ".spv") == 0)
+            return readFileBytes(filePath);
+        MR_LOG_ERROR("Runtime shader compilation is unavailable on Android; use packaged SPIR-V");
+        return {};
+#else
         std::vector<uint8> result;
 
         // Decide compiler and args
@@ -71,18 +88,37 @@ namespace MonsterRender {
         }
 
         return result;
+#endif
     }
 
     std::vector<uint8> ShaderCompiler::readFileBytes(const String& filePath) {
         std::vector<uint8> data;
-        std::ifstream f(filePath, std::ios::binary);
-        if (!f) return data;
-        f.seekg(0, std::ios::end);
-        size_t size = static_cast<size_t>(f.tellg());
-        f.seekg(0, std::ios::beg);
-        data.resize(size);
-        if (size > 0) f.read(reinterpret_cast<char*>(data.data()), size);
-        return data;
+        try {
+            if (resourceProvider) {
+                std::string error;
+                if (!resourceProvider->ReadBytes(filePath, data, error)) {
+                    MR_LOG_ERROR("Packaged shader resource read failed: " + error);
+                    return {};
+                }
+                return data;
+            }
+#if PLATFORM_ANDROID
+            MR_LOG_ERROR("Android shader resource provider is not bound on the owner thread");
+            return {};
+#else
+            std::ifstream f(fs::u8path(filePath), std::ios::binary | std::ios::ate);
+            if (!f) return {};
+            const auto length = f.tellg();
+            // Byte loading is used for shader binaries/sources, never entire scenes.
+            if (length < 0 || uint64_t(length) > (64ull << 20) || uint64_t(length) > uint64_t(std::numeric_limits<std::streamsize>::max())) return {};
+            data.resize(static_cast<size_t>(length)); f.seekg(0);
+            if (!f || (length && !f.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(length))) || f.peek() != std::char_traits<char>::eof()) return {};
+            return data;
+#endif
+        } catch (const std::exception&) {
+            MR_LOG_ERROR("Shader byte read failed");
+            return {};
+        }
     }
 
     uint64 ShaderCompiler::getLastWriteTime(const String& filePath) {

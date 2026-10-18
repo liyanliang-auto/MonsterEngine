@@ -54,7 +54,7 @@ namespace MonsterRender {
 		void* allocate(size_t size, size_t alignment = alignof(std::max_align_t));
 		void  free(void* ptr, size_t size);
 
-		// Frame scratch (reset every frame, lock-free bump allocator)
+		// Frame scratch: Android is fixed-capacity; desktop retains owner-thread growth on exhaustion.
 		void* frameAllocate(size_t size, size_t alignment = alignof(std::max_align_t));
 		void  frameReset();
 
@@ -116,6 +116,8 @@ namespace MonsterRender {
 		~MemorySystem() = default;
 		MemorySystem(const MemorySystem&) = delete;
 		MemorySystem& operator=(const MemorySystem&) = delete;
+		std::mutex m_lifecycleMutex;
+		bool m_initialized = false;
 
 		// Internal structures
 		struct SmallBinPage;
@@ -127,6 +129,7 @@ namespace MonsterRender {
 			uint32 count[7] = {};
 			uint64 hits = 0;
 			uint64 misses = 0;
+            uint64 generation = 0;
 		};
 
 		struct SmallBin {
@@ -203,10 +206,14 @@ namespace MonsterRender {
 		// Huge pages configuration
 		bool m_hugePagesEnabled = false;
 		bool m_hugePagesAvailable = false;
-		bool m_useHugePagesForTextures = true;  // Textures benefit most from huge pages
+		// Android does not request MAP_HUGETLB/large pages. The OS page size is
+		// discovered by the platform memory manager and remains independent of
+		// these allocator slab sizes.
+		bool m_useHugePagesForTextures = PLATFORM_ANDROID ? false : true;
 
 		// TLS cache (thread_local in cpp)
-		static thread_local ThreadLocalCache* t_tlsCache;
+		static thread_local ThreadLocalCache t_tlsCache;
+        uint64 m_cacheGeneration = 0;
 
 		// Helpers
 		static uint32 selectSmallBin(size_t size);

@@ -3,19 +3,34 @@
 #include "Core/CoreMinimal.h"
 
 // Vulkan headers
-#if PLATFORM_WINDOWS
+#if PLATFORM_ANDROID
+    #ifndef VK_USE_PLATFORM_ANDROID_KHR
+    #define VK_USE_PLATFORM_ANDROID_KHR
+    #endif
+#elif PLATFORM_WINDOWS
     #define VK_USE_PLATFORM_WIN32_KHR
 #elif PLATFORM_LINUX
     #define VK_USE_PLATFORM_XLIB_KHR
 #endif
 
 #include <vulkan/vulkan.h>
+#if PLATFORM_ANDROID
+// Some existing headers include vulkan.h first; keep Android declarations available
+// even when that earlier include preceded VK_USE_PLATFORM_ANDROID_KHR.
+#include <vulkan/vulkan_android.h>
+#endif
 #include <RHI/RHIDefinitions.h>
+#include <memory>
 
 namespace MonsterRender::RHI::Vulkan {
     
     // Vulkan function pointers for dynamic loading
     struct VulkanFunctions {
+        // Keeps the loader alive for an independent probe without owning its instance.
+        std::shared_ptr<void> loaderLifetime;
+        PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = nullptr;
+        PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr = nullptr;
+        PFN_vkEnumerateInstanceVersion vkEnumerateInstanceVersion = nullptr;
         // Instance functions
         PFN_vkCreateInstance vkCreateInstance = nullptr;
         PFN_vkDestroyInstance vkDestroyInstance = nullptr;
@@ -26,6 +41,10 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices = nullptr;
         PFN_vkGetPhysicalDeviceProperties vkGetPhysicalDeviceProperties = nullptr;
         PFN_vkGetPhysicalDeviceFeatures vkGetPhysicalDeviceFeatures = nullptr;
+        PFN_vkGetPhysicalDeviceFeatures2 vkGetPhysicalDeviceFeatures2 = nullptr;
+        PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = nullptr;
+        PFN_vkGetPhysicalDeviceMemoryProperties2 vkGetPhysicalDeviceMemoryProperties2 = nullptr;
+        PFN_vkGetPhysicalDeviceImageFormatProperties vkGetPhysicalDeviceImageFormatProperties = nullptr;
         PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties = nullptr;
         PFN_vkEnumerateDeviceExtensionProperties vkEnumerateDeviceExtensionProperties = nullptr;
         PFN_vkCreateDevice vkCreateDevice = nullptr;
@@ -63,6 +82,8 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkFreeMemory vkFreeMemory = nullptr;
         PFN_vkMapMemory vkMapMemory = nullptr;
         PFN_vkUnmapMemory vkUnmapMemory = nullptr;
+        PFN_vkFlushMappedMemoryRanges vkFlushMappedMemoryRanges = nullptr;
+        PFN_vkInvalidateMappedMemoryRanges vkInvalidateMappedMemoryRanges = nullptr;
         
         // Buffer functions
         PFN_vkCreateBuffer vkCreateBuffer = nullptr;
@@ -117,10 +138,19 @@ namespace MonsterRender::RHI::Vulkan {
         
         // Dispatch operations
         PFN_vkCmdDispatch vkCmdDispatch = nullptr;
+        PFN_vkCmdDispatchIndirect vkCmdDispatchIndirect = nullptr;
+        PFN_vkCreateQueryPool vkCreateQueryPool = nullptr;
+        PFN_vkDestroyQueryPool vkDestroyQueryPool = nullptr;
+        PFN_vkGetQueryPoolResults vkGetQueryPoolResults = nullptr;
+        PFN_vkCmdResetQueryPool vkCmdResetQueryPool = nullptr;
+        PFN_vkCmdWriteTimestamp vkCmdWriteTimestamp = nullptr;
 
         // Transfer operations
         PFN_vkCmdCopyBuffer vkCmdCopyBuffer = nullptr;
         PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage = nullptr;
+        PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer = nullptr;
+        PFN_vkCmdClearColorImage vkCmdClearColorImage = nullptr;
+        PFN_vkCmdClearDepthStencilImage vkCmdClearDepthStencilImage = nullptr;
         PFN_vkCmdCopyImage vkCmdCopyImage = nullptr;
         PFN_vkCmdBlitImage vkCmdBlitImage = nullptr;
         
@@ -147,9 +177,14 @@ namespace MonsterRender::RHI::Vulkan {
         PFN_vkGetSwapchainImagesKHR vkGetSwapchainImagesKHR = nullptr;
         PFN_vkAcquireNextImageKHR vkAcquireNextImageKHR = nullptr;
         PFN_vkQueuePresentKHR vkQueuePresentKHR = nullptr;
+#ifdef VK_EXT_swapchain_maintenance1
+        PFN_vkReleaseSwapchainImagesEXT vkReleaseSwapchainImagesEXT = nullptr;
+#endif
         
         // Surface functions
-#if PLATFORM_WINDOWS
+#if PLATFORM_ANDROID
+        PFN_vkCreateAndroidSurfaceKHR vkCreateAndroidSurfaceKHR = nullptr;
+#elif PLATFORM_WINDOWS
         PFN_vkCreateWin32SurfaceKHR vkCreateWin32SurfaceKHR = nullptr;
 #elif PLATFORM_LINUX
         PFN_vkCreateXlibSurfaceKHR vkCreateXlibSurfaceKHR = nullptr;
@@ -191,12 +226,28 @@ namespace MonsterRender::RHI::Vulkan {
         /**
          * Load instance-level functions
          */
-        static void loadInstanceFunctions(VkInstance instance);
+        static bool loadInstanceFunctions(VkInstance instance);
         
         /**
          * Load device-level functions
          */
-        static void loadDeviceFunctions(VkDevice device);
+        static bool loadDeviceFunctions(VkDevice device);
+
+        /** Acquire a global-only dispatch with its own loader lifetime; no renderer initialization. */
+        static bool acquireGlobalDispatch(VulkanFunctions& dispatch, String& error);
+
+        /** Load commands into an independent table. Caller owns instance and extension/version checks.
+         * Do not repurpose a table for another live instance/device; copies retain only loader lifetime.
+         */
+        static bool loadInstanceDispatch(VkInstance instance, VulkanFunctions& dispatch,
+                                         String& error, bool requireSurface = false);
+
+        /** Load core device commands; requireSwapchain only when that extension was enabled. */
+        static bool loadDeviceDispatch(VkDevice device, VulkanFunctions& dispatch,
+                                       String& error, bool requireSwapchain = true);
+
+        /** Vulkan 1.0 loaders may omit enumeration; that case reports version 1.0 and VK_SUCCESS. */
+        static VkResult enumerateInstanceVersion(const VulkanFunctions& dispatch, uint32& version);
         
         /**
          * Check if Vulkan is available on this system
@@ -205,7 +256,6 @@ namespace MonsterRender::RHI::Vulkan {
         
     private:
         static VulkanFunctions s_functions;
-        static void* s_vulkanLibrary;
         static bool s_initialized;
     };
     

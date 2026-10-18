@@ -9,7 +9,7 @@
 namespace MonsterRender {
     
     Application::Application(const ApplicationConfig& config) 
-        : m_config(config) {
+        : m_runtimeLease(FProcessRuntimeLease::Acquire()), m_config(config) {
         MR_LOG_INFO("Creating application: " + config.name);
     }
     
@@ -25,13 +25,8 @@ namespace MonsterRender {
         
         MR_LOG_INFO("Initializing application...");
         
-        // Initialize memory system FIRST - required by all other systems
-        if (!FMemoryManager::Get().Initialize()) {
-            MR_LOG_ERROR("Failed to initialize memory system");
-            return false;
-        }
-        MR_LOG_INFO("Memory system initialized successfully");
-        
+        // Process lease pins both allocator systems through object destruction.
+
         // Initialize window factory
         WindowFactory::initialize();
         
@@ -42,7 +37,7 @@ namespace MonsterRender {
         m_window = WindowFactory::createWindow(m_config.windowProperties);
         if (!m_window) {
             MR_LOG_ERROR("Failed to create application window");
-            return false;
+            shutdown();return false;
         }
         
         // Setup window event callbacks
@@ -73,14 +68,15 @@ namespace MonsterRender {
         
         if (!m_engine->initialize(rhiCreateInfo)) {
             MR_LOG_ERROR("Failed to initialize engine");
-            return false;
+            shutdown();return false;
         }
         
         // Initialize timing
         m_lastFrameTime = std::chrono::steady_clock::now();
         
         // Call derived class initialization
-        onInitialize();
+        m_derivedStarted=true;
+        try { onInitialize(); } catch (...) { shutdown();throw; }
 
         // Asset initialization is not part of a rendered-frame FPS sample.
         m_fpsSampleStart = std::chrono::steady_clock::now();
@@ -93,14 +89,11 @@ namespace MonsterRender {
     }
     
     void Application::shutdown() {
-        if (!m_initialized) {
-            return;
-        }
-        
+        if (!m_initialized&&!m_window&&!m_engine&&!m_derivedStarted) return;
         MR_LOG_INFO("Shutting down application...");
         
         // Call derived class shutdown
-        onShutdown();
+        if(m_derivedStarted){m_derivedStarted=false;onShutdown();}
         
         // Shutdown engine
         if (m_engine) {
@@ -116,10 +109,6 @@ namespace MonsterRender {
         
         // Shutdown window factory
         WindowFactory::shutdown();
-        
-        // Shutdown memory system LAST - after all other systems are destroyed
-        FMemoryManager::Get().Shutdown();
-        MR_LOG_INFO("Memory system shut down");
         
         m_initialized = false;
         MR_LOG_INFO("Application shut down successfully");
@@ -167,10 +156,11 @@ namespace MonsterRender {
         onUpdate(m_deltaTime);
         
         // Render frame
+        m_frameSubmitted=false;
         onRender();
         
         // Update statistics
-        m_frameCount++;
+        if(!m_config.requireObservedSubmission||m_frameSubmitted)m_frameCount++;
         const auto sampleEnd = std::chrono::steady_clock::now();
         const double elapsed = std::chrono::duration<double>(sampleEnd - m_fpsSampleStart).count();
         if (elapsed >= 1.0) {

@@ -7,6 +7,8 @@ namespace MonsterRender::Splat {
 class FSplatLODSelector {
 public:
     /** Select a complete resident cut and priority-ordered asynchronous requests.
+     * Versioned mobile RMS/center/support metadata uses the same projection
+     * semantics as the desktop center-error builder. Missing children retain ancestors.
      * Tile costs inferred from node bounds are conservative estimates, not measured
      * Gaussian-tile counts. The pipeline's same-frame GPU overflow guard is authoritative.
      */

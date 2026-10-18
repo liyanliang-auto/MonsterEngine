@@ -1,4 +1,4 @@
-﻿// Copyright Monster Engine. All Rights Reserved.
+// Copyright Monster Engine. All Rights Reserved.
 #ifdef _MSC_VER
 #pragma execution_character_set("utf-8")
 #endif
@@ -80,6 +80,7 @@ static ApplicationConfig CreateSplatSceneConfig(const Splat::FSplatLODRuntimeOpt
     ApplicationConfig config;
     config.name = "Monster Engine - 3DGS Splat";
     config.fpsLabel = "Render FPS";
+    config.requireObservedSubmission=true;
     config.preferredBackend = RHI::ERHIBackend::Vulkan;
     config.windowProperties.width  = runtime.width;
     config.windowProperties.height = runtime.height;
@@ -140,19 +141,21 @@ void SplatSceneApplication::destroyScene()
     if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(m_device))
         if(!vk->DrainCompletedDestructions()){failRun("Scene command bindings could not be safely released");return;}
     if(m_device)if(auto* commands=m_device->getImmediateCommandList())commands->reset();
-    for(auto& descriptors:m_present.descriptorSets)descriptors.Reset();
-    m_splatPipeline.Reset();m_gpuData.release();
+    m_splatPipeline=nullptr;m_gpuData.release();
+    if(m_session&&m_session->Streaming()){m_pagePool=nullptr;m_streamer=nullptr;m_session->ReleaseScene();}
     if(m_pagePool){
         if(m_benchmark){const auto stats=m_pagePool->GetStats();m_benchmark->SetMetadata("finalUploadedPages",std::to_string(stats.uploadedPages));m_benchmark->SetMetadata("finalEvictedPages",std::to_string(stats.evictedPages));}
-        m_pagePool->Shutdown();releaseCPUTransfers();m_pagePool.reset();
+        m_pagePool->Shutdown();releaseCPUTransfers();m_legacyPagePool.reset();m_pagePool=nullptr;
     }
     if(m_streamer){
         m_streamer->CancelGeneration(m_sceneGeneration);m_streamer->Shutdown();
         const auto memory=m_streamer->GetMemoryStats();
         if(m_benchmark){m_benchmark->SetMetadata("CPUReservationsAfterShutdown",std::to_string(memory.totalReservedBytes));m_benchmark->SetMetadata("CPUTransfersAfterShutdown",std::to_string(memory.transferredPages));}
         if(memory.totalReservedBytes||memory.transferredPages)failRun("CPU transferred ownership did not close during shutdown");
-        m_streamer.reset();
+        m_legacyStreamer.reset();m_streamer=nullptr;
     }
+    if(m_session){m_session->Shutdown();m_session.reset();}
+    m_resourceProvider.reset();
     m_selector.Reset();m_scene={};m_selection={};m_leafNodes.clear();m_residentTargetPages.clear();m_fusionCPUReservation=0;m_cpuProgressMinimumBytes=0;
     m_benchmarkSelectionFrozen=false;m_selectionSettled=false;m_selectionSHA256.clear();m_cameraSHA256.clear();m_identityNodes.clear();m_identityResidencyVersion=~uint64_t(0);
     if(m_device){auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(m_device);if(vk&&!vk->DrainCompletedDestructions())failRun("Scene backing could not be safely drained before replacement");}
@@ -287,6 +290,15 @@ void SplatSceneApplication::updateSceneStreaming(RHI::IRHICommandList* command,c
     Splat::FSplatLODView view;std::memcpy(view.view,camera.viewMatrix,sizeof(view.view));std::memcpy(view.projection,camera.projMatrix,sizeof(view.projection));std::memcpy(view.cameraPosition,camera.camPos,sizeof(view.cameraPosition));view.width=m_renderWidth;view.height=m_renderHeight;view.nearPlane=m_controls.NearPlane;view.farPlane=m_controls.FarPlane;view.gaussianScale=m_controls.GaussianScale;view.distanceCulling=m_controls.bDistanceCulling;
     auto settings=m_runtime.lod;settings.qualityPixels=m_controls.LODQualityPixels;settings.freeze=m_controls.bFreezeLOD;settings.activeBudget=m_splatPipeline->GetFrameStats().activeCapacity;settings.sortBudget=m_splatPipeline->GetFrameStats().sortCapacity;settings.sourceBudget=m_pagePool->GetGPUData().gaussianCount;
     if(m_runtime.benchmark&&m_runtime.benchmarkFreezeSelection)settings.freeze=m_benchmarkSelectionFrozen;
+    Splat::FSplatActiveSet active;
+    if(m_session&&m_session->Streaming()) {
+        // Ordinary D goes through the same ownership/submission controller as Android.
+        if(!m_controls.bLODEnabled)settings.qualityPixels=0.001f;
+        std::string error;if(!m_session->Streaming()->ApplySettings(settings,error)){failRun(error);return;}
+        auto recorded=m_session->UpdateStreaming(command,view,m_splatPipeline->GetFrameStats().frame);
+        if(!recorded.status.ok){failRun(recorded.status.message);return;}
+        m_selection=m_session->Streaming()->GetSelection();active=std::move(recorded.activeSet);
+    }else {
     const bool fullLeavesRequested=m_runtime.mode=='B'||m_runtime.fullLeaf||!m_controls.bLODEnabled;
     const bool fusion=m_runtime.projectedFusion&&m_runtime.mode>='C'&&!fullLeavesRequested;
     const bool fullLeaves=fullLeavesRequested&&m_fullLeafRequiredSlots<=m_pagePool->GetGPUData().gaussianCount&&m_scene.sourceCount<=settings.activeBudget;
@@ -315,10 +327,11 @@ void SplatSceneApplication::updateSceneStreaming(RHI::IRHICommandList* command,c
         }else m_pagePool->QueueUpload(std::move(result));
     }
     m_pagePool->Tick(command,m_sceneGeneration);releaseCPUTransfers();
-    auto active=m_pagePool->BuildActiveSet(m_selection,fusion,m_runtime.fusionImplementation=="split");
+    active=m_pagePool->BuildActiveSet(m_selection,fusion,m_runtime.fusionImplementation=="split");
     if(fusion&&m_selection.selectedProxyNodes){m_selection.degraded=true;m_selection.degradationReason="Original fusion sources unavailable: bounded spatial coarse fallback retained";}
     if(active.sourceIndices.size()!=m_selection.activeCount){failRun("Resident active cut failed coverage or generation validation");return;}
     m_splatPipeline->SetActiveSet(active);
+    }
     const auto after=m_pagePool->GetResidency();
     if(m_benchmark){
         m_selectionSettled=m_selection.requestPageIds.empty()&&!m_selection.degraded;
@@ -514,10 +527,6 @@ void SplatSceneApplication::onUpdate(float32 deltaTime)
         m_runtime.scenePath = m_nextScenePath; m_runtime.sourcePLY = m_nextSourcePLY; m_runtime.mode = m_nextMode;
         m_modelPath = m_nextSourcePLY;
         if (!loadModel() || !initSplatPipeline() || !initCamera()) { failRun("Scene replacement failed: " + m_uiMessage); return; }
-        for(auto& descriptors:m_present.descriptorSets){
-            descriptors=m_device->allocateDescriptorSet(m_present.setLayout);
-            if(!descriptors){failRun("Scene replacement present descriptor allocation failed");return;}
-        }
         m_uiRuntime.reset();
         m_firstFrame = true; m_samplingStarted = false;
     }
@@ -656,7 +665,7 @@ void SplatSceneApplication::onRender()
     if (!m_device || !m_splatPipeline || !m_splatPipeline->isInitialized())
     {
         MR_LOG(LogSplatScene, Warning, "onRender: Skipping - device=%p, pipeline=%p",
-               (void*)m_device, (void*)m_splatPipeline.Get());
+               (void*)m_device, (void*)m_splatPipeline);
         return;
     }
 
@@ -674,7 +683,8 @@ void SplatSceneApplication::onRender()
     MR_LOG(LogSplatScene, Verbose, "onRender: Frame %u begin, window=%ux%u, firstFrame=%d",
            vulkanDevice->getCurrentFrame(), m_windowWidth, m_windowHeight, (int)m_firstFrame);
 
-    context->prepareForNewFrame();
+    const auto acquired=m_device->beginFrame();
+    if(!acquired.acquired){if(acquired.status==RHI::EFrameResult::DeviceLost)failRun("Device lost during acquire");return;}
 
     // Build camera & update pipeline BEFORE command buffer recording.
     // updateCamera() pre-bakes the camera UBO descriptor binding, which
@@ -682,7 +692,7 @@ void SplatSceneApplication::onRender()
     // avoids VUID-03047 (updating a set while a pending CB references it).
     Splat::FCameraUniforms camera;
     buildCameraUniforms(camera);
-    m_splatPipeline->setCamera(camera);
+    m_session->SetCameraUniforms(camera);
     Splat::FSplatRenderSettings renderSettings;
     renderSettings.nearPlane = m_controls.NearPlane;
     renderSettings.farPlane = m_controls.FarPlane;
@@ -692,7 +702,7 @@ void SplatSceneApplication::onRender()
     renderSettings.fusionRelativeRGBAError = m_runtime.fusionRelativeRGBAError;
     renderSettings.tightTileCulling = m_runtime.tightTileCulling;
     renderSettings.rasterSharedMemoryMode = m_runtime.rasterSharedMemoryMode;
-    m_splatPipeline->setRenderSettings(renderSettings);
+    m_session->SetRenderSettings(renderSettings);
     if(m_benchmark){
         const std::string cameraBytes(reinterpret_cast<const char*>(&camera),sizeof(camera));
         const auto digest=HashText(cameraBytes);
@@ -712,24 +722,12 @@ void SplatSceneApplication::onRender()
     if(m_runFailed){cmdList->end();return;}
     MR_LOG(LogSplatScene, Verbose, "onRender: Command buffer recorded, executing splat pipeline...");
 
-    // ---- Step 0: Transition output from previous frame's shader-read back to compute-write ----
-    {
-        auto outputTex = m_splatPipeline->getOutputTexture();
-        if (outputTex)
-        {
-            // First frame: texture layout is UNDEFINED after creation.
-            // Subsequent frames: layout is SHADER_READ_ONLY_OPTIMAL from Step 2.
-            RHI::EResourceUsage srcLayout = m_firstFrame
-                ? RHI::EResourceUsage::None
-                : RHI::EResourceUsage::ShaderResource;
-            cmdList->transitionResource(outputTex, srcLayout, RHI::EResourceUsage::UnorderedAccess);
-            MR_LOG(LogSplatScene, Verbose, "onRender: Step0 - Output texture layout transition, firstFrame=%d", (int)m_firstFrame);
-        }
-    }
-
-    // ---- Step 1: Execute splat pipeline (camera already set before begin) ----
-    MR_LOG(LogSplatScene, Verbose, "onRender: Calling m_splatPipeline->execute()...");
-    auto splatOutput = m_splatPipeline->execute(cmdList);
+    Splat::FViewerFrameRequest frameRequest;frameRequest.commandList=cmdList;frameRequest.sceneGeneration=m_sceneGeneration;
+    frameRequest.configGeneration=m_sessionConfig.generation;frameRequest.surfaceGeneration=1;
+    frameRequest.viewportWidth=m_windowWidth;frameRequest.viewportHeight=m_windowHeight;
+    frameRequest.monotonicNanoseconds=std::chrono::duration_cast<std::chrono::nanoseconds>(renderStart.time_since_epoch()).count();
+    auto recorded=m_session->RecordCompute(frameRequest,true);
+    auto splatOutput=recorded.outputTexture;
     if (!splatOutput)
     {
         MR_LOG(LogSplatScene, Error, "onRender: SplatPipeline execute returned null texture");
@@ -756,89 +754,9 @@ void SplatSceneApplication::onRender()
     MR_LOG(LogSplatScene, Verbose, "onRender: SplatPipeline executed, output texture=%s (%ux%u)",
            splatOutput->getDebugName().c_str(), splatOutput->getWidth(), splatOutput->getHeight());
 
-    // ---- Step 2: Transition output from compute (UnorderedAccess) to shader-read ----
     cmdList->writeGPUTimestamp(recordingFrame,"Presentation",true);
-    cmdList->transitionResource(
-        splatOutput,
-        RHI::EResourceUsage::UnorderedAccess,
-        RHI::EResourceUsage::ShaderResource);
-    MR_LOG(LogSplatScene, Verbose, "onRender: Step2 - Output transition to ShaderResource complete");
-
-    // ---- Step 3: Fullscreen present pass → swapchain ----
-    TArray<TSharedPtr<RHI::IRHITexture>> renderTargets;
-    cmdList->setRenderTargets(
-        TSpan<TSharedPtr<RHI::IRHITexture>>(renderTargets), nullptr);
-    MR_LOG(LogSplatScene, Verbose, "onRender: setRenderTargets (swapchain) done");
-
-    // Viewport
-    RHI::Viewport viewport;
-    viewport.x = 0.0f;  viewport.y = 0.0f;
-    viewport.width  = static_cast<float>(m_windowWidth);
-    viewport.height = static_cast<float>(m_windowHeight);
-    viewport.minDepth = 0.0f;  viewport.maxDepth = 1.0f;
-    cmdList->setViewport(viewport);
-
-    // Scissor
-    RHI::ScissorRect scissor;
-    scissor.left = 0;   scissor.top = 0;
-    scissor.right  = static_cast<int32>(m_windowWidth);
-    scissor.bottom = static_cast<int32>(m_windowHeight);
-    cmdList->setScissorRect(scissor);
-
-    // Bind present pipeline
-    cmdList->setPipelineState(m_present.pipelineState);
-    MR_LOG(LogSplatScene, Verbose, "onRender: Present pipeline bound, registering texture in pending state...");
-
-    // Register present pass texture in the pending state so that
-    // prepareForDraw() can correctly allocate and update the descriptor
-    // set via the cache, rather than being overridden by a stale cached set.
-    // This avoids VUID-08114: the cached set would otherwise be allocated but
-    // never updated with the splatOutput texture.
-    {
-        auto* pendingState = context->getPendingState();
-        auto* vulkanTex = static_cast<RHI::Vulkan::VulkanTexture*>(splatOutput.get());
-        auto* vulkanSamp = static_cast<RHI::Vulkan::VulkanSampler*>(m_present.sampler.get());
-        if (pendingState && vulkanTex && vulkanSamp)
-        {
-            pendingState->setTexture(
-                0, 0,
-                vulkanTex->getImageView(),
-                vulkanSamp->getSampler(),
-                vulkanTex->getImage(),
-                vulkanTex->getVulkanFormat());
-            MR_LOG(LogSplatScene, Verbose, "onRender: Texture registered in pending state — imageView=0x%llx, sampler=0x%llx, image=0x%llx, format=%d",
-                   (uint64)vulkanTex->getImageView(), (uint64)vulkanSamp->getSampler(),
-                   (uint64)vulkanTex->getImage(), (int)vulkanTex->getVulkanFormat());
-        }
-        else
-        {
-            MR_LOG(LogSplatScene, Error, "onRender: Failed to register texture — pendingState=%p, vulkanTex=%p, vulkanSamp=%p",
-                   (void*)pendingState, (void*)vulkanTex, (void*)vulkanSamp);
-        }
-    }
-
-    // Bind the descriptor set explicitly so the recorder records and replays it.
-    // This ensures vkCmdBindDescriptorSets is called during replay, which the
-    // pending state's prepareForDraw() cannot do for the deferred replay path.
-    {
-        uint32 currentFrame = vulkanDevice->getCurrentFrame();
-        uint32 dsIndex = currentFrame % FPresentPass::kMaxFramesInFlight;
-        auto& descSet = m_present.descriptorSets[dsIndex];
-
-        // Update the pre-allocated descriptor set with the current splatOutput texture
-        descSet->updateCombinedTextureSampler(0, splatOutput, m_present.sampler);
-        MR_LOG(LogSplatScene, Verbose, "onRender: Updated descriptor set[%u] with splatOutput texture", dsIndex);
-
-        // Record bindDescriptorSet command for the recorder/replay system
-        cmdList->bindDescriptorSet(m_present.pipelineLayout, 0, descSet);
-        MR_LOG(LogSplatScene, Verbose, "onRender: Recorded bindDescriptorSet(pipelineLayout=%p, set=0, descSet=%p)",
-               (void*)m_present.pipelineLayout.Get(), (void*)descSet.Get());
-    }
-
-    // Draw fullscreen triangle (no vertex buffer)
-    MR_LOG(LogSplatScene, Verbose, "onRender: Calling cmdList->draw(3, 0)...");
-    cmdList->draw(3, 0);
-    MR_LOG(LogSplatScene, Verbose, "onRender: draw(3, 0) completed");
+    const auto presentStatus=m_session->RecordPresent(*cmdList,splatOutput,m_windowWidth,m_windowHeight);
+    if(!presentStatus.ok){failRun(presentStatus.message);cmdList->end();return;}
 
     if (m_controlUIVisible && m_imguiRenderer && m_imguiContext)
         m_imguiRenderer->RenderDrawData(cmdList, ImGui::GetDrawData());
@@ -848,11 +766,11 @@ void SplatSceneApplication::onRender()
     cmdList->writeGPUTimestamp(recordingFrame,"Presentation",false);
     cmdList->writeGPUTimestamp(recordingFrame,"WholeFrame",false);
     cmdList->end();
-    const auto beforeSubmission=m_device->getLastSubmissionToken();
-    m_device->present();
-    const auto submitted=m_device->getLastSubmissionToken();
-    const bool successfulSubmission=submitted.value&&submitted.value!=beforeSubmission.value;
-    if(successfulSubmission){m_splatPipeline->MarkFrameSubmitted(submitted);if(m_pagePool)m_pagePool->MarkFrameSubmitted(submitted);}
+    const auto submission=getEngine()->PresentFrame();
+    const auto submitted=submission.token;
+    const bool successfulSubmission=submission.submitted&&submitted.value;
+    NotifyFrameSubmitted(submission);
+    if(successfulSubmission){m_session->OnSubmitted(submitted);if(m_legacyPagePool)m_legacyPagePool->MarkFrameSubmitted(submitted);}
     else if(m_runtime.benchmark||m_pagePool)failRun("Frame did not produce a new actual submission token");
     const auto presented=std::chrono::steady_clock::now();
     if(m_benchmark&&successfulSubmission){
@@ -978,18 +896,6 @@ void SplatSceneApplication::onShutdown()
     // Release splat resources in reverse order
     destroyScene();
     if(m_benchmark){std::string error;if(!m_benchmark->Finish(m_benchmarkCompleted&&!m_runFailed,m_uiMessage.empty()?"Run ended; numeric acceptance gates require downstream evaluation":m_uiMessage,error)){m_runFailed=true;if(!error.empty())MR_LOG(LogSplatScene,Error,"Benchmark finalization: %s",error.c_str());}m_benchmark.reset();}
-
-    // Release present pass resources
-    for (uint32 i = 0; i < FPresentPass::kMaxFramesInFlight; ++i)
-    {
-        m_present.descriptorSets[i].Reset();
-    }
-    m_present.pipelineState.Reset();
-    m_present.pipelineLayout.Reset();
-    m_present.setLayout.Reset();
-    m_present.vertexShader.Reset();
-    m_present.fragmentShader.Reset();
-    m_present.sampler.Reset();
 
     // Release camera
     m_fpsCamera.Reset();
@@ -1415,6 +1321,14 @@ void SplatSceneApplication::drawControlPanels()
 bool SplatSceneApplication::loadModel()
 {
     std::string error;
+    m_session=std::make_unique<Splat::FSplatViewerSession>();
+    m_resourceProvider=std::make_unique<Splat::FFileResourceProvider>(".");
+    m_sessionConfig={};m_sessionConfig.runtime=m_runtime;m_sessionConfig.generation=m_sceneGeneration;
+    m_sessionConfig.maximumInternalEdge=std::max(m_renderWidth,m_renderHeight);
+    m_sessionConfig.maximumInternalPixels=uint64_t(m_renderWidth)*m_renderHeight;
+    auto sessionStatus=m_session->Initialize(*m_device,*m_resourceProvider,m_sessionConfig);
+    if(!sessionStatus.ok){m_uiMessage=sessionStatus.message;return false;}
+    m_session->ResizeInternal(m_renderWidth,m_renderHeight);
     if(m_runtime.shStorageMode>1 || (m_runtime.shStorageMode==1 && (m_runtime.mode!='A'||m_runtime.fullLeaf||m_runtime.projectedFusion))){m_uiMessage="SH FP16 requires full-resident A without LOD/Streaming/fullLeaf/fusion";return false;}
     m_scene = {}; m_leafNodes.clear(); m_residentTargetPages.clear(); m_terminalPageErrors.clear();
     m_selector.Reset(); m_selection = {}; m_selectionCounter = 1;
@@ -1431,6 +1345,17 @@ bool SplatSceneApplication::loadModel()
         if (m_runtime.mode == 'C') for (auto& page:m_scene.pages) page.pinned = true;
         m_fullLeafRequiredSlots=m_scene.sourceCount;std::vector<bool> leafPages(m_scene.pages.size());for(auto node:m_leafNodes)for(auto page:m_scene.nodes[node].pageIds)leafPages[page]=true;
         for(const auto& page:m_scene.pages)if(page.pinned&&!leafPages[page.id])m_fullLeafRequiredSlots+=page.gaussianCount;
+        if(m_runtime.mode=='D'&&!m_runtime.projectedFusion&&!m_runtime.fullLeaf) {
+            Splat::FSceneDescriptor descriptor;descriptor.kind=Splat::EViewerSceneKind::LOD;descriptor.generation=m_sceneGeneration;
+            const auto manifest=std::filesystem::absolute(std::filesystem::u8path(m_runtime.scenePath));
+            descriptor.directory=PathUTF8(manifest.parent_path());descriptor.manifestPath=PathUTF8(manifest);descriptor.sceneId="desktop-lod";
+            const auto opened=m_session->OpenPreparedLOD(descriptor,m_scene);
+            if(!opened.ok){m_uiMessage=opened.message;return false;}
+            m_pagePool=m_session->Streaming()->GetPagePool();m_streamer=m_session->Streaming()->GetStreamer();
+            m_gpuData=m_session->GPUData();m_shDegree=m_gpuData.shDegree;m_loading=true;
+            for(const auto& page:m_scene.pages)if(page.pinned)m_residentTargetPages.push_back(page.id);
+            return true;
+        }
         if (m_runtime.mode != 'A') {
             const uint64_t rootCount = m_scene.nodes.empty()?0:m_scene.nodes[m_scene.rootNode].gaussianCount;
             if (rootCount > m_runtime.activeCapacity) { m_uiMessage = "Mandatory coarse representation exceeds activeCapacity"; return false; }
@@ -1443,9 +1368,9 @@ bool SplatSceneApplication::loadModel()
             if(m_fusionCPUReservation>=m_runtime.streaming.cpuCacheBytes){m_uiMessage="Original fusion metadata/working reservation exceeds CPU budget";return false;}
             auto streaming=m_runtime.streaming;streaming.cpuCacheBytes-=m_fusionCPUReservation;
             if(m_scene.version>=5&&(!Splat::FSplatPageStreamer::EstimateMinimumProgressBytes(m_scene,streaming,m_cpuProgressMinimumBytes,error)||streaming.cpuCacheBytes<m_cpuProgressMinimumBytes)){m_uiMessage=error.empty()?"CPU budget leaves insufficient worker encode/decode/lease progress workspace":error;return false;}
-            m_pagePool = std::make_unique<Splat::FSplatGPUPagePool>();
+            m_legacyPagePool = std::make_unique<Splat::FSplatGPUPagePool>();m_pagePool=m_legacyPagePool.get();
             if (!m_pagePool->Initialize(m_device,m_scene,streaming,error)) { m_uiMessage=error; return false; }
-            m_streamer = std::make_unique<Splat::FSplatPageStreamer>();
+            m_legacyStreamer = std::make_unique<Splat::FSplatPageStreamer>();m_streamer=m_legacyStreamer.get();
             const auto directory=std::filesystem::u8path(m_runtime.scenePath).parent_path();
             if (!m_streamer->Open(m_scene,directory.empty()?".":PathUTF8(directory),streaming,error)) {m_uiMessage=error;return false;}
             m_gpuData=m_pagePool->GetGPUData();m_shDegree=m_gpuData.shDegree;m_loading=true;
@@ -1513,24 +1438,12 @@ bool SplatSceneApplication::initSplatPipeline()
     if (!m_gpuData.isValid())
         return false;
 
-    m_splatPipeline = MakeUnique<Splat::FSplatPipeline>();
-    if(!m_splatPipeline->SetProjectionColorCompression(m_runtime.projectionColorCompression))return false;
-    if(!m_splatPipeline->SetRadixSortBlocksPerWorkgroup(m_runtime.radixSortBlocksPerWorkgroup)||
-        !m_splatPipeline->SetRadixPhaseTiming(m_runtime.benchmark&&!m_runtime.captureOnly&&m_runtime.radixSortPhaseTiming))return false;
-    if(m_runtime.projectedFusion&&m_runtime.mode>='C'&&!m_runtime.fullLeaf&&!m_splatPipeline->EnableProjectedFusion(m_runtime.fusionImplementation=="split"))return false;
-    // A configured original-scene run needs the same capacities as its
-    // capture/benchmark run; legacy unconfigured PLY demos keep auto sizing.
-    if (m_pagePool || m_runtime.benchmark || !m_runtime.scenePath.empty())
-        m_splatPipeline->SetCapacityBudgets(m_gpuData.gaussianCount,m_runtime.activeCapacity,m_runtime.sortCapacity,m_runtime.streaming.temporaryGPUBytes);
-    if (!m_splatPipeline->initialize(m_device, m_gpuData.gaussianCount,
-                                     m_renderWidth, m_renderHeight))
-    {
-        MR_LOG(LogSplatScene, Error, "SplatPipeline::initialize failed");
-        m_uiMessage=m_splatPipeline->GetFrameStats().degradationReason;
-        return false;
-    }
-
-    m_splatPipeline->setGaussianData(m_gpuData);
+    if(m_session->Streaming()){m_splatPipeline=m_session->Pipeline();return m_splatPipeline&&m_splatPipeline->isInitialized();}
+    Splat::FSceneDescriptor descriptor;descriptor.sceneId="desktop-source";descriptor.generation=m_sceneGeneration;
+    descriptor.sourcePLY=m_modelPath;
+    auto result=m_session->AdoptDesktopGPUData(m_gpuData,descriptor,m_renderWidth,m_renderHeight,m_pagePool||m_runtime.benchmark||!m_runtime.scenePath.empty());
+    m_splatPipeline=m_session->Pipeline();
+    if(!result.ok){m_uiMessage=result.message;return false;}
     return true;
 }
 
@@ -1587,150 +1500,7 @@ bool SplatSceneApplication::initCamera()
 
 bool SplatSceneApplication::initPresentPass()
 {
-    using namespace RHI;
-
-    // ---- Load SPIR-V ----
-    auto readShader = [](const String& path) -> TSharedPtr<RHI::IRHIShader> {
-        // Dummy — actual load happens below with correct device call
-        return nullptr;
-    };
-
-    auto vertBytes = MonsterRender::ShaderCompiler::readFileBytes(Splat::SplatShaderPath(
-        "Shaders/Splat/compiled/splat_present.vert.spv"));
-    auto fragBytes = MonsterRender::ShaderCompiler::readFileBytes(Splat::SplatShaderPath(
-        "Shaders/Splat/compiled/splat_present.frag.spv"));
-
-    if (vertBytes.empty() || fragBytes.empty())
-    {
-        MR_LOG(LogSplatScene, Error, "Failed to read present shader SPIR-V");
-        return false;
-    }
-
-    // DEBUG: Log SPIR-V sizes and first 8 bytes to verify version
-    MR_LOG(LogSplatScene, Log, "initPresentPass: vert SPIR-V size=%zu, frag SPIR-V size=%zu",
-           vertBytes.size(), fragBytes.size());
-    MR_LOG(LogSplatScene, Log, "initPresentPass: frag first 8 bytes = %02x %02x %02x %02x %02x %02x %02x %02x",
-           (uint32)fragBytes[0], (uint32)fragBytes[1], (uint32)fragBytes[2], (uint32)fragBytes[3],
-           (uint32)fragBytes[4], (uint32)fragBytes[5], (uint32)fragBytes[6], (uint32)fragBytes[7]);
-
-    TSpan<const uint8> vertCode(vertBytes.data(), vertBytes.size());
-    TSpan<const uint8> fragCode(fragBytes.data(), fragBytes.size());
-
-    m_present.vertexShader   = m_device->createVertexShader(vertCode);
-    m_present.fragmentShader = m_device->createPixelShader(fragCode);
-
-    if (!m_present.vertexShader || !m_present.fragmentShader)
-    {
-        MR_LOG(LogSplatScene, Error, "Failed to create present shaders");
-        return false;
-    }
-
-    // DIAG: Log shader pointers and validity right after creation
-    {
-        auto* rawVert = static_cast<RHI::Vulkan::VulkanVertexShader*>(m_present.vertexShader.get());
-        auto* rawFrag = static_cast<RHI::Vulkan::VulkanPixelShader*>(m_present.fragmentShader.get());
-        MR_LOG(LogSplatScene, Log, "[DIAG] Shaders created: vert ptr=%p module=%p isValid=%d, frag ptr=%p module=%p isValid=%d",
-               (void*)rawVert, (void*)(uintptr_t)rawVert->getShaderModule(), rawVert->isValid() ? 1 : 0,
-               (void*)rawFrag, (void*)(uintptr_t)rawFrag->getShaderModule(), rawFrag->isValid() ? 1 : 0);
-    }
-
-    // ---- Descriptor set layout: Set 0, Binding 0 = combined image sampler ----
-    {
-        FDescriptorSetLayoutDesc setLayoutDesc(0, "SplatPresentSet");
-        setLayoutDesc.bindings.Add(FDescriptorSetLayoutBinding(
-            0, EDescriptorType::CombinedTextureSampler, EShaderStage::Fragment));
-        m_present.setLayout = m_device->createDescriptorSetLayout(setLayoutDesc);
-        if (!m_present.setLayout)
-        {
-            MR_LOG(LogSplatScene, Error, "Failed to create present set layout");
-            return false;
-        }
-    }
-
-    // ---- Pipeline layout ----
-    {
-        FPipelineLayoutDesc layoutDesc("SplatPresentLayout");
-        layoutDesc.setLayouts.Add(m_present.setLayout);
-        m_present.pipelineLayout = m_device->createPipelineLayout(layoutDesc);
-        if (!m_present.pipelineLayout)
-        {
-            MR_LOG(LogSplatScene, Error, "Failed to create present pipeline layout");
-            return false;
-        }
-    }
-
-    // ---- Graphics pipeline ----
-    {
-        PipelineStateDesc desc;
-        desc.rasterizerState.cullMode = ECullMode::None;  // 全屏三角形：禁用背面剔除（Y-flip viewport + CW 正面会把 CCW 三角形判为背面剔除，导致灰屏）
-        desc.vertexShader        = m_present.vertexShader;
-        desc.pixelShader         = m_present.fragmentShader;
-        desc.primitiveTopology   = EPrimitiveTopology::TriangleList;
-        desc.depthStencilState.depthEnable  = false;
-        desc.depthStencilState.depthWriteEnable = false;
-        desc.renderTargetFormats.Add(m_device->getSwapChainFormat());
-        desc.debugName = "SplatPresent";
-        // No vertex layout needed (gl_VertexIndex is used)
-
-        // Workaround: TSharedPtr copy can fail with multiple-inheritance types
-        // Store raw VkShaderModule handles as fallback for pipeline creation.
-        {
-            auto* rawVert = static_cast<RHI::Vulkan::VulkanVertexShader*>(m_present.vertexShader.get());
-            auto* rawFrag = static_cast<RHI::Vulkan::VulkanPixelShader*>(m_present.fragmentShader.get());
-            desc.vkVertexShaderModule = reinterpret_cast<uint64>(rawVert->getShaderModule());
-            desc.vkPixelShaderModule  = reinterpret_cast<uint64>(rawFrag->getShaderModule());
-        }
-
-        // DIAG: Log PipelineStateDesc before creating pipeline
-        {
-            auto* descVert = static_cast<RHI::Vulkan::VulkanVertexShader*>(desc.vertexShader.get());
-            MR_LOG(LogSplatScene, Log, "[DIAG] PipelineStateDesc: vertShader ptr=%p module=%p isValid=%d, use_count=%d, vkModule=%p",
-                   (void*)descVert, descVert ? (void*)(uintptr_t)descVert->getShaderModule() : nullptr,
-                   descVert ? (descVert->isValid() ? 1 : 0) : -1,
-                   desc.vertexShader.GetSharedReferenceCount(),
-                   (void*)desc.vkVertexShaderModule);
-        }
-
-        m_present.pipelineState = m_device->createPipelineState(desc);
-        if (!m_present.pipelineState)
-        {
-            MR_LOG(LogSplatScene, Error, "Failed to create present pipeline");
-            return false;
-        }
-    }
-
-    // ---- Per-frame descriptor sets ----
-    // Descriptor sets are allocated fresh each frame in onRender() to avoid
-    // VUID-08114 (never-updated set) and VUID-03047 (updating while pending).
-    // Pre-allocate once here so the array slots are non-null for the first frame.
-    for (uint32 i = 0; i < FPresentPass::kMaxFramesInFlight; ++i)
-    {
-        m_present.descriptorSets[i] = m_device->allocateDescriptorSet(m_present.setLayout);
-        if (!m_present.descriptorSets[i])
-        {
-            MR_LOG(LogSplatScene, Error, "Failed to allocate present descriptor set %u", i);
-            return false;
-        }
-    }
-
-    // ---- Sampler ----
-    {
-        SamplerDesc samplerDesc;
-        samplerDesc.filter    = ESamplerFilter::Bilinear;
-        samplerDesc.addressU  = ESamplerAddressMode::Clamp;
-        samplerDesc.addressV  = ESamplerAddressMode::Clamp;
-        samplerDesc.addressW  = ESamplerAddressMode::Clamp;
-        samplerDesc.debugName = "SplatPresentSampler";
-        m_present.sampler = m_device->createSampler(samplerDesc);
-        if (!m_present.sampler)
-        {
-            MR_LOG(LogSplatScene, Error, "Failed to create present sampler");
-            return false;
-        }
-    }
-
-    MR_LOG(LogSplatScene, Log, "Present pass initialized");
-    return true;
+    return m_session != nullptr; // lazy shared present pipeline on first acquired frame
 }
 
 // ============================================================================
@@ -1767,123 +1537,11 @@ void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUnifo
         up      = FVector::CrossProduct(forward, right);
     }
 
-    FMatrix projMatrix = viewInfo.CalculateProjectionMatrix();
-
-    // ---- Write view matrix: OpenGL/Vulkan column-major, M*v convention ----
-    // GLSL expects objects in front of the camera to have NEGATIVE view-space Z.
-    // World-to-view rotation has rows right, up, -forward. Store those rows
-    // in column-major order; translation uses the same basis.
-    {
-        float32* v = outUniforms.viewMatrix;
-        v[0]  = static_cast<float32>(right.X);
-        v[1]  = static_cast<float32>(up.X);
-        v[2]  = static_cast<float32>(-forward.X);
-        v[3]  = 0.0f;
-        v[4]  = static_cast<float32>(right.Y);
-        v[5]  = static_cast<float32>(up.Y);
-        v[6]  = static_cast<float32>(-forward.Y);
-        v[7]  = 0.0f;
-        v[8]  = static_cast<float32>(right.Z);
-        v[9]  = static_cast<float32>(up.Z);
-        v[10] = static_cast<float32>(-forward.Z);
-        v[11] = 0.0f;
-        v[12] = -static_cast<float32>(FVector::DotProduct(right, camPos));
-        v[13] = -static_cast<float32>(FVector::DotProduct(up, camPos));
-        v[14] =  static_cast<float32>(FVector::DotProduct(forward, camPos));
-        v[15] = 1.0f;
-    }
-
-    // ---- Write projection matrix: Vulkan column-major, depth=[0,1], -Z forward ----
-    // Standard Vulkan perspective: pClip.w = -pView.z, so objects with -Z
-    // in view space produce positive w for correct frustum clipping.
-    {
-        float fovYRad  = viewInfo.FOV * MR_PI / 180.0f;
-        float aspect   = static_cast<float>(m_renderWidth) / static_cast<float>(m_renderHeight);
-        float tanHalf  = FMath::Tan(fovYRad * 0.5f);
-        float nearVal  = m_controls.NearPlane;
-        float farVal   = m_controls.FarPlane;
-        float sx = 1.0f / (aspect * tanHalf);
-        float sy = 1.0f / tanHalf;
-        float A  = farVal / (nearVal - farVal);  // Vulkan [0,1] depth: A = far/(near-far)
-        float B  = -(farVal * nearVal) / (farVal - nearVal);
-
-        float32* p = outUniforms.projMatrix;
-        p[0]  = sx;  p[1]  = 0;   p[2]  = 0;   p[3]  = 0;
-        p[4]  = 0;   p[5]  = sy;  p[6]  = 0;   p[7]  = 0;
-        p[8]  = 0;   p[9]  = 0;   p[10] = A;   p[11] = -1.0f;
-        p[12] = 0;   p[13] = 0;   p[14] = B;   p[15] = 0;
-    }
-
-    outUniforms.camPos[0] = static_cast<float32>(camPos.X);
-    outUniforms.camPos[1] = static_cast<float32>(camPos.Y);
-    outUniforms.camPos[2] = static_cast<float32>(camPos.Z);
-    outUniforms.camPos[3] = 1.0f;
-
-    // ---- Focal & FOV ----
-    float fovY  = viewInfo.FOV * MR_PI / 180.0f;
-    float aspect = static_cast<float>(m_renderWidth) /
-                   static_cast<float>(m_renderHeight);
-    float tanFovY = FMath::Tan(fovY * 0.5f);
-    float tanFovX = tanFovY * aspect;
-
-    outUniforms.focalX = static_cast<float>(m_renderWidth)  / (2.0f * tanFovX);
-    outUniforms.focalY = static_cast<float>(m_renderHeight) / (2.0f * tanFovY);
-    outUniforms.tanFovX = tanFovX;
-    outUniforms.tanFovY = tanFovY;
-
-    // ---- Image dimensions & SH degree ----
-    outUniforms.imageWidth  = static_cast<int32>(m_renderWidth);
-    outUniforms.imageHeight = static_cast<int32>(m_renderHeight);
-    outUniforms.shDegree = m_runtime.displaySHDegree<0?m_shDegree:std::min(m_runtime.displaySHDegree,m_shDegree);
-    outUniforms.pad0 = 0;
-
-    // ---- Diagnostic: dump view matrix for frustum-culling analysis ----
-    {
-        const float32* v = outUniforms.viewMatrix;
-        MR_LOG(LogSplatScene, Verbose, "[VIEW_MATRIX] col0=(%.3f, %.3f, %.3f, %.3f)", v[0], v[1], v[2], v[3]);
-        MR_LOG(LogSplatScene, Verbose, "[VIEW_MATRIX] col1=(%.3f, %.3f, %.3f, %.3f)", v[4], v[5], v[6], v[7]);
-        MR_LOG(LogSplatScene, Verbose, "[VIEW_MATRIX] col2=(%.3f, %.3f, %.3f, %.3f)", v[8], v[9], v[10], v[11]);
-        MR_LOG(LogSplatScene, Verbose, "[VIEW_MATRIX] col3=(%.3f, %.3f, %.3f, %.3f)", v[12], v[13], v[14], v[15]);
-#if 0  // Set to 1 to re-enable per-frame stderr camera diagnostics
-        fprintf(stderr, "[STDERR] ViewMatrix: R=(%.3f,%.3f,%.3f) U=(%.3f,%.3f,%.3f) -F=(%.3f,%.3f,%.3f) T=(%.3f,%.3f,%.3f)\n",
-                v[0], v[1], v[2], v[4], v[5], v[6], v[8], v[9], v[10], v[12], v[13], v[14]);
-#endif
-    }
-    {
-        const float32* p = outUniforms.projMatrix;
-        MR_LOG(LogSplatScene, Verbose, "[PROJ_MATRIX] col0=(%.4f, %.4f, %.4f, %.4f)", p[0], p[1], p[2], p[3]);
-        MR_LOG(LogSplatScene, Verbose, "[PROJ_MATRIX] col1=(%.4f, %.4f, %.4f, %.4f)", p[4], p[5], p[6], p[7]);
-        MR_LOG(LogSplatScene, Verbose, "[PROJ_MATRIX] col2=(%.4f, %.4f, %.4f, %.4f)", p[8], p[9], p[10], p[11]);
-        MR_LOG(LogSplatScene, Verbose, "[PROJ_MATRIX] col3=(%.4f, %.4f, %.4f, %.4f)", p[12], p[13], p[14], p[15]);
-    }
-    MR_LOG(LogSplatScene, Verbose, "buildCameraUniforms: camPos=(%.3f, %.3f, %.3f) focalX=%.1f focalY=%.1f tanFovX=%.4f tanFovY=%.4f image=%ux%u shDegree=%d",
-           outUniforms.camPos[0], outUniforms.camPos[1], outUniforms.camPos[2],
-           outUniforms.focalX, outUniforms.focalY, outUniforms.tanFovX, outUniforms.tanFovY,
-           outUniforms.imageWidth, outUniforms.imageHeight, outUniforms.shDegree);
-
-    // ---- Diagnostic: log camera state at uniform-build time ----
-    {
-        static int32 buildFrameCount = 0;
-        ++buildFrameCount;
-        if (buildFrameCount % 60 == 0)
-        {
-            bool hasFPS = (m_fpsCamera != nullptr);
-            FVector pos    = hasFPS ? m_fpsCamera->GetPosition() : FVector(0);
-            FVector front  = hasFPS ? m_fpsCamera->GetFront()    : FVector(0);
-            float yaw      = hasFPS ? m_fpsCamera->GetYaw()      : 0.0f;
-            float pitch    = hasFPS ? m_fpsCamera->GetPitch()    : 0.0f;
-            float fov      = hasFPS ? m_fpsCamera->GetFOV()      : 0.0f;
-            float nearPlane = 0.1f;  // Matches projection and preprocess clip plane.
-            MR_LOG(LogSplatScene, Log, "[DIAG] buildCam frame=%d hasFPS=%d "
-                   "pos=(%.2f,%.2f,%.2f) front=(%.3f,%.3f,%.3f) yaw=%.1f pitch=%.1f "
-                   "fov=%.2f near=%.2f focalX=%.1f focalY=%.1f tanFovX=%.4f tanFovY=%.4f",
-                   buildFrameCount, hasFPS ? 1 : 0,
-                   pos.X, pos.Y, pos.Z,
-                   front.X, front.Y, front.Z, yaw, pitch,
-                   fov, nearPlane, outUniforms.focalX, outUniforms.focalY,
-                   outUniforms.tanFovX, outUniforms.tanFovY);
-        }
-    }
+    const float eye[3]={float(camPos.X),float(camPos.Y),float(camPos.Z)};
+    const float r[3]={float(right.X),float(right.Y),float(right.Z)},u[3]={float(up.X),float(up.Y),float(up.Z)},f[3]={float(forward.X),float(forward.Y),float(forward.Z)};
+    outUniforms=Splat::FSplatViewerSession::BuildCamera(eye,r,u,f,viewInfo.FOV,m_controls.NearPlane,m_controls.FarPlane,m_renderWidth,m_renderHeight,
+        m_runtime.displaySHDegree<0?m_shDegree:std::min(m_runtime.displaySHDegree,m_shDegree));
 }
 
 } // namespace MonsterRender
+

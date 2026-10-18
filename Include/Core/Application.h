@@ -3,6 +3,7 @@
 #include "Core/CoreMinimal.h"
 #include "Core/Window.h"
 #include "Engine.h"
+#include "Core/RuntimeLease.h"
 #include "RHI/IRHISwapChain.h"  // For ERHIBackend
 #include <chrono>
 
@@ -24,6 +25,7 @@ namespace MonsterRender {
         bool enableDebugMarkers = true;
         /** Label for completed application frames shown in the native title bar. */
         String fpsLabel = "FPS";
+        bool requireObservedSubmission = false; ///< Count only explicit successful backend submissions.
         
         // RHI backend selection (None = auto-select best available)
         RHI::ERHIBackend preferredBackend = RHI::ERHIBackend::None;
@@ -82,6 +84,7 @@ namespace MonsterRender {
         bool shouldExit() const { return m_shouldExit; }
         
     protected:
+        void NotifyFrameSubmitted(const RHI::FFrameSubmitResult& result) { m_frameSubmitted = result.submitted && result.token.value != 0; }
         // Internal methods
         virtual void tick();
         virtual void calculateDeltaTime();
@@ -95,12 +98,15 @@ namespace MonsterRender {
         void onMouseScrollEventInternal(float64 xOffset, float64 yOffset);
         
     protected:
+        FProcessRuntimeLease m_runtimeLease; // declared first, released after all owned members
         ApplicationConfig m_config;
         TUniquePtr<IWindow> m_window;
         TUniquePtr<Engine> m_engine;
         
         // Application state
         bool m_initialized = false;
+        bool m_derivedStarted = false;
+        bool m_frameSubmitted = false;
         bool m_shouldExit = false;
         bool m_minimized = false;
         

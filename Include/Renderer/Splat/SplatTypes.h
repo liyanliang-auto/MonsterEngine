@@ -22,6 +22,12 @@ namespace Splat {
 
 /** Resolve generated shader output without copying binaries into the source tree. */
 inline std::string SplatShaderPath(const char* fallback) {
+#if PLATFORM_ANDROID
+    // APK names are inventory-relative. ShaderCompiler reads them through the
+    // explicitly bound owner-thread provider, independent of cwd/environment.
+    const std::string path(fallback ? fallback : "");
+    return std::string("Shaders/Splat/") + path.substr(path.find_last_of("/\\") + 1);
+#else
     const char* directory = std::getenv("MONSTER_SPLAT_SHADER_DIR");
 #ifdef MONSTER_SPLAT_DEFAULT_SHADER_DIR
     if (!directory || !*directory) directory = MONSTER_SPLAT_DEFAULT_SHADER_DIR;
@@ -29,6 +35,7 @@ inline std::string SplatShaderPath(const char* fallback) {
     if (!directory || !*directory) return fallback;
     const std::string path(fallback);
     return std::string(directory) + "/" + path.substr(path.find_last_of("/\\") + 1);
+#endif
 }
 /** Shared GPU count/dispatch state layout; indirect triples are four-byte aligned. */
 namespace ESplatDispatchState {

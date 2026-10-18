@@ -188,8 +188,8 @@ namespace MonsterRender::RHI::Vulkan
             if (m_desc.vkVertexShaderModule != 0)
             {
                 VkShaderModule vertexModule = reinterpret_cast<VkShaderModule>(m_desc.vkVertexShaderModule);
-                MR_LOG_INFO("  [DIAG] No vertexShader TSharedPtr, using vkVertexShaderModule fallback: module=%p",
-                            (void*)vertexModule);
+                MR_LOG_INFO("  [DIAG] No vertexShader TSharedPtr, using vkVertexShaderModule fallback: module=" +
+                            std::to_string(reinterpret_cast<uintptr_t>(vertexModule)));
 
                 m_shaderModules.push_back(vertexModule);
 

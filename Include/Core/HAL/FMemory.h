@@ -14,6 +14,11 @@
 #include <cstring>
 #include <new>
 #include <cstddef>  // for std::max_align_t
+#if PLATFORM_WINDOWS
+#include <malloc.h>
+#else
+#include <alloca.h>
+#endif
 
 // Default alignment for memory allocations
 #ifndef DEFAULT_ALIGNMENT
@@ -85,10 +90,12 @@ public:
 
     // Memory validation
     static bool IsAligned(const void* Ptr, SIZE_T Alignment) {
-        return (reinterpret_cast<SIZE_T>(Ptr) & (Alignment - 1)) == 0;
+        return Alignment != 0 && (Alignment & (Alignment - 1)) == 0 &&
+            (reinterpret_cast<SIZE_T>(Ptr) & (Alignment - 1)) == 0;
     }
 
     static void* Align(void* Ptr, SIZE_T Alignment) {
+        if (!Alignment || (Alignment & (Alignment - 1)) != 0) return nullptr;
         SIZE_T Mask = Alignment - 1;
         return reinterpret_cast<void*>((reinterpret_cast<SIZE_T>(Ptr) + Mask) & ~Mask);
     }
@@ -96,11 +103,13 @@ public:
     // Template allocation helpers (UE5-style)
     template<typename T>
     static FORCEINLINE T* MallocArray(SIZE_T Count, uint32 Alignment = alignof(T)) {
+        if (Count > SIZE_T(-1) / sizeof(T)) throw std::bad_array_new_length();
         return static_cast<T*>(Malloc(Count * sizeof(T), Alignment));
     }
 
     template<typename T>
     static FORCEINLINE T* ReallocArray(T* Original, SIZE_T Count, uint32 Alignment = alignof(T)) {
+        if (Count > SIZE_T(-1) / sizeof(T)) throw std::bad_array_new_length();
         return static_cast<T*>(Realloc(Original, Count * sizeof(T), Alignment));
     }
 
@@ -108,6 +117,7 @@ public:
     template<typename T, typename... Args>
     static FORCEINLINE T* New(Args&&... InArgs) {
         void* Mem = Malloc(sizeof(T), alignof(T));
+        if (!Mem) throw std::bad_alloc();
         return new(Mem) T(std::forward<Args>(InArgs)...);
     }
 
@@ -122,6 +132,7 @@ public:
     template<typename T>
     static FORCEINLINE T* NewArray(SIZE_T Count) {
         T* Array = MallocArray<T>(Count);
+        if (!Array) throw std::bad_alloc();
         for (SIZE_T i = 0; i < Count; ++i) {
             new(&Array[i]) T();
         }

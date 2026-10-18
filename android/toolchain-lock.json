@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "com.monsterengine.viewer",
+  "compileSdk": 36,
+  "targetSdk": 36,
+  "minSdk": 26,
+  "buildTools": "36.1.0",
+  "ndk": "30.0.16248370",
+  "cmake": "3.22.1",
+  "agp": "8.13.2",
+  "gradle": "8.13",
+  "kotlin": "2.3.10",
+  "androidxCore": "1.17.0",
+  "javaToolchainMajor": 21,
+  "javaBytecodeTarget": 17,
+  "kotlinJvmTarget": 17,
+  "abis": ["arm64-v8a", "x86_64"],
+  "nativeTarget": "monster_android",
+  "stl": "c++_static",
+  "nativePackaging": {
+    "useLegacyPackaging": false,
+    "requestedZipAlignmentBytes": 16384,
+    "elfAlignmentVerification": "pending",
+    "zipAlignmentVerification": "pending",
+    "runtime16KiBVerification": "pending"
+  },
+  "wrapper": {
+    "distributionUrl": "https://services.gradle.org/distributions/gradle-8.13-bin.zip",
+    "distributionSha256": "20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78",
+    "jarSha256": "81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f",
+    "sourceTag": "https://github.com/gradle/gradle/tree/v8.13.0"
+  },
+  "hostToolInputs": ["SPLAT_GLSLC", "SPLAT_SPIRV_VAL", "Python3_EXECUTABLE"],
+  "hostToolInputMethod": "Gradle -P properties or matching environment variables; actual tool identities must be captured with build evidence",
+  "sdkInputMethod": "ANDROID_HOME or ignored local.properties; JAVA_HOME for Gradle launch",
+  "assetStaging": "app/build/generated/monsterAssets/<buildType>/<ABI>; package arm64-v8a copy after both native builds",
+  "releaseSigningEnvironment": ["MONSTER_KEYSTORE", "MONSTER_KEYSTORE_PASSWORD", "MONSTER_KEY_ALIAS", "MONSTER_KEY_PASSWORD"],
+  "releaseSigningPolicy": "All four values enable external release signing; none produces unsigned release; partial configuration fails without printing values",
+  "buildTypes": {
+    "debug": {"applicationIdSuffix": ".debug", "debuggable": true, "jniDebuggable": true, "signing": "development"},
+    "profile": {"applicationIdSuffix": ".profile", "debuggable": false, "profileableShell": true, "minify": false, "signing": "development"},
+    "release": {"debuggable": false, "jniDebuggable": false, "profileableShell": false, "minify": true, "signing": "external or unsigned"}
+  },
+  "checkedOn": "2026-10-17",
+  "compatibilityStatus": "Official version matrix checked; project build, packaging and device execution remain unverified",
+  "officialReferences": [
+    "https://developer.android.com/build/releases/agp-8-13-0-release-notes",
+    "https://kotlinlang.org/docs/gradle-configure-project.html",
+    "https://dl.google.com/android/repository/repository2-3.xml",
+    "https://developer.android.com/guide/practices/page-sizes",
+    "https://gradle.org/release-checksums/",
+    "https://developer.android.com/jetpack/androidx/releases/core",
+    "https://developer.android.com/develop/background-work/services/fgs/service-types"
+  ]
+}

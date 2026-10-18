@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only explicit user exports are shareable; private scene/job trees are excluded. -->
+    <cache-path name="diagnostic_exports" path="exports/" />
+    <files-path name="scene_exports" path="exports/" />
+</paths>

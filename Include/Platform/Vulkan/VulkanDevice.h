@@ -9,6 +9,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <functional>
 
 namespace MonsterRender::RHI {
     class FVulkanMemoryManager;
@@ -153,6 +154,29 @@ namespace MonsterRender::RHI::Vulkan {
         /** Discard query resources for an unsubmitted recording before reset. */
         void discardUnsubmittedTimestamps(VkCommandBuffer commandBuffer);
         void present() override;
+        FFrameSubmitResult beginFrame(uint64 timeoutNs = 1000000) override;
+        FFrameSubmitResult presentFrame() override;
+        FFrameSubmitResult cancelFrame() override;
+        /** Context acquisition, retained across a bounded image-fence timeout. */
+        FFrameSubmitResult acquireFrame(uint64 timeoutNs = 1000000);
+        const FFrameSubmitResult& getLastFrameResult() const { return m_frameResult; }
+        static EFrameResult ClassifyFrameResult(VkResult result);
+        void RecordSubmitFailure(VkResult result, VkFence fence);
+        VkResult getLastSubmitResult() const { return m_lastSubmitResult; }
+        const VkPhysicalDeviceFeatures& getEnabledFeatures() const { return m_enabledFeatures; }
+        const VkPhysicalDeviceFeatures& getRequestedFeatures() const { return m_requestedFeatures; }
+        const VkPhysicalDeviceFeatures& getSupportedFeatures() const { return m_deviceFeatures; }
+        bool IsPresentMaintenanceSupported() const { return m_presentMaintenanceSupported; }
+        bool IsPresentMaintenanceEnabled() const { return m_presentMaintenanceEnabled; }
+        /** False means teardown uses the documented unextended Vulkan idle assumption. */
+        bool HasPrecisePresentCompletion() const { return m_presentMaintenanceEnabled; }
+        bool AttachExternalSurface(void* nativeWindow, uint64 generation, uint32 width, uint32 height, String& error);
+        FFrameSubmitResult DetachExternalSurface(uint64 generation);
+        /** Optional platform account. Callback reserves a documented conservative
+         * WSI envelope, NOT measured opaque driver backing; null rejects admission.
+         * Set before attaching. Shared lease retires after presentation resources. */
+        void SetPresentationBudget(std::function<std::shared_ptr<void>(uint64)> reserve) { m_presentationBudget = std::move(reserve); }
+        uint64 GetPresentationReservationEstimate() const { return m_presentationReservationEstimate; }
         
         void getMemoryStats(uint64& usedBytes, uint64& availableBytes) override;
         void collectGarbage() override;
@@ -270,6 +294,29 @@ namespace MonsterRender::RHI::Vulkan {
         bool recreateSwapchain(uint32 newWidth, uint32 newHeight);
         
     private:
+        VkResult queueCurrentPresent();
+        VkResult waitPresentationCompletion(uint64 timeoutNs);
+        void destroyPresentationResources();
+        bool createImageSynchronization();
+        FFrameSubmitResult m_frameResult{};
+        VkResult m_lastSubmitResult = VK_NOT_READY;
+        bool m_frameAcquired = false;
+        bool m_presentationStopped = false;
+        bool m_deviceLost = false;
+        bool m_presentMaintenanceSupported = false;
+        bool m_presentMaintenanceEnabled = false;
+        bool m_surfaceMaintenanceEnabled = false;
+        std::vector<VkFence> m_presentFences;
+        std::vector<bool> m_presentFencePending;
+        std::vector<VkCommandBuffer> m_cancelCommandBuffers;
+        VkPhysicalDeviceFeatures m_enabledFeatures{};
+        VkPhysicalDeviceFeatures m_requestedFeatures{};
+        void* m_externalWindow = nullptr;
+        std::function<std::shared_ptr<void>(uint64)> m_presentationBudget;
+        std::shared_ptr<void> m_presentationLease;
+        uint64 m_presentationReservationEstimate = 0;
+        uint32 m_presentationReservedImages = 0;
+        uint64 m_surfaceGeneration = 0;
         struct SubmissionRecord { uint64_t value; VkFence fence; };
         struct TimestampRecord {
             VkCommandBuffer commandBuffer;

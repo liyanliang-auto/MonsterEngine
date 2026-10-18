@@ -4,7 +4,7 @@
 #include "Core/FRunnable.h"
 #include "Core/Log.h"
 
-#ifdef PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS
 #include <windows.h>
 #include <processthreadsapi.h>
 #endif
@@ -39,16 +39,19 @@ TUniquePtr<FRunnableThread> FRunnableThread::Create(
     
     // Create the actual thread
     try {
+        NewThread->m_isRunning.store(true, std::memory_order_release);
         NewThread->m_thread = MakeUnique<std::thread>([NewThread = NewThread.get()]() {
             NewThread->Run();
         });
         
-        NewThread->m_isRunning.store(true, std::memory_order_release);
         
         MR_LOG_INFO("FRunnableThread::Create - Created thread: " + ThreadName + 
                    " (ID: " + std::to_string(NewThread->m_threadID) + ")");
     }
     catch (const std::exception& e) {
+        NewThread->m_isRunning.store(false, std::memory_order_release);
+        InRunnable->Stop();
+        InRunnable->Exit();
         MR_LOG_ERROR("FRunnableThread::Create - Failed to create thread: " + 
                     ThreadName + ", Error: " + e.what());
         return nullptr;
@@ -64,12 +67,13 @@ FRunnableThread::~FRunnableThread() {
     if (m_isRunning.load(std::memory_order_acquire)) {
         Kill(true);
     }
+    WaitForCompletion();
 }
 
 void FRunnableThread::SetThreadPriority(EThreadPriority NewPriority) {
     m_threadPriority = NewPriority;
     
-#ifdef PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS
     if (m_thread && m_thread->joinable()) {
         HANDLE threadHandle = m_thread->native_handle();
         int priority = THREAD_PRIORITY_NORMAL;

@@ -6,7 +6,7 @@
  * @file SplatPLYLoader.h
  * @brief PLY file parser that uploads Gaussian data to GPU storage buffers.
  * 
- * Parses .ply files (binary, little-endian), applies activation functions
+ * Collects the shared strict streaming parser (ASCII or either binary endian), applies activation functions
  * (exp for scales, sigmoid for opacity), reorders SH coefficients, and 
  * uploads the flattened arrays as Vulkan storage buffers.
  */
@@ -75,7 +75,9 @@ struct FSplatGPUData
 class FSplatPLYLoader
 {
 public:
-    /** CPU-only strict PLY ingestion. Outputs are published only on success. */
+    /** CPU collector over FSplatPLYStream. Outputs are published only on success.
+     * For bounded external-memory ingestion use FSplatPLYStream directly.
+     */
     static bool LoadCPU(const std::string& path, std::vector<FSplatGaussian>& out,
                         uint32_t& shDegree, std::string& error);
     FSplatPLYLoader() = default;
@@ -85,7 +87,7 @@ public:
      * Load a .ply file and upload all Gaussian data to GPU storage buffers.
      * 
      * @param device RHI device for buffer creation
-     * @param filePath Path to the .ply file (binary, little-endian)
+     * @param filePath Path to an ASCII/little-endian/big-endian Gaussian PLY
      * @param outData Output: populated GPU buffer data
      * @return true on success
      */

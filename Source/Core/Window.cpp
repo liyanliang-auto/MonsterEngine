@@ -1,5 +1,7 @@
 #include "Core/Window.h"
+#if !PLATFORM_ANDROID
 #include "Platform/GLFW/GLFWWindow.h"
+#endif
 #include "Core/Log.h"
 
 namespace MonsterRender {
@@ -13,6 +15,11 @@ namespace MonsterRender {
             return nullptr;
         }
         
+#if PLATFORM_ANDROID
+        (void)properties;
+        MR_LOG_ERROR("Android windows are owned by the Surface render host");
+        return nullptr;
+#else
         // For now, we only support GLFW windows
         // In the future, we could add platform-specific window implementations
         auto window = MakeUnique<Platform::GLFW::GLFWWindow>();
@@ -23,6 +30,7 @@ namespace MonsterRender {
         }
         
         return std::move(window);
+#endif
     }
     
     void WindowFactory::initialize() {

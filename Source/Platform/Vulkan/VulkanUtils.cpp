@@ -2,7 +2,9 @@
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "Core/Log.h"
 
-#if PLATFORM_WINDOWS
+#if PLATFORM_ANDROID
+    #include <android/native_window.h>
+#elif PLATFORM_WINDOWS
     #include <windows.h>
 #elif PLATFORM_LINUX
     #include <X11/Xlib.h>
@@ -144,14 +146,25 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         VkResult createSurface(VkInstance instance, void* windowHandle, VkSurfaceKHR* surface) {
-            if (!instance || !surface) {
+            return createSurface(VulkanAPI::getFunctions(), instance, windowHandle, surface);
+        }
+
+        VkResult createSurface(const VulkanFunctions& functions, VkInstance instance,
+                               void* windowHandle, VkSurfaceKHR* surface) {
+            if (surface) *surface = VK_NULL_HANDLE;
+            if (!instance || !surface || !windowHandle) {
                 MR_LOG_ERROR("Invalid parameters for surface creation");
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
             
-            const auto& functions = VulkanAPI::getFunctions();
-            
-            #if PLATFORM_WINDOWS
+            #if PLATFORM_ANDROID
+                if (!functions.vkCreateAndroidSurfaceKHR) return VK_ERROR_EXTENSION_NOT_PRESENT;
+                VkAndroidSurfaceCreateInfoKHR createInfo{};
+                createInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+                createInfo.window = static_cast<ANativeWindow*>(windowHandle);
+                // The owner retains its window reference until GPU/present detach is complete.
+                return functions.vkCreateAndroidSurfaceKHR(instance, &createInfo, nullptr, surface);
+            #elif PLATFORM_WINDOWS
                 if (functions.vkCreateWin32SurfaceKHR && windowHandle) {
                     VkWin32SurfaceCreateInfoKHR createInfo{};
                     createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
