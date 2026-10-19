@@ -38,9 +38,9 @@ Bicycle 使用外部训练的 3DGS 模型。本项目实现模型加载、GPU �
 
 
 
-**Android 客户端运行效果**（MuMu 安卓模拟器，x86_64 / Vulkan）：
+**Android 客户端运行效果**：
 
-![Android 3DGS Bonsai](docs/images/samples/android_mumu_bonsai.png)
+![Android 3DGS Bonsai](D:\code\MonsterEngine\docs\images\samples\android_mumu_bonsai_4.png)
 
 
 
