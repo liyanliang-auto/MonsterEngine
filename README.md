@@ -2,12 +2,13 @@
 
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
 ![Windows](https://img.shields.io/badge/platform-Windows-blue)
+![Android](https://img.shields.io/badge/platform-Android-green)
 ![Vulkan](https://img.shields.io/badge/backend-Vulkan-red)
 ![OpenGL](https://img.shields.io/badge/backend-OpenGL-orange)
 
 MonsterEngine 是使用 C++20 开发的 3D 渲染引擎，提供 Vulkan / OpenGL 渲染后端、基于物理的渲染（PBR），以及基于 Vulkan Compute Shader 的 3D Gaussian Splatting（3DGS）。引擎围绕 RHI、场景、材质和资源管理组织代码。
 
-项目目前以 **Windows + Vulkan** 为主要开发与验证环境。3DGS 管线支持百万级高斯渲染，并提供离线 LOD 构建、异步分页加载、显存预算控制和相机序列工具。
+项目目前以 **Windows + Vulkan** 为主要开发与验证环境，同时提供 **Android + Vulkan** 客户端。3DGS 管线支持百万级高斯渲染，并提供离线 LOD 构建、异步分页加载、显存预算控制和相机序列工具。
 
 ## 示例效果
 
@@ -34,6 +35,12 @@ Bicycle 使用外部训练的 3DGS 模型。本项目实现模型加载、GPU �
 <a href="docs/images/samples/bonsai_monsterengine_path_window.mp4">
   <img src="docs/images/samples/vulkan_3DGS_bonsai_30k.gif" alt="Bonsai 30 秒漫游：拉近、拉远、围绕盆景半周，点击观看高清视频" width="100%">
 </a>
+
+
+
+**Android 客户端运行效果**（MuMu 安卓模拟器，x86_64 / Vulkan）：
+
+![Android 3DGS Bonsai](docs/images/samples/android_mumu_bonsai.png)
 
 
 
@@ -66,11 +73,20 @@ cmake --build build --config Release --target MonsterEngine SplatLODBuilder
 
 工具集、依赖与其他构建方式见 [Windows 构建指南](BUILD.md)。模型与生成的 3DGS 分页数据需要自行准备。
 
+Android 客户端通过 PowerShell 脚本构建（需要 PowerShell 7、JDK 21、Android SDK / NDK 与 Vulkan SDK 的 `glslc`）：
+
+```powershell
+./Tools/Android/build_android.ps1 -Variant Debug
+```
+
+脚本构建 `arm64-v8a` 与 `x86_64` 双 ABI APK，产物位于 `android/app/build/outputs/`。环境变量、打包与安装步骤见 [Android 客户端指南](android/README.md)。
+
 ## 文档
 
 | 文档 | 内容 |
 | --- | --- |
 | [构建指南](BUILD.md) | Windows 环境、CMake 与 Visual Studio 构建 |
+| [Android 客户端指南](android/README.md) | Android Vulkan viewer、双 ABI 构建、场景恢复与验证边界 |
 | [引擎架构](devDocument/引擎的架构和设计.md) | RHI 分层、渲染与资源系统的设计说明 |
 | [Shader 系统](Shaders/README.md) | Shader 组织、编译与渲染模块 |
 | [3DGS 使用指南](docs/3dgs.md) | 模型准备、LOD 构建、预算配置、相机序列与视频导出 |
@@ -86,6 +102,14 @@ cmake --build build --config Release --target MonsterEngine SplatLODBuilder
 - OpenGL 后端：对应的设备、资源与命令接口。
 
 3DGS 展示与本次 GPU 验证使用 Vulkan 后端。其他平台与后端的能力以各模块实现为准。
+
+### Android 客户端
+
+- Android Vulkan viewer：`ViewerSurfaceView` + Choreographer 驱动，`AndroidRenderHost` 在独立线程持有原生渲染。
+- 支持 `arm64-v8a` / `x86_64`，最低 API 26；渲染准入要求 Vulkan 1.2 与 `shaderInt64`。
+- 与原 Windows 入口共享 `FSplatViewerSession` / `FSplatStreamingController`，复用 3DGS 渲染与分页流式代码。
+- 内置场景、用户 PLY 导入、离线有界 LOD 构建，以及后台构建的暂停 / 恢复。
+- 前后台切换与 Activity 重建时的 native owner 串行替换和 Surface 恢复。
 
 ### PBR 与场景渲染
 
@@ -213,6 +237,7 @@ ctest --test-dir build -C Release --output-on-failure
 | `Source/` | 模块实现、应用示例与正式 C++ 测试 |
 | `Shaders/` | 图形与 Compute Shader |
 | `Tools/` | 离线资源处理工具 |
+| `android/` | Android 客户端、Gradle 工程与构建/发布文档 |
 | `resources/` | 运行配置与示例资源 |
 | `cmake/` | 构建模块与测试目标 |
 | `3rd-party/` | 第三方头文件、库与许可证 |
