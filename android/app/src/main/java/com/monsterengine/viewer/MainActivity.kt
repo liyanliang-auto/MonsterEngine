@@ -17,6 +17,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 import java.io.File
 
@@ -29,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var panel: LinearLayout
     private lateinit var scroll: ScrollView
     private lateinit var viewer: FrameLayout
+    private lateinit var fpsOverlay: TextView
     private lateinit var cancelImport: Button
     private var screen = "viewer"
     private var pendingJob: String? = null
@@ -39,27 +42,38 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         screen=savedInstanceState?.getString("screen")?:intent.getStringExtra("screen")?:"viewer"
-        controller=ViewerController(applicationContext)
+        controller=retainedController?:ViewerController(applicationContext).also{retainedController=it}
         val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(12,12,12,12)}
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val safe=insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(12+safe.left,12+safe.top,12+safe.right,12+safe.bottom)
+            insets
+        }
         val navigation=LinearLayout(this)
         for((key,label) in listOf("viewer" to "画面","library" to "场景","builds" to "任务","settings" to "设置","report" to "报告"))
             navigation.addView(Button(this).apply{text=label;setOnClickListener{showScreen(key)}},LinearLayout.LayoutParams(0,-2,1f))
         root.addView(navigation)
-        status=TextView(this).apply{setPadding(6,10,6,10);textSize=15f;accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE}
+        status=TextView(this).apply{text=controller.state.message;setPadding(6,10,6,10);textSize=15f;accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE}
         root.addView(status)
         cancelImport=Button(this).apply{text="取消导入";visibility=View.GONE;setOnClickListener{controller.cancelImport()}}
         root.addView(cancelImport)
         viewer=FrameLayout(this);surface=ViewerSurfaceView(this,controller);viewer.addView(surface,FrameLayout.LayoutParams(-1,-1))
+        fpsOverlay=TextView(this).apply { textSize=12f; setTextColor(0xffffffff.toInt()); setBackgroundColor(0x99000000.toInt()); setPadding(8,4,8,4); visibility=View.GONE; text="FPS --"; contentDescription="Observed submit/present return FPS; CPU cadence" }
+        viewer.addView(fpsOverlay,FrameLayout.LayoutParams(-2,-2).apply { gravity=android.view.Gravity.TOP or android.view.Gravity.END; topMargin=8; rightMargin=8 })
         root.addView(viewer,LinearLayout.LayoutParams(-1,0,1f))
         val viewerActions=LinearLayout(this)
         viewerActions.addView(Button(this).apply{text="复位相机";setOnClickListener{surface.resetCamera()}})
-        viewerActions.addView(Button(this).apply{text="重试画面";setOnClickListener{controller.retry()}})
+        viewerActions.addView(Button(this).apply{text="重试画面";setOnClickListener{controller.retry();surface.retrySurface()}})
+        viewerActions.addView(Button(this).apply{text="最高画质";setOnClickListener{applyHighQuality()}})
         viewerActions.tag="viewerActions";root.addView(viewerActions)
         panel=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
         scroll=ScrollView(this).apply{addView(panel)};root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
         setContentView(root)
+        ViewCompat.requestApplyInsets(root)
         controller.onState={state->
             status.text=state.message
+            surface.refreshRequestedExtent()
+            if(BuildConfig.FPS_OVERLAY_ENABLED) updateFpsOverlay(state)
             cancelImport.visibility=if(state.busy&&state.message.contains("复制"))View.VISIBLE else View.GONE
             if(screen=="library")renderLibrary(state)
             if(screen=="builds")renderJobs(state)
@@ -70,7 +84,16 @@ class MainActivity : Activity() {
     }
     override fun onResume(){super.onResume();if(::controller.isInitialized)controller.setResumed(true)}
     override fun onPause(){if(::controller.isInitialized)controller.setResumed(false);super.onPause()}
-    override fun onDestroy(){if(::controller.isInitialized)controller.close();super.onDestroy()}
+    override fun onDestroy(){
+        if(::controller.isInitialized){
+            // The native owner is process-owned. Configuration changes and
+            // transient destruction only drop this Activity's callbacks and
+            // surface; the successor Activity reuses the same owner and scene.
+            if(isChangingConfigurations||!isFinishing)controller.detachActivity()
+            else {retainedController=null;controller.close()}
+        }
+        super.onDestroy()
+    }
     override fun onTrimMemory(level: Int){super.onTrimMemory(level);if(::controller.isInitialized)controller.trim(level)}
     override fun onSaveInstanceState(outState: Bundle){outState.putString("screen",screen);super.onSaveInstanceState(outState)}
     override fun onNewIntent(intent: Intent){super.onNewIntent(intent);setIntent(intent);if(intent.getStringExtra("screen")=="builds")showScreen("builds")}
@@ -92,7 +115,7 @@ class MainActivity : Activity() {
         if(identity==lastLibrary)return;lastLibrary=identity;val y=scroll.scrollY;panel.removeAllViews()
         text("场景库",22f)
         button("打开内置示例",!state.busy&&state.builtin!=null){controller.openBuiltin();showScreen("viewer")}
-        text("内置示例由本项目生成，可离线使用。单指旋转，双指平移或缩放，双击复位。",14f)
+        text("内置示例由外部 PLY 完整派生为离线 LOD；来源与授权仍待核实。单指旋转，双指平移或缩放，双击复位。",14f)
         button("导入 PLY 或场景包",!state.busy&&state.pendingImport==null){
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),IMPORT_REQUEST)
@@ -163,20 +186,26 @@ class MainActivity : Activity() {
         text("画面设置",22f);text("请求值会保存在本机。实际生效值在渲染完成后显示。",14f)
         effectiveSettings=TextView(this).apply{text=effectiveText(state.effective);textSize=14f;setPadding(6,12,6,8);accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE}
         panel.addView(effectiveSettings)
-        text("最长渲染边（128–1280）")
+        button("最高画质",!state.busy){applyHighQuality();showScreen("viewer")}
+        text("最长渲染边（128–4096）")
         val edge=EditText(this).apply{inputType=android.text.InputType.TYPE_CLASS_NUMBER;setText(requested.maximumInternalEdge.toString())};panel.addView(edge)
-        text("质量阈值（1–12；数值越小细节越多）")
+        text("质量阈值（0.1–100；数值越小细节越多）")
         val quality=EditText(this).apply{inputType=android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL;setText(requested.runtime.getJSONObject("lod").getDouble("qualityPixels").toString())};panel.addView(quality)
         button("保存并应用",!state.busy){try {
-            val longest=edge.text.toString().toInt().also{require(it in 128..1280)}
-            val q=quality.text.toString().toDouble().also{require(it.isFinite()&&it in 1.0..12.0)}
+            val longest=edge.text.toString().toInt().also{require(it in 128..4096)}
+            val q=quality.text.toString().toDouble().also{require(it.isFinite()&&it in 0.1..100.0)}
             val runtime=JSONObject(requested.runtime.toString());runtime.getJSONObject("lod").put("qualityPixels",q)
             controller.applySettings(requested.copy(runtime=runtime,maximumInternalEdge=longest,
-                maximumInternalPixels=minOf(921600L,longest.toLong()*longest),generation=Math.addExact(requested.generation,1),configHash=""))
+                maximumInternalPixels=minOf(requested.maximumInternalPixels,longest.toLong()*longest),generation=Math.addExact(requested.generation,1),configHash=""))
         }catch(_: Exception){toast("请输入范围内的数值")}}
-        text("当前采用保守移动端参数。设备能力不足时会暂停或保留上一幅完整画面；可手动重试。",14f)
+        text("最高画质优先细节，采用完整 SH、细分 LOD 和高清渲染，可能明显降低帧率。设备资源不足时会暂停或保留上一幅完整画面；可手动重试。",14f)
     }
+    private fun applyHighQuality(){try {controller.applySettings(ViewerConfig.highQualityPreset(controller.state.requested))}catch(_: Exception){toast("暂时无法应用最高画质，请稍后重试")}}
     private fun effectiveText(config: ViewerConfig?)="实际生效：${config?.let{"最长边 ${it.maximumInternalEdge}，质量阈值 ${it.runtime.optJSONObject("lod")?.optDouble("qualityPixels")}"}?:"尚未确认"}"
+    private fun updateFpsOverlay(state: ViewerController.State) {
+        fpsOverlay.text=state.observedFps?.let { "FPS %.1f".format(it) } ?: "FPS --"
+        fpsOverlay.visibility=View.VISIBLE
+    }
     private fun renderReport(){panel.removeAllViews();text("报告与截图",22f)
         text("报告保存在本机，仅在你选择分享后交给其他应用。默认省略场景源文件、文件名和私有路径。",14f)
         button("生成诊断报告"){controller.exportDiagnostics{offerShare(it,"诊断报告")}}
@@ -198,5 +227,6 @@ class MainActivity : Activity() {
     private fun toast(value: String)=Toast.makeText(this,value,Toast.LENGTH_LONG).show()
     private fun stageName(stage: BuildStage)=when(stage){BuildStage.Created->"等待开始";BuildStage.Copying->"复制中";BuildStage.Normalizing->"解析中";BuildStage.Partitioning->"分区中";BuildStage.BuildingLeaves->"构建细节";BuildStage.Reducing->"生成层级";BuildStage.Validating->"检查结果";BuildStage.Publishing->"保存场景";BuildStage.Completed->"已完成";BuildStage.Paused->"已暂停";BuildStage.Cancelled->"已取消，进度保留";BuildStage.Failed->"未完成";BuildStage.WaitingForResources->"等待可用资源"}
     companion object{private const val IMPORT_REQUEST=10;private const val NOTIFICATION_REQUEST=11
+        private var retainedController: ViewerController?=null
         private val RETIRED=setOf(BuildStage.Paused,BuildStage.Cancelled,BuildStage.Failed,BuildStage.Completed,BuildStage.WaitingForResources)}
 }

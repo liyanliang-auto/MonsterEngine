@@ -25,6 +25,23 @@ class AndroidContractInstrumentation : Instrumentation() {
             cases.put(result)
             sendStatus(0, Bundle().apply { putString("stream", result.toString() + "\n") })
         }
+        BonsaiContinuationTests.run(targetContext, ::run)
+        PresentationDiagnosticsTests.run(targetContext, ::run)
+        run("native_public_descriptor_cannot_override_trusted_builtin_camera") {
+            val owner = NativeBridge.create(targetContext.assets, targetContext.filesDir.absolutePath, ViewerConfig())
+            check(owner.isValid) { "Native owner creation failed" }
+            try {
+                val request = JSONObject().put("schemaVersion", 1).put("kind", "builtinScene")
+                val builtin = NativeBridge.snapshot(owner, request)
+                check(builtin.ok) { builtin.toString() }
+                val descriptor = builtin.payload.getJSONObject("descriptor")
+                for (key in listOf("initialCamera", "camera")) {
+                    val injected = JSONObject(descriptor.toString()).put(key, JSONObject().put("rollDegrees", 0))
+                    val result = NativeResult.fromJson(NativeBridge.nativeOpenScene(owner.value, injected.toString()))
+                    check(!result.ok) { "Public descriptor admitted camera override" }
+                }
+            } finally { check(NativeBridge.destroy(owner).ok) }
+        }
         run("native_missing_leaves_and_mixed_aliases") { fixture { f ->
             val aliasSource = f.source.absolutePath.replace("/data/user/0/", "/data/data/")
             val handle = NativeBridge.createBuild(aliasSource, f.journal.path, f.output.path, BoundedBuildConfig())

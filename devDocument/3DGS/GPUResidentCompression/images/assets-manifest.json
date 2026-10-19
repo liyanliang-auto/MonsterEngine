@@ -1,0 +1,32 @@
+[
+  {
+    "path": "images/bicycle-difference-x32.png",
+    "bytes": 63441,
+    "sha256": "6f131cf4b72fd65716b62189b5a146192324cb90e0a6aacf2c6f81d9822b8cb0"
+  },
+  {
+    "path": "images/bicycle-sh16-linear.png",
+    "bytes": 4395400,
+    "sha256": "b8e35d28a8be4e3a6f77b4958012c4ff82f8439f779df1ab8c8fe178fa2ce286"
+  },
+  {
+    "path": "images/bicycle-sh16-window-fps.jpg",
+    "bytes": 172463,
+    "sha256": "a81cfc9f271d97f1740b841f17713e59032bf35488a1494abc0f2d0f8e2a244f"
+  },
+  {
+    "path": "images/bicycle-sh32-linear.png",
+    "bytes": 4395320,
+    "sha256": "529ab21e9e5af9b118bccfe7b8792915d2edc29732525a47d6039f99075463e5"
+  },
+  {
+    "path": "images/bicycle-sh32-window-fps.jpg",
+    "bytes": 172382,
+    "sha256": "0f72377cacec1b4253f0a50bcc6c24294a6aa07e76e0f6043618e788d7c0112e"
+  },
+  {
+    "path": "images/window-capture-metadata.json",
+    "bytes": 3573,
+    "sha256": "a9101376286f3a879220f6102cbfa8a11d1dffefa5fec38cf1c665115a84870a"
+  }
+]

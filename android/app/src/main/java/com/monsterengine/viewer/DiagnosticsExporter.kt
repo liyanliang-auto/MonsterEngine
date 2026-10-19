@@ -138,6 +138,21 @@ class DiagnosticsExporter(context: Context) {
         source.keys().forEach { key ->
             if (key !in SAFE_KEYS) return@forEach
             val value = source.opt(key)
+            // Presentation observations have a scalar type contract. Do not let
+            // the generic nested/string handling admit a mistyped observation.
+            if (key in PRESENTATION_NUMBER_KEYS) {
+                if (value is Number && value.toDouble().isFinite()) output.put(key, value)
+                return@forEach
+            }
+            if (key in PRESENTATION_BOOLEAN_KEYS) {
+                if (value is Boolean) output.put(key, value)
+                return@forEach
+            }
+            if (key in MEMORY_NUMBER_KEYS) {
+                if (value == JSONObject.NULL) output.put(key, JSONObject.NULL)
+                else if (value is Number && value.toDouble().isFinite()) output.put(key, value)
+                return@forEach
+            }
             when (value) {
                 null, JSONObject.NULL -> output.put(key, JSONObject.NULL)
                 is Boolean -> output.put(key, value)
@@ -176,12 +191,17 @@ class DiagnosticsExporter(context: Context) {
         private const val CSV_HEADER = "frameId,sceneGeneration,surfaceGeneration,configGeneration,submissionToken,activeGaussians,sortEntries,sortCountFrame,residentBytes,uploadedBytes,cpuLeaseBytes,cpuFrameMilliseconds,gpuMilliseconds,gpuTimingFrame,presentReturnCadenceMilliseconds,degraded,streamBytesRead,streamPendingReads,streamActiveReads,streamUploadedPages,streamEvictedPages"
         private val HASH_KEYS = setOf("contentHash", "buildIdentity", "configHash", "shaderIdentity", "sourceSHA256", "builderHash")
         private val CODE_KEYS = setOf("code", "name", "reason", "degradationReason", "stage", "state", "kind", "unavailableReason")
+        private val PRESENTATION_NUMBER_KEYS = setOf("presentationFormat", "presentationColorSpace",
+            "presentationWidth", "presentationHeight", "displayWidth", "displayHeight",
+            "presentationDisplayScale", "presentationSharpeningStrength")
+        private val PRESENTATION_BOOLEAN_KEYS = setOf("presentationFormatSRGB")
+        private val MEMORY_NUMBER_KEYS = setOf("vulkanManagedLiveBytes", "vulkanManagedBackingBytes", "vulkanPooledUnusedBytes")
         private val SAFE_TEXT = setOf("viewer_diagnostics", "build_report", "diagnosticsOnly", "paths_and_source_omitted",
             "not_observed", "not_measured", "not_queried", "not_observed_or_identity_not_supplied", "omitted_for_privacy",
             "owner_cpu_interval_not_gpu", "completed_interval_original_gpuTimingFrame", "internal_offscreen_output",
-            "linear_shader_output_before_srgb_present", "RGBA8_UNORM", "MonsterEngine-MobileLOD-1", "MonsterEngine-PLY-Activated-1",
+            "linear_shader_output_before_srgb_present", "srgb_encoded_rgb", "RGBA8_UNORM", "MonsterEngine-MobileLOD-1", "MonsterEngine-PLY-Activated-1",
             "A", "B", "C", "D", "E", "split", "scalar", "pending", "top_left")
-        private val SAFE_KEYS = HASH_KEYS + CODE_KEYS + setOf("schemaVersion", "privacy", "latest", "frames", "capacity", "droppedFrames",
+        private val SAFE_KEYS = HASH_KEYS + CODE_KEYS + PRESENTATION_NUMBER_KEYS + PRESENTATION_BOOLEAN_KEYS + MEMORY_NUMBER_KEYS + setOf("schemaVersion", "privacy", "latest", "frames", "capacity", "droppedFrames",
             "frameId", "sceneGeneration", "surfaceGeneration", "configGeneration", "requestedConfig", "effectiveConfig", "generation",
             "maximumInternalEdge", "maximumInternalPixels", "width", "height", "renderWidth", "renderHeight", "mode", "vsync",
             "activeCapacity", "sortCapacity", "sceneGPUBytes", "stagingBytes", "cpuCacheBytes", "temporaryGPUBytes", "maxUploadBytesPerFrame",

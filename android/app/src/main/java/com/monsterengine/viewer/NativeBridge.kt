@@ -38,8 +38,11 @@ object NativeBridge {
     external fun nativeProbe(surface: Surface?): String
     /** Create render owner; zero on failure, never returns a raw native pointer. */
     external fun nativeCreate(assets: AssetManager, filesRoot: String, configJson: String): Long
-    /** Queue a new positive Surface generation and nonzero drawable extent. */
-    external fun nativeAttach(handle: Long, surface: Surface, generation: Long, width: Int, height: Int): String
+    /** Consume bounded private renderer creation diagnostics on its calling worker. */
+    external fun nativeTakeRendererCreationError(): String
+    /** Queue one generation's producer and visible view extents; only producer pixels allocate WSI. */
+    external fun nativeAttach(handle: Long, surface: Surface, generation: Long, width: Int, height: Int,
+                              displayWidth: Int, displayHeight: Int): String
     /** Synchronous release acknowledgement: after success the old window is no longer in use
      * by recording, submission, GPU or presentation. Never acknowledge CPU queueing alone.
      */
@@ -62,6 +65,8 @@ object NativeBridge {
     external fun nativeSnapshot(handle: Long, requestJson: String): String
     /** Idempotent destruction; invalidate registry before retiring ownership. */
     external fun nativeDestroy(handle: Long)
+    /** Worker-only result after actual owner retirement; queueing is not success. */
+    external fun nativeRetireOwner(handle: Long): String
     /** CPU validation; caller must use a worker for filesystem work. */
     external fun nativeValidateScene(path: String): String
     /** Create independent CPU build job; stable private source and bounded config only. */
@@ -95,14 +100,29 @@ object NativeBridge {
 
     /** Create a structurally valid registry token or return the invalid zero token. */
     fun create(assets: AssetManager, filesRoot: String, config: ViewerConfig): NativeHandle {
+        rendererCreationFailure.remove()
         require(filesRoot.isNotBlank())
-        return createHandle { nativeCreate(assets, filesRoot, config.toJson().toString()) }
+        if(!isAvailable){rendererCreationFailure.set(unavailable());return NativeHandle()}
+        return try {
+            NativeHandle(nativeCreate(assets,filesRoot,config.toJson().toString())).also {
+                if(!it.isValid){lastCallError="native_creation_rejected";rendererCreationFailure.set(result { nativeTakeRendererCreationError() })}
+            }
+        }catch(error: LinkageError){recordLinkage(error);rendererCreationFailure.set(unavailable());NativeHandle()}
+        catch(error: RuntimeException){rendererCreationFailure.set(runtimeFailure(error));NativeHandle()}
+    }
+    private val rendererCreationFailure=ThreadLocal<NativeResult>()
+    /** Raw private detail must be consumed immediately and redacted before export. */
+    fun takeRendererCreationFailure(): NativeResult {
+        val failure=rendererCreationFailure.get();rendererCreationFailure.remove()
+        return failure?:NativeResult(false,"native_creation_rejected","No creation diagnostic on this worker")
     }
 
     /** Attach only valid extents; registry and Surface lifetime checks remain native. */
-    fun attach(handle: NativeHandle, surface: Surface, generation: Long, width: Int, height: Int): NativeResult {
-        require(generation > 0 && width > 0 && height > 0)
-        return withHandle(handle) { nativeAttach(handle.value, surface, generation, width, height) }
+    fun attach(handle: NativeHandle, surface: Surface, generation: Long, width: Int, height: Int,
+               displayWidth: Int = width, displayHeight: Int = height): NativeResult {
+        require(generation > 0 && width in 1..16384 && height in 1..16384)
+        require(displayWidth in 1..16384 && displayHeight in 1..16384)
+        return withHandle(handle) { nativeAttach(handle.value, surface, generation, width, height, displayWidth, displayHeight) }
     }
 
     /** Return native synchronous acknowledgement unchanged; failure cannot imply safe detach. */
@@ -141,7 +161,7 @@ object NativeBridge {
     }
     /** Releasing the invalid token is a safe no-op; stale nonzero tokens are checked natively. */
     fun destroy(handle: NativeHandle): NativeResult = if (handle.value == 0L) NativeResult(true, "already_destroyed")
-        else command(handle) { nativeDestroy(handle.value) }
+        else withHandle(handle) { nativeRetireOwner(handle.value) }
     /** Validate only on a worker; never perform this in a Surface handshake. */
     fun validateScene(path: String): NativeResult {
         require(path.isNotBlank())

@@ -3,60 +3,90 @@
   "generation": 1,
   "configHash": "",
   "shaderIdentity": "",
-  "maximumInternalEdge": 1280,
-  "maximumInternalPixels": 921600,
+  "maximumInternalEdge": 1920,
+  "maximumInternalPixels": 2073600,
   "runtime": {
     "mode": "D",
-    "width": 1280,
-    "height": 720,
-    "renderWidth": 1280,
-    "renderHeight": 720,
-    "activeCapacity": 100000,
-    "sortCapacity": 2000000,
+    "width": 1920,
+    "height": 1080,
+    "renderWidth": 1920,
+    "renderHeight": 1080,
+    "activeCapacity": 1000000,
+    "sortCapacity": 4500000,
     "benchmark": false,
     "validation": false,
     "vsync": true,
     "projectedFusion": false,
     "shStorageMode": 0,
     "shStorageDegree": -1,
-    "displaySHDegree": -1,
+    "displaySHDegree": 3,
     "tightTileCulling": 0,
     "projectionColorCompression": false,
     "rasterSharedMemoryMode": 0,
     "radixSortBlocksPerWorkgroup": 32,
     "radixSortPhaseTiming": false,
     "streaming": {
-      "sceneGPUBytes": 134217728,
+      "sceneGPUBytes": 234881024,
       "stagingBytes": 16777216,
-      "cpuCacheBytes": 67108864,
+      "cpuCacheBytes": 25165824,
       "temporaryGPUBytes": 268435456,
       "maxUploadBytesPerFrame": 2097152,
-      "maxConcurrentReads": 2,
+      "maxConcurrentReads": 1,
       "retries": 2,
       "retryDelayMilliseconds": 25
     },
     "lod": {
-      "qualityPixels": 3.0,
-      "hysteresis": 0.2,
-      "activeBudget": 100000,
-      "sortBudget": 2000000,
+      "qualityPixels": 0.1,
+      "hysteresis": 0.0,
+      "activeBudget": 1000000,
+      "sortBudget": 4500000,
       "freeze": false
     }
   },
   "builtinScene": {
-    "asset": "scenes/builtin.ply",
-    "generator": "MonsterEngine-ProceduralBuiltin-1",
-    "gaussians": 49152,
-    "shDegree": 0,
+    "asset": "scenes/bonsai-lod/scene.mgs",
+    "generator": "MonsterEngine-MobileLOD-1-external-source",
+    "gaussians": 1244819,
+    "shDegree": 3,
     "expectedWidth": 1280,
     "expectedHeight": 720,
     "camera": {
-      "eye": [0.0, 1.2, 5.5],
-      "target": [0.0, 0.0, 0.0],
-      "up": [0.0, 1.0, 0.0],
-      "verticalFovDegrees": 45.0,
-      "nearPlane": 0.05,
-      "farPlane": 100.0
+      "eye": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "target": [
+        0.85505036,
+        -0.86824089,
+        4.84923155
+      ],
+      "up": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "verticalFovDegrees": 60.0,
+      "rollDegrees": 180.0,
+      "nearPlane": 0.1,
+      "farPlane": 1000.0
+    },
+    "source": {
+      "path": "resources/point_cloud/bonsai_30k.ply",
+      "bytes": 308716644,
+      "sha256": "a16af6d8815498ffbf9eb5d5ee93f5bcc9dca34c4e3eb6f7a796ef9e97c0d273",
+      "records": 1244819
+    },
+    "buildConfig": {
+      "workingMemoryBytes": 268435456,
+      "metadataBytes": 33554432,
+      "leafCapacity": 8192,
+      "pageCapacity": 8192,
+      "maxProxyCount": 8192,
+      "rootProxyCount": 8192,
+      "maxManifestBytes": 33554432,
+      "maxNodes": 100000,
+      "maxPages": 100000
     }
   }
 }

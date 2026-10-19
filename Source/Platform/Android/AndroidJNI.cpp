@@ -214,11 +214,17 @@ struct Entry {
     ~Entry(){if(hostId)FAndroidRenderHost::Destroy(hostId);}
 };
 struct BuildEntry { FSplatBoundedBuildConfig config;std::string root; };
+struct PrivateRootPin {std::string spelling;dev_t device=0;ino_t inode=0;};
 struct Process {
     std::mutex mutex;
     std::shared_ptr<FSplatBudgetCoordinator> budget;
     std::optional<FSplatBudgetCoordinator::FReservation> bridgeMetadata;
     std::string root,limitSource,lastError;
+    // One process may legitimately see the same app-private directory through
+    // /data/data and /data/user/0 spellings, and instrumentation isolates owners
+    // under distinct app-private roots. Each admitted root is verified app-owned;
+    // identical inodes are unified to the first spelling so path comparisons agree.
+    std::vector<PrivateRootPin> roots;
     FAndroidProbeOptions probe;
     uint64_t nextRender=1,nextTicket=1;
     std::map<uint64_t,std::shared_ptr<Entry>> renderers;
@@ -238,17 +244,28 @@ fs::path PrivateRoot(const std::string& candidate){
     auto path=fs::canonical(fs::path(candidate));struct stat st{};
     // Android may create filesDir as 0771 with the application's own primary group.
     Need(::lstat(path.c_str(),&st)==0&&S_ISDIR(st.st_mode)&&st.st_uid==::getuid()&&!(st.st_mode&0002)&&(!(st.st_mode&0020)||st.st_gid==::getgid()),"Files root must be app-owned private storage");
-    auto& p=State();std::lock_guard lock(p.mutex);Need(p.root.empty()||p.root==path.string(),"private_root_mismatch");p.root=path.string();return path;
+    auto& p=State();std::lock_guard lock(p.mutex);
+    for(const auto& pin:p.roots)if(pin.device==st.st_dev&&pin.inode==st.st_ino)return fs::path(pin.spelling);
+    Need(p.roots.size()<16,"Private root registry exhausted");
+    p.roots.push_back(PrivateRootPin{path.string(),st.st_dev,st.st_ino});
+    if(p.root.empty())p.root=path.string();
+    return path;
 }
 fs::path RootFor(const std::string& path){
-    std::string root;{auto& p=State();std::lock_guard lock(p.mutex);root=p.root;}
-    if(!root.empty())return fs::path(root);
-    // A service resumed after process death can precede viewer creation. Only
-    // accept Android internal files ancestry owned by this application UID.
-    auto at=path.find("/files/");Need(at!=std::string::npos,"Private files root has not been initialized");
-    const auto candidate=path.substr(0,at+6);
-    Need(candidate.starts_with("/data/user/")||candidate.starts_with("/data/user_de/")||candidate.starts_with("/data/data/"),"Unsupported private root ancestry");
-    return PrivateRoot(candidate);
+    std::vector<PrivateRootPin> roots;std::string root;
+    {auto& p=State();std::lock_guard lock(p.mutex);roots=p.roots;root=p.root;}
+    auto at=path.find("/files/");
+    if(at!=std::string::npos){
+        const auto candidate=path.substr(0,at+6);
+        Need(candidate.starts_with("/data/user/")||candidate.starts_with("/data/user_de/")||candidate.starts_with("/data/data/"),"Unsupported private root ancestry");
+        return PrivateRoot(candidate);
+    }
+    // Non-files paths (for example a rejected /proc source) must still be checked
+    // against an admitted root so the diagnostic is a real confinement decision.
+    for(const auto& pin:roots)if(path.starts_with(pin.spelling+"/")||path==pin.spelling)return fs::path(pin.spelling);
+    if(!root.empty()){struct stat st{};if(::stat(root.c_str(),&st)==0)return fs::path(root);}
+    for(const auto& pin:roots){struct stat st{};if(::stat(pin.spelling.c_str(),&st)==0)return fs::path(pin.spelling);}
+    throw std::runtime_error("Private files root has not been initialized");
 }
 fs::file_status InspectPrivatePath(const fs::path& path){
     std::error_code ec;
@@ -260,17 +277,29 @@ fs::file_status InspectPrivatePath(const fs::path& path){
     Need(status.type()!=fs::file_type::none,"Unknown private path component status");
     return status;
 }
+bool SameDirectory(const fs::path& left,const fs::path& right){
+    std::error_code ec;const bool equal=fs::equivalent(left,right,ec);
+    return !ec&&equal;
+}
 fs::path Confined(const fs::path& root,const std::string& path,bool mayNotExist=false){
     Need(!path.empty()&&path.size()<=4096&&path.find('\0')==std::string::npos,"Invalid private path");
     auto raw=fs::path(path);Need(raw.is_absolute(),"Private path must be absolute");
     for(const auto& part:raw)Need(part!="..","Traversal in private path");
     const auto normalized=raw.lexically_normal();
     const auto canonicalRoot=fs::canonical(root);
+    // Every admitted root is Android app-private storage below /data. A path
+    // outside this ancestry cannot be confined; reject it before any stat so an
+    // unrelated EACCES (for example /proc) is never reported as a path failure.
+    const auto text=normalized.generic_string();
+    Need(text.starts_with("/data/user/")||text.starts_with("/data/user_de/")||text.starts_with("/data/data/"),
+        "Path escapes private files root");
 
     // Android exposes the same app-private directory through aliases such as
-    // /data/data/<package>/files and /data/user/0/<package>/files. Resolve the
-    // candidate before confinement so these equivalent spellings are accepted,
-    // while the canonical target still has to remain below the app-owned root.
+    // /data/data/<package>/files and /data/user/0/<package>/files. MIUI may serve
+    // both spellings from separate bind mounts, so canonical strings differ while
+    // the device/inode identity is equal. Locate the supplied spelling of the root
+    // by identity, then return the path in the pinned spelling so later ownership
+    // comparisons remain stable.
     std::error_code ec;
     const auto finalStatus=InspectPrivatePath(normalized);
     fs::path resolved;
@@ -285,31 +314,40 @@ fs::path Confined(const fs::path& root,const std::string& path,bool mayNotExist=
         Need(fs::is_directory(canonicalParent,ec)&&!ec,"Private path parent must be an existing directory");
         resolved=canonicalParent/normalized.filename();
     }
-    auto relative=resolved.lexically_relative(canonicalRoot);
-    Need(!relative.empty()&&*relative.begin()!=".."&&resolved!=canonicalRoot,"Path escapes private files root");
 
-    // Locate the spelling of the root in the supplied path. Android's root
-    // aliases may contain links before the files directory; links below that
-    // boundary are always rejected, even when they resolve back inside root.
+    // Links above the root boundary may be platform aliases; links below it are
+    // always rejected, even when they resolve back inside the root.
     fs::path aliasRoot;
     auto probe=normalized.root_path();
     for(const auto& part:normalized.relative_path()){
         probe/=part;
-        if(!fs::exists(InspectPrivatePath(probe)))break;
+        const auto status=InspectPrivatePath(probe);
+        if(!fs::exists(status))break;
+        if(probe==root){aliasRoot=probe;break;}
         const auto probeCanonical=fs::canonical(probe,ec);
-        Need(!ec,"Unable to resolve private path component");
-        if(probeCanonical==canonicalRoot){aliasRoot=probe;break;}
+        if(ec){ec.clear();continue;}
+        if(probeCanonical==canonicalRoot||SameDirectory(probe,canonicalRoot)){aliasRoot=probe;break;}
     }
-    Need(!aliasRoot.empty(),"Private path root alias mismatch");
-    auto cursor=aliasRoot;
+    Need(!aliasRoot.empty(),"Path escapes private files root");
     const auto tail=normalized.lexically_relative(aliasRoot);
+    Need(!tail.empty(),"Path escapes private files root");
+    fs::path confined=root;
+    for(const auto& part:tail){
+        Need(part!=".."&&part!="."&&!part.empty(),"Private path escapes private files root");
+        confined/=part;
+    }
+    confined=confined.lexically_normal();
+    Need(confined!=root,"Path escapes private files root");
+    auto cursor=aliasRoot;
     for(const auto& part:tail){
         cursor/=part;
         const auto status=InspectPrivatePath(cursor);
         Need(!fs::is_symlink(status),"Private path contains symlink");
         if(!fs::exists(status))Need(mayNotExist&&cursor==normalized,"Private path does not exist or missing ancestor");
     }
-    return resolved;
+    if(mayNotExist&&!fs::exists(finalStatus))return confined;
+    Need(resolved!=canonicalRoot&&confined!=root,"Path escapes private files root");
+    return confined;
 }
 std::shared_ptr<Entry> Lookup(uint64_t token,bool allowRetired=false){
     Need((token>>32)==RenderGeneration&&uint32_t(token),"invalid_handle");
@@ -409,7 +447,8 @@ FSceneDescriptor DecodeScene(const Json& j,const std::shared_ptr<Entry>& e){
     d.kind=kind=="PLY"?EViewerSceneKind::PLY:EViewerSceneKind::LOD;
     const auto directory=Confined(fs::path(e->root),d.directory);
     if(d.sceneId==e->builtin.sceneId){
-        Need(directory==fs::path(e->builtin.directory)&&d.sourcePLY==e->builtin.sourcePLY&&d.manifestPath.empty()&&d.contentHash==e->builtin.contentHash&&d.kind==EViewerSceneKind::PLY,"Builtin descriptor mismatch");
+        Need(directory==fs::path(e->builtin.directory)&&d.sourcePLY==e->builtin.sourcePLY&&d.manifestPath==e->builtin.manifestPath&&d.contentHash==e->builtin.contentHash&&d.kind==e->builtin.kind,"Builtin descriptor mismatch");
+        d.initialCamera=e->builtin.initialCamera;
     }else{
         Need(d.sceneId.find_first_not_of("0123456789abcdef-")==std::string::npos&&d.sceneId.size()==36,"Invalid library scene UUID");
         Need(directory==fs::path(e->root)/"scene-store"/"published"/d.sceneId,"Scene must be a published library entry");
@@ -496,36 +535,124 @@ FAndroidProbeOptions PrepareProbe(const std::shared_ptr<Provider>& provider){
 void RecordError(const std::string& error)noexcept{
     try{auto& p=State();std::lock_guard lock(p.mutex);p.lastError=error.substr(0,4096);}catch(...){}
 }
+// Consume only on the same creation worker; raw detail never enters public reports.
+thread_local std::array<char,4097> RendererCreationError{};
+thread_local std::array<char,81> RendererCreationPhase{};
+thread_local FSplatBudgetSnapshot RendererCreationBudget;
+thread_local uint64_t RendererCreationOwners=0,RendererRetiringOwners=0;
+void RecordRendererCreationError(const char* phase,const char* message)noexcept{
+    const auto copy=[](auto& output,const char* input){size_t at=0;while(input&&*input&&at+1<output.size()){const auto c=static_cast<unsigned char>(*input++);output[at++]=c>=32&&c<127?char(c):'?';}output[at]='\0';};
+    copy(RendererCreationPhase,phase);copy(RendererCreationError,message);
+}
+jstring TakeRendererCreationError(JNIEnv* env,jobject){
+    return StringBoundary(env,[&]{
+        WorkerOnly(env);Json payload=Json::Obj();payload["phase"]=RendererCreationPhase.data();
+        payload["budgetBeforeAdmission"]=Budget(RendererCreationBudget);payload["activeRendererOwners"]=RendererCreationOwners;payload["retiringRendererOwners"]=RendererRetiringOwners;
+        std::string message=RendererCreationError.data();RendererCreationError[0]='\0';RendererCreationPhase[0]='\0';
+        return Result(false,"native_creation_rejected",message.empty()?"No creation diagnostic on this worker":message,std::move(payload));
+    });
+}
 jlong Create(JNIEnv* env,jobject,jobject assets,jstring files,jstring configuration)noexcept{
+    RendererCreationError[0]='\0';RendererCreationPhase[0]='\0';RendererCreationBudget={};RendererCreationOwners=RendererRetiringOwners=0;
+    const char* phase="worker_or_request";
     try{
         WorkerOnly(env);Need(assets,"AssetManager required");
         auto text=String(env,configuration);auto json=Parser(text,CommandBytes).parse();auto config=DecodeConfig(json);
         uint64_t limit=0;if(json.has("aggregateBudgetBytes")){limit=json.at("aggregateBudgetBytes").u64();Need(limit>0,"Aggregate budget must be positive");}
         auto budget=Account(limit);auto runtime=FProcessRuntimeLease::Acquire();std::string startupError;
+        phase="startup_reservation";RendererCreationBudget=budget->Snapshot();
+        {auto& p=State();std::lock_guard lock(p.mutex);RendererCreationOwners=p.renderers.size();RendererRetiringOwners=p.retiredOwners.size();}
         // Covers provider's bounded asset buffers and semantic validator peak;
         // this is an admission envelope, never a claim of observed RSS.
         auto startup=budget->TryReserve(ESplatBudgetComponent::Metadata,320ull<<20,startupError);Need(bool(startup),startupError);
+        phase="private_root_and_asset_inventory";
         auto root=PrivateRoot(String(env,files,4096));
         auto provider=std::make_shared<Provider>(env,assets);std::string error;auto manager=AAssetManager_fromJava(env,assets);JavaOK(env);
         Need(manager&&provider->provider.Initialize(manager,root.string(),error),error);
         auto options=PrepareProbe(provider);auto requirements=FAndroidCapabilities::ParseShaderRequirements(options.shaderManifestJSON,{},error);
         Need(requirements.valid,error);Need(config.shaderIdentity.empty()||config.shaderIdentity==requirements.shaderIdentity,"Requested shader inventory mismatch");
         config.shaderIdentity=requirements.shaderIdentity;options.identity.configSHA256=config.configHash;
-        // Resolve and validate builtin only here on the creation worker, using
-        // provider-returned path rather than guessing a cache layout.
-        std::string builtinPath;Need(provider->ResolveValidatedFile("scenes/builtin.ply",builtinPath,error),error);
-        FSplatSceneValidationResult validation;Need(FSplatSceneValidation::Validate(builtinPath,{},validation,error),error);
+        // Materialize only inventory-verified files, preserving the manifest's
+        // relative page layout inside the private provider cache. No runtime
+        // construction and no direct-PLY admission exception is involved.
+        std::vector<uint8_t> defaultBytes;Need(provider->ReadBytes("resources/android/default-viewer.json",defaultBytes,error),error);
+        Need(defaultBytes.size()<=CommandBytes,"Builtin configuration limit");
+        auto defaults=Parser(std::string(defaultBytes.begin(),defaultBytes.end()),CommandBytes).parse();Version(defaults);
+        phase="builtin_camera_metadata";
+        const auto& builtin=defaults.at("builtinScene");const auto logical=builtin.at("asset").str();
+        const auto& camera=builtin.at("camera");Known(camera,{"eye","target","up","verticalFovDegrees","nearPlane","farPlane","rollDegrees"});
+        FViewerOrbitCameraPreset cameraPreset;
+        for(const auto* name:{"eye","target","up"})Need(camera.at(name).kind==Json::Array&&camera.at(name).array.size()==3,"Invalid builtin camera vector");
+        for(int axis=0;axis<3;++axis){
+            cameraPreset.eye[axis]=camera.at("eye").array[axis].number();cameraPreset.target[axis]=camera.at("target").array[axis].number();
+            Need(camera.at("up").array[axis].number()==(axis==1?1.0f:0.0f),"Builtin orbit requires upright Y camera");
+        }
+        cameraPreset.verticalFOVDegrees=camera.at("verticalFovDegrees").number();cameraPreset.nearPlane=camera.at("nearPlane").number();cameraPreset.farPlane=camera.at("farPlane").number();
+        if(camera.has("rollDegrees"))cameraPreset.rollDegrees=camera.at("rollDegrees").number();
+        Need(FSplatViewerSession::IsValidOrbitCameraPreset(cameraPreset),"Invalid builtin orbit camera pose");
+        Need(logical=="scenes/bonsai-lod/scene.mgs","Unsupported builtin LOD asset");
+        const auto& source=builtin.at("source");const auto sourceHash=source.at("sha256").str();
+        Need(HashValid(sourceHash)&&source.at("records").u64()>0,"Invalid builtin source identity");
+        std::string builtinPath;Need(provider->ResolveValidatedFile(logical,builtinPath,error),error);
+        phase="builtin_page_materialization";
+        const auto sceneDirectory=fs::path(builtinPath).parent_path();
+        const auto logicalDirectory=fs::path(logical).parent_path();
+        // Use the verified bounded package index to materialize files first.
+        // Semantic validation then preflights index/workspace caps before any
+        // full manifest object is allocated.
+        std::vector<uint8_t> indexBytes;Need(provider->ReadBytes("scenes/builtin-lod.json",indexBytes,error),error);
+        Need(indexBytes.size()<=OutputBytes,"Builtin LOD package index limit");
+        auto index=Parser(std::string(indexBytes.begin(),indexBytes.end()),OutputBytes).parse();Version(index);
+        const auto& packageFiles=index.at("files");Need(packageFiles.kind==Json::Array&&packageFiles.array.size()<=100001,"Builtin LOD package file limit");
+        std::set<std::string> materialized;
+        for(const auto& file:packageFiles.array){
+            const auto name=file.at("path").str();const fs::path relative(name);
+            Need(!relative.is_absolute()&&relative.generic_string()==name&&name.find('\\')==std::string::npos&&
+                name.find(':')==std::string::npos,"Invalid builtin page path");
+            for(const auto& component:relative)Need(component!=".."&&component!="."&&!component.empty(),"Invalid builtin page component");
+            Need(name=="scene.mgs"||(name.starts_with("pages/")&&name.ends_with(".mgsp")),"Unexpected builtin LOD file");
+            Need(materialized.insert(name).second,"Duplicate builtin LOD file");
+            std::string pagePath;Need(provider->ResolveValidatedFile((logicalDirectory/relative).generic_string(),pagePath,error),error);
+            Need(Confined(root,pagePath)==sceneDirectory/relative,"Builtin page escaped manifest directory");
+        }
+        phase="builtin_native_validation";
+        FSplatSceneManifest manifest;Need(FSplatSceneFormat::LoadManifest(builtinPath,manifest,error),error);
+        std::string manifestHash;Need(FSplatSceneFormat::SHA256File(builtinPath,manifestHash,error),error);
+        const auto& packageValidation=index.at("validation");
+        uint64_t encodedBytes=0;for(const auto& page:manifest.pages)encodedBytes+=page.byteSize;
+        // The signed APK inventory already binds every page hash to the host
+        // builder's validation output. Re-check those identities and the manifest
+        // hash instead of decoding 1.2M gaussians on every owner creation; fall
+        // back to the full native validation when the package index is incomplete.
+        const bool indexed=packageValidation.has("ok")&&packageValidation.at("ok").boolean()&&
+            packageValidation.has("contentSHA256")&&packageValidation.has("pageCount")&&
+            packageValidation.has("encodedPageBytes")&&packageValidation.has("sourceRecords")&&
+            packageValidation.at("contentSHA256").str()==manifestHash&&
+            packageValidation.at("pageCount").u64()==manifest.pages.size()&&
+            packageValidation.at("encodedPageBytes").u64()==encodedBytes&&
+            packageValidation.at("sourceRecords").u64()==manifest.sourceCount&&
+            manifest.sourceCount==source.at("records").u64()&&manifest.leafCount==manifest.sourceCount;
+        FSplatSceneValidationResult validation;
+        if(indexed){validation.contentSHA256=manifestHash;validation.pageCount=uint32_t(manifest.pages.size());
+            validation.sourceRecords=manifest.sourceCount;validation.encodedPageBytes=encodedBytes;validation.shDegree=manifest.shDegree;}
+        else Need(FSplatSceneValidation::Validate(builtinPath,{},validation,error),error);
+        Need(manifest.version==3&&manifest.builderVersion==SplatBoundedBuilderVersion&&manifest.sourceSHA256==sourceHash&&
+            manifest.builderHash==index.at("builderSHA256").str()&&validation.contentSHA256==packageValidation.at("contentSHA256").str()&&
+            manifest.sourceCount==source.at("records").u64()&&manifest.leafCount==manifest.sourceCount,"Builtin LOD source identity mismatch");
+        for(const auto& page:manifest.pages)Need(materialized.contains(page.relativePath),"Builtin page absent from package index");
         auto entry=std::make_shared<Entry>();entry->resources=provider;entry->root=root.string();entry->requested=config;
         entry->metadata=budget->TryReserve(ESplatBudgetComponent::Metadata,8ull<<20,error);Need(bool(entry->metadata),error);
-        entry->builtin.sceneId="builtin-"+validation.contentSHA256;entry->builtin.directory=fs::path(builtinPath).parent_path().string();
-        entry->builtin.sourcePLY=builtinPath;entry->builtin.contentHash=validation.contentSHA256;entry->builtin.generation=1;entry->builtin.kind=EViewerSceneKind::PLY;
+        entry->builtin.sceneId="builtin-"+validation.contentSHA256;entry->builtin.directory=sceneDirectory.string();
+        entry->builtin.manifestPath=builtinPath;entry->builtin.contentHash=validation.contentSHA256;entry->builtin.generation=1;entry->builtin.kind=EViewerSceneKind::LOD;
+        entry->builtin.initialCamera=cameraPreset;
         FAndroidRenderHostCreateInfo info;info.resources=provider;info.budget=budget;info.config=config;info.probe=options;
+        phase="native_render_owner";
         entry->hostId=FAndroidRenderHost::Create(std::move(info),error);Need(entry->hostId,error);
         entry->host=FAndroidRenderHost::Acquire(entry->hostId);Need(bool(entry->host),"Host registry creation failed");
         auto& p=State();std::lock_guard lock(p.mutex);Need(p.renderers.size()<16&&p.retiredOwners.size()<128&&p.nextRender<=UINT32_MAX,"Render registry exhausted");
         uint64_t token=(RenderGeneration<<32)|p.nextRender++;p.renderers.emplace(token,entry);p.probe=std::move(options);p.lastError.clear();return jlong(token);
-    }catch(const std::exception& e){env->ExceptionClear();RecordError(e.what());return 0;}
-    catch(...){env->ExceptionClear();RecordError("Unexpected native creation failure");return 0;}
+    }catch(const std::exception& e){env->ExceptionClear();RecordRendererCreationError(phase,e.what());RecordError(e.what());return 0;}
+    catch(...){env->ExceptionClear();RecordRendererCreationError(phase,"Unexpected native creation failure");RecordError("Unexpected native creation failure");return 0;}
 }
 jstring Probe(JNIEnv* env,jobject,jobject surface){
     return StringBoundary(env,[&]{
@@ -538,10 +665,12 @@ jstring Probe(JNIEnv* env,jobject,jobject surface){
         return Result(true,"probe_observed","",std::move(payload));
     });
 }
-jstring Attach(JNIEnv* env,jobject,jlong token,jobject surface,jlong generation,jint width,jint height){
+jstring Attach(JNIEnv* env,jobject,jlong token,jobject surface,jlong generation,jint width,jint height,jint displayWidth,jint displayHeight){
     return StringBoundary(env,[&]{
-        Need(generation>0&&width>0&&height>0,"Invalid Surface extent/generation");auto e=Lookup(uint64_t(token));auto host=Host(e);Window window(env,surface);
-        auto status=host->Attach(window.value,uint64_t(generation),uint32_t(width),uint32_t(height));
+        Need(generation>0&&width>0&&height>0&&width<=16384&&height<=16384&&
+            displayWidth>0&&displayHeight>0&&displayWidth<=16384&&displayHeight<=16384,"Invalid Surface extent/generation");
+        auto e=Lookup(uint64_t(token));auto host=Host(e);Window window(env,surface);
+        auto status=host->Attach(window.value,uint64_t(generation),uint32_t(width),uint32_t(height),uint32_t(displayWidth),uint32_t(displayHeight));
         // Queued is an admission ACK only. Readiness is observed independently.
         Json payload=Json::Obj();payload["attachment"]="queued";payload["drawableObserved"]=false;payload["surfaceGeneration"]=uint64_t(generation);return Result(status,std::move(payload));
     });
@@ -631,20 +760,28 @@ jstring Settings(JNIEnv* env,jobject,jlong token,jstring command){
 }
 void Trim(JNIEnv* env,jobject,jlong token,jint level){VoidBoundary(env,[&]{auto s=Host(Lookup(uint64_t(token)))->MemoryPressure(level);Need(s.ok,s.code);});}
 jstring Retry(JNIEnv* env,jobject,jlong token){return StringBoundary(env,[&]{return Result(Host(Lookup(uint64_t(token)))->Retry());});}
-void Destroy(JNIEnv* env,jobject,jlong token){
-    VoidBoundary(env,[&]{
-        if(!token)return;Need((uint64_t(token)>>32)==RenderGeneration&&uint32_t(token),"invalid_handle");std::shared_ptr<Entry> e;
-        {auto& p=State();std::lock_guard lock(p.mutex);auto it=p.renderers.find(uint64_t(token));if(it==p.renderers.end())return;e=std::move(it->second);p.renderers.erase(it);p.retiredOwners.emplace(uint64_t(token),e);}
+FViewerStatus RetireRenderer(uint64_t token){
+        if(!token)return {true,"already_retired",{}};Need((token>>32)==RenderGeneration&&uint32_t(token),"invalid_handle");std::shared_ptr<Entry> e;
+        {auto& p=State();std::lock_guard lock(p.mutex);auto it=p.renderers.find(token);
+            if(it==p.renderers.end())return p.retiredOwners.contains(token)?FViewerStatus{false,"renderer_retirement_pending",{}}:FViewerStatus{true,"already_retired",{}};
+            e=std::move(it->second);p.renderers.erase(it);p.retiredOwners.emplace(token,e);}
         uint64_t hostId=0;
         {std::lock_guard lock(e->mutex);e->invalidated=true;hostId=e->hostId;e->hostId=0;}
         // Removed admission before owner join; never hold a registry/job lock.
-        if(hostId)FAndroidRenderHost::Destroy(hostId);
+        if(hostId)Need(FAndroidRenderHost::Destroy(hostId),"Renderer host retirement not acknowledged");
         bool liveTickets=false;
         {std::lock_guard lock(e->mutex);e->host.reset();for(const auto& [id,ticket]:e->tickets){(void)id;liveTickets|=bool(ticket.lease);}}
-        if(!liveTickets){auto& p=State();std::lock_guard lock(p.mutex);p.retiredOwners.erase(uint64_t(token));}
+        if(!liveTickets){auto& p=State();std::lock_guard lock(p.mutex);p.retiredOwners.erase(token);}
         // Explicit tickets remain reachable via budget release on retired owner.
         // No GC/handle disappearance is proof that managed backing retired.
-    });
+        return {true,"renderer_retired",{}};
+}
+void Destroy(JNIEnv* env,jobject,jlong token){
+    VoidBoundary(env,[&]{const auto status=RetireRenderer(uint64_t(token));Need(status.ok,status.code);});
+}
+jstring RetireOwner(JNIEnv* env,jobject,jlong token){
+    return StringBoundary(env,[&]{WorkerOnly(env);auto status=RetireRenderer(uint64_t(token));
+        Json payload=Json::Obj();payload["budgetAfterRetirement"]=Budget(Account()->Snapshot());return Result(status,std::move(payload));});
 }
 Json Diagnostics(const std::shared_ptr<Entry>& e,const std::shared_ptr<const FAndroidRenderHostSnapshot>& s){
     Json payload=Json::Obj();payload["schemaVersion"]=uint32_t(1);payload["status"]=Status(s->status);
@@ -762,7 +899,8 @@ void DestroyBuild(JNIEnv* env,jobject,jlong handle){
 JNINativeMethod Methods[]={
     METHOD("nativeProbe","(Landroid/view/Surface;)Ljava/lang/String;",Probe),
     METHOD("nativeCreate","(Landroid/content/res/AssetManager;Ljava/lang/String;Ljava/lang/String;)J",Create),
-    METHOD("nativeAttach","(JLandroid/view/Surface;JII)Ljava/lang/String;",Attach),
+    METHOD("nativeTakeRendererCreationError","()Ljava/lang/String;",TakeRendererCreationError),
+    METHOD("nativeAttach","(JLandroid/view/Surface;JIIII)Ljava/lang/String;",Attach),
     METHOD("nativeDetach","(JJ)Ljava/lang/String;",Detach),
     METHOD("nativeResume","(JZ)V",Resume),
     METHOD("nativeFrame","(JJ)V",Frame),
@@ -773,6 +911,7 @@ JNINativeMethod Methods[]={
     METHOD("nativeRetry","(J)Ljava/lang/String;",Retry),
     METHOD("nativeSnapshot","(JLjava/lang/String;)Ljava/lang/String;",Snapshot),
     METHOD("nativeDestroy","(J)V",Destroy),
+    METHOD("nativeRetireOwner","(J)Ljava/lang/String;",RetireOwner),
     METHOD("nativeValidateScene","(Ljava/lang/String;)Ljava/lang/String;",Validate),
     METHOD("nativeCreateBuild","(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)J",CreateBuild),
     METHOD("nativeTakeBuildCreationError","()Ljava/lang/String;",TakeBuildCreationError),

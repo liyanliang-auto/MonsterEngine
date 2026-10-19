@@ -286,6 +286,8 @@ namespace MonsterRender::RHI::Vulkan {
         bool supportsSwapchainReadback() const { return m_swapchainReadbackSupported; }
         const VkExtent2D& getSwapchainExtent() const { return m_swapchainExtent; }
         VkFormat getSwapchainFormat() const { return m_swapchainImageFormat; }
+        /** Actual WSI color space; meaningful while a swapchain is attached. */
+        VkColorSpaceKHR getSwapchainColorSpace() const { return m_swapchainColorSpace; }
         
         /**
          * Recreate swapchain when window is resized
@@ -389,6 +391,7 @@ namespace MonsterRender::RHI::Vulkan {
         std::vector<VkImage> m_swapchainImages;
         std::vector<VkImageView> m_swapchainImageViews;
         VkFormat m_swapchainImageFormat = VK_FORMAT_UNDEFINED;
+        VkColorSpaceKHR m_swapchainColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
         bool m_swapchainReadbackSupported = false;
         VkExtent2D m_swapchainExtent = {0, 0};
         

@@ -72,7 +72,7 @@ def reflect(path):
     for identifier in shared:
         size, alignment = layout(identifier)
         total = align(total, alignment) + size
-    return {"capabilities": sorted(caps), "shaderInt64": 11 in caps,
+    return {"spirvVersion": words[1], "capabilities": sorted(caps), "shaderInt64": 11 in caps,
             "shaderFloat64": 10 in caps, "shaderFloat16": 9 in caps,
             "subgroupCapabilityIds": sorted(caps.intersection(range(61, 69))),
             "localSizes": groups, "sharedMemoryBytesUpperBound": total,
@@ -96,12 +96,12 @@ def main():
     shaders = []
     for entry in inputs:
         path = args.shader_dir / entry["output"]
-        subprocess.run([str(args.validator), "--target-env", "vulkan1.2", str(path)], check=True)
+        subprocess.run([str(args.validator), "--target-env", "vulkan1.1", str(path)], check=True)
         shaders.append({"path": path.name, "sha256": sha256(path), "bytes": path.stat().st_size,
                         "requirements": reflect(path), "sources": [
                             {"path": source["logical"], "sha256": sha256(Path(source["file"]))}
                             for source in entry["sources"]]})
-    document = {"schemaVersion": 1, "targetEnvironment": "vulkan1.2",
+    document = {"schemaVersion": 1, "targetEnvironment": "vulkan1.1",
                 "compiler": tool_identity(args.compiler), "validator": tool_identity(args.validator),
                 "shaders": shaders}
     args.output.parent.mkdir(parents=True, exist_ok=True)

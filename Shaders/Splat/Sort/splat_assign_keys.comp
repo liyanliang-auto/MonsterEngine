@@ -10,7 +10,6 @@
 
 #version 450
 #extension GL_GOOGLE_include_directive : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 #include "splat_tight_culling.glsl"
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -36,7 +35,7 @@ layout(std430, set = 0, binding = 2) readonly buffer DepthBuf {
 // ============================================================================
 
 layout(std430, set = 0, binding = 4) writeonly buffer SortKeysBuf {
-    uint64_t sortKeys[];    // (tileIndex << 32) | depthBits
+    uvec2 sortKeys[];       // x = depthBits (low word), y = tileIndex (high word)
 };
 
 layout(std430, set = 0, binding = 5) writeonly buffer SortValuesBuf {
@@ -103,8 +102,10 @@ void main() {
             // Bounds guard: drop remaining tiles instead of writing out of buffer.
             if (writeIdx >= pc.maxSortElements) return;
 
-            uint64_t tileIndex = uint64_t(tileX) + uint64_t(tileY) * uint64_t(pc.gridX);
-            uint64_t key = (tileIndex << 32u) | uint64_t(depthBits);
+            // The host validates gridX * gridY before dispatch. Keep both
+            // complete words and the existing 8-byte key stride without Int64.
+            uint tileIndex = tileX + tileY * pc.gridX;
+            uvec2 key = uvec2(depthBits, tileIndex);
 
             sortKeys[writeIdx] = key;
             sortValues[writeIdx] = gaussianIdx;

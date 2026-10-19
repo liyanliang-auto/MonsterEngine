@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Framework-only runner: this APK's tests are not JUnit cases, so the
+         test manifest declares the custom Instrumentation directly. -->
+    <instrumentation
+        android:name="com.monsterengine.viewer.AndroidContractInstrumentation"
+        android:targetPackage="com.monsterengine.viewer.debug"
+        android:label="MonsterEngine Android contract tests"
+        android:handleProfiling="false"
+        android:functionalTest="false" />
     <application>
         <provider android:name="com.monsterengine.viewer.VerificationDocumentsProvider"
             android:authorities="com.monsterengine.viewer.debug.test.documents"

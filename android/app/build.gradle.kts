@@ -12,6 +12,9 @@ val hostTools = hostToolNames.mapNotNull { name ->
     providers.gradleProperty(name).orElse(providers.environmentVariable(name)).orNull
         ?.takeIf { it.isNotBlank() }?.let { name to it }
 }.toMap()
+val fpsOverlayEnabled = providers.gradleProperty("MONSTER_ANDROID_FPS_OVERLAY")
+    .map { it.equals("ON", ignoreCase = true) || it.equals("true", ignoreCase = true) }
+    .orElse(false).get()
 val signingNames = listOf("MONSTER_KEYSTORE", "MONSTER_KEYSTORE_PASSWORD", "MONSTER_KEY_ALIAS", "MONSTER_KEY_PASSWORD")
 val signingValues = signingNames.associateWith { providers.environmentVariable(it).orNull }
 val signingAvailable = signingValues.values.all { !it.isNullOrBlank() }
@@ -34,7 +37,8 @@ android {
         externalNativeBuild {
             cmake {
                 targets += "monster_android"
-                arguments += listOf("-DANDROID_STL=c++_static", "-DMONSTER_BUILD_ENGINE=ON")
+                arguments += listOf("-DANDROID_STL=c++_static", "-DMONSTER_BUILD_ENGINE=ON",
+                    "-DMONSTER_ANDROID_FPS_OVERLAY=${if (fpsOverlayEnabled) "ON" else "OFF"}")
                 arguments += hostTools.map { (name, path) -> "-D$name=$path" }
             }
         }
@@ -92,6 +96,7 @@ android {
     }
     androidResources { noCompress += listOf("spv", "ply", "mgs", "mgp") }
     buildFeatures { buildConfig = true }
+    buildTypes.all { buildConfigField("boolean", "FPS_OVERLAY_ENABLED", fpsOverlayEnabled.toString()) }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -102,7 +107,7 @@ kotlin {
     compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
-// Native CMake dependencies produce validated shaders and the licensed built-in scene.
+// Native CMake dependencies produce validated shaders and the externally derived built-in scene.
 // Asset merging must never silently package an empty or stale generated directory.
 tasks.configureEach {
     if (name in setOf("mergeDebugAssets", "mergeProfileAssets", "mergeReleaseAssets")) {

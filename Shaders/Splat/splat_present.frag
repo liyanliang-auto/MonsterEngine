@@ -6,6 +6,10 @@ layout(set = 0, binding = 0) uniform sampler2D splatOutput;
 
 layout(location = 0) in vec2 fragUV;
 layout(location = 0) out vec4 outColor;
+layout(push_constant) uniform PresentationTransfer {
+    uint decodeSRGBForAttachment;
+    float compositorSharpeningStrength;
+} transfer;
 
 vec3 srgbToLinear(vec3 color)
 {
@@ -50,7 +54,27 @@ void main()
     if (all(lessThanEqual(outputSize, sourceSize + vec2(1.0))))
     {
         vec4 color = texture(splatOutput, fragUV);
-        outColor = vec4(srgbToLinear(max(color.rgb, vec3(0.0))), color.a);
+        // A bounded producer can be magnified later by Android's compositor,
+        // which fwidth cannot observe. Compensate only that explicit policy;
+        // no external magnification keeps the original sample exactly intact.
+        if (transfer.compositorSharpeningStrength > 0.0)
+        {
+            vec2 texel = 1.0 / sourceSize;
+            vec3 north = textureLod(splatOutput, fragUV - vec2(0.0, texel.y), 0.0).rgb;
+            vec3 south = textureLod(splatOutput, fragUV + vec2(0.0, texel.y), 0.0).rgb;
+            vec3 west = textureLod(splatOutput, fragUV - vec2(texel.x, 0.0), 0.0).rgb;
+            vec3 east = textureLod(splatOutput, fragUV + vec2(texel.x, 0.0), 0.0).rgb;
+            vec3 minimumColor = min(color.rgb, min(min(north, south), min(west, east)));
+            vec3 maximumColor = max(color.rgb, max(max(north, south), max(west, east)));
+            float contrast = max(maximumColor.r - minimumColor.r,
+                max(maximumColor.g - minimumColor.g, maximumColor.b - minimumColor.b));
+            float gain = clamp(transfer.compositorSharpeningStrength, 0.0, 0.22) * smoothstep(0.015, 0.20, contrast);
+            vec3 detail = color.rgb - 0.25 * (north + south + west + east);
+            color.rgb = clamp(color.rgb + gain * detail, minimumColor, maximumColor);
+        }
+        vec3 rgb = max(color.rgb, vec3(0.0));
+        if (transfer.decodeSRGBForAttachment != 0u) rgb = srgbToLinear(rgb);
+        outColor = vec4(rgb, color.a);
         return;
     }
 
@@ -70,5 +94,7 @@ void main()
     float gain = 0.22 * smoothstep(0.015, 0.20, contrast);
     vec3 detail = reconstructed.rgb - 0.25 * (north + south + west + east);
     vec3 sharpened = clamp(reconstructed.rgb + gain * detail, minimumColor, maximumColor);
-    outColor = vec4(srgbToLinear(max(sharpened, vec3(0.0))), reconstructed.a);
+    vec3 rgb = max(sharpened, vec3(0.0));
+    if (transfer.decodeSRGBForAttachment != 0u) rgb = srgbToLinear(rgb);
+    outColor = vec4(rgb, reconstructed.a);
 }

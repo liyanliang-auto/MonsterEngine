@@ -70,7 +70,7 @@ namespace EAssignKeysBinding
     constexpr uint32 TilesTouched  = 3;  // storage buffer (read): uint[]
 
     // Output
-    constexpr uint32 SortKeys      = 4;  // storage buffer (write): uint64_t[] (tile<<32 | depth)
+    constexpr uint32 SortKeys      = 4;  // storage buffer (write): uvec2[] (low depth, high tile; 8-byte stride) (tile<<32 | depth)
     constexpr uint32 SortValues    = 5;  // storage buffer (write): uint32[] (Gaussian index)
     constexpr uint32 DispatchState = 6;
     constexpr uint32 ConicOpacity = 7; ///< Projected FP32 conic and opacity.
@@ -128,7 +128,7 @@ static_assert(sizeof(FRadixSortPushConstants) == 16, "FRadixSortPushConstants mu
 /** Descriptor set bindings for radix sort histogram (Set 0) */
 namespace ERadixHistogramBinding
 {
-    constexpr uint32 SortKeys    = 0;  // storage buffer (read): uint64_t[]
+    constexpr uint32 SortKeys    = 0;  // storage buffer (read): uvec2[] (low depth, high tile; 8-byte stride)
     constexpr uint32 Histogram   = 1;  // storage buffer (write): uint32[RADIX_SORT_BINS * numWorkgroups]
     constexpr uint32 DispatchState = 2;
     constexpr uint32 Count       = 3;
@@ -140,8 +140,8 @@ namespace ERadixHistogramBinding
  */
 namespace ERadixScatterBinding
 {
-    constexpr uint32 SortKeysIn    = 0;  // storage buffer (read):  uint64_t[]   (binding 0: KeysIn)
-    constexpr uint32 SortKeysOut   = 1;  // storage buffer (write): uint64_t[]   (binding 1: KeysOut)
+    constexpr uint32 SortKeysIn    = 0;  // storage buffer (read):  uvec2[] (low depth, high tile; 8-byte stride)   (binding 0: KeysIn)
+    constexpr uint32 SortKeysOut   = 1;  // storage buffer (write): uvec2[] (low depth, high tile; 8-byte stride)   (binding 1: KeysOut)
     constexpr uint32 SortValuesIn  = 2;  // storage buffer (read):  uint32[]      (binding 2: ValuesIn)
     constexpr uint32 SortValuesOut = 3;  // storage buffer (write): uint32[]      (binding 3: ValuesOut)
     constexpr uint32 Histogram     = 4;  // storage buffer (read):  uint32[RADIX_SORT_BINS * numWorkgroups] (binding 4: HistogramBuf)
@@ -166,7 +166,7 @@ static_assert(sizeof(FTileBoundariesPushConstants) == 12, "FTileBoundariesPushCo
 /** Descriptor set bindings for tile boundaries (Set 0) */
 namespace ETileBoundariesBinding
 {
-    constexpr uint32 SortKeys = 0;  // storage buffer (read): uint64_t[] (sorted by tile→depth)
+    constexpr uint32 SortKeys = 0;  // storage buffer (read): uvec2[] (low depth, high tile; 8-byte stride) (sorted by tile→depth)
     constexpr uint32 TileRanges = 1; // storage buffer (write): uvec2[] (start, end per tile)
     constexpr uint32 DispatchState = 2;
     constexpr uint32 Count      = 3;

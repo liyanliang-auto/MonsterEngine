@@ -24,6 +24,10 @@ public:
     FViewerStatus OpenScene(const FSceneDescriptor&);
     /** Touch deltas modify shared orbital camera; stale Surface inputs are rejected. */
     void ApplyCameraInput(const FCameraInputState&);
+    /** Validate an orbit pose without requiring a device. */
+    static bool IsValidOrbitCameraPreset(const FViewerOrbitCameraPreset&);
+    /** Owner-only startup/reset pose; null restores the original generic orbit. */
+    FViewerStatus SetOrbitCameraPreset(std::optional<FViewerOrbitCameraPreset>);
     /** Quality-only changes apply directly; capacity changes require scene re-admission. */
     void ApplySettings(const FViewerConfig&);
     /** Record shared compute and fullscreen presentation into an acquired command list.
@@ -33,6 +37,11 @@ public:
     void OnSubmitted(RHI::FGPUCompletionToken);
     /** Clamp to admitted maximum edge/pixels; recreate with old+new overlap charged. */
     FViewerStatus ResizeInternal(uint32_t, uint32_t);
+    /** Owner-only metadata for the attached visible view; zero/invalid clears external filtering policy. */
+    void SetPresentationDisplayExtent(uint32_t width, uint32_t height);
+    /** Pure bounded policy; native upscaling and absent/invalid display extents retain zero extra gain. */
+    static FViewerPresentationScalePolicy EvaluatePresentationScale(uint32_t renderWidth, uint32_t renderHeight,
+        uint32_t presentationWidth, uint32_t presentationHeight, uint32_t displayWidth, uint32_t displayHeight);
     /** Stop recording; safe scene release remains explicit. */
     void Suspend();
     /** Cancel/join preparation and retire GPU resources while device is alive. */

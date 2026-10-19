@@ -10,7 +10,7 @@ import java.io.File
 class ViewerSettingsStore(context: Context) {
     private val app = context.applicationContext
     private val file = AtomicFile(File(app.filesDir, "viewer-settings.json"))
-    data class Saved(val requested: ViewerConfig, val effective: ViewerConfig? = null)
+    data class Saved(val requested: ViewerConfig, val effective: ViewerConfig? = null, val selectedSceneId: String = "")
 
     fun load(): Saved {
         checkWorker()
@@ -26,13 +26,19 @@ class ViewerSettingsStore(context: Context) {
             val json = JSONObject(String(bytes,0,used,Charsets.UTF_8))
             require(json.getInt("schemaVersion") == VIEWER_SCHEMA_VERSION)
             Saved(validate(ViewerConfig.fromJson(json.getJSONObject("requested"))),
-                json.optJSONObject("effective")?.let { validate(ViewerConfig.fromJson(it)) })
+                json.optJSONObject("effective")?.let { validate(ViewerConfig.fromJson(it)) },
+                json.optString("selectedSceneId", ""))
         }
     }
-    fun save(requested: ViewerConfig, effective: ViewerConfig? = null) {
+    fun save(requested: ViewerConfig, effective: ViewerConfig? = null, selectedSceneId: String? = null) {
         checkWorker(); validate(requested); effective?.let { validate(it) }
-        val bytes = JSONObject().put("schemaVersion", VIEWER_SCHEMA_VERSION).put("requested", requested.toJson())
-            .put("effective", effective?.toJson() ?: JSONObject.NULL).toString().toByteArray(Charsets.UTF_8)
+        // Validate existing input even for explicit writes; preserve unknown/corrupt envelopes.
+        val saved = load()
+        val retainedSceneId = selectedSceneId ?: saved.selectedSceneId
+        val json = JSONObject().put("schemaVersion", VIEWER_SCHEMA_VERSION).put("requested", requested.toJson())
+            .put("effective", effective?.toJson() ?: JSONObject.NULL)
+        json.put("selectedSceneId", retainedSceneId.take(512))
+        val bytes = json.toString().toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_BYTES)
         val output = file.startWrite()
         try { output.write(bytes); file.finishWrite(output) } catch (error: Exception) { file.failWrite(output); throw error }

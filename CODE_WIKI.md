@@ -1,6 +1,6 @@
 # MonsterEngine Code Wiki
 
-更新：2026-10-18（北京时间）。用途：AI方案与开发的源码导航；不是功能验收报告。
+更新：2026-10-20（北京时间）。用途：AI方案与开发的源码导航；不是功能验收报告。
 本轮起始仓库 HEAD：`e275df73277eb58d65e2a9fe6221ee7f707815b8`；工作区含未提交修改，HEAD不能单独代表当前内容。
 已知原有修改包括 `Source/Renderer/Splat/Streaming/SplatGPUPagePool.cpp` 以及未跟踪开发文档/素材；后续开发不得覆盖。
 本索引以当前源码为准；历史性能、测试数量仅在对应文档和构建身份下成立。
@@ -12,7 +12,7 @@
 - 原生Vulkan Compute 3DGS、稳定Radix排序、16×16 Tile合成。
 - 具备PLY加载、离线LOD、后台分页、GPU驻留预算、相机序列和遥测。
 - Android已有Gradle客户端、JNI、单原生渲染owner与双ABI monster_android构建target；完整构建/模拟器验收以本轮实际日志为准。
-- 尚无物理手机；ARM真机、实际16KiB页运行、图像质量阈值与AC17长测未获验收，不能由源码或语法检查外推。
+- 当前可用真机为 Xiaomi 2307BRPDCC 平板（Android15、Adreno730、Vulkan1.1.128、无shaderInt64、4KiB页）；本轮真实渲染/恢复仍待验收，实际16KiB、图像阈值与AC17不能由源码检查外推。
 - 不要把前述百万高斯桌面展示结果外推到手机；小场景与能力探针需单独验收。
 
 ## 2. 目录职责
@@ -61,6 +61,9 @@ main.cpp
 - `Include/SplatSceneApplication.h` / `Source/SplatSceneApplication.cpp`：组合场景、相机、LOD、GPU页池、Benchmark、ImGui及present。
 - 关键方法：`onInitialize`、`onUpdate`、`onRender`、`destroyScene`、`loadModel`、`initSplatPipeline`、`initPresentPass`、`onShutdown`、`onWindowResize`。
 - `FSplatViewerSession`：平台无关场景worker准备、相机、分块上传、compute、fullscreen present和诊断；Windows普通D路径和Android共用。桌面实验/导出/ImGui仍属Windows shell。
+- Android `ViewerSurfaceView` 将有界 producer 尺寸与可见 view 尺寸按同一 Surface generation 经 `NativeBridge`/JNI 传入 `AndroidRenderHost::FWindow`。owner 的 `ResizeForWindow` 在 attach/恢复/retry 时同步 `SetPresentationDisplayExtent`；退休清除。producer/账户上限不因此增加。
+- `FSplatViewerSession::EvaluatePresentationScale` 是纯数值策略：有效尺寸不超过16384、外部放大时最多0.22局部对比增益；已有原生上采样时不叠加。`FViewerPresentationPushConstants` 现为8字节（sRGB selector + compositor gain），对应 `splat_present.frag`；无外部放大保持原直接路径。实际render/WSI/view尺寸、外部scale/gain进入typed诊断，效果须由匹配构建实屏验证。
+- session owner 最多每秒通过现有 `VulkanDevice::getMemoryStats` 采样一次 `vulkanManagedLiveBytes`、`vulkanManagedBackingBytes`、`vulkanPooledUnusedBytes`。含host-visible staging，缺少opaque WSI/driver/fallback分配，不能称为完整物理VRAM；未采样为null，backing加法检查溢出。Android进程PSS/RSS另用系统实测记录。
 - `FSplatStreamingController`：共享D模式选择、后台读取、传输lease、页池、active set和真实submission关联。
 - `LOD/SplatLODRuntimeOptions.cpp`：Windows/Android共享的严格运行配置解析与校验；Benchmark记录和图像导出仍留在桌面shell。
 - `FProcessRuntimeLease`同时固定两套现有allocator生命周期；renderer/build owner与工作线程退休后才归还。
@@ -88,8 +91,8 @@ main.cpp
 - `Shaders/Splat/splat_preprocess.comp`：协方差投影、SH颜色、Tile覆盖与可见性。
 - `Shaders/Splat/Sort`：scan、indirect args、键分配、稳定排序、tile边界。
 - `Shaders/Splat/Render/splat_render.comp`：16×16工作组，rgba8 storage image，前到后透明度合成；原路径和共享batch64可切换。
-- 排序键实际包含uint64_t；“48位排序”仍不能据此当作不需要shaderInt64。
-- scatter有subgroup扩展声明，但当前主体用32位shared flags/atomicOr/bitCount；扩展声明不等于实际subgroup指令需求。应核查最终SPIR-V capabilities。
+- 排序键在GPU中使用uvec2（低字depth、高字tile），保持8字节ABI及完整64位信息；radix按低字/高字提取字节，48/64位排序与稳定性契约保留，不要求shaderInt64。
+- scatter使用32位shared flags/atomicOr/bitCount，已去除未使用的Int64/subgroup扩展；仍以最终SPIR-V capabilities及实际GPU回归为准。
 - 各Pass常用256线程；手机兼容性需检查invocations、各轴大小和compiled shared-memory用量。
 - RGB21F投影颜色压缩与SH FP16是独立开关；不要合并成单一“FP16优化”。
 - `SplatSplitFusionPass`和fusion shader已存在，但不能自动计入Android首版验证范围。
@@ -98,7 +101,7 @@ main.cpp
 
 - `SplatTypes.h::SplatShaderPath`：优先MONSTER_SPLAT_SHADER_DIR，再编译定义，再fallback路径。
 - `ShaderCompiler::readFileBytes`支持注入IResourceProvider；Android资源provider从APK读取并对inventory大小/hash校验，必要时持久化私有cache。compileFromFile仍是host工具路径。
-- `cmake/SplatLODStreaming.cmake`用host glslc/spirv-val离线编译并生成最终SPIR-V需求/身份清单，target-env=vulkan1.2；AndroidAssets生成双ABI独立资源树，Gradle merge依赖原生/资源生成。
+- `cmake/SplatLODStreaming.cmake`用host glslc/spirv-val离线编译并生成最终SPIR-V需求/身份清单，target-env=vulkan1.1（SPIR-V1.3）；AndroidAssets生成双ABI独立资源树，Gradle merge依赖原生/资源生成。
 - 不要把已有离线编译描述为全无Shader构建系统，也不要依赖Windows生成目录在Android存在。
 
 ## 5. LOD与Streaming
@@ -128,7 +131,7 @@ main.cpp
 - `beginFrame`/`presentFrame`/`cancelFrame`返回真实acquire/submit/present结果和completion token；录制不算提交。移动端强制单采样，上传帧无输出也须提交并建立WSI布局。
 - Android owner在beginFrame之后显式begin/end命令录制；WSI预算按格式/样本/请求图像数+2预留并校验实际图像数量，opaque驱动分配仍非测量。`VK_SUBOPTIMAL_KHR`保留已提交帧与读回有效性，不单独触发静止Surface的swapchain重建；`VK_ERROR_OUT_OF_DATE_KHR`触发重建，`SURFACE_LOST`走detach/重新attach，`DEVICE_LOST`走受限恢复。upright渲染要求Surface支持IDENTITY变换，否则明确拒绝；不假称已做预旋转。
 - Compute离屏行序为bottom-up，present负高度viewport与诊断PNG编码分别转换到显示方向；PNG元数据rowOrigin=top_left。导出报告nativeReportScope=library_load_only区分初始加载报告与viewer当前GPU阶段观察。
-- instance要求Vulkan1.2；logical device仅请求已支持/实际需要的features。AndroidCapabilities区分支持/启用/执行，实际owner device需UUID等身份唯一匹配报告。
+- instance/共享设备底线为Vulkan1.1；AndroidCapabilities按选定最终Shader manifest计算最低API与features，区分支持/启用/执行，实际owner device需UUID等身份唯一匹配报告。无窗口预检只证明静态准入，不能冒充Surface/present通过；真实owner附着独占WSI验证，不再为同一窗口创建额外探针Surface。
 - timestamp代码已有validBits/period与延迟resolve；Android还需实际队列/完成验证。
 - 内存层包含FVulkanMemoryManager、FVulkanResourceManager以及VulkanBuffer/Texture，必须沿真实创建路径核对actual backing。
 
@@ -148,6 +151,13 @@ main.cpp
 
 - `AndroidJNI::InspectPrivatePath/Confined` 区分缺失条目的 ENOENT/not_found 与权限、ENOTDIR 等检查失败；只有 `mayNotExist` 允许不存在的末级，且父级须为现存目录。文件根别名从首个 canonical 匹配点确定，根下符号链接（含悬空链接）、缺失祖先、遍历与越界仍拒绝；`BuildJobStore` 可保留尚不存在的 journal/output 名称。
 - `NativeBridge.createBuild` 保持返回 `NativeHandle`；失败时立即在同一 worker 消费 JNI `nativeTakeBuildCreationError` 的有界阶段/原因，再经 `takeBuildCreationFailure()` 写入 `LodBuildService` 私有任务错误。原生和 Kotlin 失败缓存均按线程隔离并消费清除，诊断包含私有细节，不直接作为公开导出内容。检查点兼容、显式恢复与原子发布契约不变。
+- Android 默认资产由 `prepare_assets.py --prepare-lod` 使用 host `SplatMobileLODBuilder` 从完整指定 PLY 离线派生；`build_android.ps1 -LodBuilder` / `SPLAT_MOBILE_LOD_BUILDER` 指定真实工具，源/配置/工具身份选择 `build/android-builtin-lod` 缓存。CMake 要求准备好的 `builtin-lod.json`；APK 打包 `scenes/bonsai-lod/scene.mgs` 与分页，不打包超限原始 PLY。JNI materialize 清单引用的受限分页后执行原生场景验证；64MiB 单资源与32MiB/10万条直接PLY限制保留。具体构建/运行结果见 `specs/20261018-223900-xymn`，此处只描述源码契约。
+- Kotlin `ObservedFpsSampler` 要求相同 scene/surface 上 frameId 与 submissionToken 连续推进，读取原生 `payload.diagnostics.latest` 的 submit/present-return cadence；生命周期 epoch 拒绝旧轮询回复，主线程单调时钟3000ms过期检查不依赖I/O worker返回。Gradle `MONSTER_ANDROID_FPS_OVERLAY` 同步 native/BuildConfig，默认关闭且不安排FPS专用轮询。设置保留已选场景，未知/损坏schema明确失败并保留原始文件。外部默认模型来源/授权未核验，不能沿用旧程序化模型许可声明。
+
+- Android builtin 相机只从 inventory 验证的 `default-viewer.json` 读取，经有限值、向量尺寸、距离、FOV/裁剪面与 roll 校验后附在 native 内部 descriptor；JNI 仅对匹配 builtin ID/路径/hash 注入。`FSplatViewerSession::SetOrbitCameraPreset` 将 eye/target 转为 orbit，roll 旋转正交 right/up，初始和复位使用同一姿态；离开 builtin 恢复通用 orbit，Windows/用户场景协议不增加字段。
+- 当前画质优先默认与显式“最高画质”请求为：最长边1920、2073600像素、active上限1000000、sort上限4500000、source GPU224MiB、CPU24MiB/单读取worker、LOD阈值0.1像素、完整SH3/FP32、融合及颜色压缩关闭。CPU额度仍须通过manifest/workspace与worker最小进度预检；排序和诊断截图都占用768MiB聚合账户。真实GPU预检和临界压力暂停仍生效，这不是全量叶驻留或设备支持承诺。旧设置继续优先，只有用户点击档位按钮才显式保存新请求，不改场景选择。实际尺寸/活跃数/账户与画面效果见本轮日志，不能由配置推断验收。
+
+- `ViewerController` 的导入/创建/诊断/关闭共用进程级单串行 I/O executor；Activity `close()` 将旧任务后的原生退休排入同一 FIFO，新 Activity 初始化随后执行，UI不等待join。`NativeBridge.destroy` 使用返回真实结果的 `nativeRetireOwner`，registry移除、owner Stop/join及资源释放后才确认，失败时保留旧句柄/场景lease并阻止新创建；旧的void JNI符号只为兼容保留。线程级renderer创建诊断含阶段/原生原因/创建前账户，立即由同worker消费，原始细节仅写私有 `viewer-initialization-error.json` / `viewer-owner-lifecycle.json`，不纳入公开报告。创建失败不再误报成保存场景缺失。当前验证见 `specs/20261019-085641-s4yf`，前轮生命周期FAIL证据保留。
 
 ## 8. 相关计划与证据
 

@@ -703,6 +703,9 @@ namespace MonsterRender::RHI {
         // Vulkan backend can use this raw module handle directly.
         uint64 vkVertexShaderModule = 0;
         uint64 vkPixelShaderModule = 0;
+        /** Optional explicit graphics layout, retained for the pipeline lifetime.
+         * An absent layout keeps the existing shader-reflected layout behavior. */
+        TSharedPtr<class IRHIPipelineLayout> pipelineLayout;
     };
 
     // Compute pipeline state description

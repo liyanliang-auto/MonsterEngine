@@ -1,0 +1,92 @@
+[
+  {
+    "mode": 0,
+    "storage": "FP32",
+    "capturedUTC": "2026-10-17T01:54:47.809Z",
+    "window": {
+      "app": "process:D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\MonsterEngine.exe",
+      "id": 112135148,
+      "title": "Monster Engine - 3DGS Splat [Vulkan] - Render FPS: 38"
+    },
+    "screenshot": {
+      "id": "screenshot-0",
+      "width": 962,
+      "height": 570,
+      "mime": "data:image/jpeg"
+    },
+    "titleFPS": 38,
+    "method": "@oai/sky.get_window_state",
+    "savedUnmodified": true,
+    "path": "bicycle-sh32-window-fps.jpg",
+    "sha256": "0f72377cacec1b4253f0a50bcc6c24294a6aa07e76e0f6043618e788d7c0112e",
+    "supportingEvidence": {
+      "runtime-config.json": {
+        "path": "evidence/window-display-mode0/runtime-config.json",
+        "sha256": "a7ccaa0e3c0cf95a22b9d1a59abfb1d04e85f617e2c86dd62924a62c9a673b15"
+      },
+      "metadata.json": {
+        "path": "evidence/window-display-mode0/metadata.json",
+        "sha256": "1fd5224b517cfb44238d164b7e480437616d6a3361d6a2fc1f671d1880b2cf00"
+      },
+      "stdout.log": {
+        "path": "evidence/window-display-mode0/stdout.log",
+        "sha256": "849c9b3d2f3ffdf184bf10c6fdad5d42502db7cd478f5262ea3330d7387125cf"
+      },
+      "stderr.log": {
+        "path": "evidence/window-display-mode0/stderr.log",
+        "sha256": "bc387c2cbaa57ac5b6afa3173e2f040ae3bf0d89e2830adc547e121b45043900"
+      }
+    },
+    "effectiveModeVerified": 0,
+    "identityVerified": true,
+    "displaySessionStatus": "FAILED",
+    "excludedFromTimingPair": true,
+    "originalFormat": "JPEG as returned by sky; no crop/resize/reencoding/title edit",
+    "pairedFPS": 37.6577259760379
+  },
+  {
+    "mode": 1,
+    "storage": "packed FP16 storage / FP32 evaluation",
+    "capturedUTC": "2026-10-17T01:56:40.629Z",
+    "window": {
+      "app": "process:D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\MonsterEngine.exe",
+      "id": 64102160,
+      "title": "Monster Engine - 3DGS Splat [Vulkan] - Render FPS: 36"
+    },
+    "screenshot": {
+      "id": "screenshot-0",
+      "width": 962,
+      "height": 570,
+      "mime": "data:image/jpeg"
+    },
+    "titleFPS": 36,
+    "method": "@oai/sky.get_window_state",
+    "savedUnmodified": true,
+    "path": "bicycle-sh16-window-fps.jpg",
+    "sha256": "a81cfc9f271d97f1740b841f17713e59032bf35488a1494abc0f2d0f8e2a244f",
+    "supportingEvidence": {
+      "runtime-config.json": {
+        "path": "evidence/window-display-mode1/runtime-config.json",
+        "sha256": "15ae323d77cb30f8ea274d8f1a04d7c906f4fe064e8ebb7a23cf712461660cb0"
+      },
+      "metadata.json": {
+        "path": "evidence/window-display-mode1/metadata.json",
+        "sha256": "0d192ce5730287267cd30911b6e72d304ebae029e70732104c99b4d75ef660de"
+      },
+      "stdout.log": {
+        "path": "evidence/window-display-mode1/stdout.log",
+        "sha256": "7d2804ec52c4a886696a9f740fde7b38d1c66a498aaaf728ccde764afe674b63"
+      },
+      "stderr.log": {
+        "path": "evidence/window-display-mode1/stderr.log",
+        "sha256": "8f4a382f6ad261fa7373836d86671c01b504e0d4ecddf2863e07ebed61dba382"
+      }
+    },
+    "effectiveModeVerified": 1,
+    "identityVerified": true,
+    "displaySessionStatus": "FAILED",
+    "excludedFromTimingPair": true,
+    "originalFormat": "JPEG as returned by sky; no crop/resize/reencoding/title edit",
+    "pairedFPS": 37.222444224540574
+  }
+]

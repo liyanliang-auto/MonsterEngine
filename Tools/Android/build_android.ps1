@@ -6,6 +6,7 @@ param(
     [switch]$RequireSigning,
     [string]$OutputDirectory,
     [string]$InitScript,
+    [string]$LodBuilder,
     [int]$VersionCode = 1,
     [string]$VersionName = '0.1.0'
 )
@@ -52,8 +53,13 @@ try {
     $glslc = Resolve-HostTool 'SPLAT_GLSLC' 'glslc'
     $spirv = Resolve-HostTool 'SPLAT_SPIRV_VAL' 'spirv-val'
     $python = Resolve-HostTool 'Python3_EXECUTABLE' 'python'
+    if ($LodBuilder) { $env:SPLAT_MOBILE_LOD_BUILDER = (Resolve-Path -LiteralPath $LodBuilder).Path }
+    $lodBuilderTool = Resolve-HostTool 'SPLAT_MOBILE_LOD_BUILDER' 'SplatMobileLODBuilder'
+    $lodRoot = if ($env:MONSTER_ANDROID_BUILTIN_LOD_DIR) { [IO.Path]::GetFullPath($env:MONSTER_ANDROID_BUILTIN_LOD_DIR) } else { Join-Path $repo 'build/android-builtin-lod' }
+    Invoke-Checked $python @((Join-Path $repo 'Tools/Android/prepare_assets.py'),'--prepare-lod','--source-root',$repo,'--builder',$lodBuilderTool,'--output',$lodRoot)
+    $report.builtinLOD = Get-Content -LiteralPath (Join-Path $lodRoot 'builtin-lod.json') -Raw | ConvertFrom-Json
     $report.hostTools = @()
-    foreach ($tool in @($glslc,$spirv,$python)) {
+    foreach ($tool in @($glslc,$spirv,$python,$lodBuilderTool)) {
         $report.hostTools += @{ name=[IO.Path]::GetFileName($tool); sha256=(Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant() }
     }
     $signingNames = @('MONSTER_KEYSTORE','MONSTER_KEYSTORE_PASSWORD','MONSTER_KEY_ALIAS','MONSTER_KEY_PASSWORD')
@@ -66,7 +72,7 @@ try {
     $report.gitHead = (& git -C $repo rev-parse HEAD | Out-String).Trim()
     $report.workspaceDirty = [bool]((& git -C $repo status --porcelain | Out-String).Trim())
     $report.sourceInventory = @()
-    $sourceFiles = @(& git -C $repo ls-files --cached --others --exclude-standard -- Include Source Shaders cmake Tools/Android android/app/src android/app/build.gradle.kts android/gradle android/build.gradle.kts android/settings.gradle.kts CMakeLists.txt)
+    $sourceFiles = @(& git -C $repo ls-files --cached --others --exclude-standard -- Include Source Shaders cmake Tools/Android android/app/src android/app/build.gradle.kts android/gradle android/build.gradle.kts android/settings.gradle.kts CMakeLists.txt resources/android resources/point_cloud/bonsai_30k.ply)
     foreach ($relative in ($sourceFiles | Sort-Object -Unique)) {
         $source = Join-Path $repo $relative
         if (Test-Path -LiteralPath $source -PathType Leaf) { $report.sourceInventory += @{ path=$relative; sha256=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() } }

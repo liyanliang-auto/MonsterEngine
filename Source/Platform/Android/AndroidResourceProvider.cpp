@@ -7,7 +7,10 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <stdexcept>
+#include <tuple>
 #if PLATFORM_ANDROID
 #include <android/asset_manager.h>
 #include <cerrno>
@@ -47,13 +50,27 @@ void PublishFile(const std::filesystem::path& target, const std::vector<uint8_t>
             if (written <= 0) throw std::runtime_error("Resource cache write failed");
             done += static_cast<size_t>(written);
         }
+        // The cache is derived from the signed APK inventory and re-verified
+        // (size/mtime, then full hash) on reuse, so a lost flush only costs a
+        // re-materialization. Keep the atomic rename without per-file directory
+        // fsync, which otherwise dominates first-launch materialization.
         if (::fsync(output.value) != 0) throw std::runtime_error("Resource cache flush failed");
-        FFileDescriptor directory;
-        directory.value = ::open(target.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-        if (directory.value < 0) throw std::runtime_error("Cannot open resource cache parent");
         if (::rename(temporary.c_str(), target.c_str()) != 0) throw std::runtime_error("Resource cache atomic publication failed");
-        if (::fsync(directory.value) != 0) throw std::runtime_error("Resource cache directory flush failed");
     } catch (...) { ::unlink(temporary.c_str()); throw; }
+}
+// Process-wide cache hits: a materialized file that was just written from
+// verified APK bytes, or hashed once in this process, need not be re-hashed for
+// every owner recreation. Keys include size and modification time.
+std::mutex VerifiedMutex;
+std::set<std::tuple<std::string, uint64_t, int64_t, int64_t>> VerifiedFiles;
+bool CacheVerified(const std::filesystem::path& target, const struct stat& status) {
+    std::lock_guard lock(VerifiedMutex);
+    return VerifiedFiles.count({target.string(), uint64_t(status.st_size), int64_t(status.st_mtim.tv_sec), int64_t(status.st_mtim.tv_nsec)}) != 0;
+}
+void RememberVerified(const std::filesystem::path& target, const struct stat& status) {
+    std::lock_guard lock(VerifiedMutex);
+    if (VerifiedFiles.size() >= 8192) VerifiedFiles.clear();
+    VerifiedFiles.emplace(target.string(), uint64_t(status.st_size), int64_t(status.st_mtim.tv_sec), int64_t(status.st_mtim.tv_nsec));
 }
 #endif
 }
@@ -147,12 +164,25 @@ bool FAndroidResourceProvider::ResolveValidatedFile(const std::string& logical, 
         // Reject a final-component symlink even if it resolves inside the cache.
         struct stat status{};
         const bool regular = ::lstat(target.c_str(), &status) == 0 && S_ISREG(status.st_mode) && status.st_uid == ::getuid();
-        if (regular && files.ResolveValidatedFile(logical, path, error)) return true;
+        if (regular && CacheVerified(target, status)) { path = target.string(); error.clear(); return true; }
+        if (regular) {
+            std::vector<uint8_t> cached;
+            if (files.ReadBytes(logical, cached, error)) {
+                struct stat after{};
+                if (::lstat(target.c_str(), &after) != 0 || after.st_size != status.st_size ||
+                    after.st_mtim.tv_sec != status.st_mtim.tv_sec || after.st_mtim.tv_nsec != status.st_mtim.tv_nsec)
+                    throw std::runtime_error("Resource cache changed while validating");
+                RememberVerified(target, status); path = target.string(); error.clear(); return true;
+            }
+        }
         std::vector<uint8_t> bytes;
         if (!ReadVerified(logical, bytes, error)) return false;
         PublishFile(target, bytes);
-        // Verify the published file again before exposing an ordinary-file path.
-        return files.ResolveValidatedFile(logical, path, error);
+        struct stat published{};
+        if (::lstat(target.c_str(), &published) != 0 || !S_ISREG(published.st_mode) || published.st_uid != ::getuid() ||
+            uint64_t(published.st_size) != uint64_t(bytes.size()))
+            throw std::runtime_error("Resource cache publication verification failed");
+        RememberVerified(target, published); path = target.string(); error.clear(); return true;
     } catch (const std::exception& exception) { path.clear(); error = exception.what(); return false; }
 #else
     (void)logical;

@@ -8,7 +8,6 @@
 // https://github.com/MircoWerner/VkRadixSort
 
 #version 450
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
 #define WORKGROUP_SIZE 256
 #define RADIX_SORT_BINS 256U
@@ -20,7 +19,7 @@ layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 // ============================================================================
 
 layout(std430, set = 0, binding = 0) readonly buffer KeysIn {
-    uint64_t keys[];
+    uvec2 keys[]; // low depth word, high tile word; unchanged 8-byte stride
 };
 
 layout(std430, set = 0, binding = 1) buffer HistogramOut {
@@ -69,7 +68,8 @@ void main() {
         uint elementId = wID * pc.g_num_blocks_per_workgroup * WORKGROUP_SIZE
                        + block * WORKGROUP_SIZE + lID;
         if (elementId < numElements) {
-            uint bin = uint(keys[elementId] >> pc.g_shift) & (RADIX_SORT_BINS - 1u);
+            uint word = pc.g_shift < 32u ? keys[elementId].x : keys[elementId].y;
+            uint bin = (word >> (pc.g_shift & 31u)) & (RADIX_SORT_BINS - 1u);
             atomicAdd(histogram[bin], 1U);
         }
     }

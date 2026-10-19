@@ -2,9 +2,9 @@
 
 The test APK uses framework Instrumentation and a test-only DocumentsProvider;
 there are no added AndroidX/JUnit dependencies or production configuration seams.
-The runner class is `com.monsterengine.viewer.AndroidContractInstrumentation`.
-Supply `defaultConfig.testInstrumentationRunner` through the local verification
-init script when building `:app:assembleDebugAndroidTest`.
+The runner class is `com.monsterengine.viewer.AndroidContractInstrumentation`; the
+test manifest declares it as the APK's `<instrumentation>`, so
+`:app:assembleDebugAndroidTest` is runnable without any extra Gradle property.
 
 Install the matching production and test APKs without uninstalling existing data.
 Run only after the foreground build worker retires: instrumentation starts the

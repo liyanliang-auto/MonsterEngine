@@ -1,0 +1,375 @@
+{
+  "status": "PASS",
+  "scope": "One short pair; no confidence interval or cross-device claim",
+  "timingsMilliseconds": {
+    "0": {
+      "Preprocess": {
+        "count": 301,
+        "mean": 3.9212973289036546,
+        "median": 3.52496,
+        "p95": 5.842976
+      },
+      "Raster": {
+        "count": 301,
+        "mean": 6.9444695813953485,
+        "median": 6.511136,
+        "p95": 8.6016
+      },
+      "WholeFrame": {
+        "count": 301,
+        "mean": 25.663271973421928,
+        "median": 25.009024,
+        "p95": 29.49792
+      },
+      "FrameInterval": {
+        "count": 301,
+        "mean": 26.554975747508305,
+        "median": 26.1262,
+        "p95": 30.4156
+      },
+      "activeCountRange": [
+        6131954,
+        6131954
+      ],
+      "sortCountRange": [
+        4349760,
+        4349768
+      ],
+      "FPS": 37.6577259760379
+    },
+    "1": {
+      "Preprocess": {
+        "count": 298,
+        "mean": 3.7829588187919465,
+        "median": 3.145216,
+        "p95": 5.855860799999999
+      },
+      "Raster": {
+        "count": 298,
+        "mean": 6.913571114093959,
+        "median": 6.5164159999999995,
+        "p95": 7.985647999999998
+      },
+      "WholeFrame": {
+        "count": 298,
+        "mean": 26.196040805369126,
+        "median": 25.925552000000003,
+        "p95": 28.665996799999995
+      },
+      "FrameInterval": {
+        "count": 298,
+        "mean": 26.865511409395975,
+        "median": 26.66225,
+        "p95": 29.232
+      },
+      "activeCountRange": [
+        6131954,
+        6131954
+      ],
+      "sortCountRange": [
+        4349760,
+        4349767
+      ],
+      "FPS": 37.222444224540574
+    }
+  },
+  "changePercent": {
+    "Preprocess": -3.5278760703000733,
+    "Raster": -0.44493631859470195,
+    "WholeFrame": 2.0759972948849237,
+    "FrameInterval": 1.1694066861153374,
+    "FPS": -1.1558896354344483
+  },
+  "memoryBytes": {
+    "0": {
+      "shLogicalBytes": 1177335168,
+      "shTailPaddingBytes": 0,
+      "sourceLogicalBytes": 1496196776,
+      "sourceReservedBytes": 1496196784,
+      "sourceBackingBytes": 1496196784,
+      "shReservedBytes": 1177335168,
+      "shBackingBytes": 1177335168,
+      "shRequiredAllocationBytes": 1177335168,
+      "shAllocationAlignmentBytes": 16,
+      "initialUploadPayloadBytes": 1496196776,
+      "initialUploadStagingLogicalBytes": 33554392,
+      "initialUploadStagingAlignmentBytes": 16,
+      "initialUploadStagingPeakBackingBytes": 33554400,
+      "allocator_pooled_reserved_bytesRange": [
+        0,
+        0
+      ],
+      "allocator_pooled_used_bytesRange": [
+        0,
+        0
+      ],
+      "allocator_dedicated_committed_bytesRange": [
+        3564195024,
+        3564195024
+      ],
+      "driverProcessVRAMBytes": "unavailable"
+    },
+    "1": {
+      "shLogicalBytes": 588667584,
+      "shTailPaddingBytes": 0,
+      "sourceLogicalBytes": 907529192,
+      "sourceReservedBytes": 907529200,
+      "sourceBackingBytes": 907529200,
+      "shReservedBytes": 588667584,
+      "shBackingBytes": 588667584,
+      "shRequiredAllocationBytes": 588667584,
+      "shAllocationAlignmentBytes": 16,
+      "initialUploadPayloadBytes": 907529192,
+      "initialUploadStagingLogicalBytes": 33554412,
+      "initialUploadStagingAlignmentBytes": 16,
+      "initialUploadStagingPeakBackingBytes": 33554416,
+      "allocator_pooled_reserved_bytesRange": [
+        0,
+        0
+      ],
+      "allocator_pooled_used_bytesRange": [
+        0,
+        0
+      ],
+      "allocator_dedicated_committed_bytesRange": [
+        2975527440,
+        2975527440
+      ],
+      "driverProcessVRAMBytes": "unavailable"
+    }
+  },
+  "memoryReductionBytes": {
+    "shLogicalBytes": 588667584,
+    "shTailPaddingBytes": 0,
+    "sourceLogicalBytes": 588667584,
+    "sourceReservedBytes": 588667584,
+    "sourceBackingBytes": 588667584,
+    "shReservedBytes": 588667584,
+    "shBackingBytes": 588667584,
+    "shRequiredAllocationBytes": 588667584,
+    "shAllocationAlignmentBytes": 0,
+    "initialUploadPayloadBytes": 588667584,
+    "initialUploadStagingLogicalBytes": -20,
+    "initialUploadStagingAlignmentBytes": 0,
+    "initialUploadStagingPeakBackingBytes": -16
+  },
+  "uploadAndConversion": {
+    "0": {
+      "shConversionMilliseconds": 0.0,
+      "initialUploadMilliseconds": 892.6173,
+      "scope": "CPU wall time for buffer creation/staging/copies/waits including packing; SH conversion separately includes validation and packing; excludes PLY parsing; no standalone GPU upload interval"
+    },
+    "1": {
+      "shConversionMilliseconds": 39459.7962,
+      "initialUploadMilliseconds": 37127.212,
+      "scope": "CPU wall time for buffer creation/staging/copies/waits including packing; SH conversion separately includes validation and packing; excludes PLY parsing; no standalone GPU upload interval"
+    }
+  },
+  "images": {
+    "numericStatus": "PASS",
+    "RGB": {
+      "MAE": 1.7451888162672476e-05,
+      "RMSE": 0.00026160806009853653,
+      "PSNRdB": 71.64697759209353,
+      "PSNRInfinite": false,
+      "maxAbsoluteError": 0.00392156862745098,
+      "changedChannels": 27684,
+      "channelCount": 6220800
+    },
+    "RGBA": {
+      "MAE": 1.3088916122004357e-05,
+      "RMSE": 0.00022655922588009882,
+      "PSNRdB": 72.89636495817653,
+      "PSNRInfinite": false,
+      "maxAbsoluteError": 0.00392156862745098,
+      "changedChannels": 27684,
+      "channelCount": 8294400
+    },
+    "alpha": {
+      "MAE": 0.0,
+      "RMSE": 0.0,
+      "PSNRdB": null,
+      "PSNRInfinite": true,
+      "maxAbsoluteError": 0.0,
+      "changedChannels": 0,
+      "channelCount": 2073600
+    },
+    "changedRGBPixels": 27518,
+    "changedRGBAPixels": 27518,
+    "width": 1920,
+    "height": 1080,
+    "gate": {
+      "representation": "normalized linear RGB RGBA8_UNORM",
+      "maeMaximum": 0.00392156862745098,
+      "psnrMinimumDB": 40,
+      "maximumAbsoluteError": 0.06274509803921569,
+      "visualInspectionRequired": true
+    },
+    "visualInspection": "REQUIRED: inspect real images and full native FPS windows",
+    "precisionLimitation": "Linear RGBA8 readback; does not measure errors before output quantization"
+  },
+  "environment": {
+    "cameraSHA256": "777ef4ab36e45b91d49b9766f9b64e932e43f3c5ba4e51ddd5e6768ad4893fa9",
+    "selectionSHA256": "282f65b06dcd2915c83f4404e6ed4f949875788a7038d180f6b52746ab3d938a",
+    "sourceSHA256": "64d357cb25bd85f710f8551a18d830f8497277fbd8c5805adfd72ffe9ca78227",
+    "manifestSHA256": "4c08c3ad1af925dd22d355bfa3d8daa415736ab0d33d00726b0c7fdaea8cbc30",
+    "sequenceSHA256": "2883ea25622b679871b132fbd0387d619a59422041bdf548366b3b4ff7e61f98",
+    "executableSHA256": "e729b8d7def9196dcbae1e6ebc21fe594dc0e462faeb716dbf870ee84bd8d3aa",
+    "device": "NVIDIA GeForce RTX 3060",
+    "driverVersion": "2500395008",
+    "shader_splat_assign_keys.spv": "477c19daadee8ded9aaa398bff4676e6ccbf9d4fc545a5cb7428929dc13b041f",
+    "shader_splat_fusion.spv": "00067376151ed617f7c8a3d6019e3bf8e85d3bb5f9cee4712a51ad6033c23f9d",
+    "shader_splat_fusion_queue_args.spv": "86806beabaec100c05fc758d47481e2dcc30852e19e2bd33e3f716b21c0f9e93",
+    "shader_splat_fusion_split_cheap.spv": "64598aeae5407bc129a9d7af434359b35856fbe0702e4f7d83beba3d37384b71",
+    "shader_splat_fusion_split_clear.spv": "51c7331b6bd8b6035e02921e19d4d5290c299d009e040e6f3c723b64b809679d",
+    "shader_splat_fusion_split_exact.spv": "618ffa2e0b6df8df9b5acbc6a91f03d7c4a3f3752c7cbb33124eca3705ed1140",
+    "shader_splat_fusion_split_fresh.spv": "2978845a4017713d1dd7a293eb84c173215c7c76339906d626d6ec4401066095",
+    "shader_splat_fusion_visible.spv": "671dfb2abc246f9185c61fc2622b53244863f6773b783066d2b13bf35a610553",
+    "shader_splat_prefix_sum.spv": "c81ff075a465f585cad51cb7e9b8d63ce5d88e184ba2f093cd9c03a86a08ac05",
+    "shader_splat_prepare_dispatch.spv": "6a7f9d78ab75a87fdc048d4cd72ac613e992b28c8ff18c29c1167cf0b5e36549",
+    "shader_splat_prepare_split_dispatch.spv": "213c706ec92f3a1db3728b1b00bdd25c6d99bff9c378eca5a1d9d6d1113d497e",
+    "shader_splat_preprocess.spv": "7c786e85e2773bb08ec67c38b20431b523de2c6d4187922c6c1bdf60183d4833",
+    "shader_splat_present.frag.spv": "368f26f7ee53e23992858e8496b92f1eaa144e73ab100b3adbb72273dc427d73",
+    "shader_splat_present.vert.spv": "f90a8520718b7f7589bd5c640ffe631fb475a5492d0de67a9916b5095a42d0ac",
+    "shader_splat_radix_histogram.spv": "77b4377213087d7d73863d22360adfe26ea0f7ecf4479bd70d4f370e03c244c4",
+    "shader_splat_radix_offsets.spv": "93e6ab431926f1627aaecc533a851c03393ec1d65eb868680096482248d07797",
+    "shader_splat_radix_scatter.spv": "1c0e287edd818f23237e4e00362b38ebaf98136adaee88f45f1cef26faedce89",
+    "shader_splat_render.spv": "187d8040bbe3c8342e04ab0551313d531059952ac2c4f84ce33e10861ff20c66",
+    "shader_splat_tile_boundaries.spv": "def9793ef498a96f863b507c279f4dd8de091d52623a501115cc1403b96bf7cf"
+  },
+  "protocol": {
+    "version": 1,
+    "benchmark": true,
+    "vsync": false,
+    "width": 1920,
+    "height": 1080,
+    "activeCapacity": 6131954,
+    "sortCapacity": 64000000,
+    "qualityPixels": 1,
+    "hysteresis": 0.2,
+    "sceneGPUBytes": 2147483648,
+    "cpuCacheBytes": 268435456,
+    "stagingBytes": 33554432,
+    "temporaryGPUBytes": 4294967296,
+    "maxUploadBytesPerFrame": 8388608,
+    "maxConcurrentReads": 2,
+    "retries": 2,
+    "retryDelayMilliseconds": 25,
+    "warmupSeconds": 3,
+    "sampleSeconds": 8,
+    "rounds": 1,
+    "cacheCondition": "unknown",
+    "captureSettleSeconds": 3,
+    "displaySHDegree": 3,
+    "fullLeaf": false,
+    "projectedFusion": false,
+    "mode": "A",
+    "tightTileCulling": 2,
+    "radixSortBlocksPerWorkgroup": 32,
+    "radixSortPhaseTiming": false,
+    "rasterSharedMemoryMode": 1,
+    "benchmarkFixedCameraSeconds": 0,
+    "benchmarkFreezeSelection": true,
+    "functionalSmoke": true,
+    "scene": "D:/code/MonsterEngine/TestFile/3DGSLODStreaming/tight-tile-culling-20261016/baseline/build/bin/Release/resources/3dgs_scenes/bicycle/scene.mgs",
+    "sourcePLY": "D:/code/MonsterEngine/resources/point_cloud/bicycle/point_cloud_30000.ply",
+    "sequence": "D:/code/MonsterEngine/resources/3dgs_sequences/bicycle_lod_mid_far.json"
+  },
+  "inputIdentities": [
+    {
+      "sha256": "e729b8d7def9196dcbae1e6ebc21fe594dc0e462faeb716dbf870ee84bd8d3aa",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\MonsterEngine.exe"
+    },
+    {
+      "sha256": "477c19daadee8ded9aaa398bff4676e6ccbf9d4fc545a5cb7428929dc13b041f",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_assign_keys.spv"
+    },
+    {
+      "sha256": "86806beabaec100c05fc758d47481e2dcc30852e19e2bd33e3f716b21c0f9e93",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_fusion_queue_args.spv"
+    },
+    {
+      "sha256": "64598aeae5407bc129a9d7af434359b35856fbe0702e4f7d83beba3d37384b71",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_fusion_split_cheap.spv"
+    },
+    {
+      "sha256": "51c7331b6bd8b6035e02921e19d4d5290c299d009e040e6f3c723b64b809679d",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_fusion_split_clear.spv"
+    },
+    {
+      "sha256": "618ffa2e0b6df8df9b5acbc6a91f03d7c4a3f3752c7cbb33124eca3705ed1140",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_fusion_split_exact.spv"
+    },
+    {
+      "sha256": "2978845a4017713d1dd7a293eb84c173215c7c76339906d626d6ec4401066095",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_fusion_split_fresh.spv"
+    },
+    {
+      "sha256": "671dfb2abc246f9185c61fc2622b53244863f6773b783066d2b13bf35a610553",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_fusion_visible.spv"
+    },
+    {
+      "sha256": "00067376151ed617f7c8a3d6019e3bf8e85d3bb5f9cee4712a51ad6033c23f9d",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_fusion.spv"
+    },
+    {
+      "sha256": "c81ff075a465f585cad51cb7e9b8d63ce5d88e184ba2f093cd9c03a86a08ac05",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_prefix_sum.spv"
+    },
+    {
+      "sha256": "6a7f9d78ab75a87fdc048d4cd72ac613e992b28c8ff18c29c1167cf0b5e36549",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_prepare_dispatch.spv"
+    },
+    {
+      "sha256": "213c706ec92f3a1db3728b1b00bdd25c6d99bff9c378eca5a1d9d6d1113d497e",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_prepare_split_dispatch.spv"
+    },
+    {
+      "sha256": "7c786e85e2773bb08ec67c38b20431b523de2c6d4187922c6c1bdf60183d4833",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_preprocess.spv"
+    },
+    {
+      "sha256": "368f26f7ee53e23992858e8496b92f1eaa144e73ab100b3adbb72273dc427d73",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_present.frag.spv"
+    },
+    {
+      "sha256": "f90a8520718b7f7589bd5c640ffe631fb475a5492d0de67a9916b5095a42d0ac",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_present.vert.spv"
+    },
+    {
+      "sha256": "77b4377213087d7d73863d22360adfe26ea0f7ecf4479bd70d4f370e03c244c4",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_radix_histogram.spv"
+    },
+    {
+      "sha256": "93e6ab431926f1627aaecc533a851c03393ec1d65eb868680096482248d07797",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_radix_offsets.spv"
+    },
+    {
+      "sha256": "1c0e287edd818f23237e4e00362b38ebaf98136adaee88f45f1cef26faedce89",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_radix_scatter.spv"
+    },
+    {
+      "sha256": "187d8040bbe3c8342e04ab0551313d531059952ac2c4f84ce33e10861ff20c66",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_render.spv"
+    },
+    {
+      "sha256": "def9793ef498a96f863b507c279f4dd8de091d52623a501115cc1403b96bf7cf",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\gpu-resident-20261017-092204-9e3t\\final\\deployed\\splat-shaders\\splat_tile_boundaries.spv"
+    },
+    {
+      "sha256": "4c08c3ad1af925dd22d355bfa3d8daa415736ab0d33d00726b0c7fdaea8cbc30",
+      "path": "D:\\code\\MonsterEngine\\TestFile\\3DGSLODStreaming\\tight-tile-culling-20261016\\baseline\\build\\bin\\Release\\resources\\3dgs_scenes\\bicycle\\scene.mgs"
+    },
+    {
+      "sha256": "64d357cb25bd85f710f8551a18d830f8497277fbd8c5805adfd72ffe9ca78227",
+      "path": "D:\\code\\MonsterEngine\\resources\\point_cloud\\bicycle\\point_cloud_30000.ply"
+    },
+    {
+      "sha256": "2883ea25622b679871b132fbd0387d619a59422041bdf548366b3b4ff7e61f98",
+      "path": "D:\\code\\MonsterEngine\\resources\\3dgs_sequences\\bicycle_lod_mid_far.json"
+    }
+  ],
+  "visualAcceptance": "Pending human/agent visual inspection of captures and native full-window FPS screenshots",
+  "memoryScope": "Actual source/SH RHI reservation and backing; allocator ranges engine-only; process/driver VRAM unavailable",
+  "gpuTimingScope": "WholeFrame excludes present/compositor latency; Raster/Preprocess overlap WholeFrame; do not sum"
+}

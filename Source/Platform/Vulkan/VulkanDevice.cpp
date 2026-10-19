@@ -1107,7 +1107,7 @@ namespace MonsterRender::RHI::Vulkan {
         const auto& functions = VulkanAPI::getFunctions();
         uint32 loaderVersion = VK_API_VERSION_1_0;
         if (VulkanAPI::enumerateInstanceVersion(functions, loaderVersion) != VK_SUCCESS ||
-            loaderVersion < VK_API_VERSION_1_2) return false;
+            loaderVersion < VK_API_VERSION_1_1) return false;
         m_validationEnabled = createInfo.enableValidation;
         m_runningUnderRenderDoc = false;
 #if PLATFORM_WINDOWS
@@ -1142,7 +1142,7 @@ namespace MonsterRender::RHI::Vulkan {
         app.applicationVersion = createInfo.applicationVersion;
         app.pEngineName = "MonsterRender";
         app.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        app.apiVersion = VK_API_VERSION_1_2;
+        app.apiVersion = VK_API_VERSION_1_1;
         VkInstanceCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         info.pApplicationInfo = &app;
@@ -1278,7 +1278,7 @@ namespace MonsterRender::RHI::Vulkan {
         m_graphicsQueueFamily = findQueueFamilies(m_physicalDevice, VK_NULL_HANDLE, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
         m_presentQueueFamily = m_surface ? findQueueFamilies(m_physicalDevice, m_surface, 0) : m_graphicsQueueFamily;
         if (m_graphicsQueueFamily.familyIndex == VK_QUEUE_FAMILY_IGNORED ||
-            m_presentQueueFamily.familyIndex == VK_QUEUE_FAMILY_IGNORED || !m_deviceFeatures.shaderInt64) return false;
+            m_presentQueueFamily.familyIndex == VK_QUEUE_FAMILY_IGNORED) return false;
         std::vector<VkDeviceQueueCreateInfo> queues;
         const float priority = 1.0f;
         for (uint32 family : std::set<uint32>{m_graphicsQueueFamily.familyIndex, m_presentQueueFamily.familyIndex}) {
@@ -1288,7 +1288,9 @@ namespace MonsterRender::RHI::Vulkan {
             queues.push_back(q);
         }
         VkPhysicalDeviceFeatures requested{};
-        requested.shaderInt64 = VK_TRUE;
+        // Sort keys use two uint32 words. Preserve optional desktop shader support
+        // without imposing shaderInt64 on the shared renderer.
+        requested.shaderInt64 = m_deviceFeatures.shaderInt64;
         requested.samplerAnisotropy = m_deviceFeatures.samplerAnisotropy;
         requested.fillModeNonSolid = m_deviceFeatures.fillModeNonSolid;
         requested.geometryShader = m_deviceFeatures.geometryShader;
@@ -1475,6 +1477,9 @@ namespace MonsterRender::RHI::Vulkan {
         if (functions.vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_swapchainImages.data()) != VK_SUCCESS) return false;
         
         m_swapchainImageFormat = surfaceFormat.format;
+        m_swapchainColorSpace = surfaceFormat.colorSpace;
+        MR_LOG_INFO("Selected swapchain format=" + std::to_string(surfaceFormat.format) +
+            ", colorSpace=" + std::to_string(surfaceFormat.colorSpace));
         m_swapchainExtent = extent;
         
         // Create image views
@@ -1987,7 +1992,7 @@ namespace MonsterRender::RHI::Vulkan {
         functions.vkGetPhysicalDeviceFormatProperties(device, VK_FORMAT_R8G8B8A8_UNORM, &rgba);
         const VkFormatFeatureFlags requiredFormat = VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
         const auto& limits = deviceProperties.limits;
-        return deviceProperties.apiVersion >= VK_API_VERSION_1_2 && deviceFeatures.shaderInt64 &&
+        return deviceProperties.apiVersion >= VK_API_VERSION_1_1 &&
             limits.maxComputeWorkGroupInvocations >= 256 && limits.maxComputeWorkGroupSize[0] >= 256 &&
             limits.maxComputeWorkGroupSize[1] >= 16 &&
             (rgba.optimalTilingFeatures & requiredFormat) == requiredFormat &&

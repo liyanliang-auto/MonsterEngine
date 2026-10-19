@@ -83,9 +83,23 @@ struct FSplatViewerSession::FImpl {
     FSplatRenderSettings settings;
     bool initialized=false,suspended=false,shaderRead=false,committedShaderRead=false,pendingRecording=false,externalCamera=false,explicitCaps=true;
     uint32_t width=1280,height=720,uploaded=0,recordedRows=0,uploadRows=0;
+    uint32_t presentationWidth=0,presentationHeight=0,displayWidth=0,displayHeight=0;
+    FViewerPresentationScalePolicy presentationScale;
+    std::chrono::steady_clock::time_point nextMemoryObservation{};
+    std::optional<uint64_t> managedLiveBytes,managedBackingBytes,pooledUnusedBytes;
     uint64_t highestScene=0,surface=0,streamedFrame=0,recordNanos=0;
     RHI::FGPUCompletionToken uploadToken{},lastSubmission{},baseline{};
     float yaw=0,pitch=0.215f,distance=5.63f,target[3]{};
+    std::optional<FViewerOrbitCameraPreset> orbitPreset;
+    void ResetOrbit() {
+        if(orbitPreset){
+            const auto& p=*orbitPreset;float delta[3];
+            for(int axis=0;axis<3;++axis){target[axis]=p.target[axis];delta[axis]=p.eye[axis]-p.target[axis];}
+            distance=std::hypot(delta[0],delta[1],delta[2]);
+            yaw=std::atan2(delta[0],delta[2]);pitch=std::asin(std::clamp(delta[1]/distance,-1.0f,1.0f));
+        }else {yaw=0;pitch=0.215f;distance=5.63f;std::fill(std::begin(target),std::end(target),0);}
+        externalCamera=false;
+    }
     MonsterEngine::TSharedPtr<RHI::IRHIVertexShader> vertex;
     MonsterEngine::TSharedPtr<RHI::IRHIPixelShader> fragment;
     MonsterEngine::TSharedPtr<RHI::IRHIDescriptorSetLayout> setLayout;
@@ -100,7 +114,33 @@ struct FSplatViewerSession::FImpl {
         auto next=std::make_shared<FViewerDiagnosticsSnapshot>();next->frameId=frame;
         next->sceneGeneration=scene.generation;next->surfaceGeneration=surface;next->configGeneration=config.generation;
         next->sceneId=scene.sceneId;next->contentHash=scene.contentHash;next->requestedConfig=config;
-        if(initialized)next->effectiveConfig=config;next->budget=budget?budget->Snapshot():FSplatBudgetSnapshot{};next->status=status;
+        next->renderWidth=pipeline?width:0;next->renderHeight=pipeline?height:0;
+        next->presentationWidth=presentationWidth;next->presentationHeight=presentationHeight;
+        next->displayWidth=displayWidth;next->displayHeight=displayHeight;
+        next->presentationDisplayScale=presentationScale.displayScale;
+        next->presentationSharpeningStrength=presentationScale.sharpeningStrength;
+        if(initialized)next->effectiveConfig=config;
+        if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(device)) {
+            const VkFormat format=vk->getSwapchainFormat();
+            next->presentationFormat=static_cast<uint32_t>(format);
+            next->presentationColorSpace=static_cast<uint32_t>(vk->getSwapchainColorSpace());
+            next->presentationFormatSRGB=format==VK_FORMAT_R8G8B8A8_SRGB||format==VK_FORMAT_B8G8R8A8_SRGB||
+                format==VK_FORMAT_R8G8B8_SRGB||format==VK_FORMAT_B8G8R8_SRGB||
+                format==VK_FORMAT_R8_SRGB;
+            const auto now=std::chrono::steady_clock::now();
+            if(initialized&&now>=nextMemoryObservation){
+                // One owner-thread manager observation per second, not one lock
+                // traversal per frame. These bytes include host-visible backing
+                // and exclude opaque WSI/driver allocations; they are not VRAM.
+                uint64 used=0,unused=0;vk->getMemoryStats(used,unused);
+                managedLiveBytes=used;pooledUnusedBytes=unused;
+                managedBackingBytes=unused<=UINT64_MAX-used?std::optional<uint64_t>(used+unused):std::nullopt;
+                nextMemoryObservation=now+std::chrono::seconds(1);
+            }
+        }
+        next->vulkanManagedLiveBytes=managedLiveBytes;next->vulkanManagedBackingBytes=managedBackingBytes;
+        next->vulkanPooledUnusedBytes=pooledUnusedBytes;
+        next->budget=budget?budget->Snapshot():FSplatBudgetSnapshot{};next->status=status;
         if(pipeline){const auto& p=pipeline->GetFrameStats();next->counters.activeGaussians=p.activeCount;
             if(p.countAvailable){next->counters.sortEntries=p.actualSortCount;next->counters.sortCountFrame=p.countFrame;}
             // Android's viewer records the complete Gaussian compute/raster workload
@@ -124,8 +164,11 @@ struct FSplatViewerSession::FImpl {
         fragment=device->createPixelShader(MonsterEngine::TSpan<const uint8>(f.data(),f.size()));if(!vertex||!fragment)return false;
         RHI::FDescriptorSetLayoutDesc ds(0,"SharedSplatPresentSet");ds.bindings.Add(RHI::FDescriptorSetLayoutBinding(0,RHI::EDescriptorType::CombinedTextureSampler,RHI::EShaderStage::Fragment));
         setLayout=device->createDescriptorSetLayout(ds);if(!setLayout)return false;
-        RHI::FPipelineLayoutDesc layout("SharedSplatPresentLayout");layout.setLayouts.Add(setLayout);presentLayout=device->createPipelineLayout(layout);if(!presentLayout)return false;
+        RHI::FPipelineLayoutDesc layout("SharedSplatPresentLayout");layout.setLayouts.Add(setLayout);
+        layout.pushConstantRanges.Add(RHI::FPushConstantRange(RHI::EShaderStage::Fragment, 0, sizeof(FViewerPresentationPushConstants)));
+        presentLayout=device->createPipelineLayout(layout);if(!presentLayout)return false;
         RHI::PipelineStateDesc desc;desc.vertexShader=vertex;desc.pixelShader=fragment;desc.rasterizerState.cullMode=RHI::ECullMode::None;
+        desc.pipelineLayout=presentLayout;
         desc.depthStencilState.depthEnable=false;desc.depthStencilState.depthWriteEnable=false;desc.primitiveTopology=RHI::EPrimitiveTopology::TriangleList;desc.renderTargetFormats.Add(device->getSwapChainFormat());
         desc.vkVertexShaderModule=reinterpret_cast<uint64>(static_cast<RHI::Vulkan::VulkanVertexShader*>(vertex.get())->getShaderModule());
         desc.vkPixelShaderModule=reinterpret_cast<uint64>(static_cast<RHI::Vulkan::VulkanPixelShader*>(fragment.get())->getShaderModule());
@@ -156,7 +199,14 @@ struct FSplatViewerSession::FImpl {
         const float cp=std::cos(pitch),sp=std::sin(pitch),sy=std::sin(yaw),cy=std::cos(yaw);
         float eye[3]={target[0]+distance*cp*sy,target[1]+distance*sp,target[2]+distance*cp*cy};
         float forward[3]={-cp*sy,-sp,-cp*cy},right[3]={cy,0,-sy},up[3]={-sp*sy,cp,-sp*cy};
-        camera=FSplatViewerSession::BuildCamera(eye,right,up,forward,45,settings.nearPlane,settings.farPlane,width,height,config.runtime.displaySHDegree<0?gpu.shDegree:std::min(config.runtime.displaySHDegree,gpu.shDegree));
+        if(orbitPreset&&orbitPreset->rollDegrees!=0){
+            const float radians=orbitPreset->rollDegrees*3.14159265358979323846f/180;
+            const float cosine=std::cos(radians),sine=std::sin(radians);
+            for(int axis=0;axis<3;++axis){const float r=right[axis],u=up[axis];right[axis]=r*cosine-u*sine;up[axis]=u*cosine+r*sine;}
+        }
+        camera=FSplatViewerSession::BuildCamera(eye,right,up,forward,orbitPreset?orbitPreset->verticalFOVDegrees:45,
+            orbitPreset?orbitPreset->nearPlane:settings.nearPlane,orbitPreset?orbitPreset->farPlane:settings.farPlane,
+            width,height,config.runtime.displaySHDegree<0?gpu.shDegree:std::min(config.runtime.displaySHDegree,gpu.shDegree));
     }
 };
 FSplatViewerSession::FSplatViewerSession():Impl(std::make_unique<FImpl>()){}
@@ -166,6 +216,7 @@ FViewerStatus FSplatViewerSession::Initialize(RHI::IRHIDevice& d,IResourceProvid
     auto& i=*Impl;if(i.initialized)return Bad("already_initialized","");
     if(!c.maximumInternalEdge||!c.maximumInternalPixels||!c.runtime.activeCapacity||!c.runtime.sortCapacity||!d.supportsSubmissionCompletion())return Bad("invalid_config","Invalid extent/capacity or missing completion support");
     try {i.config=c;i.device=&d;i.provider=&p;i.settings.tightTileCulling=c.runtime.tightTileCulling;i.settings.rasterSharedMemoryMode=c.runtime.rasterSharedMemoryMode;
+        i.nextMemoryObservation={};i.managedLiveBytes.reset();i.managedBackingBytes.reset();i.pooledUnusedBytes.reset();
         if(!i.budget){uint64_t total=65536;for(uint64_t bytes:{c.runtime.streaming.cpuCacheBytes,c.runtime.streaming.sceneGPUBytes,c.runtime.streaming.stagingBytes,c.runtime.streaming.temporaryGPUBytes})total=Sum(total,bytes);i.localBudget=std::make_unique<FSplatBudgetCoordinator>(total);i.budget=i.localBudget.get();}
 #if PLATFORM_ANDROID
         ShaderCompiler::setResourceProvider(std::shared_ptr<IResourceProvider>(&p,[](IResourceProvider*){}));
@@ -181,7 +232,9 @@ FViewerStatus FSplatViewerSession::Initialize(RHI::IRHIDevice& d,IResourceProvid
 FViewerStatus FSplatViewerSession::OpenScene(const FSceneDescriptor& scene) {
     auto& i=*Impl;if(!i.initialized)return Bad("not_initialized","");
     if(!scene.generation||scene.generation<=i.highestScene)return Bad("stale_scene","");
+    if(scene.initialCamera&&!IsValidOrbitCameraPreset(*scene.initialCamera))return Bad("invalid_camera_preset","");
     ReleaseScene();i.highestScene=scene.generation;i.scene=scene;i.suspended=false;
+    if(scene.initialCamera||i.orbitPreset)SetOrbitCameraPreset(scene.initialCamera);
     try {
         i.cpu=i.Reserve(ESplatBudgetComponent::CPUCache,i.config.runtime.streaming.cpuCacheBytes);
         i.control=std::make_shared<FSplatBuildControl>();auto control=i.control;const auto runtime=i.config.runtime;
@@ -228,10 +281,26 @@ FViewerStatus FSplatViewerSession::AdoptDesktopGPUData(const FSplatGPUData& data
 void FSplatViewerSession::ApplyCameraInput(const FCameraInputState& input) {
     auto& i=*Impl;if(input.surfaceGeneration!=i.surface&&i.surface)return;
     if(input.phase==EViewerPointerPhase::Cancel)return;
-    if(input.reset){i.yaw=0;i.pitch=0.215f;i.distance=5.63f;std::fill(std::begin(i.target),std::end(i.target),0);}
+    if(input.reset)i.ResetOrbit();
     if(!std::isfinite(input.orbitX)||!std::isfinite(input.orbitY)||!std::isfinite(input.panX)||!std::isfinite(input.panY)||!std::isfinite(input.pinchScale)||input.pinchScale<=0)return;
     i.yaw+=input.orbitX*6.2831853f;i.pitch=std::clamp(i.pitch+input.orbitY*3.1415927f,-1.5f,1.5f);
     i.distance=std::clamp(i.distance/input.pinchScale,0.1f,100000.0f);i.target[0]-=input.panX*i.distance;i.target[1]+=input.panY*i.distance;i.externalCamera=false;
+}
+bool FSplatViewerSession::IsValidOrbitCameraPreset(const FViewerOrbitCameraPreset& p) {
+    float delta[3];
+    for(int axis=0;axis<3;++axis){
+        if(!std::isfinite(p.eye[axis])||!std::isfinite(p.target[axis])||std::abs(p.eye[axis])>1e7f||std::abs(p.target[axis])>1e7f)return false;
+        delta[axis]=p.eye[axis]-p.target[axis];
+    }
+    const float distance=std::hypot(delta[0],delta[1],delta[2]);
+    return distance>=0.1f&&distance<=100000&&std::abs(delta[1]/distance)<=std::sin(1.5f)&&
+        std::isfinite(p.rollDegrees)&&std::abs(p.rollDegrees)<=180&&
+        std::isfinite(p.verticalFOVDegrees)&&p.verticalFOVDegrees>=1&&p.verticalFOVDegrees<=170&&
+        std::isfinite(p.nearPlane)&&std::isfinite(p.farPlane)&&p.nearPlane>0&&p.farPlane>p.nearPlane&&p.farPlane<=1e7f;
+}
+FViewerStatus FSplatViewerSession::SetOrbitCameraPreset(std::optional<FViewerOrbitCameraPreset> preset) {
+    if(preset&&!IsValidOrbitCameraPreset(*preset))return Bad("invalid_camera_preset","");
+    Impl->orbitPreset=std::move(preset);Impl->ResetOrbit();return Good("camera_preset_applied");
 }
 void FSplatViewerSession::ApplySettings(const FViewerConfig& c) {
     auto& i=*Impl;if(c.generation<i.config.generation)return;
@@ -296,8 +365,11 @@ FViewerFrameResult FSplatViewerSession::RecordCompute(const FViewerFrameRequest&
         }
         if(!i.pipeline){result.status=i.status.ok?Good("loading"):i.status;return result;}
         const auto frame=frameAlreadyReserved?i.pipeline->GetFrameStats().frame:i.pipeline->ReserveFrameId();
-        if(!i.externalCamera)i.OrbitCamera();i.pipeline->setCamera(i.camera);i.pipeline->setRenderSettings(i.settings);
-        if(i.streaming&&i.streamedFrame!=frame){FSplatLODView view;std::copy_n(i.camera.viewMatrix,16,view.view);std::copy_n(i.camera.projMatrix,16,view.projection);std::copy_n(i.camera.camPos,3,view.cameraPosition);view.width=i.width;view.height=i.height;view.nearPlane=i.settings.nearPlane;view.farPlane=i.settings.farPlane;view.gaussianScale=i.settings.gaussianScale;UpdateStreaming(request.commandList,view,frame);}
+        if(!i.externalCamera)i.OrbitCamera();i.pipeline->setCamera(i.camera);
+        auto renderSettings=i.settings;
+        if(i.orbitPreset){renderSettings.nearPlane=i.orbitPreset->nearPlane;renderSettings.farPlane=i.orbitPreset->farPlane;}
+        i.pipeline->setRenderSettings(renderSettings);
+        if(i.streaming&&i.streamedFrame!=frame){FSplatLODView view;std::copy_n(i.camera.viewMatrix,16,view.view);std::copy_n(i.camera.projMatrix,16,view.projection);std::copy_n(i.camera.camPos,3,view.cameraPosition);view.width=i.width;view.height=i.height;view.nearPlane=i.orbitPreset?i.orbitPreset->nearPlane:i.settings.nearPlane;view.farPlane=i.orbitPreset?i.orbitPreset->farPlane:i.settings.farPlane;view.gaussianScale=i.settings.gaussianScale;UpdateStreaming(request.commandList,view,frame);}
         PrepareOutputForCompute(*request.commandList);result.outputTexture=i.pipeline->execute(request.commandList);result.recorded=bool(result.outputTexture);i.pendingRecording=result.recorded;result.pipelineFrameId=frame;
         i.status=result.outputTexture?Good():Bad("compute_failed",i.pipeline->GetFrameStats().degradationReason);i.Publish(frame);result.counters=i.snapshot->counters;result.diagnostics=i.snapshot;result.status=i.status;
     }catch(const std::exception& e){i.status=Bad("record_failed",e.what());i.Publish();result.status=i.status;result.diagnostics=i.snapshot;}return result;
@@ -311,7 +383,14 @@ FViewerStatus FSplatViewerSession::RecordPresent(RHI::IRHICommandList& command,M
     auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(i.device);if(!vk)return Bad("backend_unavailable","");
     auto* pending=vk->getCommandListContext()->getPendingState();auto* texture=static_cast<RHI::Vulkan::VulkanTexture*>(output.get());auto* sampler=static_cast<RHI::Vulkan::VulkanSampler*>(i.sampler.get());
     if(pending)pending->setTexture(0,0,texture->getImageView(),sampler->getSampler(),texture->getImage(),texture->getVulkanFormat());
-    auto& set=i.sets[vk->getCurrentFrame()%2];if(!set)set=i.device->allocateDescriptorSet(i.setLayout);if(!set)return Bad("present_descriptor_failed","");set->updateCombinedTextureSampler(0,output,i.sampler);command.bindDescriptorSet(i.presentLayout,0,set);command.draw(3,0);return Good();
+    auto& set=i.sets[vk->getCurrentFrame()%2];if(!set)set=i.device->allocateDescriptorSet(i.setLayout);if(!set)return Bad("present_descriptor_failed","");set->updateCombinedTextureSampler(0,output,i.sampler);command.bindDescriptorSet(i.presentLayout,0,set);
+    const VkFormat format=vk->getSwapchainFormat();
+    const bool srgb=format==VK_FORMAT_R8G8B8A8_SRGB||format==VK_FORMAT_B8G8R8A8_SRGB||format==VK_FORMAT_R8G8B8_SRGB||format==VK_FORMAT_B8G8R8_SRGB||format==VK_FORMAT_R8_SRGB;
+    i.presentationWidth=w;i.presentationHeight=h;
+    i.presentationScale=EvaluatePresentationScale(output->getWidth(),output->getHeight(),w,h,i.displayWidth,i.displayHeight);
+    const FViewerPresentationPushConstants transfer{srgb?1u:0u,i.presentationScale.sharpeningStrength};
+    command.pushConstants(i.presentLayout,RHI::EShaderStage::Fragment,0,sizeof(transfer),&transfer);
+    command.draw(3,0);return Good();
 }
 FViewerFrameResult FSplatViewerSession::TickAndRecord(const FViewerFrameRequest& request) {
     auto result=RecordCompute(request);if(result.outputTexture){auto status=RecordPresent(*request.commandList,result.outputTexture,request.viewportWidth,request.viewportHeight);if(!status.ok)result.status=status;}return result;
@@ -329,6 +408,25 @@ FViewerStatus FSplatViewerSession::ResizeInternal(uint32_t w,uint32_t h) {
     auto& i=*Impl;if(!w||!h)return Bad("not_drawable","");i.suspended=false;i.Clamp(w,h);if(w==i.width&&h==i.height)return Good();
     try {if(i.pipeline&&!i.MakePipeline(w,h))return Bad("resize_failed","Old output retained");i.width=w;i.height=h;i.status=Good();}catch(const std::exception& e){i.status=Bad("resize_failed",e.what());}i.Publish();return i.status;
 }
+FViewerPresentationScalePolicy FSplatViewerSession::EvaluatePresentationScale(uint32_t rw,uint32_t rh,
+    uint32_t pw,uint32_t ph,uint32_t dw,uint32_t dh) {
+    FViewerPresentationScalePolicy policy;
+    // The Surface boundary uses the same limit. Invalid or unavailable metadata
+    // must never turn on compensation, and this calculation never allocates.
+    for(uint32_t extent:{rw,rh,pw,ph,dw,dh})if(!extent||extent>16384)return policy;
+    policy.displayScale=std::max({1.0f,float(dw)/float(pw),float(dh)/float(ph)});
+    // Existing native Catmull-Rom/upscale contrast recovery remains authoritative;
+    // do not stack another sharpening pass when native presentation already scales.
+    if(pw>rw+1||ph>rh+1)return policy;
+    policy.sharpeningStrength=0.22f*std::clamp(2.0f*(policy.displayScale-1.0f),0.0f,1.0f);
+    return policy;
+}
+void FSplatViewerSession::SetPresentationDisplayExtent(uint32_t w,uint32_t h) {
+    auto& i=*Impl;
+    if(!w||!h||w>16384||h>16384)w=h=0;
+    i.displayWidth=w;i.displayHeight=h;i.presentationWidth=i.presentationHeight=0;
+    i.presentationScale={};i.Publish();
+}
 void FSplatViewerSession::Suspend(){Impl->suspended=true;}
 void FSplatViewerSession::ReleaseScene() {
     if(!Impl)return;auto& i=*Impl;if(i.control)i.control->RequestCancel();if(i.preparation.valid()){i.preparation.wait();i.preparation.get();}i.control.reset();
@@ -339,6 +437,8 @@ void FSplatViewerSession::ReleaseScene() {
 void FSplatViewerSession::Shutdown() {
     if(!Impl||!Impl->initialized)return;ReleaseScene();auto& i=*Impl;i.device->waitForIdle();for(auto& set:i.sets)set.Reset();i.sampler.Reset();i.presentPipeline.Reset();i.presentLayout.Reset();i.setLayout.Reset();i.vertex.Reset();i.fragment.Reset();
     if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(i.device))vk->DrainCompletedDestructions();i.metadata.reset();i.initialized=false;i.device=nullptr;i.provider=nullptr;
+    i.managedLiveBytes.reset();i.managedBackingBytes.reset();i.pooledUnusedBytes.reset();i.nextMemoryObservation={};
+    SetPresentationDisplayExtent(0,0);
 #if PLATFORM_ANDROID
     ShaderCompiler::setResourceProvider({});
 #endif

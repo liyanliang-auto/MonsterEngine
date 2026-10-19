@@ -2,6 +2,39 @@ package com.monsterengine.viewer
 
 import org.json.JSONObject
 
+/** One submitted diagnostic frame; CPU submit/present-return cadence is not GPU/display timing.
+ * @property frameId Submitted pipeline frame identity.
+ * @property submissionToken Actual device submission identity.
+ * @property sceneGeneration Submitted scene identity.
+ * @property surfaceGeneration Submitted Surface identity.
+ * @property cadenceMilliseconds Native CPU interval between submit/present-return observations.
+ */
+data class ObservedFpsSample(val frameId: Long, val submissionToken: Long,
+    val sceneGeneration: Long, val surfaceGeneration: Long, val cadenceMilliseconds: Double)
+
+/** Pure overlay sampling seam. Repeated or invalid observations clear continuity and FPS. */
+class ObservedFpsSampler {
+    private var previous: ObservedFpsSample? = null
+    /** Forget continuity on lifecycle, scene-open or request failure. */
+    fun reset() { previous = null }
+    /** Require consecutive progressing submissions in one scene and Surface. */
+    fun observe(sample: ObservedFpsSample?): Double? {
+        if (sample == null || sample.frameId <= 0 || sample.submissionToken <= 0 ||
+            sample.sceneGeneration <= 0 || sample.surfaceGeneration <= 0 ||
+            !sample.cadenceMilliseconds.isFinite() || sample.cadenceMilliseconds <= 0) {
+            reset(); return null
+        }
+        val before = previous
+        previous = sample
+        if (before == null || before.sceneGeneration != sample.sceneGeneration ||
+            before.surfaceGeneration != sample.surfaceGeneration) return null
+        if (sample.frameId <= before.frameId || sample.submissionToken <= before.submissionToken) {
+            reset(); return null
+        }
+        return (1000.0 / sample.cadenceMilliseconds).takeIf { it.isFinite() && it > 0 }
+    }
+}
+
 /** JNI and persisted JSON protocol version. Unknown versions must be rejected. */
 const val VIEWER_SCHEMA_VERSION = 1
 
@@ -103,6 +136,22 @@ data class ViewerConfig(val runtime: JSONObject = mobileRuntimeDefaults(),
         .put("configHash", configHash).put("shaderIdentity", shaderIdentity)
 
     companion object {
+        /** Fixed quality-first request within the unchanged aggregate admission cap.
+         * Existing settings/selection change only through an explicit user action. */
+        fun highQualityPreset(base: ViewerConfig): ViewerConfig {
+            val runtime=JSONObject(base.runtime.toString()).put("activeCapacity",1000000)
+                .put("sortCapacity",4500000).put("width",1920).put("height",1080)
+                .put("renderWidth",1920).put("renderHeight",1080).put("displaySHDegree",3)
+                .put("shStorageMode",0).put("shStorageDegree",-1).put("projectedFusion",false)
+                .put("projectionColorCompression",false)
+            runtime.getJSONObject("streaming").put("sceneGPUBytes",224L shl 20)
+                .put("cpuCacheBytes",24L shl 20).put("stagingBytes",16L shl 20).put("maxConcurrentReads",1)
+                .put("temporaryGPUBytes",256L shl 20)
+            runtime.getJSONObject("lod").put("qualityPixels",0.1).put("hysteresis",0.0)
+                .put("activeBudget",1000000).put("sortBudget",4500000).put("freeze",false)
+            return base.copy(runtime=runtime,maximumInternalEdge=1920,maximumInternalPixels=2073600,
+                generation=Math.addExact(base.generation,1),configHash="")
+        }
         /** Initial mobile budgets match FViewerConfig; no measurements are implied. */
         fun mobileRuntimeDefaults(): JSONObject = JSONObject().put("activeCapacity", 100000)
             .put("sortCapacity", 2000000).put("projectedFusion", false).put("shStorageMode", 0)

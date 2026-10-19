@@ -8,7 +8,6 @@
 // Reference: 3dgs-vulkan-cpp tile_boundaries.comp / 3DGS.cpp tile_boundary.comp
 
 #version 450
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -17,7 +16,7 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 // ============================================================================
 
 layout(std430, set = 0, binding = 0) readonly buffer SortedKeys {
-    uint64_t keys[];            // Sorted: (tileID << 32) | depthBits
+    uvec2 keys[];               // x = depth bits, y = full tile ID
 };
 
 layout(std430, set = 0, binding = 1) buffer TileRanges {
@@ -46,11 +45,11 @@ void main() {
     }
     uint count = pc.numRendered == 0xffffffffu ? state[0] : pc.numRendered;
     if (idx >= count) return;
-    uint tile = uint(keys[idx] >> 32u);
+    uint tile = keys[idx].y;
     if (tile >= pc.numTiles) return;
     if (idx == 0u) ranges[tile].x = 0u;
     else {
-        uint previous = uint(keys[idx - 1u] >> 32u);
+        uint previous = keys[idx - 1u].y;
         if (tile != previous) {
             ranges[tile].x = idx;
             if (previous < pc.numTiles) ranges[previous].y = idx;

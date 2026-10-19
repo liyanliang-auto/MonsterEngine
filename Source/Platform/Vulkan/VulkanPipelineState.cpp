@@ -1,6 +1,7 @@
 #include "Platform/Vulkan/VulkanPipelineState.h"
 #include "Platform/Vulkan/VulkanDevice.h"
 #include "Platform/Vulkan/VulkanShader.h"
+#include "Platform/Vulkan/VulkanDescriptorSetLayout.h"
 #include "Platform/Vulkan/VulkanUtils.h"
 #include "Core/Log.h"
 
@@ -242,6 +243,21 @@ namespace MonsterRender::RHI::Vulkan
 
     bool VulkanPipelineState::createPipelineLayout()
     {
+        if (m_desc.pipelineLayout)
+        {
+            auto* explicitLayout = dynamic_cast<VulkanPipelineLayout*>(m_desc.pipelineLayout.get());
+            if (!explicitLayout || !explicitLayout->isValid())
+            {
+                MR_LOG_ERROR("Graphics pipeline requires a valid Vulkan pipeline layout");
+                return false;
+            }
+            // The description retains this layout and its descriptor set layouts.
+            // These handles are borrowed, including its declared push ranges.
+            m_pipelineLayout = explicitLayout->getHandle();
+            const auto& layouts = explicitLayout->getVulkanSetLayouts();
+            m_descriptorSetLayouts.assign(layouts.begin(), layouts.end());
+            return true;
+        }
         const auto &functions = VulkanAPI::getFunctions();
         VkDevice device = m_device->getLogicalDevice();
 
@@ -711,14 +727,15 @@ namespace MonsterRender::RHI::Vulkan
 
             if (m_pipelineLayout != VK_NULL_HANDLE)
             {
-                functions.vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
+                if (!m_desc.pipelineLayout)
+                    functions.vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
                 m_pipelineLayout = VK_NULL_HANDLE;
             }
 
             // Cleanup descriptor set layouts
             for (auto layout : m_descriptorSetLayouts)
             {
-                if (layout != VK_NULL_HANDLE)
+                if (layout != VK_NULL_HANDLE && !m_desc.pipelineLayout)
                 {
                     functions.vkDestroyDescriptorSetLayout(device, layout, nullptr);
                 }
@@ -801,6 +818,8 @@ namespace MonsterRender::RHI::Vulkan
         }
 
         // Hash primitive topology
+        if (m_desc.pipelineLayout)
+            hash ^= std::hash<void *>{}(m_desc.pipelineLayout.get());
         hash ^= std::hash<uint32>{}(static_cast<uint32>(m_desc.primitiveTopology));
 
         // Hash render target formats

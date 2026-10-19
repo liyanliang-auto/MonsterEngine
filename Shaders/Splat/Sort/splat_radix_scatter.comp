@@ -8,10 +8,6 @@
 // https://github.com/MircoWerner/VkRadixSort
 
 #version 450
-#extension GL_KHR_shader_subgroup_basic      : enable
-#extension GL_KHR_shader_subgroup_arithmetic : enable
-#extension GL_KHR_shader_subgroup_ballot     : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
 
 #define WORKGROUP_SIZE 256
 #define RADIX_SORT_BINS 256U
@@ -23,11 +19,11 @@ layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 // ============================================================================
 
 layout(std430, set = 0, binding = 0) readonly buffer KeysIn {
-    uint64_t keys_in[];
+    uvec2 keys_in[]; // low depth word, high tile word
 };
 
 layout(std430, set = 0, binding = 1) buffer KeysOut {
-    uint64_t keys_out[];
+    uvec2 keys_out[];
 };
 
 layout(std430, set = 0, binding = 2) readonly buffer ValuesIn {
@@ -105,7 +101,7 @@ void main() {
         }
         barrier();
 
-        uint64_t key_in = 0UL;
+        uvec2 key_in = uvec2(0u);
         uint value_in    = 0u;
         uint binID       = 0u;
         uint binOffset   = 0u;
@@ -114,7 +110,8 @@ void main() {
             key_in  = keys_in[elementId];
             value_in = values_in[elementId];
 
-            binID = uint(key_in >> pc.g_shift) & (RADIX_SORT_BINS - 1u);
+            uint word = pc.g_shift < 32u ? key_in.x : key_in.y;
+            binID = (word >> (pc.g_shift & 31u)) & (RADIX_SORT_BINS - 1u);
             binOffset = global_offsets[binID];
 
             // Mark this thread in the bin's flag array

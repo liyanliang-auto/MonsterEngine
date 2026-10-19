@@ -88,6 +88,17 @@ std::string Snapshot(const FViewerDiagnosticsSnapshot& s, const FSplatStreamingC
     o.Add("buildIdentity", Hash(s.buildIdentity)); o.Add("requestedConfig", Config(s.requestedConfig));
     o.Add("effectiveConfig", s.effectiveConfig ? Config(*s.effectiveConfig) : "null");
     o.Add("submissionToken", token.value ? Number(token.value) : "null");
+    o.Add("presentationFormat", Number(s.presentationFormat));
+    o.Add("presentationColorSpace", Number(s.presentationColorSpace));
+    o.Add("presentationFormatSRGB", s.presentationFormatSRGB ? "true" : "false");
+    o.Add("renderWidth", Number(s.renderWidth)); o.Add("renderHeight", Number(s.renderHeight));
+    o.Add("presentationWidth", Number(s.presentationWidth)); o.Add("presentationHeight", Number(s.presentationHeight));
+    o.Add("displayWidth", Number(s.displayWidth)); o.Add("displayHeight", Number(s.displayHeight));
+    o.Add("presentationDisplayScale", Number(s.presentationDisplayScale));
+    o.Add("presentationSharpeningStrength", Number(s.presentationSharpeningStrength));
+    o.Add("vulkanManagedLiveBytes", Optional(s.vulkanManagedLiveBytes));
+    o.Add("vulkanManagedBackingBytes", Optional(s.vulkanManagedBackingBytes));
+    o.Add("vulkanPooledUnusedBytes", Optional(s.vulkanPooledUnusedBytes));
     o.Add("degraded", s.degraded ? "true" : "false");
     o.Add("degradationReason", Quote(Code(s.degradationReason)));
     Object status; status.Add("ok", s.status.ok ? "true" : "false"); status.Add("code", Quote(Code(s.status.code)));
@@ -275,7 +286,10 @@ bool FSplatViewerDiagnostics::RecordScreenshot(RHI::IRHIDevice& device, RHI::IRH
     meta.Add("configHash", snapshot.effectiveConfig ? Hash(snapshot.effectiveConfig->configHash) : "null");
     meta.Add("shaderIdentity", snapshot.effectiveConfig ? Hash(snapshot.effectiveConfig->shaderIdentity) : "null");
     meta.Add("buildIdentity", Hash(snapshot.buildIdentity)); meta.Add("width", Number(width)); meta.Add("height", Number(height));
-    meta.Add("format", "\"RGBA8_UNORM\""); meta.Add("colorSpace", "\"linear_shader_output_before_srgb_present\"");
+    // The compute image stores the renderer's already sRGB-encoded composite in
+    // an UNORM texture. The later swapchain transfer selector is not part of this
+    // image, so label the stored pixel meaning rather than the present attachment.
+    meta.Add("format", "\"RGBA8_UNORM\""); meta.Add("colorSpace", "\"srgb_encoded_rgb\"");
     meta.Add("origin", "\"internal_offscreen_output\""); meta.Add("rowOrigin", "\"top_left\""); p.metadata = meta.End();
     p.before = device.getLastSubmissionToken(); p.captureDevice = &device; p.width = width; p.height = height;
     p.readback = std::move(buffer); p.sourceImage = std::move(image); p.gpuLease = std::move(gpu); p.cpuLease = std::move(cpu); p.token = {};

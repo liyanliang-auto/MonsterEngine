@@ -10,6 +10,7 @@ namespace MonsterRender::Splat {
 /** Requirements extracted from selected final SPIR-V manifest entries. */
 struct FAndroidShaderRequirements {
     bool valid = false; ///< False for absent, malformed or incomplete inventory.
+    uint32_t minimumAPIVersion = 0; ///< Vulkan version required by the validated manifest target environment.
     bool shaderInt64 = false, shaderFloat64 = false, shaderFloat16 = false; ///< Actual capability declarations.
     std::array<uint32_t,3> localSize{1,1,1}; ///< Maximum per-axis workgroup sizes.
     uint64_t maxInvocations = 1; ///< Maximum product for any selected shader.
@@ -36,7 +37,7 @@ struct FAndroidProbeOptions {
 /** Versioned immutable-by-copy report; JSON retains partial results on any failure. */
 struct FAndroidCapabilityReport {
     bool diagnosticsOnly = true; ///< No device currently meets all queried admission gates.
-    bool renderEligible = false; ///< Static preflight only; never means execution passed.
+    bool renderEligible = false; ///< Static preflight only; a headless probe leaves presentation unverified.
     std::string json; ///< Schema-1 report; unavailable observations are null or pending.
 };
 /** Actual owner-selected device identity; UUID is lowercase hex when queried. */

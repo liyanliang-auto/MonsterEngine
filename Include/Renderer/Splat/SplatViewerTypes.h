@@ -14,6 +14,12 @@ struct FViewerStatus {
 };
 /** Published scene representation selected by its descriptor. */
 enum class EViewerSceneKind : uint8_t { PLY, LOD };
+/** Optional owner-internal orbit pose; never part of user scene schemas. */
+struct FViewerOrbitCameraPreset {
+    float eye[3]{}, target[3]{};
+    float verticalFOVDegrees=45, nearPlane=0.05f, farPlane=100;
+    float rollDegrees=0; ///< Rotate the orthonormal view basis about its forward axis.
+};
 /** Immutable scene-store identity; all paths are stable validated private files. */
 struct FSceneDescriptor {
     std::string sceneId; ///< Opaque stable library identifier, not a path.
@@ -23,6 +29,7 @@ struct FSceneDescriptor {
     std::string contentHash; ///< Validated source/manifest content identity.
     uint64_t generation = 0; ///< Zero invalid; owner assigns monotonically, never reuses.
     EViewerSceneKind kind = EViewerSceneKind::PLY; ///< Representation to open.
+    std::optional<FViewerOrbitCameraPreset> initialCamera; ///< Trusted packaged builtin only.
 };
 /** Requested settings. Effective settings are copied separately after admission;
  * maximum extents restrict internal output, not the Android Surface dimensions. */
@@ -99,9 +106,31 @@ struct FViewerDiagnosticsSnapshot {
     std::vector<FViewerCapabilityState> capabilities; ///< Partial capability/probe observations.
     FSplatBudgetSnapshot budget; ///< Consistent aggregate backing accounting.
     bool degraded = false; ///< Fallback image or reduced quality is active.
+    uint32_t presentationFormat = 0; ///< Actual selected swapchain VkFormat; zero when unavailable.
+    uint32_t presentationColorSpace = 0; ///< Actual selected swapchain VkColorSpaceKHR; zero when unavailable.
+    bool presentationFormatSRGB = false; ///< True when attachment writes apply sRGB encoding.
+    uint32_t renderWidth = 0, renderHeight = 0; ///< Actual admitted compute extent, zero before a pipeline exists.
+    uint32_t presentationWidth = 0, presentationHeight = 0; ///< Actual last recorded WSI viewport, zero before presentation.
+    uint32_t displayWidth = 0, displayHeight = 0; ///< Visible Android view pixels, zero when no external compositor extent is supplied.
+    float presentationDisplayScale = 1; ///< External compositor magnification, at least one; one when unavailable.
+    float presentationSharpeningStrength = 0; ///< Maximum local contrast gain actually passed for external magnification.
+    std::optional<uint64_t> vulkanManagedLiveBytes; ///< Manager-tracked live pooled suballocations plus dedicated backing; includes host-visible memory.
+    std::optional<uint64_t> vulkanManagedBackingBytes; ///< Live bytes plus unused pools, excluding opaque WSI/driver/fallback allocations.
+    std::optional<uint64_t> vulkanPooledUnusedBytes; ///< Reserved pool bytes currently free; not free device VRAM.
     std::string degradationReason; ///< Stable explanation; empty when not degraded.
     FViewerStatus status; ///< Last operation/error state.
 };
+/** External display filtering policy; does not allocate pixels or change internal quality. */
+struct FViewerPresentationScalePolicy {
+    float displayScale = 1; ///< Valid external magnification, floored at one; invalid extents fall back to one.
+    float sharpeningStrength = 0; ///< Bounded [0, 0.22] contrast gain, zero when native upscaling already applies.
+};
+/** Fragment presentation transfer selector and external filter compensation; matches shader ABI. */
+struct FViewerPresentationPushConstants {
+    uint32_t decodeSRGBForAttachment = 0; ///< Decode encoded composite only for an sRGB attachment.
+    float compositorSharpeningStrength = 0; ///< Maximum bounded gain before Android compositor filtering.
+};
+static_assert(sizeof(FViewerPresentationPushConstants) == 8, "Presentation push constant ABI");
 /** One owner-thread recording request; stale generations must be rejected before use. */
 struct FViewerFrameRequest {
     RHI::IRHICommandList* commandList = nullptr; ///< Borrowed only for this recording call.

@@ -97,9 +97,9 @@ if(SPLAT_BUILD_SHADERS OR MONSTER_BUILD_ENGINE OR SPLAT_BUILD_GPU_TESTS OR SPLAT
         list(APPEND allShaderDependencies ${shaderDeps})
         add_custom_command(OUTPUT "${output}"
             COMMAND "${CMAKE_COMMAND}" -E make_directory "${SPLAT_GENERATED_SHADER_DIR}"
-            COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.2 ${stage}
+            COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.1 ${stage}
                 -I "${PROJECT_SOURCE_DIR}/Shaders/Splat" -o "${output}" "${source}"
-            COMMAND "${SPLAT_SPIRV_VAL}" --target-env vulkan1.2 "${output}"
+            COMMAND "${SPLAT_SPIRV_VAL}" --target-env vulkan1.1 "${output}"
             DEPENDS ${shaderDeps} "${SPLAT_GLSLC}" "${SPLAT_SPIRV_VAL}"
             VERBATIM COMMENT "Compile and validate splat shader ${shader}")
         list(APPEND SPLAT_SHADER_OUTPUTS "${output}")
@@ -136,14 +136,14 @@ if(SPLAT_BUILD_GPU_TESTS OR SPLAT_BUILD_INTEGRATION_TESTS)
     set(readbackOutput "${SPLAT_TEST_SHADER_DIR}/storage_readback.spv")
     add_custom_command(OUTPUT "${readbackOutput}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${SPLAT_TEST_SHADER_DIR}"
-        COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.2 -fshader-stage=comp
+        COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.1 -fshader-stage=comp
             -o "${readbackOutput}" "${readbackSource}"
         DEPENDS "${readbackSource}" VERBATIM)
     set(tightCullingProbeSource "${PROJECT_SOURCE_DIR}/Source/Tests/3DGSLODStreaming/Shaders/tight_culling_probe.comp")
     set(tightCullingProbeOutput "${SPLAT_TEST_SHADER_DIR}/tight_culling_probe.spv")
     add_custom_command(OUTPUT "${tightCullingProbeOutput}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${SPLAT_TEST_SHADER_DIR}"
-        COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.2 -fshader-stage=comp
+        COMMAND "${SPLAT_GLSLC}" --target-env=vulkan1.1 -fshader-stage=comp
             "-I${PROJECT_SOURCE_DIR}/Shaders/Splat"
             -o "${tightCullingProbeOutput}" "${tightCullingProbeSource}"
         DEPENDS "${tightCullingProbeSource}" "${PROJECT_SOURCE_DIR}/Shaders/Splat/splat_tight_culling.glsl"

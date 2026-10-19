@@ -44,7 +44,8 @@ public:
     static bool Destroy(uint64_t handle);
     ~FAndroidRenderHost();
     /** Acquires one native reference before queue admission. Bounded to four generations. */
-    FViewerStatus Attach(ANativeWindow*, uint64_t generation, uint32_t width, uint32_t height);
+    FViewerStatus Attach(ANativeWindow*, uint64_t generation, uint32_t width, uint32_t height,
+        uint32_t displayWidth = 0, uint32_t displayHeight = 0);
     /** Invalidates generation immediately. Success ACK means backend and native
      * reference released; timeout keeps ownership queued for a later retry. */
     FViewerStatus Detach(uint64_t generation, std::chrono::milliseconds timeout);
