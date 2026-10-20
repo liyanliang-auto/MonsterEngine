@@ -48,3 +48,6 @@ CMakeUserPresets.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Development documents stay local (removed from git tracking)
+devDocument/
