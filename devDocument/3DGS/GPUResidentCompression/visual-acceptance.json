@@ -1,9 +1,0 @@
-{
-  "status": "PASS",
-  "numericAnalyzerStatus": "PASS",
-  "visualCorruptionObserved": false,
-  "inspection": "Both actual native full windows show same Bicycle composition with live FPS titles; matched GPU raw images have no visible corruption.",
-  "nativeScreenshotEvidence": "images/window-capture-metadata.json",
-  "analyzerVisualAcceptanceNote": "Analyzer remains unmodified with its original pending-visual note; this separate record resolves that required visual step.",
-  "rawViewOrientation": "Derived lossless PNG views vertically flip the Vulkan readback row order for presentation; numerical comparison uses unmodified RGBA bytes."
-}

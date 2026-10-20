@@ -93,6 +93,9 @@ __pycache__/
 signing.properties
 local.properties
 
+# Development documents stay local (removed from git tracking)
+devDocument/
+
 # Workstation audits and private development handoffs stay local
 devDocument/3DGS/Android_Environment_Audit.md
 devDocument/3DGS/Android_Filament_Reference_Audit.md
