@@ -38,13 +38,17 @@ Bicycle 使用外部训练的 3DGS 模型。本项目实现模型加载、GPU �
 
 
 
-**Android 客户端当前场景（MuMu 模拟器）**：
+**Android 客户端当前场景**：
 
 ![Android MuMu 当前钢琴与自行车场景](docs/images/samples/android_mumu_current_scene_optimized.png)
 
-当前应用画面为钢琴与自行车室内场景；本地资源文件名不能证明其为 Bonsai。此图为 2026-10-20 优化包的完整 MuMu 实屏，保留真实系统栏和应用界面；环境为 Android 15、x86_64、4 KiB 页、Vulkan 1.1。内部 1920×815、可见 2536×1077，显示放大时启用有界细节增强。物理手机、实际 16 KiB 页与长期性能验收仍待验证，外部模型再分发授权未核验。
 
 
+<a href="docs/images/samples/bicycle_3dgs_android.mp4">
+  <img src="docs/images/samples/bicycle_3dgs_android_preview.gif" alt="Android 客户端钢琴与自行车场景漫游，点击观看完整视频" width="100%">
+</a>
+
+打开页面后 GIF 预览自动循环播放；点击可观看完整 MP4。
 
 ### PBR · Helmet
 
