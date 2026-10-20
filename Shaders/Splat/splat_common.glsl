@@ -101,16 +101,26 @@ bool inFrustum(vec3 posWorld, mat4 viewMatrix, mat4 projMatrix, float nearPlane,
 // Returns vec3(cov2D_xx, cov2D_xy, cov2D_yy)
 // Reference: preprocess.comp::computeCov2D
 // ============================================================================
-vec3 computeCov2D(vec3 pView, float cov3D_data[6], mat4 viewMatrix, float focalX, float focalY, float tanFovX, float tanFovY) {
+vec3 computeCov2D(vec3 pView, float cov3D_data[6], mat4 viewMatrix, float focalX, float focalY, float tanFovX, float tanFovY, vec2 projectionOffset) {
     vec3 t = pView;
 
-    // Clamp to frustum
+    // Brush helpers.wgsl::calc_cam_J clamps to the image plus a 15% margin.
+    // For GL -Z view, edge-origin pixel = -focal * (t.xy / t.z)
+    // + (1 - projectionOffset) * imageSize / 2. Thus its ratio bounds
+    // are (-1.3 - projectionOffset) * tanFov .. (1.3 - projectionOffset)
+    // * tanFov. Keep the old centered arithmetic when the offsets are zero.
     float limx = 1.3 * tanFovX;
     float limy = 1.3 * tanFovY;
+    vec2 shift = -projectionOffset * vec2(tanFovX, tanFovY);
+    // An unrepresentable bound must fail closed, rather than enter clamp.
+    vec2 lower = -vec2(limx, limy) + shift;
+    vec2 upper = vec2(limx, limy) + shift;
+    if (any(isnan(lower)) || any(isinf(lower)) ||
+        any(isnan(upper)) || any(isinf(upper))) return vec3(0.0);
     float txtz = t.x / t.z;
     float tytz = t.y / t.z;
-    t.x = clamp(txtz, -limx, limx) * t.z;
-    t.y = clamp(tytz, -limy, limy) * t.z;
+    t.x = clamp(txtz, lower.x, upper.x) * t.z;
+    t.y = clamp(tytz, lower.y, upper.y) * t.z;
 
     // Jacobian matrix
     mat3 J = mat3(

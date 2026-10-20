@@ -450,6 +450,69 @@ FSplatBudgetCoordinator& FSplatViewerSession::Budget(){return *Impl->budget;}
 FSplatPipeline* FSplatViewerSession::Pipeline()const{return Impl->pipeline.get();}
 FSplatStreamingController* FSplatViewerSession::Streaming()const{return Impl->streaming.get();}
 const FSplatGPUData& FSplatViewerSession::GPUData()const{return Impl->gpu;}
+bool FSplatViewerSession::BuildCalibratedCamera(const FCalibratedCameraDesc& desc,FCameraUniforms& output,std::string& error) {
+    error.clear();
+    const auto fail=[&error](const char* reason){error=reason;return false;};
+    if(!desc.width||!desc.height||desc.width>16384||desc.height>16384)
+        return fail("Calibrated camera dimensions must be in [1,16384]");
+    if(desc.shDegree<0||desc.shDegree>3)return fail("Calibrated camera SH degree must be in [0,3]");
+    if(!std::isfinite(desc.fx)||!std::isfinite(desc.fy)||desc.fx<=0||desc.fy<=0||
+       !std::isfinite(desc.cx)||!std::isfinite(desc.cy))return fail("Invalid calibrated camera intrinsics");
+    if(!std::isfinite(desc.nearPlane)||!std::isfinite(desc.farPlane)||desc.nearPlane<=0||desc.farPlane<=desc.nearPlane)
+        return fail("Invalid calibrated camera clip planes");
+    const auto* view=desc.viewMatrix;
+    for(int n=0;n<16;++n)if(!std::isfinite(view[n]))return fail("Nonfinite calibrated camera pose");
+    if(view[3]!=0||view[7]!=0||view[11]!=0||view[15]!=1)
+        return fail("Calibrated camera pose must have affine bottom row [0,0,0,1]");
+    constexpr double rigidTolerance=1e-4;
+    for(int a=0;a<3;++a)for(int b=a;b<3;++b){
+        double dot=0;
+        for(int row=0;row<3;++row)dot+=double(view[4*a+row])*view[4*b+row];
+        if(std::abs(dot-(a==b?1.0:0.0))>rigidTolerance)return fail("Calibrated camera rotation is not orthonormal");
+    }
+    const double determinant=double(view[0])*(double(view[5])*view[10]-double(view[9])*view[6])-
+        double(view[4])*(double(view[1])*view[10]-double(view[9])*view[2])+
+        double(view[8])*(double(view[1])*view[6]-double(view[5])*view[2]);
+    if(std::abs(determinant-1.0)>rigidTolerance)return fail("Calibrated camera rotation must have determinant +1");
+
+    // Check before casting: conversion outside the finite float range is not portable.
+    // Nonzero subnormals are rejected because the GPU may flush them to zero.
+    const auto store=[](double value,float& destination){
+        if(!std::isfinite(value)||std::abs(value)>std::numeric_limits<float>::max()||
+           (value!=0&&std::abs(value)<std::numeric_limits<float>::min()))return false;
+        destination=static_cast<float>(value);return true;
+    };
+    FCameraUniforms out{};
+    std::copy_n(view,16,out.viewMatrix);
+    for(int axis=0;axis<3;++axis){
+        double eye=0;
+        for(int row=0;row<3;++row)eye-=double(view[4*axis+row])*view[12+row];
+        if(!store(eye,out.camPos[axis]))return fail("Calibrated camera position is not representable as float");
+    }
+    out.camPos[3]=1;
+    const double width=desc.width,height=desc.height,nearPlane=desc.nearPlane,farPlane=desc.farPlane;
+    // For depth d=-z, desired pixels are u=fx*x/d+cx and top-down v=cy-fy*y/d.
+    // ndc2Pix(s,N)=((s+1)*N-1)/2, and raw row y=(H-1)-v. Hence
+    // P02=1-(2*cx+1)/W, P12=(2*cy+1)/H-1. The half-pixel terms are required.
+    if(!store(desc.fx,out.focalX)||!store(desc.fy,out.focalY)||
+       !store(width/(2*desc.fx),out.tanFovX)||!store(height/(2*desc.fy),out.tanFovY)||
+       !store(2*desc.fx/width,out.projMatrix[0])||!store(2*desc.fy/height,out.projMatrix[5])||
+       !store(1-(2*desc.cx+1)/width,out.projMatrix[8])||
+       !store((2*desc.cy+1)/height-1,out.projMatrix[9])||
+       !store(farPlane/(nearPlane-farPlane),out.projMatrix[10])||
+       !store(-(farPlane*nearPlane)/(farPlane-nearPlane),out.projMatrix[14]))
+        return fail("Calibrated camera derived uniforms are not representable as finite normal floats");
+    // Independently rounded focal/projection values must still describe one camera
+    // to subpixel precision; reject extreme finite intrinsics that cannot do so.
+    if(std::abs(double(out.focalX)-desc.fx)>0.25||std::abs(double(out.focalY)-desc.fy)>0.25||
+       std::abs(double(out.projMatrix[0])*width/2-desc.fx)>0.25||
+       std::abs(double(out.projMatrix[5])*height/2-desc.fy)>0.25||
+       std::abs((1-double(out.projMatrix[8]))*width/2-0.5-desc.cx)>0.25||
+       std::abs((1+double(out.projMatrix[9]))*height/2-0.5-desc.cy)>0.25)
+        return fail("Calibrated intrinsics lose more than 0.25 pixel precision in the GPU uniforms");
+    out.projMatrix[11]=-1;out.imageWidth=int32_t(desc.width);out.imageHeight=int32_t(desc.height);out.shDegree=desc.shDegree;
+    output=out;return true;
+}
 FCameraUniforms FSplatViewerSession::BuildCamera(const float eye[3],const float right[3],const float up[3],const float forward[3],float fov,float nearPlane,float farPlane,uint32_t w,uint32_t h,int32_t degree) {
     FCameraUniforms out{};if(!w||!h||!std::isfinite(fov)||fov<=0||fov>=179||nearPlane<=0||farPlane<=nearPlane)return out;
     for(int axis=0;axis<3;++axis){out.viewMatrix[axis*4]=right[axis];out.viewMatrix[axis*4+1]=up[axis];out.viewMatrix[axis*4+2]=-forward[axis];out.viewMatrix[12]-=right[axis]*eye[axis];out.viewMatrix[13]-=up[axis]*eye[axis];out.viewMatrix[14]+=forward[axis]*eye[axis];out.camPos[axis]=eye[axis];}

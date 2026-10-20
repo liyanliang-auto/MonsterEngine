@@ -5,8 +5,18 @@
 #include "Renderer/Splat/SplatPipeline.h"
 #include "Renderer/Splat/SplatResourceProvider.h"
 #include <memory>
+#include <string>
 
 namespace MonsterRender::Splat {
+/** Calibrated pinhole camera in the exported scene's world coordinates. */
+struct FCalibratedCameraDesc {
+    float viewMatrix[16]{}; ///< Column-major rigid world-to-view: right-handed, -Z forward, +Y up.
+    double fx=0, fy=0; ///< Positive focal lengths in resized-image pixels, independently applied.
+    double cx=0, cy=0; ///< Top-left principal point; integer coordinates denote pixel centers.
+    float nearPlane=0, farPlane=0; ///< Positive ordered view-space clipping distances.
+    uint32_t width=0, height=0; ///< Actual image extent, each in [1,16384].
+    int32_t shDegree=0; ///< Display SH degree in [0,3].
+};
 /** Shared platform-independent scene/camera/compute/presentation owner. All methods
  * run on one rendering owner except worker preparation internal to OpenScene.
  * Device/provider and injected budget account must outlive Shutdown. */
@@ -80,6 +90,12 @@ public:
     static FCameraUniforms BuildCamera(const float eye[3], const float right[3],
         const float up[3], const float forward[3], float verticalFOVDegrees,
         float nearPlane, float farPlane, uint32_t width, uint32_t height, int32_t shDegree);
+    /** Pure calibrated construction; failure leaves output unchanged and supplies a reason.
+     * Rotation orthonormality/determinant tolerance is 1e-4; affine bottom row is exact.
+     * COLMAP +Y-down/+Z-forward poses must first be converted by diag(1,-1,-1,1).
+     * Projection targets the compute output's bottom-up rows; no UBO ABI change. */
+    static bool BuildCalibratedCamera(const FCalibratedCameraDesc&, FCameraUniforms& output,
+        std::string& error);
 private:
     struct FImpl;
     std::unique_ptr<FImpl> Impl;

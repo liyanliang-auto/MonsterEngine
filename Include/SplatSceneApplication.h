@@ -86,7 +86,7 @@ public:
     void onMouseScrolled(float64 xOffset, float64 yOffset) override;
     bool HasStartupExportFailed() const { return m_startupExportFailed; }
     /** Startup, lifecycle and evidence failures propagate through main's exit code. */
-    bool HasRunFailed() const { return m_runFailed || m_startupExportFailed; }
+    bool HasRunFailed() const { return m_runFailed || m_startupExportFailed || (m_runtime.calibratedCapture && !m_benchmarkCompleted); }
     /** Scene replacement is deferred to a safe frame boundary. */
     bool QueueSceneSwitch(const String& manifestPath, const String& sourcePLY, char mode);
 

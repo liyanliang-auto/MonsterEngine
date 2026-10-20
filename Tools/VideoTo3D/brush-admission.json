@@ -1,0 +1,356 @@
+{
+  "schemaVersion": 1,
+  "upstreamUrl": "https://github.com/ArthurBrussee/brush",
+  "revision": "3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486",
+  "releaseTag": "v0.3.0",
+  "auditedAtUtc": "2026-10-20T07:11:00.219171+00:00",
+  "auditStatus": "SUPPORTED_BY_SOURCE",
+  "productAdmission": "BLOCKED",
+  "capabilities": {
+    "safePause": {
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-ui/src/ui_process.rs",
+          "line": 92,
+          "anchor": "pub fn set_train_paused",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-ui/src/ui_process.rs#L92"
+        },
+        {
+          "file": "crates/brush-ui/src/ui_process.rs",
+          "line": 205,
+          "anchor": "// Check if training is paused.",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-ui/src/ui_process.rs#L205"
+        },
+        {
+          "file": "crates/brush-process/src/train_stream.rs",
+          "line": 192,
+          "anchor": "const UPDATE_EVERY: u32 = 5;",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-process/src/train_stream.rs#L192"
+        }
+      ],
+      "gaps": [
+        "UI can stop stream polling after a TrainStep event and keep memory alive.",
+        "No product worker pause request/generation, device-completion barrier, full-state durable save, published checkpoint ACK, or safe exit contract.",
+        "Process termination is cancellation; it cannot serve as safe pause."
+      ]
+    },
+    "fullCheckpointRestore": {
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-process/src/train_stream.rs",
+          "line": 266,
+          "anchor": "async fn export_checkpoint(",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-process/src/train_stream.rs#L266"
+        },
+        {
+          "file": "crates/brush-process/src/train_stream.rs",
+          "line": 286,
+          "anchor": "let splat_data = brush_serde::splat_to_ply(splats)",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-process/src/train_stream.rs#L286"
+        },
+        {
+          "file": "crates/brush-process/src/train_stream.rs",
+          "line": 112,
+          "anchor": "let mut trainer = SplatTrainer::new",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-process/src/train_stream.rs#L112"
+        }
+      ],
+      "gaps": [
+        "export_checkpoint writes only PLY. All ID14 state families below require integration.",
+        "start_iter and init.ply create a fresh trainer; they do not restore its state."
+      ]
+    },
+    "gaussianExport": {
+      "status": "SUPPORTED_BY_SOURCE",
+      "evidence": [
+        {
+          "file": "crates/brush-serde/src/export.rs",
+          "line": 228,
+          "anchor": "pub async fn splat_to_ply",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-serde/src/export.rs#L228"
+        },
+        {
+          "file": "crates/brush-process/src/train_stream.rs",
+          "line": 286,
+          "anchor": "let splat_data = brush_serde::splat_to_ply(splats)",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-process/src/train_stream.rs#L286"
+        }
+      ],
+      "gaps": [
+        "Actual Gaussian export, MonsterEngine import, camera/SH conversion and image parity have not been exercised."
+      ]
+    }
+  },
+  "requiredCheckpointState": [
+    {
+      "name": "rawGaussianParameters",
+      "fields": [
+        "means FP32",
+        "raw rotation quaternion",
+        "log_scales",
+        "raw_opacity logits",
+        "SH coefficient tensors including degree/layout",
+        "parameter IDs and Gaussian row ordering"
+      ],
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-render/src/gaussian_splats.rs",
+          "line": 29,
+          "anchor": "pub struct Splats",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-render/src/gaussian_splats.rs#L29"
+        }
+      ],
+      "gaps": [
+        "PLY is an inference/export format; no atomic full trainer snapshot binds parameters and optimizer IDs."
+      ],
+      "minimumPatch": "Serialize lossless raw tensors, dimensions, IDs and mapping; restore before optimizer binding."
+    },
+    {
+      "name": "optimizer",
+      "fields": [
+        "per-parameter Adam moment_1",
+        "moment_2",
+        "time",
+        "optional scaling",
+        "optimizer hyperparameters and presence/initialization flags"
+      ],
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-train/src/adam_scaled.rs",
+          "line": 50,
+          "anchor": "pub(crate) struct AdamState",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/adam_scaled.rs#L50"
+        },
+        {
+          "file": "crates/brush-train/src/adam_scaled.rs",
+          "line": 140,
+          "anchor": "state.time += 1;",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/adam_scaled.rs#L140"
+        },
+        {
+          "file": "crates/brush-train/src/train.rs",
+          "line": 52,
+          "anchor": "optim: Option<OptimizerType>",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/train.rs#L52"
+        }
+      ],
+      "gaps": [
+        "Records exist for in-memory refinement but trainer export/restore is absent."
+      ],
+      "minimumPatch": "Expose trainer record export/load, preserve absent optimizer and map stable parameter IDs; shape-check all moments."
+    },
+    {
+      "name": "iterationAndSchedule",
+      "fields": [
+        "next iteration",
+        "mean scheduler state",
+        "scale scheduler state",
+        "total_steps and schedule configuration",
+        "elapsed training duration"
+      ],
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-process/src/train_stream.rs",
+          "line": 115,
+          "anchor": "for iter in process_args.process_config.start_iter",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-process/src/train_stream.rs#L115"
+        },
+        {
+          "file": "crates/brush-train/src/train.rs",
+          "line": 49,
+          "anchor": "sched_mean: ExponentialLrScheduler",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/train.rs#L49"
+        },
+        {
+          "file": "crates/brush-train/src/train.rs",
+          "line": 93,
+          "anchor": "optim: None",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/train.rs#L93"
+        }
+      ],
+      "gaps": [
+        "start_iter changes loop counter after new trainer resets optimizer and schedulers; it is not full resume."
+      ],
+      "minimumPatch": "Save the next completed-step boundary plus both scheduler records; never infer schedule state from a newly initialized trainer."
+    },
+    {
+      "name": "densification",
+      "fields": [
+        "refine_weight_norm",
+        "weight_counts",
+        "refiner presence",
+        "bounds center/extent",
+        "refine/growth phase configuration",
+        "Gaussian index correspondence"
+      ],
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-train/src/stats.rs",
+          "line": 8,
+          "anchor": "pub(crate) struct RefineRecord",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/stats.rs#L8"
+        },
+        {
+          "file": "crates/brush-train/src/train.rs",
+          "line": 56,
+          "anchor": "bounds: BoundingBox",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/train.rs#L56"
+        }
+      ],
+      "gaps": [
+        "Refiner and mutable bounds are in memory only; stopping between step and refinement creates inconsistent state."
+      ],
+      "minimumPatch": "Snapshot after complete step/refine transaction with refiner tensors and bounds; restore optional state and count invariants."
+    },
+    {
+      "name": "randomAndSampling",
+      "fields": [
+        "backend GPU random stream/counter",
+        "initialization RNG state when needed",
+        "multinomial CPU RNG state",
+        "each loader RNG and shuffled index remainder",
+        "prefetch queue order and pending sample identities",
+        "worker ordering and next consumed sample cursor"
+      ],
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-train/src/multinomial.rs",
+          "line": 2,
+          "anchor": "let mut rng = rand::rng();",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/multinomial.rs#L2"
+        },
+        {
+          "file": "crates/brush-train/src/train.rs",
+          "line": 302,
+          "anchor": "Tensor::random(",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/train.rs#L302"
+        },
+        {
+          "file": "crates/brush-dataset/src/scene_loader.rs",
+          "line": 94,
+          "anchor": "shuf_indices.shuffle(&mut rng);",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-dataset/src/scene_loader.rs#L94"
+        },
+        {
+          "file": "crates/brush-dataset/src/scene_loader.rs",
+          "line": 58,
+          "anchor": "let num_img_queue = 32;",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-dataset/src/scene_loader.rs#L58"
+        }
+      ],
+      "gaps": [
+        "Thread-local RNG, GPU RNG and parallel arrival ordering are not checkpointed; reseeding alone does not restore future sequence."
+      ],
+      "minimumPatch": "Replace sampling with trainer-owned serializable/counter RNGs; assign sample sequence before parallel decode, persist cursor and order, drain/reconstruct bounded prefetch. Investigate Burn/CubeCL RNG export or explicit counter-based noise."
+    },
+    {
+      "name": "enabledAuxiliaryModules",
+      "fields": [
+        "SSIM enabled/window/settings and derived state",
+        "LPIPS enabled weights/checksum/model version",
+        "mask/alpha behavior",
+        "all enabled loss and model configuration"
+      ],
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-train/src/train.rs",
+          "line": 54,
+          "anchor": "ssim: Option<Ssim<DiffBackend>>",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/train.rs#L54"
+        },
+        {
+          "file": "crates/brush-train/src/train.rs",
+          "line": 59,
+          "anchor": "lpips: Option<lpips::LpipsModel<DiffBackend>>",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-train/src/train.rs#L59"
+        }
+      ],
+      "gaps": [
+        "SSIM and LPIPS reconstructed from configuration; no checkpoint binds exact enabled modules or LPIPS weight identity."
+      ],
+      "minimumPatch": "Inventory module state; persist mutable tensors, or bind immutable weights/hash/config and prove exact reconstruction. Reject unknown enabled modules."
+    },
+    {
+      "name": "dataConfigBackendBinding",
+      "fields": [
+        "dataset image/mask content manifest hashes",
+        "camera/intrinsics/coordinate binding",
+        "train/eval split and ordering",
+        "all load/model/train/process configs",
+        "Brush source+patch/build/dependency identity",
+        "checkpoint schema and tensor dtype/layout",
+        "backend/device/driver compatibility policy"
+      ],
+      "status": "MISSING",
+      "evidence": [
+        {
+          "file": "crates/brush-process/src/config.rs",
+          "line": 40,
+          "anchor": "pub struct ProcessArgs",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-process/src/config.rs#L40"
+        },
+        {
+          "file": "crates/brush-process/src/train_stream.rs",
+          "line": 57,
+          "anchor": "load_dataset(vfs.clone()",
+          "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-process/src/train_stream.rs#L57"
+        }
+      ],
+      "gaps": [
+        "No full-state checkpoint envelope, data hashes or backend compatibility validation accompanies exported PLY."
+      ],
+      "minimumPatch": "Versioned manifest with content hashes and all config, backend/build binding; reject incompatible/unknown/corrupt input before allocating or changing user state."
+    }
+  ],
+  "runtimeVerification": {
+    "status": "NOT_VERIFIED",
+    "evidence": [],
+    "reason": "No admitted Brush executable/build and no Rust toolchain found on PATH during this audit. Source inspection is not a runtime probe."
+  },
+  "cliProbe": {
+    "arguments": [
+      "--help"
+    ],
+    "status": "SUPPORTED_BY_SOURCE",
+    "evidence": [
+      {
+        "file": "crates/brush-cli/src/lib.rs",
+        "line": 11,
+        "anchor": "#[derive(Parser)]",
+        "url": "https://github.com/ArthurBrussee/brush/blob/3edecbb2fe79d3e2c87eeab85b15e0b1dd10d486/crates/brush-cli/src/lib.rs#L11"
+      }
+    ]
+  },
+  "nextActions": [
+    "Build or obtain the exact pinned Brush Windows binary; record file SHA256, source/build binding, dependencies and GPU/driver identity. Run --help only through the identity-matched Windows admission CLI.",
+    "Implement minimal pinned Brush patch: process worker PauseAndSave(requestId,generation) accepted only after step+refine, stop new batches, await GPU completion, snapshot every ID14 family, write/flush/hash temporary checkpoint then atomically publish manifest; ACK checkpoint identity only after durable publication; allow safe exit only after ACK.",
+    "Implement strict Restore: validate schema/backend/config/data hashes and tensor sizes before replacing state; restore sampler/RNG, parameters/IDs, optimizer/schedulers/refiner/bounds/modules, then continue at saved next iteration. Failed saves retain previous valid checkpoint.",
+    "Run a short licensed real dataset through exact binary: uninterrupted baseline versus same initial run paused at non-refine and refine boundaries and restored in a fresh process. Compare every saved state field and subsequent sample IDs first; approve quality/timing tolerances before independent-view image comparisons.",
+    "Exercise forced termination before/during/after publication, disk failure, corruption, changed data/config/backend and stale pause messages. Demonstrate recovery from last published checkpoint and preservation of raw incompatible input. ID16 remains BLOCKED until real complete-state restore and controlled pause pass."
+  ],
+  "patchAssessment": {
+    "scope": "Pinned upstream Rust product patch required; no backend substitution.",
+    "effort": "High integration risk; provisional engineering estimate 3-6 engineer-weeks for implementation plus real GPU verification, not a delivery promise.",
+    "uncertainty": [
+      "Burn/CubeCL random stream export may require backend changes or explicit counter-based kernels.",
+      "Parallel sample sequencing and GPU nondeterminism must be measured; no equivalence tolerance has been approved.",
+      "Optimizer ParamId stability, dynamic densification shapes and large tensor checkpoint I/O require real scale experiments."
+    ],
+    "components": [
+      "brush-process train_stream/config/message: worker control, safe boundary and checkpoint orchestration",
+      "brush-train train/adam_scaled/stats: state records and strict restore",
+      "brush-dataset scene_loader: reproducible sampler and prefetch retirement",
+      "brush-train multinomial and random kernels: owned reproducible RNG state",
+      "new checkpoint codec/storage module: versioned transaction/hash/compatibility",
+      "brush-cli/brush-app: framed control/events, pause-save ACK and restore options"
+    ]
+  }
+}

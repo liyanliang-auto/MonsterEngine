@@ -14,6 +14,8 @@
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <chrono>
+#include <thread>
 
 namespace MonsterRender::Splat {
 namespace {
@@ -75,7 +77,8 @@ FSplatLODBenchmark::FSplatLODBenchmark():Impl(std::make_unique<FImpl>()){}
 FSplatLODBenchmark::~FSplatLODBenchmark(){std::string error;if(Impl->begun&&!Impl->finished)Finish(false,"Recorder destroyed before completion",error);}
 bool FSplatLODBenchmark::Begin(const FSplatLODRuntimeOptions& options,const std::map<std::string,std::string>& metadata,std::string& error){
     if(Impl->begun){error="Recorder already initialized";return false;}if(!options.Validate(error))return false;
-    try{std::filesystem::create_directories(std::filesystem::u8path(options.outputDirectory));auto& s=*Impl;s.options=options;s.metadata=metadata;s.metadata["rasterSharedMemoryMode"]=std::to_string(options.rasterSharedMemoryMode);
+    try{if(options.calibratedCapture){const auto output=std::filesystem::u8path(options.outputDirectory);if(std::filesystem::exists(output)&&(!std::filesystem::is_directory(output)||!std::filesystem::is_empty(output)))throw std::runtime_error("Calibrated capture refuses an occupied output directory");}
+        std::filesystem::create_directories(std::filesystem::u8path(options.outputDirectory));auto& s=*Impl;s.options=options;s.metadata=metadata;s.metadata["rasterSharedMemoryMode"]=std::to_string(options.rasterSharedMemoryMode);
         s.frames.open(std::filesystem::u8path(options.outputDirectory)/"frames.csv",std::ios::trunc);s.gpu.open(std::filesystem::u8path(options.outputDirectory)/"gpu_samples.csv",std::ios::trunc);s.counts.open(std::filesystem::u8path(options.outputDirectory)/"gpu_counts.csv",std::ios::trunc);
         if(!s.frames||!s.gpu||!s.counts)throw std::runtime_error("Cannot open benchmark CSV files");
         s.frames<<std::setprecision(17)<<"frame,elapsed_s,sequence_s,round,sampled,excluded,loading,degraded,frame_ms,cpu_ms,selection_ms,gpu_ms,preprocess_ms,scan_ms,assign_ms,radix_ms,bounds_ms,render_ms,pipeline_ms,upload_ms,presentation_ms,gpu_available,count_available,sort_count,overflow,source_capacity,active_count,active_capacity,sort_capacity,temporary_bytes,output_image_bytes,resident_bytes,source_reserved_bytes,source_backing_bytes,live_staging_bytes,staging_reserved_bytes,staging_backing_bytes,cpu_charged_bytes,encoded_cache_bytes,inflight_cpu_bytes,ready_cpu_bytes,transferred_cpu_bytes,metadata_cpu_bytes,allocator_bytes,allocator_available_bytes,disk_bytes,cache_hits,requests,retries,failures,cancellations,pending_reads,active_reads,uploaded_bytes,uploaded_pages,evicted_pages,pending_uploads,pinned_pages,inflight_pages,rejected_uploads,telemetry_skipped,allocator_pooled_reserved_bytes,allocator_pooled_used_bytes,allocator_dedicated_committed_bytes,selected_leaf_nodes,selected_proxy_nodes,proxy_gaussians,max_proxy_error_px,measured_source_active,rendered_primitives,fused_primitives,fusion_applied,max_fusion_rgba_l2,tight_tile_culling_requested,tight_tile_culling_effective,radix_blocks_requested,radix_blocks_effective,radix_histogram_ms,radix_offsets_ms,radix_scatter_ms,radix_keys_bytes,radix_values_bytes,radix_histogram_bytes,radix_phase_timing,raster_shared_memory_mode\n";
@@ -128,14 +131,29 @@ bool FSplatLODBenchmark::RecordCapture(RHI::IRHIDevice* device,RHI::IRHICommandL
 }
 bool FSplatLODBenchmark::FinishCapture(RHI::FGPUCompletionToken token,std::string& error){
     auto& s=*Impl;if(!s.capturePending||!token.value||!s.captureDevice){error="Capture has no actual submission token";return false;}
-    s.captureDevice->waitForIdle();if(!s.captureDevice->isSubmissionComplete(token)){error="Capture submission did not complete";return false;}
+    if(s.options.calibratedCapture){
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+        while(!s.captureDevice->isSubmissionComplete(token)){
+            if(std::chrono::steady_clock::now()>=deadline){error="Calibrated capture GPU completion timed out after 30 seconds";return false;}
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }else s.captureDevice->waitForIdle();
+    if(!s.captureDevice->isSubmissionComplete(token)){error="Capture submission did not complete";return false;}
     const auto* pixels=static_cast<const uint8_t*>(s.readback->map());if(!pixels){error="Cannot map capture readback";return false;}
     bool success=false;
     try{
         std::ostringstream stem;stem<<"capture_"<<std::setw(3)<<std::setfill('0')<<s.captures;const auto root=std::filesystem::u8path(s.options.outputDirectory)/stem.str();
         std::ofstream rgba(root.string()+".rgba",std::ios::binary);rgba.write(reinterpret_cast<const char*>(pixels),std::streamsize(uint64_t(s.options.width)*s.options.height*4));rgba.close();
         std::ofstream ppm(root.string()+".ppm",std::ios::binary);ppm<<"P6\n"<<s.options.width<<' '<<s.options.height<<"\n255\n";for(uint64_t i=0;i<uint64_t(s.options.width)*s.options.height;++i)ppm.write(reinterpret_cast<const char*>(pixels+i*4),3);ppm.close();
-        std::ofstream meta(root.string()+".json");meta<<std::setprecision(17)<<"{\"frame\":"<<s.captureFrame<<",\"sequenceSeconds\":"<<s.captureTime<<",\"mode\":"<<Quote(std::string(1,s.options.mode))<<",\"width\":"<<s.options.width<<",\"height\":"<<s.options.height<<",\"format\":\"RGBA8_UNORM\",\"colorSpace\":\"linear shader output before sRGB present\",\"background\":\"black RGB with transparent alpha\",\"exposure\":1,\"shDegree\":"<<s.camera.shDegree<<",\"selectionSHA256\":"<<Quote(s.captureSelectionSHA256)<<",\"cameraSHA256\":"<<Quote(s.captureCameraSHA256)<<",\"tightTileCullingRequested\":"<<Quote(s.metadata["tightTileCullingRequested"])<<",\"tightTileCullingEffective\":"<<Quote(s.metadata["tightTileCullingEffective"])<<",\"radixSortBlocksPerWorkgroupRequested\":"<<Quote(s.metadata["radixSortBlocksPerWorkgroupRequested"])<<",\"radixSortBlocksPerWorkgroupEffective\":"<<Quote(s.metadata["radixSortBlocksPerWorkgroupEffective"])<<",\"rasterSharedMemoryMode\":"<<s.options.rasterSharedMemoryMode<<",\"view\":[";
+        std::ofstream meta(root.string()+".json");meta<<std::setprecision(17)<<"{\"frame\":"<<s.captureFrame<<",\"sequenceSeconds\":"<<s.captureTime<<",\"mode\":"<<Quote(std::string(1,s.options.mode))<<",\"width\":"<<s.options.width<<",\"height\":"<<s.options.height<<",\"format\":\"RGBA8_UNORM\",\"colorSpace\":\"trained-image-encoded-rgb\",\"encoding\":\"trained-image-encoded-rgb\",\"rowOrigin\":\"bottom_left\",\"displayTransfer\":\"identity\",\"completionStatus\":\"complete\",\"background\":\"black RGB with transparent alpha\",\"exposure\":1,\"shDegree\":"<<s.camera.shDegree<<",\"selectionSHA256\":"<<Quote(s.captureSelectionSHA256)<<",\"cameraSHA256\":"<<Quote(s.captureCameraSHA256)<<",\"tightTileCullingRequested\":"<<Quote(s.metadata["tightTileCullingRequested"])<<",\"tightTileCullingEffective\":"<<Quote(s.metadata["tightTileCullingEffective"])<<",\"radixSortBlocksPerWorkgroupRequested\":"<<Quote(s.metadata["radixSortBlocksPerWorkgroupRequested"])<<",\"radixSortBlocksPerWorkgroupEffective\":"<<Quote(s.metadata["radixSortBlocksPerWorkgroupEffective"])<<",\"rasterSharedMemoryMode\":"<<s.options.rasterSharedMemoryMode;
+        meta<<",\"schemaVersion\":1,\"submissionToken\":"<<token.value<<",\"cameraId\":"<<Quote(s.options.cameraId)
+            <<",\"policySHA256\":"<<Quote(s.options.policySHA256)<<",\"auditSHA256\":"<<Quote(s.options.auditSHA256)<<",\"protectedInputsSHA256\":"<<Quote(s.options.protectedInputsSHA256)
+            <<",\"sourceSHDegree\":"<<Quote(s.metadata["sourceSHDegree"])<<",\"shStorageMode\":"<<s.options.shStorageMode<<",\"shStorageDegree\":"<<s.options.shStorageDegree
+            <<",\"projectionColorCompression\":"<<(s.options.projectionColorCompression?"true":"false")<<",\"projectedFusion\":"<<(s.options.projectedFusion?"true":"false")<<",\"fullLeaf\":"<<(s.options.fullLeaf?"true":"false")
+            <<",\"originalResidentData\":"<<(s.options.mode=='A'?"true":"false")<<",\"device\":"<<Quote(s.metadata["device"])<<",\"driverVersion\":"<<Quote(s.metadata["driverVersion"])
+            <<",\"vendorID\":"<<Quote(s.metadata["vendorID"])<<",\"deviceID\":"<<Quote(s.metadata["deviceID"])<<",\"vulkanVersion\":"<<Quote(s.metadata["vulkanVersion"]);
+        if(s.options.calibratedCapture)meta<<",\"requestedFocal\":["<<s.options.calibratedFX<<','<<s.options.calibratedFY<<"],\"principalPoint\":["<<s.options.calibratedCX<<','<<s.options.calibratedCY<<"],\"nearPlane\":"<<s.options.calibratedNear<<",\"farPlane\":"<<s.options.calibratedFar;
+        meta<<",\"view\":[";
         for(size_t i=0;i<16;++i){if(i)meta<<',';meta<<s.camera.viewMatrix[i];}meta<<"],\"projection\":[";for(size_t i=0;i<16;++i){if(i)meta<<',';meta<<s.camera.projMatrix[i];}meta<<"],\"cameraPosition\":["<<s.camera.camPos[0]<<','<<s.camera.camPos[1]<<','<<s.camera.camPos[2]<<"],\"focal\":["<<s.camera.focalX<<','<<s.camera.focalY<<"],\"excludedFromPerformance\":true}\n";meta.close();
         if(!rgba||!ppm||!meta)throw std::runtime_error("Capture artifact write failed");++s.captures;success=true;error.clear();
     }catch(const std::exception& e){error=e.what();}

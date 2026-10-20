@@ -35,6 +35,14 @@ struct FSplatLODRuntimeOptions {
     std::vector<double> captureTimes = {0,15,30,45,60}; ///< Exact camera sampling times.
     FSplatStreamingConfig streaming; ///< Independent byte budgets.
     FSplatLODSettings lod; ///< Quality/hysteresis and selection policy.
+    bool calibratedCapture = false; ///< Strict single-view capture, excludes legacy overrides.
+    FCameraUniforms calibratedCamera{}; ///< Validated camera, unchanged GPU ABI.
+    double calibratedFX = 0, calibratedFY = 0; ///< Requested focal lengths before GPU FP32 conversion.
+    double calibratedCX = 0, calibratedCY = 0; ///< Top-left integer-center principal point.
+    float calibratedNear = 0, calibratedFar = 0; ///< Requested clipping distances.
+    std::string cameraId, policySHA256, auditSHA256, protectedInputsSHA256; ///< Capture identities.
+    /** Parse the complete bounded schema-1 calibrated capture request. */
+    static bool LoadCalibratedCaptureConfig(const std::string&, FSplatLODRuntimeOptions&, std::string& error);
     /** Parse a bounded flat JSON config with strict known fields. */
     static bool LoadConfig(const std::string&, FSplatLODRuntimeOptions&, std::string& error);
     /** Reject invalid modes, times, capacities and output paths. */

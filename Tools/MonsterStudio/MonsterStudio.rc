@@ -1,0 +1,60 @@
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+
+STRINGTABLE
+BEGIN
+    IDS_APP_TITLE "MonsterStudio - VideoTo3D 计划项目"
+    IDS_CREATE "创建项目..."
+    IDS_OPEN "打开项目..."
+    IDS_ADD "加入待办计划"
+    IDS_UP "上移"
+    IDS_DOWN "下移"
+    IDS_CANCEL "取消待办"
+    IDS_PROJECT_NONE "尚未打开项目。请选择创建或打开。"
+    IDS_PROJECT_INFO "项目：%s    ID：%s    修订：%llu\r\n目录：%s"
+    IDS_REQUEST_LABEL "计划请求（仅保存文字配置，不导入媒体）："
+    IDS_QUEUE_LABEL "待办及历史记录："
+    IDS_STATUS_READY "就绪。计划条目不会自动执行。"
+    IDS_STATUS_BUSY "正在保存项目，请稍候..."
+    IDS_STATUS_SAVED "项目已持久保存。"
+    IDS_STATUS_NO_CHANGE "队列顺序未变化。"
+    IDS_STATUS_ERROR "操作失败："
+    IDS_UNAVAILABLE "此版本暂不支持媒体导入、重建/训练执行、预览、编辑、导出或分享；中断任务暂不能恢复。"
+    IDS_PLAN_ONLY "仅计划，未开始生成"
+    IDS_CREATE_PROMPT "项目名称（将在所选父目录下建立同名项目目录）："
+    IDS_SELECT_PARENT "选择项目的父目录"
+    IDS_SELECT_PROJECT "选择已有 MonsterStudio 项目目录"
+    IDS_NAME_REQUIRED "请输入项目名称。"
+    IDS_REQUEST_REQUIRED "请输入要保存的计划请求文字。"
+    IDS_SELECT_RUN "请先选择一条待办记录。"
+    IDS_CLOSE_WAIT "正在等待当前保存操作完成..."
+    IDS_STATE_PENDING "待办"
+    IDS_STATE_RUNNING "运行中（历史状态）"
+    IDS_STATE_PAUSING "暂停中（历史状态）"
+    IDS_STATE_CANCELING "取消中（历史状态）"
+    IDS_STATE_INTERRUPTED "已中断；此版本不能恢复"
+    IDS_STATE_CANCELED "已取消"
+    IDS_STATE_FAILED "失败"
+    IDS_REQUEST_TOO_LARGE "请求文字超出 64 KiB 限制。"
+    IDS_INITIAL_REQUEST "例如：场景说明、预期输入和参数。此处只保存计划文字。"
+    IDS_FOLDER_ERROR "无法选择目录。"
+    IDS_ACTION_ERROR "无法完成操作。"
+    IDS_INTERRUPTED_NOTE "打开时已将历史活动状态持久标记为中断；此版本不会自动恢复计算。"
+    IDS_INIT_ERROR "无法初始化 Windows 对话框组件。"
+END
+
+IDD_CREATE_PROJECT DIALOGEX 0, 0, 260, 81
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "创建 MonsterStudio 项目"
+FONT 9, "Microsoft YaHei UI"
+BEGIN
+    LTEXT "项目名称：", IDC_CREATE_PROMPT, 8, 9, 244, 12
+    EDITTEXT IDC_CREATE_NAME, 8, 25, 244, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON "确定", IDOK, 139, 55, 53, 17
+    PUSHBUTTON "取消", IDCANCEL, 199, 55, 53, 17
+END
+
+1 RT_MANIFEST "MonsterStudio.manifest"

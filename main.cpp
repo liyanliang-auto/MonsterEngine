@@ -96,7 +96,7 @@ public:
 int main(int argc, char** argv) {
     using namespace MonsterRender;
     bool splatEvidenceRun=false;
-    for(int i=1;i<argc;++i)if(strcmp(argv[i],"--splat-benchmark")==0||strcmp(argv[i],"--splat-capture-only")==0||strcmp(argv[i],"--splat-scene")==0||strcmp(argv[i],"--splat-config")==0)splatEvidenceRun=true;
+    for(int i=1;i<argc;++i)if(strcmp(argv[i],"--splat-benchmark")==0||strcmp(argv[i],"--splat-capture-only")==0||strcmp(argv[i],"--splat-scene")==0||strcmp(argv[i],"--splat-config")==0||strcmp(argv[i],"--splat-calibrated-capture")==0)splatEvidenceRun=true;
     
     // ========================================================================
     // Initialize Logging System FIRST - before any other initialization
@@ -158,6 +158,14 @@ int main(int argc, char** argv) {
             ShutdownLogging(); return 2;
         }
         splatLODRequested = true;
+    }
+    // A calibrated request is a complete isolated invocation.
+    for(int i=1;i<argc;++i)if(strcmp(argv[i],"--splat-calibrated-capture")==0){
+        std::string error;
+        if(argc!=3||i!=1||!Splat::FSplatLODRuntimeOptions::LoadCalibratedCaptureConfig(argv[2],splatRuntime,error)){
+            std::fprintf(stderr,"Invalid calibrated capture: %s\n",error.empty()?"Use only --splat-calibrated-capture <config.json>":error.c_str());ShutdownLogging();return 2;
+        }
+        splatLODRequested=true;
     }
     for(int i=1;i<argc;++i)if(strcmp(argv[i],"--splat-config")==0){
         std::string error;
@@ -282,6 +290,7 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--splat-sequence") == 0 && i + 1 < argc) {
             splatRuntime.sequencePath = splatExport.sequencePath = argv[++i];
         }
+        else if(strcmp(argv[i],"--splat-calibrated-capture")==0){argument();}
         else if(strcmp(argv[i],"--splat-config")==0){argument();}
         else if(strcmp(argv[i],"--splat-scene")==0){splatRuntime.scenePath=argument();splatLODRequested=true;}
         else if(strcmp(argv[i],"--splat-source-ply")==0){splatRuntime.sourcePLY=splatModelPath=argument();}

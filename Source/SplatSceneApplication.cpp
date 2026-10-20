@@ -165,9 +165,9 @@ bool SplatSceneApplication::initializeBenchmark()
     if(!m_runtime.benchmark)return true;
     std::string error;if(!m_runtime.Validate(error)){m_uiMessage=error;return false;}
     if(!m_startupExport.videoPath.empty()){m_uiMessage="Benchmark and video export require separate runs";return false;}
-    if(!m_sequence.LoadJson(m_runtime.sequencePath,&error)||m_sequence.GetKeyframes().size()<2||m_sequence.GetDuration()<=0){m_uiMessage=error.empty()?"Invalid benchmark sequence":error;return false;}
-    if(m_runtime.benchmarkFixedCameraSeconds>m_sequence.GetDuration()){m_uiMessage="Fixed camera time exceeds the registered sequence";return false;}
-    if(m_runtime.captureOnly&&m_runtime.captureTimes.back()>m_sequence.GetDuration()){m_uiMessage="Capture times exceed the registered camera sequence";return false;}
+    if(!m_runtime.calibratedCapture && (!m_sequence.LoadJson(m_runtime.sequencePath,&error)||m_sequence.GetKeyframes().size()<2||m_sequence.GetDuration()<=0)){m_uiMessage=error.empty()?"Invalid benchmark sequence":error;return false;}
+    if(!m_runtime.calibratedCapture&&m_runtime.benchmarkFixedCameraSeconds>m_sequence.GetDuration()){m_uiMessage="Fixed camera time exceeds the registered sequence";return false;}
+    if(!m_runtime.calibratedCapture&&m_runtime.captureOnly&&m_runtime.captureTimes.back()>m_sequence.GetDuration()){m_uiMessage="Capture times exceed the registered camera sequence";return false;}
     if(!m_runtime.captureOnly&&!m_device->supportsGPUTimestamps()){m_uiMessage="Hardware GPU timestamps unavailable; performance run is unverified";return false;}
     auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(m_device);if(!vk){m_uiMessage="Benchmark requires Vulkan";return false;}
     VkPhysicalDeviceProperties properties{};RHI::Vulkan::VulkanAPI::getFunctions().vkGetPhysicalDeviceProperties(vk->getPhysicalDevice(),&properties);
@@ -177,7 +177,7 @@ bool SplatSceneApplication::initializeBenchmark()
     metadata["validation"]=m_config.enableValidation?"enabled":"disabled";metadata["VSyncRequested"]="disabled";metadata["frameCap"]="none";
     metadata["presentMode"]=vk->GetConfiguredPresentMode()==VK_PRESENT_MODE_IMMEDIATE_KHR?"IMMEDIATE":vk->GetConfiguredPresentMode()==VK_PRESENT_MODE_MAILBOX_KHR?"MAILBOX":"FIFO";
     metadata["presentModeImplications"]=vk->GetConfiguredPresentMode()==VK_PRESENT_MODE_MAILBOX_KHR?"Presentation is synchronized; mailbox can replace queued images and does not impose a software render cap":"Immediate presentation requested; no application render cap";
-    metadata["colorSpace"]="linear RGBA8 shader output before sRGB present";metadata["background"]="black RGB with transparent alpha";metadata["exposure"]="1";
+    metadata["colorSpace"]="trained-image-encoded-rgb";metadata["background"]="black RGB with transparent alpha";metadata["exposure"]="1";
     metadata["sourcePLY"]=m_modelPath;metadata["manifest"]=m_runtime.scenePath;metadata["sequence"]=m_runtime.sequencePath;metadata["sourceSHDegree"]=std::to_string(m_gpuData.sourceSHDegree);
     metadata["displaySHDegree"]=std::to_string(m_runtime.displaySHDegree<0?m_shDegree:m_runtime.displaySHDegree);
     metadata["shStorageDegreeRequested"]=std::to_string(m_runtime.shStorageDegree);
@@ -256,7 +256,7 @@ bool SplatSceneApplication::initializeBenchmark()
     metadata["benchmarkFreezeSelection"]=m_runtime.benchmarkFreezeSelection?"true":"false";
     metadata["selectionSettled"]="false";
     metadata["selectionIdentityPolicy"]="SHA256 source identity and ordered active source indices; original A uses complete ordered range [0,count); pool identity includes selected node order and physical source mapping";
-    metadata["capturePrecisionPolicy"]="RGBA8_UNORM linear raw readback; byte equality proves quantized output equality only, not prequantization FP32 equality";
+    metadata["capturePrecisionPolicy"]="RGBA8_UNORM raw trained-image-encoded-rgb readback; byte equality proves quantized output equality only, not prequantization FP32 equality";
     std::ostringstream canonical;canonical<<std::setprecision(17)<<m_runtime.projectedFusion<<'|'<<m_runtime.fusionImplementation<<'|'<<m_runtime.fusionRelativeRGBAError<<'|'<<m_runtime.mode<<'|'<<m_runtime.width<<'|'<<m_runtime.height<<'|'<<m_runtime.renderWidth<<'|'<<m_runtime.renderHeight<<'|'<<m_runtime.activeCapacity<<'|'<<m_runtime.sortCapacity<<'|'<<m_runtime.displaySHDegree<<'|'<<m_runtime.lod.qualityPixels<<'|'<<m_runtime.lod.hysteresis<<'|'<<m_runtime.fullLeaf<<'|'<<m_runtime.warmupSeconds<<'|'<<m_runtime.sampleSeconds<<'|'<<m_runtime.rounds<<'|'<<m_runtime.streaming.sceneGPUBytes<<'|'<<m_runtime.streaming.cpuCacheBytes<<'|'<<m_runtime.streaming.stagingBytes<<'|'<<m_runtime.streaming.temporaryGPUBytes<<'|'<<m_runtime.streaming.maxUploadBytesPerFrame<<'|'<<m_runtime.streaming.maxConcurrentReads<<'|'<<m_runtime.streaming.retries<<'|'<<m_runtime.streaming.retryDelayMilliseconds;
     canonical<<'|'<<m_runtime.benchmarkFixedCameraSeconds<<'|'<<m_runtime.benchmarkFreezeSelection<<'|'<<m_runtime.lod.freeze<<'|'<<m_runtime.validation<<'|'<<m_runtime.captureOnly<<'|'<<m_runtime.functionalSmoke<<'|'<<m_runtime.captureSettleSeconds;
     for(double t:m_runtime.captureTimes)canonical<<'|'<<t;
@@ -265,7 +265,7 @@ bool SplatSceneApplication::initializeBenchmark()
     const char* processor=std::getenv("PROCESSOR_IDENTIFIER");metadata["CPU"]=processor?processor:"unavailable";
     MEMORYSTATUSEX ram{};ram.dwLength=sizeof(ram);metadata["systemRAMBytes"]=GlobalMemoryStatusEx(&ram)?std::to_string(ram.ullTotalPhys):"unavailable";
     auto hash=[&](const std::string& name,const std::string& path){std::string value;if(!Splat::FSplatSceneFormat::SHA256File(path,value,error)){m_uiMessage=error;return false;}metadata[name]=value;return true;};
-    if(!hash("sequenceSHA256",m_runtime.sequencePath))return false;
+    if(!m_runtime.calibratedCapture&&!hash("sequenceSHA256",m_runtime.sequencePath))return false;
     if(!m_runtime.scenePath.empty()&&!hash("manifestSHA256",m_runtime.scenePath))return false;
     if(m_scene.sourceSHA256.empty()&&!hash("sourceSHA256",m_modelPath))return false;
     wchar_t executable[32768]{};const DWORD size=GetModuleFileNameW(nullptr,executable,32768);
@@ -433,7 +433,7 @@ void SplatSceneApplication::onInitialize()
     // Load model
     if (!loadModel())
     {
-        MR_LOG(LogSplatScene, Error, "Failed to load model: %s", m_modelPath.c_str());
+        MR_LOG(LogSplatScene, Error, "Failed to load model: %s (%s)", m_modelPath.c_str(),m_uiMessage.c_str());
         m_runFailed = true; m_startupExportFailed = !m_startupExport.videoPath.empty();
         requestExit();
         return;
@@ -466,7 +466,7 @@ void SplatSceneApplication::onInitialize()
         return;
     }
 
-    if ((!m_runtime.benchmark || m_runtime.captureOnly) && !initImGui())
+    if (!m_runtime.calibratedCapture && (!m_runtime.benchmark || m_runtime.captureOnly) && !initImGui())
         MR_LOG(LogSplatScene, Warning, "3DGS controls unavailable: ImGui initialization failed");
 
     // Adjust window to swapchain size
@@ -517,6 +517,7 @@ void SplatSceneApplication::onInitialize()
 void SplatSceneApplication::onUpdate(float32 deltaTime)
 {
     m_updateStart = std::chrono::steady_clock::now();
+    if(m_runtime.calibratedCapture && std::chrono::duration<double>(m_updateStart-m_startupStart).count()>110){failRun("Calibrated capture exceeded 110-second application budget");return;}
     m_deltaTime = deltaTime;
     if (m_pendingSceneSwitch) {
         m_pendingSceneSwitch = false;
@@ -577,7 +578,7 @@ void SplatSceneApplication::onUpdate(float32 deltaTime)
         m_controls.bLODBoundsOverlay = playbackControls.bLODBoundsOverlay;
         m_controls.LODQualityPixels = playbackControls.LODQualityPixels;
     }
-    if (m_runtime.benchmark) {
+    if (m_runtime.benchmark && !m_runtime.calibratedCapture) {
         double elapsed = m_samplingStarted ? std::chrono::duration<double>(m_updateStart - m_sampleStart).count() : 0;
         m_sequenceTime = m_runtime.captureOnly && m_captureIndex < m_runtime.captureTimes.size() ? m_runtime.captureTimes[m_captureIndex] :
             std::fmod(elapsed < m_runtime.warmupSeconds ? elapsed : elapsed - m_runtime.warmupSeconds, m_runtime.sampleSeconds);
@@ -694,8 +695,8 @@ void SplatSceneApplication::onRender()
     buildCameraUniforms(camera);
     m_session->SetCameraUniforms(camera);
     Splat::FSplatRenderSettings renderSettings;
-    renderSettings.nearPlane = m_controls.NearPlane;
-    renderSettings.farPlane = m_controls.FarPlane;
+    renderSettings.nearPlane = m_runtime.calibratedCapture?m_runtime.calibratedNear:m_controls.NearPlane;
+    renderSettings.farPlane = m_runtime.calibratedCapture?m_runtime.calibratedFar:m_controls.FarPlane;
     renderSettings.distanceCulling = m_controls.bDistanceCulling;
     renderSettings.wireframe = m_controls.bWireframe;
     renderSettings.gaussianScale = m_controls.GaussianScale;
@@ -1403,6 +1404,9 @@ bool SplatSceneApplication::loadModel()
     }
 
     m_shDegree = m_gpuData.shDegree;
+    if(m_runtime.calibratedCapture && (m_gpuData.sourceSHDegree!=m_runtime.calibratedCamera.shDegree||m_gpuData.shDegree!=m_gpuData.sourceSHDegree||m_gpuData.shStorageMode!=0)){
+        m_uiMessage="Calibrated capture requires matching complete source SH degree and FP32 storage";return false;
+    }
     m_initialUploadStagingPeakBytes=loader.GetStagingBackingBytes();
     if(!m_runtime.scenePath.empty()&&m_runtime.mode=='A'&&(m_gpuData.gaussianCount!=m_scene.sourceCount||uint32_t(m_gpuData.sourceSHDegree)!=m_scene.shDegree)){m_uiMessage="Original baseline count/SH degree differs from scene manifest";return false;}
     m_legacyAllocations={};std::set<uint64_t> backing;
@@ -1510,6 +1514,7 @@ bool SplatSceneApplication::initPresentPass()
 void SplatSceneApplication::buildCameraUniforms(Splat::FCameraUniforms& outUniforms) const
 {
     using namespace MonsterEngine;
+    if(m_runtime.calibratedCapture){outUniforms=m_runtime.calibratedCamera;return;}
 
     if (!m_cameraManager)
     {

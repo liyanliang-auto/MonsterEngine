@@ -1,5 +1,8 @@
 // Copyright Monster Engine. All Rights Reserved.
 #include "Renderer/Splat/LOD/SplatLODBenchmark.h"
+#include "Renderer/Splat/SplatViewerSession.h"
+#include <algorithm>
+#include <set>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -64,6 +67,8 @@ public:
 
 bool FSplatLODRuntimeOptions::Validate(std::string& error) const {
     auto fail=[&](const char* message){error=message;return false;};
+    if(calibratedCapture && (!benchmark||!captureOnly||mode!='A'||fullLeaf||projectedFusion||projectionColorCompression||shStorageMode||shStorageDegree!=-1||displaySHDegree!=calibratedCamera.shDegree||!scenePath.empty()||!sequencePath.empty()||renderWidth!=width||renderHeight!=height||captureTimes!=std::vector<double>{0}))
+        return fail("Calibrated capture requires exact original resident FP32/full SH single-view settings");
     if(fusionImplementation!="split"&&fusionImplementation!="scalar")return fail("Fusion implementation must be split or scalar");
     if(mode<'A'||mode>'E') return fail("Mode must be A, B, C, D or E");
     if(tightTileCulling>2) return fail("tightTileCulling must be 0, 1 or 2");
@@ -81,7 +86,7 @@ bool FSplatLODRuntimeOptions::Validate(std::string& error) const {
     if(!streaming.sceneGPUBytes||!streaming.cpuCacheBytes||!streaming.stagingBytes||!streaming.temporaryGPUBytes||!streaming.maxUploadBytesPerFrame||!streaming.maxConcurrentReads||streaming.maxConcurrentReads>64||streaming.retries>32||streaming.retryDelayMilliseconds>60000) return fail("Invalid streaming budgets or concurrency");
     if(!std::isfinite(lod.qualityPixels)||lod.qualityPixels<=0||!std::isfinite(lod.hysteresis)||lod.hysteresis<0||lod.hysteresis>=1) return fail("Invalid LOD quality or hysteresis");
     if(!std::isfinite(warmupSeconds)||warmupSeconds<0||!std::isfinite(sampleSeconds)||sampleSeconds<=0||sampleSeconds>3600||!rounds||rounds>100||!std::isfinite(captureSettleSeconds)||captureSettleSeconds<0||captureSettleSeconds>60) return fail("Invalid benchmark timing");
-    if(benchmark && (sequencePath.empty()||outputDirectory.empty())) return fail("Benchmark requires sequence and output paths");
+    if(benchmark && ((!calibratedCapture&&sequencePath.empty())||outputDirectory.empty())) return fail("Benchmark requires sequence and output paths");
     if(benchmark && !captureOnly && !functionalSmoke && (warmupSeconds<10||sampleSeconds<60||rounds<3)) return fail("Performance runs require 10s warmup, 60s rounds and three rounds");
     if(benchmark && !captureOnly && !functionalSmoke && mode=='E' && sampleSeconds*rounds<1800) return fail("Restricted E requires at least 30 minutes of registered sampling");
     if(captureOnly && (!benchmark||captureTimes.empty())) return fail("Capture-only requires benchmark and capture times");
@@ -89,6 +94,40 @@ bool FSplatLODRuntimeOptions::Validate(std::string& error) const {
     if(cacheCondition!="unknown"&&cacheCondition!="warm-file-cache"&&cacheCondition!="cold-file-cache") return fail("Invalid cache-condition label");
     if(outputDirectory.find('\0')!=std::string::npos) return fail("Invalid output directory");
     error.clear(); return true;
+}
+bool FSplatLODRuntimeOptions::LoadCalibratedCaptureConfig(const std::string& path,FSplatLODRuntimeOptions& options,std::string& error) {
+    try {
+        std::ifstream in(std::filesystem::u8path(path),std::ios::binary|std::ios::ate);
+        if(!in) throw std::runtime_error("Cannot open calibrated capture config");
+        const auto length=in.tellg();if(length<=0||length>65536)throw std::runtime_error("Calibrated config must be 1..65536 bytes");
+        in.seekg(0);std::string source(static_cast<size_t>(length),'\0');if(!in.read(source.data(),length))throw std::runtime_error("Cannot read calibrated capture config");
+        const auto fields=ConfigReader(source).Read();
+        const std::set<std::string> expected={"schemaVersion","cameraId","sourcePLY","outputDirectory","width","height","fx","fy","cx","cy","nearPlane","farPlane","viewMatrix","shDegree","policySHA256","auditSHA256","protectedInputsSHA256"};
+        if(fields.size()!=expected.size())throw std::runtime_error("Calibrated config requires exactly the schema-1 fields");
+        for(const auto& field:fields)if(!expected.count(field.first))throw std::runtime_error("Unknown calibrated config field: "+field.first);
+        auto number=[&](const char* key){const auto& v=fields.at(key);if(v.kind!=Value::Number)throw std::runtime_error(std::string("Expected number: ")+key);return v.number;};
+        auto integer=[&](const char* key,uint32_t limit){const auto n=number(key);if(n<0||n>limit||n!=std::floor(n))throw std::runtime_error(std::string("Invalid integer: ")+key);return uint32_t(n);};
+        auto text=[&](const char* key){const auto& v=fields.at(key);if(v.kind!=Value::String||v.text.empty()||v.text.size()>32768||v.text.find('\0')!=std::string::npos)throw std::runtime_error(std::string("Invalid string: ")+key);return v.text;};
+        if(integer("schemaVersion",1)!=1)throw std::runtime_error("Unsupported calibrated capture schema");
+        FSplatLODRuntimeOptions value;value.calibratedCapture=true;value.mode='A';value.benchmark=true;value.captureOnly=true;value.vsync=false;
+        value.width=integer("width",16384);value.height=integer("height",16384);value.renderWidth=value.width;value.renderHeight=value.height;
+        value.cameraId=text("cameraId");if(value.cameraId.size()>256)throw std::runtime_error("cameraId exceeds 256 bytes");
+        value.sourcePLY=text("sourcePLY");value.outputDirectory=text("outputDirectory");
+        if(!std::filesystem::is_regular_file(std::filesystem::u8path(value.sourcePLY)))throw std::runtime_error("sourcePLY must be an existing regular file");
+        const auto output=std::filesystem::u8path(value.outputDirectory);
+        if(std::filesystem::exists(output)&&(!std::filesystem::is_directory(output)||!std::filesystem::is_empty(output)))throw std::runtime_error("Calibrated output directory must be new or empty");
+        auto hash=[&](const char* key){auto v=text(key);if(v.size()!=64||!std::all_of(v.begin(),v.end(),[](char c){return (c>='0'&&c<='9')||(c>='a'&&c<='f');}))throw std::runtime_error(std::string("Invalid SHA256: ")+key);return v;};
+        value.policySHA256=hash("policySHA256");value.auditSHA256=hash("auditSHA256");value.protectedInputsSHA256=hash("protectedInputsSHA256");
+        FCalibratedCameraDesc camera;camera.width=value.width;camera.height=value.height;camera.fx=number("fx");camera.fy=number("fy");camera.cx=number("cx");camera.cy=number("cy");
+        camera.nearPlane=float(number("nearPlane"));camera.farPlane=float(number("farPlane"));camera.shDegree=int32_t(integer("shDegree",3));
+        const auto& matrix=fields.at("viewMatrix");if(matrix.kind!=Value::Array||matrix.array.size()!=16)throw std::runtime_error("viewMatrix requires exactly 16 numbers");
+        for(size_t i=0;i<16;++i)camera.viewMatrix[i]=float(matrix.array[i]);
+        if(!FSplatViewerSession::BuildCalibratedCamera(camera,value.calibratedCamera,error))return false;
+        value.calibratedFX=camera.fx;value.calibratedFY=camera.fy;value.calibratedCX=camera.cx;value.calibratedCY=camera.cy;value.calibratedNear=camera.nearPlane;value.calibratedFar=camera.farPlane;value.displaySHDegree=camera.shDegree;
+        value.captureTimes={0};value.captureSettleSeconds=0;value.warmupSeconds=0;value.sampleSeconds=1;value.rounds=1;
+        if(!value.Validate(error))return false;
+        options=std::move(value);error.clear();return true;
+    }catch(const std::exception& e){error=e.what();return false;}
 }
 bool FSplatLODRuntimeOptions::LoadConfig(const std::string& path,FSplatLODRuntimeOptions& options,std::string& error) {
     try {

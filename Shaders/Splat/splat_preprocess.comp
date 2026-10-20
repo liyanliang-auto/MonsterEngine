@@ -266,7 +266,7 @@ void main() {
     computeCov3D(scales[sourceIdx].xyz, rotations[sourceIdx], pc.gaussianScale, cov3D_data);
 
     // Step 1.5: Compute 2D covariance (Jacobian + projection)
-    vec3 cov2D = computeCov2D(pView, cov3D_data, camera.viewMatrix, camera.focalX, camera.focalY, camera.tanFovX, camera.tanFovY);
+    vec3 cov2D = computeCov2D(pView, cov3D_data, camera.viewMatrix, camera.focalX, camera.focalY, camera.tanFovX, camera.tanFovY, camera.projMatrix[2].xy);
 
     // Step 1.6: EWA conic (invert 2D covariance)
     float det = cov2D.x * cov2D.z - cov2D.y * cov2D.y;
