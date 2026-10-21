@@ -2,6 +2,7 @@
 #include "Renderer/Splat/SplatStreamingController.h"
 #include "Renderer/Splat/LOD/SplatSceneFormat.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <deque>
 #include <filesystem>
@@ -118,6 +119,7 @@ struct FSplatStreamingController::FImpl {
     FSplatLODSelection selection;
     FSplatStreamingControllerSnapshot snapshot;
     uint64_t generation = 0, lastFrame = 0, submissionBaseline = 0, selectionVersion = 0, previousResidency = 0;
+    MonsterEngine::Profiling::Context recording;
     bool initialized = false, cancelled = false, failed = false, pressure = false, awaitingSubmission = false;
 
     bool Mandatory(uint32_t page) const {
@@ -143,6 +145,9 @@ struct FSplatStreamingController::FImpl {
         if (streamer) streamer->CancelGeneration(generation);
     }
     void Capture() {
+        snapshot.desiredNodes=selection.desiredNodeIds.size(); snapshot.selectedNodes=selection.selectedNodeIds.size();
+        snapshot.requestPages=selection.requestPageIds.size(); snapshot.prefetchPages=selection.prefetchPageIds.size();
+        snapshot.maxSelectedProxyErrorPixels=selection.maxSelectedProxyErrorPixels;
         snapshot.sceneGeneration = generation;
         snapshot.frameId = lastFrame;
         snapshot.memoryPressure = pressure;
@@ -186,6 +191,10 @@ struct FSplatStreamingController::FImpl {
         const auto append = [&](uint32_t page, double priority) {
             if (page >= seen.size() || seen[page] || terminal[page] || pool->HasPage(page, generation)) return;
             seen[page] = true; requests.push_back({page, priority, generation});
+            if (MonsterEngine::Profiling::IsEnabled()) {
+                auto& context = requests.back().profiling;
+                context = recording; context.sceneId = generation; context.pageId = uint64_t(page) + 1;
+            }
         };
         // Root priority cannot be displaced by refinement or an offscreen camera.
         if (manifest.rootNode != SplatInvalidId)
@@ -317,7 +326,7 @@ bool FSplatStreamingController::InitializePrepared(RHI::IRHIDevice* device, cons
 }
 
 FSplatStreamingFrameResult FSplatStreamingController::UpdateAndRecord(RHI::IRHICommandList* command,
-    const FSplatLODView& camera, uint64_t frameId) {
+    const FSplatLODView& camera, uint64_t frameId, uint64_t requestId) {
     auto& s = *Impl;
     FSplatStreamingFrameResult result;
     if (!s.initialized || s.cancelled || s.failed || !command || !frameId || frameId <= s.lastFrame || !ValidCamera(camera)) {
@@ -325,13 +334,17 @@ FSplatStreamingFrameResult FSplatStreamingController::UpdateAndRecord(RHI::IRHIC
         result.snapshot = std::make_shared<const FSplatStreamingControllerSnapshot>(s.snapshot);
         return result;
     }
+    s.snapshot.lodSelectionMilliseconds.reset();s.snapshot.uploadRecordMilliseconds.reset();
     try {
         s.lastFrame = frameId;
+        s.recording = {requestId, frameId, 0, s.generation, 0};
+        MonsterEngine::Profiling::Scope profileUpdate("Stream/UpdateAndRecord", s.recording);
         const auto residency = s.pool->GetResidency();
         auto settings = s.settings;
         const bool leaves = s.runtime.mode == 'B' || s.runtime.fullLeaf;
         const bool fusion = s.runtime.projectedFusion && s.runtime.mode >= 'C' && !leaves;
         if (leaves || fusion) settings.qualityPixels = 0.001f;
+        const auto selectionStart=std::chrono::steady_clock::now();
         s.selection = s.pressure ? s.Coarse(residency) : s.selector.Select(s.manifest, camera, settings, residency);
         if (leaves && !s.pressure && std::all_of(s.leaves.begin(), s.leaves.end(),
             [&](uint32_t node) { return residency.IsNodeReady(s.manifest, node); })) {
@@ -339,6 +352,7 @@ FSplatStreamingFrameResult FSplatStreamingController::UpdateAndRecord(RHI::IRHIC
             s.selection.selectedNodeIds = s.leaves; s.selection.desiredNodeIds = s.leaves;
             s.selection.activeCount = s.manifest.sourceCount; s.selection.selectedLeafNodes = s.leaves.size();
         }
+        s.snapshot.lodSelectionMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-selectionStart).count();
         if (s.selection.selectedNodeIds != s.previousCut || residency.residencyVersion != s.previousResidency) ++s.selectionVersion;
         s.previousCut = s.selection.selectedNodeIds; s.previousResidency = residency.residencyVersion;
         s.selection.selectionVersion = s.selectionVersion;
@@ -348,7 +362,9 @@ FSplatStreamingFrameResult FSplatStreamingController::UpdateAndRecord(RHI::IRHIC
         if (s.failed) { s.Capture(); result.status = s.snapshot.status; }
         else {
             s.submissionBaseline = s.device->getLastSubmissionToken().value;
-            s.pool->Tick(command, s.generation);
+            const auto uploadStart=std::chrono::steady_clock::now();
+            s.pool->Tick(command, s.generation, s.recording);
+            s.snapshot.uploadRecordMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-uploadStart).count();
             s.ReleasePoolTransfers();
             result.activeSet = s.pool->BuildActiveSet(s.selection, fusion, s.runtime.fusionImplementation == "split");
             if (result.activeSet.sourceIndices.size() != s.selection.activeCount || result.activeSet.sceneGeneration != s.generation)
@@ -391,6 +407,7 @@ void FSplatStreamingController::OnMemoryPressure() {
     s.previousCut = s.selection.selectedNodeIds;
     s.selection.selectionVersion = s.selectionVersion;
     s.pool->ProtectSelection(s.selection); s.pool->TrimUnprotected(); s.streamer->OnMemoryPressure();
+    s.recording = {}; // Pressure-triggered work has no causal frame/request.
     s.ReleasePoolTransfers(); s.Requests(); s.Capture();
 }
 

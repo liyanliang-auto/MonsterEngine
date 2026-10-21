@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "platform": "windows-amd64",
+  "perfetto": {
+    "version": "48.1",
+    "url": "https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v48.1/windows-amd64/trace_processor_shell.exe",
+    "file": "trace_processor_shell.exe",
+    "sha256": "d41639844a6c36dbaa195d91e9c356f2172d924c70a1bfed5432c407f857f009",
+    "documentation": "https://perfetto.dev/docs/analysis/trace-processor"
+  },
+  "tracy": {
+    "version": "0.14.1",
+    "url": "https://github.com/wolfpld/tracy/releases/download/v0.14.1/windows-0.14.1.zip",
+    "file": "windows-0.14.1.zip",
+    "sha256": "f7499d74914aa3ba94a2c1ce72f36477d7b61d9d0f7c9790e05274c258c97fb5",
+    "documentation": "https://github.com/wolfpld/tracy/tree/v0.14.1/import"
+  },
+  "mcp": {"implementation": "monsterengine-stdio", "version": "1.0.0", "protocolVersion": "2024-11-05", "transport": "stdio-newline-jsonrpc"}
+}

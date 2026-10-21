@@ -18,6 +18,9 @@ struct FSplatStreamingControllerSnapshot {
     uint64_t controllerReservedBytes = 0, minimumProgressBytes = 0; ///< CPU admission reservations.
     uint64_t activeCount = 0, selectedLeafNodes = 0, selectedProxyNodes = 0; ///< Actual complete cut.
     uint64_t selectionVersion = 0, residencyVersion = 0; ///< Cut and physical mapping identities.
+    std::optional<double> lodSelectionMilliseconds, uploadRecordMilliseconds; ///< Selection and pool Tick wall scopes in ms.
+    uint64_t desiredNodes=0, selectedNodes=0, requestPages=0, prefetchPages=0; ///< Ideal cut, resident cut and demand.
+    double maxSelectedProxyErrorPixels=0; ///< -1 denotes forced near-plane fallback.
     uint32_t terminalPageFailures = 0, deferredPages = 0; ///< Bounded failure/backpressure state.
     bool rootReady = false, loading = true, degraded = false, memoryPressure = false; ///< Observed state.
     std::string degradationReason; ///< Stable reason; absent means no degradation.
@@ -50,7 +53,7 @@ public:
         FSplatSceneManifest, std::string& error);
     /** No disk read or GPU wait. frameId must increase and command must already record. */
     FSplatStreamingFrameResult UpdateAndRecord(RHI::IRHICommandList* command,
-                                               const FSplatLODView& camera, uint64_t frameId);
+                                               const FSplatLODView& camera, uint64_t frameId, uint64_t requestId = 0);
     /** Call only for the new successful submission containing the returned active set/uploads. */
     void OnSubmitted(RHI::FGPUCompletionToken token);
     /** Invalidates this scene and all queued I/O results; GPU ownership retires at Shutdown. */

@@ -30,7 +30,7 @@ class DiagnosticsExporter(context: Context) {
      */
     fun createBundle(nativeSnapshot: JSONObject? = null, framesCSV: String? = null,
                      buildReports: List<JSONObject> = emptyList(), screenshot: File? = null,
-                     screenshotMetadata: JSONObject? = null): File {
+                     screenshotMetadata: JSONObject? = null): File = NativeBridge.profileScope("ME/kotlin.export_bundle") {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Diagnostic export requires a worker" }
         require(buildReports.size <= 32) { "Too many build reports" }
         require(nativeSnapshot == null || nativeSnapshot.toString().length <= 16 * 1024 * 1024)
@@ -53,6 +53,14 @@ class DiagnosticsExporter(context: Context) {
             report.put("buildReports", builds)
             artifacts["report.json"] = report.toString(2).toByteArray(Charsets.UTF_8)
             if (framesCSV != null) artifacts["frames.csv"] = safeCSV(framesCSV).toByteArray(Charsets.UTF_8)
+            nativeSnapshot?.optString("profilingRawJSON")?.takeIf { it.isNotEmpty() }?.let { raw ->
+                require(raw.length <= 12 * 1024 * 1024)
+                val profile = JSONObject(raw)
+                require(profile.optInt("schemaVersion") == 1)
+                validateProfiling(profile)
+                // Preserve original uint64 text: JSONObject round-trips values above Long.MAX_VALUE as Double.
+                artifacts["profiling.json"] = raw.toByteArray(Charsets.UTF_8)
+            }
             if (screenshot != null && screenshotMetadata != null) {
                 require(screenshotMetadata.optBoolean("gpuCompleted", false)) { "Readback has not completed" }
                 require(screenshotMetadata.optString("origin") == "internal_offscreen_output") { "Wrong screenshot origin" }
@@ -97,7 +105,7 @@ class DiagnosticsExporter(context: Context) {
                     zip.closeEntry()
                 }
             }
-            return target
+            target
         } catch (error: Exception) {
             if (!target.delete() && target.exists()) target.deleteOnExit()
             throw error
@@ -123,8 +131,9 @@ class DiagnosticsExporter(context: Context) {
         require(lines.isNotEmpty() && lines.size <= 513 && lines.first() == CSV_HEADER) { "Unexpected native CSV schema" }
         lines.drop(1).forEach { line ->
             val cells = line.split(',')
-            require(cells.size == 21 && cells.all { it.isEmpty() ||
+            require(cells.size == CSV_COLUMN_COUNT && cells.all { it.isEmpty() ||
                 (it.length <= 32 && it.matches(Regex("[0-9.+eE-]+")) && it.toDoubleOrNull()?.isFinite() == true) })
+            require(cells[21] == "2") { "Unsupported measurement schema" }
         }
         return lines.joinToString("\n", postfix = "\n")
     }
@@ -132,12 +141,24 @@ class DiagnosticsExporter(context: Context) {
     /** Allowlisted scalar-only strings and bounded nested numeric observations.
      * Unknown fields are dropped, so future raw paths cannot silently leak.
      */
-    private fun safeObject(source: JSONObject, depth: Int = 0): JSONObject {
+    private fun safeObject(source: JSONObject, depth: Int = 0, measurementObservation: Boolean = false): JSONObject {
         require(depth <= 12 && source.length() <= 128)
         val output = JSONObject()
         source.keys().forEach { key ->
             if (key !in SAFE_KEYS) return@forEach
             val value = source.opt(key)
+            // Shared dimensions retain the presentation omission contract outside
+            // the versioned measurement object, whose observations are strict.
+            if (key in MEASUREMENT_NUMBER_KEYS && (measurementObservation || key !in PRESENTATION_NUMBER_KEYS)) {
+                require(value == JSONObject.NULL || value is Number && value.toDouble().isFinite()) {
+                    "Mistyped measurement observation"
+                }
+                if (key == "measurementSchemaVersion") require(value is Number && value.toDouble() == 2.0) {
+                    "Unsupported measurement schema"
+                }
+                output.put(key, value)
+                return@forEach
+            }
             // Presentation observations have a scalar type contract. Do not let
             // the generic nested/string handling admit a mistyped observation.
             if (key in PRESENTATION_NUMBER_KEYS) {
@@ -157,7 +178,7 @@ class DiagnosticsExporter(context: Context) {
                 null, JSONObject.NULL -> output.put(key, JSONObject.NULL)
                 is Boolean -> output.put(key, value)
                 is Number -> if (value.toDouble().isFinite()) output.put(key, value) else output.put(key, JSONObject.NULL)
-                is JSONObject -> output.put(key, safeObject(value, depth + 1))
+                is JSONObject -> output.put(key, safeObject(value, depth + 1, key == "measurement"))
                 is JSONArray -> {
                     require(value.length() <= 512)
                     val items = JSONArray()
@@ -181,14 +202,43 @@ class DiagnosticsExporter(context: Context) {
         return output
     }
 
+    /** Validate a path-free backend schema while retaining its exact numeric source text. */
+    private fun validateProfiling(value: Any, depth: Int = 0) {
+        require(depth <= 4)
+        when (value) {
+            is JSONObject -> {
+                require(value.length() <= 32)
+                value.keys().forEach { key ->
+                    require(key in PROFILING_KEYS)
+                    validateProfiling(value.get(key), depth + 1)
+                }
+            }
+            is JSONArray -> {
+                require(value.length() <= 16384)
+                for (index in 0 until value.length()) validateProfiling(value.get(index), depth + 1)
+            }
+            is String -> require(value.length <= 96 && value.matches(Regex("[a-zA-Z0-9_.:/ -]+")))
+            is Number -> require(value.toDouble().isFinite())
+            is Boolean -> Unit
+            else -> require(value == JSONObject.NULL)
+        }
+    }
+
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
         .joinToString("") { "%02x".format(it.toInt() and 255) }
 
     companion object {
+        private val PROFILING_KEYS = setOf("schemaVersion", "clockDomain", "enabled", "captureEpoch", "ringCapacity",
+            "droppedEvents", "overwrittenEvents", "recordCalls", "recordDurationNs", "exportCallsBeforeThis",
+            "exportDurationNsBeforeThis", "exportDurationNsThisSnapshot", "enabledBackends", "tracyIntegration", "events",
+            "eventSequence", "timestampNs", "threadId", "name", "phase", "requestId", "frameId", "submissionId",
+            "sceneId", "pageId", "value")
         private const val MAX_SCREENSHOT_BYTES = 20L * 1024 * 1024
         private const val MAX_BUNDLE_BYTES = 40L * 1024 * 1024
         private val PNG_SIGNATURE = byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10)
-        private const val CSV_HEADER = "frameId,sceneGeneration,surfaceGeneration,configGeneration,submissionToken,activeGaussians,sortEntries,sortCountFrame,residentBytes,uploadedBytes,cpuLeaseBytes,cpuFrameMilliseconds,gpuMilliseconds,gpuTimingFrame,presentReturnCadenceMilliseconds,degraded,streamBytesRead,streamPendingReads,streamActiveReads,streamUploadedPages,streamEvictedPages"
+        private const val CSV_COLUMN_COUNT = 73
+        private const val CSV_HEADER = "frameId,sceneGeneration,surfaceGeneration,configGeneration,submissionToken,activeGaussians,sortEntries,sortCountFrame,residentBytes,uploadedBytes,cpuLeaseBytes,cpuFrameMilliseconds,gpuMilliseconds,gpuTimingFrame,presentReturnCadenceMilliseconds,degraded,streamBytesRead,streamPendingReads,streamActiveReads,streamUploadedPages,streamEvictedPages,measurementSchemaVersion,pipelineGeneration,ownerStartNanoseconds,presentReturnNanoseconds,sessionMilliseconds,acquireMilliseconds,presentMilliseconds,ownerWorkMilliseconds,sortStatus,sortOverflow,gpuPreprocessMilliseconds,gpuPreprocessStatus,gpuScanMilliseconds,gpuScanStatus,gpuAssignKeysMilliseconds,gpuAssignKeysStatus,gpuRadixSortMilliseconds,gpuRadixSortStatus,gpuTileBoundsMilliseconds,gpuTileBoundsStatus,gpuRenderMilliseconds,gpuRenderStatus,gpuPipelineMilliseconds,gpuPipelineStatus,cameraX,cameraY,cameraZ,cameraYaw,cameraPitch,cameraDistance,externalCamera,renderWidth,renderHeight,presentationWidth,presentationHeight,displayWidth,displayHeight,lodSelectionMilliseconds,uploadRecordMilliseconds,desiredNodes,selectedNodes,requestPages,prefetchPages,maxSelectedProxyErrorPixels,selectedLeafNodes,selectedProxyNodes,streamPendingUploads,streamReadyBytes,streamDeferredPages,streamLoading,streamRootReady,streamRequests"
+        private val MEASUREMENT_NUMBER_KEYS = setOf("measurementSchemaVersion", "pipelineGeneration", "ownerStartNanoseconds", "presentReturnNanoseconds", "sessionMilliseconds", "acquireMilliseconds", "presentMilliseconds", "ownerWorkMilliseconds", "sortStatus", "sortOverflow", "gpuPreprocessMilliseconds", "gpuPreprocessStatus", "gpuScanMilliseconds", "gpuScanStatus", "gpuAssignKeysMilliseconds", "gpuAssignKeysStatus", "gpuRadixSortMilliseconds", "gpuRadixSortStatus", "gpuTileBoundsMilliseconds", "gpuTileBoundsStatus", "gpuRenderMilliseconds", "gpuRenderStatus", "gpuPipelineMilliseconds", "gpuPipelineStatus", "cameraX", "cameraY", "cameraZ", "cameraYaw", "cameraPitch", "cameraDistance", "externalCamera", "renderWidth", "renderHeight", "presentationWidth", "presentationHeight", "displayWidth", "displayHeight", "lodSelectionMilliseconds", "uploadRecordMilliseconds", "desiredNodes", "selectedNodes", "requestPages", "prefetchPages", "maxSelectedProxyErrorPixels", "selectedLeafNodes", "selectedProxyNodes", "streamPendingUploads", "streamReadyBytes", "streamDeferredPages", "streamLoading", "streamRootReady", "streamRequests")
         private val HASH_KEYS = setOf("contentHash", "buildIdentity", "configHash", "shaderIdentity", "sourceSHA256", "builderHash")
         private val CODE_KEYS = setOf("code", "name", "reason", "degradationReason", "stage", "state", "kind", "unavailableReason")
         private val PRESENTATION_NUMBER_KEYS = setOf("presentationFormat", "presentationColorSpace",
@@ -200,8 +250,9 @@ class DiagnosticsExporter(context: Context) {
             "not_observed", "not_measured", "not_queried", "not_observed_or_identity_not_supplied", "omitted_for_privacy",
             "owner_cpu_interval_not_gpu", "completed_interval_original_gpuTimingFrame", "internal_offscreen_output",
             "linear_shader_output_before_srgb_present", "srgb_encoded_rgb", "RGBA8_UNORM", "MonsterEngine-MobileLOD-1", "MonsterEngine-PLY-Activated-1",
+            "pending_until_nonblocking_resolve_or_ring_overwrite",
             "A", "B", "C", "D", "E", "split", "scalar", "pending", "top_left")
-        private val SAFE_KEYS = HASH_KEYS + CODE_KEYS + PRESENTATION_NUMBER_KEYS + PRESENTATION_BOOLEAN_KEYS + MEMORY_NUMBER_KEYS + setOf("schemaVersion", "privacy", "latest", "frames", "capacity", "droppedFrames",
+        private val SAFE_KEYS = HASH_KEYS + CODE_KEYS + MEASUREMENT_NUMBER_KEYS + PRESENTATION_NUMBER_KEYS + PRESENTATION_BOOLEAN_KEYS + MEMORY_NUMBER_KEYS + setOf("measurement", "unresolvedOverwrittenFrames", "unmatchedGPURecords", "schemaVersion", "privacy", "latest", "frames", "capacity", "droppedFrames",
             "frameId", "sceneGeneration", "surfaceGeneration", "configGeneration", "requestedConfig", "effectiveConfig", "generation",
             "maximumInternalEdge", "maximumInternalPixels", "width", "height", "renderWidth", "renderHeight", "mode", "vsync",
             "activeCapacity", "sortCapacity", "sceneGPUBytes", "stagingBytes", "cpuCacheBytes", "temporaryGPUBytes", "maxUploadBytesPerFrame",

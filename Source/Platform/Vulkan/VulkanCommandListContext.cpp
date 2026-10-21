@@ -124,15 +124,19 @@ namespace MonsterRender::RHI::Vulkan {
     bool FVulkanCommandListContext::submitCommands(
         VkSemaphore* waitSemaphores, uint32 waitSemaphoreCount,
         VkSemaphore* signalSemaphores, uint32 signalSemaphoreCount) {
+        MonsterEngine::Profiling::Scope scope("vulkan.submit_dispatch", m_device ? m_device->GetProfilingContext() : MonsterEngine::Profiling::Context{});
+        scope.SetValue(0);
         if (m_manager && m_device) {
             // Use the in-flight fence for this frame to enable proper frame synchronization
             uint32 currentFrame = m_device->getCurrentFrame();
             VkFence inFlightFence = m_device->getInFlightFence(currentFrame);
-            return m_manager->submitActiveCmdBufferWithFence(
+            const bool submitted = m_manager->submitActiveCmdBufferWithFence(
                 waitSemaphores, waitSemaphoreCount,
                 signalSemaphores, signalSemaphoreCount,
                 inFlightFence
             );
+            scope.SetValue(submitted ? 1 : 0);
+            return submitted;
         }
         return false;
     }

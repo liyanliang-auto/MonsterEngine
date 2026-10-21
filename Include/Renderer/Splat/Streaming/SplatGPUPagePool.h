@@ -30,7 +30,8 @@ public:
     /** Protect actual/desired cuts before Tick so transitions retain complete fallback. */
     void ProtectSelection(const FSplatLODSelection&);
     /** Poll completion and record bounded uploads; performs no waits or disk reads. */
-    void Tick(RHI::IRHICommandList*,uint64_t sceneGeneration);
+    void Tick(RHI::IRHICommandList*,uint64_t sceneGeneration,
+        const MonsterEngine::Profiling::Context& recording = {});
     /** Immutable mappings only include pages whose upload submission completed. */
     FSplatResidencySnapshot GetResidency() const;
     /** Build compact source indices and pin selected slots until owning submission completes. */

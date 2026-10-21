@@ -18,7 +18,8 @@ class AndroidContractInstrumentation : Instrumentation() {
     private var cleanupGuiJob: String? = null
     private var caseFilter: Regex? = null
     private var pauseOnly = false
-    override fun onCreate(arguments: Bundle?) { cleanupGuiJob=arguments?.getString("cleanupGuiJob"); caseFilter=arguments?.getString("caseFilter")?.toRegex(); pauseOnly=arguments?.getString("pauseOnly")=="true"; super.onCreate(arguments); start() }
+    private var exporterOnly = false
+    override fun onCreate(arguments: Bundle?) { exporterOnly=arguments?.getString("exporterOnly")=="true"; cleanupGuiJob=arguments?.getString("cleanupGuiJob"); caseFilter=arguments?.getString("caseFilter")?.toRegex(); pauseOnly=arguments?.getString("pauseOnly")=="true"; super.onCreate(arguments); start() }
     override fun onStart() {
         val cases = JSONArray()
         fun run(name: String, body: () -> Unit) {
@@ -31,6 +32,7 @@ class AndroidContractInstrumentation : Instrumentation() {
         }
         BonsaiContinuationTests.run(targetContext, ::run)
         PresentationDiagnosticsTests.run(targetContext, ::run)
+        ViewerMeasurementExportTests.run(targetContext, ::run)
         run("native_public_descriptor_cannot_override_trusted_builtin_camera") {
             val owner = NativeBridge.create(targetContext.assets, targetContext.filesDir.absolutePath, ViewerConfig())
             check(owner.isValid) { "Native owner creation failed" }
@@ -157,7 +159,7 @@ class AndroidContractInstrumentation : Instrumentation() {
             check(error.message == "Unsupported scene document")
             check(inventory(repository) == before)
         } }
-        AndroidGuiTests.run(this, ::run, cleanupGuiJob, pauseOnly)
+        if (!exporterOnly) AndroidGuiTests.run(this, ::run, cleanupGuiJob, pauseOnly)
         val failed = (0 until cases.length()).count { !cases.getJSONObject(it).getBoolean("passed") }
         val report = JSONObject().put("schemaVersion", 1).put("total", cases.length()).put("passed", cases.length() - failed)
             .put("failed", failed).put("cases", cases).put("coverage", "not_instrumented")
@@ -204,3 +206,5 @@ class AndroidContractInstrumentation : Instrumentation() {
         error("Expected transaction rejection")
     }
 }
+
+

@@ -10,6 +10,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release")
 option(MONSTER_BUILD_ENGINE "Build native viewer/runtime" ON)
+option(MONSTER_PROFILING_ATRACE "Mirror opt-in profiling to Android ATrace (API 26+)" ${ANDROID})
 include(cmake/MonsterSources.cmake)
 find_package(Threads REQUIRED)
 
@@ -29,7 +30,13 @@ monster_compile_settings(MonsterMemoryRuntime)
 target_link_libraries(MonsterMemoryRuntime PUBLIC Threads::Threads)
 if(ANDROID)
     target_link_libraries(MonsterMemoryRuntime PUBLIC log)
+    if(MONSTER_PROFILING_ATRACE)
+        target_compile_definitions(MonsterMemoryRuntime PRIVATE MONSTER_PROFILING_ATRACE=1)
+        target_link_libraries(MonsterMemoryRuntime PUBLIC android)
+    endif()
 endif()
+# Tracy uses the pinned offline CLI adapter in Tools/Android, with no native
+# capture service/dependency in tools-off measurements. Recording starts disabled.
 
 if(MONSTER_BUILD_ENGINE)
     if(NOT WIN32 AND NOT ANDROID)

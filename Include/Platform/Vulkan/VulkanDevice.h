@@ -4,6 +4,7 @@
 #include "RHI/IRHIDevice.h"
 #include "Platform/Vulkan/VulkanRHI.h"
 #include "RHI/RHI.h"
+#include "Profiling/MonsterProfiler.h"
 
 #include <vector>
 #include <mutex>
@@ -80,6 +81,10 @@ namespace MonsterRender::RHI::Vulkan {
      */
     class VulkanDevice : public IRHIDevice {
     public:
+        /** Owner-thread diagnostic identities; zero means unavailable. */
+        void SetProfilingContext(const MonsterEngine::Profiling::Context& value) { m_profilingContext = value; }
+        /** Copy explicit owner context for stage observations. */
+        MonsterEngine::Profiling::Context GetProfilingContext() const { return m_profilingContext; }
         // Constants
         static constexpr uint32 MAX_FRAMES_IN_FLIGHT = 2;
         
@@ -296,6 +301,7 @@ namespace MonsterRender::RHI::Vulkan {
         bool recreateSwapchain(uint32 newWidth, uint32 newHeight);
         
     private:
+        MonsterEngine::Profiling::Context m_profilingContext{};
         VkResult queueCurrentPresent();
         VkResult waitPresentationCompletion(uint64 timeoutNs);
         void destroyPresentationResources();

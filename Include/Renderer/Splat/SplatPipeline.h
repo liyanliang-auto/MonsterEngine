@@ -43,6 +43,7 @@ struct FSplatPipelineFrameStats {
     uint64_t overflowFrames = 0; ///< Completed samples containing overflow.
     uint64_t telemetrySkippedFrames = 0; ///< Frames without a free asynchronous readback slot.
     bool overflow = false, degraded = false, countAvailable = false; ///< Delayed GPU sample.
+    bool countRecordingSkipped = false; ///< Current recording has no free count readback slot.
     bool timingAvailable = false; ///< Hardware timestamp capability.
     std::string degradationReason; ///< Configuration/capacity failure.
     uint32 tightTileCullingRequested = 0, tightTileCullingEffective = 0; ///< Count/emit mode selected for this pipeline.

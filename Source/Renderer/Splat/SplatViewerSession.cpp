@@ -87,6 +87,9 @@ struct FSplatViewerSession::FImpl {
     FViewerPresentationScalePolicy presentationScale;
     std::chrono::steady_clock::time_point nextMemoryObservation{};
     std::optional<uint64_t> managedLiveBytes,managedBackingBytes,pooledUnusedBytes;
+    FViewerFrameMeasurement measurement;
+    uint64_t profilingRequestId=0;
+    uint64_t pipelineGeneration=0;
     uint64_t highestScene=0,surface=0,streamedFrame=0,recordNanos=0;
     RHI::FGPUCompletionToken uploadToken{},lastSubmission{},baseline{};
     float yaw=0,pitch=0.215f,distance=5.63f,target[3]{};
@@ -112,6 +115,9 @@ struct FSplatViewerSession::FImpl {
     }
     void Publish(uint64_t frame=0) {
         auto next=std::make_shared<FViewerDiagnosticsSnapshot>();next->frameId=frame;
+        next->measurement=measurement;next->measurement.pipelineGeneration=pipelineGeneration;
+        std::copy_n(camera.camPos,3,next->measurement.cameraPosition.begin());
+        next->measurement.cameraYaw=yaw;next->measurement.cameraPitch=pitch;next->measurement.cameraDistance=distance;next->measurement.externalCamera=externalCamera;
         next->sceneGeneration=scene.generation;next->surfaceGeneration=surface;next->configGeneration=config.generation;
         next->sceneId=scene.sceneId;next->contentHash=scene.contentHash;next->requestedConfig=config;
         next->renderWidth=pipeline?width:0;next->renderHeight=pipeline?height:0;
@@ -142,6 +148,7 @@ struct FSplatViewerSession::FImpl {
         next->vulkanPooledUnusedBytes=pooledUnusedBytes;
         next->budget=budget?budget->Snapshot():FSplatBudgetSnapshot{};next->status=status;
         if(pipeline){const auto& p=pipeline->GetFrameStats();next->counters.activeGaussians=p.activeCount;
+            next->measurement.gpuStatus.fill(p.timingAvailable?0:2);next->measurement.sortStatus=p.countRecordingSkipped?4:0;
             if(p.countAvailable){next->counters.sortEntries=p.actualSortCount;next->counters.sortCountFrame=p.countFrame;}
             // Android's viewer records the complete Gaussian compute/raster workload
             // as the Vulkan timestamp interval named Pipeline. Keep WholeFrame for
@@ -150,7 +157,7 @@ struct FSplatViewerSession::FImpl {
             for(const auto& sample:p.timestampSamples)if(sample.label=="WholeFrame"||sample.label=="Pipeline") {next->counters.gpuMilliseconds=sample.milliseconds;next->counters.gpuTimingFrame=sample.frame;}
             next->degraded=p.degraded||p.overflow;next->degradationReason=p.overflow?"sort_capacity_overflow_previous_complete_image_retained":p.degradationReason;
         }
-        if(streaming){const auto s=streaming->Snapshot();next->counters.residentBytes=s.pool.residentBytes;next->counters.cpuLeaseBytes=s.cpu.totalReservedBytes;next->degraded|=s.degraded;if(s.degraded)next->degradationReason=s.degradationReason;}
+        if(streaming){const auto s=streaming->Snapshot();next->counters.uploadedBytes=s.pool.uploadedBytes;next->counters.residentBytes=s.pool.residentBytes;next->counters.cpuLeaseBytes=s.cpu.totalReservedBytes;next->degraded|=s.degraded;if(s.degraded)next->degradationReason=s.degradationReason;}
         else if(gpu.isValid()){next->counters.residentBytes=gpu.sourceLogicalBytes;next->counters.uploadedBytes=gpu.uploadedBytes;}
         std::shared_ptr<const FViewerDiagnosticsSnapshot> immutable=std::move(next);
         std::atomic_store_explicit(&snapshot,std::move(immutable),std::memory_order_release);
@@ -187,7 +194,7 @@ struct FSplatViewerSession::FImpl {
         const auto discard=[&] {next.reset();device->waitForIdle();if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(device))vk->DrainCompletedDestructions();};
         if(!next->initialize(device,gpu.gaussianCount,w,h)){discard();return false;}
         if(next->GetFrameStats().temporaryBytes>bytes){discard();return false;}
-        next->setGaussianData(gpu);device->waitForIdle();pipeline=std::move(next);
+        next->setGaussianData(gpu);device->waitForIdle();pipeline=std::move(next);++pipelineGeneration;
         if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(device))vk->DrainCompletedDestructions();
         temporary=std::move(lease);width=w;height=h;shaderRead=committedShaderRead=false;return true;
     }
@@ -313,14 +320,14 @@ void FSplatViewerSession::ApplySettings(const FViewerConfig& c) {
     i.config=c;if(i.streaming){std::string error;if(!i.streaming->ApplySettings(c.runtime.lod,error))i.status=Bad("settings_failed",error);}i.Publish();
 }
 FSplatStreamingFrameResult FSplatViewerSession::UpdateStreaming(RHI::IRHICommandList* command,const FSplatLODView& view,uint64_t frame) {
-    auto& i=*Impl;if(!i.streaming)return {};auto result=i.streaming->UpdateAndRecord(command,view,frame);i.streamedFrame=frame;
+    auto& i=*Impl;if(!i.streaming)return {};auto result=i.streaming->UpdateAndRecord(command,view,frame,i.profilingRequestId);i.streamedFrame=frame;
     if(i.pipeline)i.pipeline->SetActiveSet(result.activeSet);i.status=result.status;return result;
 }
 void FSplatViewerSession::SetCameraUniforms(const FCameraUniforms& c){Impl->camera=c;Impl->externalCamera=true;if(Impl->pipeline)Impl->pipeline->setCamera(c);}
 void FSplatViewerSession::SetRenderSettings(const FSplatRenderSettings& s){Impl->settings=s;if(Impl->pipeline)Impl->pipeline->setRenderSettings(s);}
 void FSplatViewerSession::PrepareOutputForCompute(RHI::IRHICommandList& command){auto& i=*Impl;if(i.shaderRead&&i.pipeline){command.transitionResource(i.pipeline->getOutputTexture(),RHI::EResourceUsage::ShaderResource,RHI::EResourceUsage::UnorderedAccess);i.shaderRead=false;}}
 FViewerFrameResult FSplatViewerSession::RecordCompute(const FViewerFrameRequest& request,bool frameAlreadyReserved) {
-    auto& i=*Impl;FViewerFrameResult result;
+    auto& i=*Impl;FViewerFrameResult result;i.measurement={};
     if(!i.initialized||!request.commandList||!request.viewportWidth||!request.viewportHeight){result.status=Bad("not_drawable","");return result;}
     if(request.sceneGeneration!=i.scene.generation||request.configGeneration!=i.config.generation||
        (i.surface&&request.surfaceGeneration<i.surface)){result.status=Bad("stale_generation","");return result;}
@@ -370,7 +377,7 @@ FViewerFrameResult FSplatViewerSession::RecordCompute(const FViewerFrameRequest&
         if(i.orbitPreset){renderSettings.nearPlane=i.orbitPreset->nearPlane;renderSettings.farPlane=i.orbitPreset->farPlane;}
         i.pipeline->setRenderSettings(renderSettings);
         if(i.streaming&&i.streamedFrame!=frame){FSplatLODView view;std::copy_n(i.camera.viewMatrix,16,view.view);std::copy_n(i.camera.projMatrix,16,view.projection);std::copy_n(i.camera.camPos,3,view.cameraPosition);view.width=i.width;view.height=i.height;view.nearPlane=i.orbitPreset?i.orbitPreset->nearPlane:i.settings.nearPlane;view.farPlane=i.orbitPreset?i.orbitPreset->farPlane:i.settings.farPlane;view.gaussianScale=i.settings.gaussianScale;UpdateStreaming(request.commandList,view,frame);}
-        PrepareOutputForCompute(*request.commandList);result.outputTexture=i.pipeline->execute(request.commandList);result.recorded=bool(result.outputTexture);i.pendingRecording=result.recorded;result.pipelineFrameId=frame;
+        PrepareOutputForCompute(*request.commandList);result.outputTexture=i.pipeline->execute(request.commandList);i.diagnostics.Resolve(i.pipelineGeneration,i.pipeline->GetFrameStats());result.recorded=bool(result.outputTexture);i.pendingRecording=result.recorded;result.pipelineFrameId=frame;
         i.status=result.outputTexture?Good():Bad("compute_failed",i.pipeline->GetFrameStats().degradationReason);i.Publish(frame);result.counters=i.snapshot->counters;result.diagnostics=i.snapshot;result.status=i.status;
     }catch(const std::exception& e){i.status=Bad("record_failed",e.what());i.Publish();result.status=i.status;result.diagnostics=i.snapshot;}return result;
 }
@@ -392,17 +399,20 @@ FViewerStatus FSplatViewerSession::RecordPresent(RHI::IRHICommandList& command,M
     command.pushConstants(i.presentLayout,RHI::EShaderStage::Fragment,0,sizeof(transfer),&transfer);
     command.draw(3,0);return Good();
 }
+void FSplatViewerSession::SetProfilingRequestId(uint64_t requestId){Impl->profilingRequestId=requestId;}
 FViewerFrameResult FSplatViewerSession::TickAndRecord(const FViewerFrameRequest& request) {
-    auto result=RecordCompute(request);if(result.outputTexture){auto status=RecordPresent(*request.commandList,result.outputTexture,request.viewportWidth,request.viewportHeight);if(!status.ok)result.status=status;}return result;
+    const auto start=Now();auto result=RecordCompute(request);if(result.outputTexture){auto status=RecordPresent(*request.commandList,result.outputTexture,request.viewportWidth,request.viewportHeight);if(!status.ok)result.status=status;}Impl->measurement.sessionMilliseconds=double(Now()-start)/1000000.0;return result;
 }
-void FSplatViewerSession::OnSubmitted(RHI::FGPUCompletionToken token) {
+void FSplatViewerSession::OnSubmitted(RHI::FGPUCompletionToken token,const FViewerFrameMeasurement* owner) {
     auto& i=*Impl;if(!i.pendingRecording||!token.value||token.value==i.lastSubmission.value||token.value==i.baseline.value)return;
     // Tokens are accepted only if observed on this device, never synthesized frame IDs.
     if(i.device->getLastSubmissionToken().value!=token.value)return;i.lastSubmission=token;i.pendingRecording=false;i.committedShaderRead=i.shaderRead;
     if(i.recordedRows){i.uploaded+=i.recordedRows;i.gpu.uploadedBytes=uint64_t(i.uploaded)*(52+3*(i.gpu.shDegree+1)*(i.gpu.shDegree+1)*4);i.recordedRows=0;i.uploadToken=token;}
     if(i.pipeline)i.pipeline->MarkFrameSubmitted(token);if(i.streaming)i.streaming->OnSubmitted(token);
+    if(owner){i.measurement.ownerStartNanoseconds=owner->ownerStartNanoseconds;i.measurement.presentReturnNanoseconds=owner->presentReturnNanoseconds;
+        i.measurement.acquireMilliseconds=owner->acquireMilliseconds;i.measurement.presentMilliseconds=owner->presentMilliseconds;i.measurement.ownerWorkMilliseconds=owner->ownerWorkMilliseconds;}
     i.diagnostics.OnScreenshotSubmitted(token);i.diagnostics.PollScreenshot();i.Publish(i.pipeline?i.pipeline->GetFrameStats().frame:0);
-    const auto stream=i.streaming?std::optional<FSplatStreamingControllerSnapshot>(i.streaming->Snapshot()):std::nullopt;i.diagnostics.Record(*i.snapshot,stream?&*stream:nullptr,token,Now());
+    const auto stream=i.streaming?std::optional<FSplatStreamingControllerSnapshot>(i.streaming->Snapshot()):std::nullopt;i.diagnostics.Record(*i.snapshot,stream?&*stream:nullptr,token,owner?owner->presentReturnNanoseconds:Now());
 }
 FViewerStatus FSplatViewerSession::ResizeInternal(uint32_t w,uint32_t h) {
     auto& i=*Impl;if(!w||!h)return Bad("not_drawable","");i.suspended=false;i.Clamp(w,h);if(w==i.width&&h==i.height)return Good();
@@ -427,7 +437,7 @@ void FSplatViewerSession::SetPresentationDisplayExtent(uint32_t w,uint32_t h) {
     i.displayWidth=w;i.displayHeight=h;i.presentationWidth=i.presentationHeight=0;
     i.presentationScale={};i.Publish();
 }
-void FSplatViewerSession::Suspend(){Impl->suspended=true;}
+void FSplatViewerSession::Suspend(){Impl->suspended=true;Impl->diagnostics.ResetCadence();Impl->measurement={};}
 void FSplatViewerSession::ReleaseScene() {
     if(!Impl)return;auto& i=*Impl;if(i.control)i.control->RequestCancel();if(i.preparation.valid()){i.preparation.wait();i.preparation.get();}i.control.reset();
     if(i.device){i.device->waitForIdle();if(auto* command=i.device->getImmediateCommandList())command->reset();for(auto& set:i.sets)set.Reset();i.diagnostics.Shutdown();}if(i.streaming)i.streaming->Shutdown();i.streaming.reset();i.pipeline.reset();i.gpu.release();i.upload.Reset();

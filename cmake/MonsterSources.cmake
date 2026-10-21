@@ -1,6 +1,7 @@
 # Explicit production inventory. Do not glob or infer sources from IDE metadata.
 # Frozen future job sources must exist before configure; verification follows all coding jobs.
 set(MONSTER_MEMORY_SOURCES
+    Source/Profiling/MonsterProfiler.cpp
     Source/Core/Memory.cpp
     Source/Core/HAL/FMemory.cpp
     Source/Core/HAL/FMemoryManager.cpp

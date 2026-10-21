@@ -313,7 +313,7 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
     private fun canObserveFrames() = !closed&&resumed&&handle.isValid&&attachedGeneration>0&&
         pendingDetach==0L&&openAccepted&&!state.buildBlocked
     private fun stopFrames(){resetFps();if(framePosted){Choreographer.getInstance().removeFrameCallback(this);framePosted=false}}
-    override fun doFrame(frameTimeNanos: Long) {
+    override fun doFrame(frameTimeNanos: Long): Unit = NativeBridge.profileScope("ME/choreographer") {
         framePosted=false;attachPendingSince=0
         if(!closed&&resumed&&attachedGeneration>0&&pendingDetach==0L&&openAccepted&&!state.buildBlocked){if(!NativeBridge.frame(handle,frameTimeNanos).ok)resetFps();scheduleFrames()}
     }

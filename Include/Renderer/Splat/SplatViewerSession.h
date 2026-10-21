@@ -43,8 +43,10 @@ public:
     /** Record shared compute and fullscreen presentation into an acquired command list.
      * Does not end render pass/command buffer or submit; platform may append its UI. */
     FViewerFrameResult TickAndRecord(const FViewerFrameRequest&);
+    /** Owner sets the incoming request before recording; zero clears unavailable cause. */
+    void SetProfilingRequestId(uint64_t requestId);
     /** Associate only a new actual device submission with the preceding recording. */
-    void OnSubmitted(RHI::FGPUCompletionToken);
+    void OnSubmitted(RHI::FGPUCompletionToken,const FViewerFrameMeasurement* owner=nullptr);
     /** Clamp to admitted maximum edge/pixels; recreate with old+new overlap charged. */
     FViewerStatus ResizeInternal(uint32_t, uint32_t);
     /** Owner-only metadata for the attached visible view; zero/invalid clears external filtering policy. */

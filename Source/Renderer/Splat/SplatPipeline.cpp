@@ -438,6 +438,7 @@ MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICom
     PollTelemetry();
     if (!m_frameReserved) ReserveFrameId();
     m_frameReserved = false;
+    m_stats.countRecordingSkipped = true;
     const uint64_t activeSize = m_hasActiveSet ? m_activeSet.sourceIndices.size() : m_gaussianCount;
     m_stats.degraded = false; m_stats.degradationReason.clear();
     auto fail = [&](const char* reason) {
@@ -500,6 +501,7 @@ MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICom
         cmd->copyBuffer(m_telemetry[slot].buffer, m_dispatchState, ESplatDispatchState::Bytes); cmd->resourceBarrier();
         m_telemetry[slot].pending = true; m_telemetry[slot].token = {}; m_telemetry[slot].frame = m_frame; m_pendingTelemetry = int(slot); break;
     }
+    m_stats.countRecordingSkipped = m_pendingTelemetry < 0;
     if (m_pendingTelemetry < 0) ++m_stats.telemetrySkippedFrames;
     return m_render.getOutputTexture();
 }

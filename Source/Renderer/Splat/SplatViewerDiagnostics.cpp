@@ -1,5 +1,6 @@
 // Copyright Monster Engine. All Rights Reserved.
 #include "Renderer/Splat/SplatViewerDiagnostics.h"
+#include "Profiling/MonsterProfiler.h"
 #include "RHI/IRHIDevice.h"
 #include "Platform/Vulkan/VulkanBuffer.h"
 #include "Platform/Vulkan/VulkanTexture.h"
@@ -79,10 +80,36 @@ std::string Config(const FViewerConfig& c) {
 std::string Observation(EViewerObservation value) {
     return value == EViewerObservation::Unknown ? "null" : value == EViewerObservation::Yes ? "true" : "false";
 }
+constexpr const char* StageNames[]={"Preprocess","Scan","AssignKeys","RadixSort","TileBounds","Render","Pipeline"};
+using MeasurementFields=std::vector<std::pair<std::string,std::string>>;
+MeasurementFields Fields(const FViewerDiagnosticsSnapshot& s,const FSplatStreamingControllerSnapshot* t) {
+    MeasurementFields f;const auto& m=s.measurement;
+    auto add=[&](const char* key,const auto& n){f.emplace_back(key,Number(n));};
+    auto opt=[&](const char* key,const auto& n){f.emplace_back(key,Optional(n));};
+    add("measurementSchemaVersion",2);add("pipelineGeneration",m.pipelineGeneration);
+    add("ownerStartNanoseconds",m.ownerStartNanoseconds);add("presentReturnNanoseconds",m.presentReturnNanoseconds);
+    opt("sessionMilliseconds",m.sessionMilliseconds);opt("acquireMilliseconds",m.acquireMilliseconds);
+    opt("presentMilliseconds",m.presentMilliseconds);opt("ownerWorkMilliseconds",m.ownerWorkMilliseconds);
+    add("sortStatus",m.sortStatus);opt("sortOverflow",m.sortOverflow);
+    for(size_t j=0;j<7;++j){f.emplace_back(std::string("gpu")+StageNames[j]+"Milliseconds",Optional(m.gpuStages[j]));f.emplace_back(std::string("gpu")+StageNames[j]+"Status",Number(m.gpuStatus[j]));}
+    add("cameraX",m.cameraPosition[0]);add("cameraY",m.cameraPosition[1]);add("cameraZ",m.cameraPosition[2]);
+    add("cameraYaw",m.cameraYaw);add("cameraPitch",m.cameraPitch);add("cameraDistance",m.cameraDistance);add("externalCamera",m.externalCamera?1:0);
+    add("renderWidth",s.renderWidth);add("renderHeight",s.renderHeight);add("presentationWidth",s.presentationWidth);add("presentationHeight",s.presentationHeight);add("displayWidth",s.displayWidth);add("displayHeight",s.displayHeight);
+    auto stream=[&](const char* key,const auto& n){f.emplace_back(key,t?Number(n):"null");};
+    opt("lodSelectionMilliseconds",t?t->lodSelectionMilliseconds:std::nullopt);opt("uploadRecordMilliseconds",t?t->uploadRecordMilliseconds:std::nullopt);
+    const FSplatStreamingControllerSnapshot empty;const auto& v=t?*t:empty;
+    stream("desiredNodes",v.desiredNodes);stream("selectedNodes",v.selectedNodes);stream("requestPages",v.requestPages);stream("prefetchPages",v.prefetchPages);
+    stream("maxSelectedProxyErrorPixels",v.maxSelectedProxyErrorPixels);
+    stream("selectedLeafNodes",v.selectedLeafNodes);stream("selectedProxyNodes",v.selectedProxyNodes);
+    stream("streamPendingUploads",v.pool.pendingUploads);stream("streamReadyBytes",v.cpu.readyBytes);stream("streamDeferredPages",v.deferredPages);
+    stream("streamLoading",v.loading?1:0);stream("streamRootReady",v.rootReady?1:0);stream("streamRequests",v.io.requests);
+    return f;
+}
 std::string Snapshot(const FViewerDiagnosticsSnapshot& s, const FSplatStreamingControllerSnapshot* stream,
                      RHI::FGPUCompletionToken token, std::optional<double> cadence) {
     Object o;
-    o.Add("schemaVersion", "1"); o.Add("frameId", Number(s.frameId));
+    o.Add("schemaVersion", "2"); o.Add("frameId", Number(s.frameId));
+    Object measurement;for(const auto& field:Fields(s,stream))measurement.Add(field.first.c_str(),field.second);o.Add("measurement",measurement.End());
     o.Add("sceneGeneration", Number(s.sceneGeneration)); o.Add("surfaceGeneration", Number(s.surfaceGeneration));
     o.Add("configGeneration", Number(s.configGeneration)); o.Add("contentHash", Hash(s.contentHash));
     o.Add("buildIdentity", Hash(s.buildIdentity)); o.Add("requestedConfig", Config(s.requestedConfig));
@@ -186,11 +213,17 @@ FViewerScreenshot Encode(std::vector<uint8_t> rgba, uint32_t width, uint32_t hei
 constexpr const char* CSVHeader = "frameId,sceneGeneration,surfaceGeneration,configGeneration,submissionToken,activeGaussians,sortEntries,sortCountFrame,residentBytes,uploadedBytes,cpuLeaseBytes,cpuFrameMilliseconds,gpuMilliseconds,gpuTimingFrame,presentReturnCadenceMilliseconds,degraded,streamBytesRead,streamPendingReads,streamActiveReads,streamUploadedPages,streamEvictedPages\n";
 }
 struct FSplatViewerDiagnostics::FImpl {
-    struct Row { std::string json, csv; };
+    struct Row {
+        FViewerDiagnosticsSnapshot snapshot;
+        std::optional<FSplatStreamingControllerSnapshot> stream;
+        RHI::FGPUCompletionToken token{};
+        std::optional<double> cadence;
+    };
     std::mutex mutex;
     std::deque<Row> frames;
     size_t maximumFrames;
-    uint64_t dropped = 0, previousPresent = 0, previousSurface = 0;
+    uint64_t dropped=0, unresolvedOverwritten=0, unmatchedGPURecords=0, previousPresent=0;
+    uint64_t previousSurface=0,previousScene=0,previousConfig=0,previousPipeline=0;
     RHI::IRHIDevice* captureDevice = nullptr;
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> readback;
     MonsterEngine::TSharedPtr<RHI::IRHITexture> sourceImage;
@@ -205,39 +238,80 @@ FSplatViewerDiagnostics::FSplatViewerDiagnostics(size_t count) : Impl(std::make_
     Impl->maximumFrames = std::clamp<size_t>(count, 1, 512);
 }
 FSplatViewerDiagnostics::~FSplatViewerDiagnostics() { Shutdown(); }
-void FSplatViewerDiagnostics::Record(const FViewerDiagnosticsSnapshot& s, const FSplatStreamingControllerSnapshot* stream,
-                                    RHI::FGPUCompletionToken token, uint64_t present) {
-    auto& p = *Impl; std::lock_guard lock(p.mutex);
+void FSplatViewerDiagnostics::Record(const FViewerDiagnosticsSnapshot& input,const FSplatStreamingControllerSnapshot* stream,
+                                    RHI::FGPUCompletionToken token,uint64_t present) {
+    auto& p=*Impl;std::lock_guard lock(p.mutex);auto s=input;
+    // The new row contains only its own GPU data. Delayed pipeline aggregates stay
+    // in session Snapshot() for compatibility, never masquerade as this row's work.
+    s.counters.sortEntries.reset();s.counters.sortCountFrame.reset();
+    s.counters.gpuMilliseconds.reset();s.counters.gpuTimingFrame.reset();
+    const bool same=p.previousSurface==s.surfaceGeneration&&p.previousScene==s.sceneGeneration&&
+        p.previousConfig==s.configGeneration&&p.previousPipeline==s.measurement.pipelineGeneration;
     std::optional<double> cadence;
-    if (present && p.previousPresent && p.previousSurface == s.surfaceGeneration && present > p.previousPresent)
-        cadence = double(present - p.previousPresent) / 1000000.0;
-    if (present) { p.previousPresent = present; p.previousSurface = s.surfaceGeneration; }
-    std::ostringstream csv; csv.imbue(std::locale::classic());
-    csv << s.frameId << ',' << s.sceneGeneration << ',' << s.surfaceGeneration << ',' << s.configGeneration << ',';
-    auto cell = [&](const auto& value) { auto n = Optional(value); if (n != "null") csv << n; csv << ','; };
-    cell(token.value ? std::optional<uint64_t>(token.value) : std::nullopt);
-    const auto& c = s.counters; cell(c.activeGaussians); cell(c.sortEntries); cell(c.sortCountFrame); cell(c.residentBytes);
-    cell(c.uploadedBytes); cell(c.cpuLeaseBytes); cell(c.cpuFrameMilliseconds); cell(c.gpuMilliseconds); cell(c.gpuTimingFrame);
-    cell(cadence); csv << (s.degraded ? 1 : 0) << ',';
-    if (stream && stream->frameId == s.frameId && stream->sceneGeneration == s.sceneGeneration)
-        csv << stream->io.bytesRead << ',' << stream->io.pendingReads << ',' << stream->io.activeReads << ','
-            << stream->pool.uploadedPages << ',' << stream->pool.evictedPages;
-    else csv << ",,,,";
-    csv << '\n';
-    if (p.frames.size() == p.maximumFrames) { p.frames.pop_front(); ++p.dropped; }
-    p.frames.push_back({Snapshot(s, stream, token, cadence), csv.str()});
+    if(present&&p.previousPresent&&same&&present>p.previousPresent)cadence=double(present-p.previousPresent)/1000000.0;
+    s.counters.cpuFrameMilliseconds.reset();
+    if(!p.frames.empty()&&same&&s.measurement.ownerStartNanoseconds>p.frames.back().snapshot.measurement.ownerStartNanoseconds&&p.frames.back().snapshot.measurement.ownerStartNanoseconds)
+        s.counters.cpuFrameMilliseconds=double(s.measurement.ownerStartNanoseconds-p.frames.back().snapshot.measurement.ownerStartNanoseconds)/1000000.0;
+    if(present){p.previousPresent=present;p.previousSurface=s.surfaceGeneration;p.previousScene=s.sceneGeneration;p.previousConfig=s.configGeneration;p.previousPipeline=s.measurement.pipelineGeneration;}
+    if(p.frames.size()==p.maximumFrames){
+        const auto& old=p.frames.front().snapshot.measurement;
+        if(old.sortStatus==0||std::find(old.gpuStatus.begin(),old.gpuStatus.end(),0u)!=old.gpuStatus.end())++p.unresolvedOverwritten;
+        p.frames.pop_front();++p.dropped;
+    }
+    const bool matched=stream&&stream->frameId==s.frameId&&stream->sceneGeneration==s.sceneGeneration;
+    p.frames.push_back({std::move(s),matched?std::optional<FSplatStreamingControllerSnapshot>(*stream):std::nullopt,token,cadence});
+}
+void FSplatViewerDiagnostics::ResetCadence(){auto& p=*Impl;std::lock_guard lock(p.mutex);p.previousPresent=0;p.previousSurface=p.previousScene=p.previousConfig=p.previousPipeline=0;}
+void FSplatViewerDiagnostics::Resolve(uint64_t generation,const FSplatPipelineFrameStats& stats){
+    MonsterEngine::Profiling::Scope scope("diagnostics.resolve");
+    auto& p=*Impl;std::lock_guard lock(p.mutex);
+    auto find=[&](uint64_t frame)->FImpl::Row*{
+        for(auto& row:p.frames)if(row.snapshot.frameId==frame&&row.snapshot.measurement.pipelineGeneration==generation)return &row;
+        ++p.unmatchedGPURecords;return nullptr;
+    };
+    for(const auto& sample:stats.timestampSamples){
+        const auto stage=std::find_if(std::begin(StageNames),std::end(StageNames),[&](const char* label){return sample.label==label;});
+        if(stage==std::end(StageNames))continue;
+        if(auto* row=find(sample.frame)){
+            const size_t j=stage-std::begin(StageNames);auto& m=row->snapshot.measurement;
+            const bool valid=std::isfinite(sample.milliseconds)&&sample.milliseconds>=0;
+            m.gpuStatus[j]=valid?1:3;m.gpuStages[j]=valid?std::optional<double>(sample.milliseconds):std::nullopt;
+            if(j==6&&valid){row->snapshot.counters.gpuMilliseconds=sample.milliseconds;row->snapshot.counters.gpuTimingFrame=sample.frame;}
+        }
+    }
+    for(const auto& sample:stats.countSamples)if(auto* row=find(sample.frame)){
+        row->snapshot.measurement.sortStatus=1;row->snapshot.measurement.sortOverflow=sample.overflow?1u:0u;row->snapshot.counters.sortEntries=sample.count;row->snapshot.counters.sortCountFrame=sample.frame;
+    }
 }
 std::string FSplatViewerDiagnostics::SnapshotJSON() const {
-    auto& p = *Impl; std::lock_guard lock(p.mutex); Object o;
-    o.Add("schemaVersion", "1"); o.Add("kind", "\"viewer_diagnostics\""); o.Add("privacy", "\"paths_and_source_omitted\"");
-    o.Add("droppedFrames", Number(p.dropped)); o.Add("capacity", Number(p.maximumFrames));
-    o.Add("latest", p.frames.empty() ? "null" : p.frames.back().json);
-    std::string frames = "["; for (const auto& row : p.frames) { if (frames.size() > 1) frames += ','; frames += row.json; }
-    o.Add("frames", frames + ']'); o.Add("unavailableReason", "\"not_observed\""); return o.End();
+    MonsterEngine::Profiling::Scope scope("diagnostics.snapshot_json");
+    auto& p=*Impl;std::lock_guard lock(p.mutex);Object o;
+    o.Add("schemaVersion","2");o.Add("kind","\"viewer_diagnostics\"");o.Add("privacy","\"paths_and_source_omitted\"");
+    o.Add("droppedFrames",Number(p.dropped));o.Add("unresolvedOverwrittenFrames",Number(p.unresolvedOverwritten));
+    o.Add("unmatchedGPURecords",Number(p.unmatchedGPURecords));o.Add("capacity",Number(p.maximumFrames));
+    auto encode=[](const FImpl::Row& r){return Snapshot(r.snapshot,r.stream?&*r.stream:nullptr,r.token,r.cadence);};
+    o.Add("latest",p.frames.empty()?"null":encode(p.frames.back()));
+    std::string frames="[";for(const auto& row:p.frames){if(frames.size()>1)frames+=',';frames+=encode(row);}o.Add("frames",frames+']');
+    o.Add("unavailableReason","\"pending_until_nonblocking_resolve_or_ring_overwrite\"");return o.End();
 }
 std::string FSplatViewerDiagnostics::FramesCSV() const {
-    auto& p = *Impl; std::lock_guard lock(p.mutex); std::string out = CSVHeader;
-    for (const auto& row : p.frames) out += row.csv; return out;
+    MonsterEngine::Profiling::Scope scope("diagnostics.frames_csv");
+    auto& p=*Impl;std::lock_guard lock(p.mutex);std::string out=CSVHeader;out.pop_back();
+    FViewerDiagnosticsSnapshot blank;
+    for(const auto& f:Fields(blank,nullptr)){out+=',';out+=f.first;}out+='\n';
+    for(const auto& row:p.frames){
+        const auto& s=row.snapshot;const auto& c=s.counters;const auto* t=row.stream?&*row.stream:nullptr;
+        std::ostringstream csv;csv.imbue(std::locale::classic());
+        csv<<s.frameId<<','<<s.sceneGeneration<<','<<s.surfaceGeneration<<','<<s.configGeneration<<',';
+        auto cell=[&](const auto& v){auto n=Optional(v);if(n!="null")csv<<n;csv<<',';};
+        cell(row.token.value?std::optional<uint64_t>(row.token.value):std::nullopt);
+        cell(c.activeGaussians);cell(c.sortEntries);cell(c.sortCountFrame);cell(c.residentBytes);cell(c.uploadedBytes);cell(c.cpuLeaseBytes);cell(c.cpuFrameMilliseconds);cell(c.gpuMilliseconds);cell(c.gpuTimingFrame);cell(row.cadence);
+        csv<<(s.degraded?1:0)<<',';
+        if(t)csv<<t->io.bytesRead<<','<<t->io.pendingReads<<','<<t->io.activeReads<<','<<t->pool.uploadedPages<<','<<t->pool.evictedPages;
+        else csv<<",,,,";
+        for(const auto& f:Fields(s,t)){csv<<',';if(f.second!="null")csv<<f.second;}csv<<'\n';out+=csv.str();
+    }
+    return out;
 }
 std::string FSplatViewerDiagnostics::BuildReportJSON(const FSplatBuildIdentity& i, const FSplatBuildProgress& p) {
     Object o; o.Add("schemaVersion", "1"); o.Add("kind", "\"build_report\"");

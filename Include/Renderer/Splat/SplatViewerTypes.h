@@ -4,6 +4,7 @@
 #include "Renderer/Splat/SplatBudgetCoordinator.h"
 #include <memory>
 #include <optional>
+#include <array>
 
 namespace MonsterRender::Splat {
 /** A result is successful only when explicitly set; stable codes are machine-readable. */
@@ -95,6 +96,19 @@ struct FViewerFrameCounters {
     std::optional<double> gpuMilliseconds; ///< Observed completed GPU interval only.
     std::optional<uint64_t> gpuTimingFrame; ///< Original recording ID of gpuMilliseconds.
 };
+/** Original-frame observation. GPU status: 0 pending, 1 valid, 2 unsupported, 3 invalid, 4 dropped. */
+struct FViewerFrameMeasurement {
+    uint64_t pipelineGeneration = 0; ///< Lifetime distinguishes restarted pipeline frame IDs.
+    uint64_t ownerStartNanoseconds = 0, presentReturnNanoseconds = 0; ///< Monotonic wall clock.
+    std::optional<double> sessionMilliseconds, acquireMilliseconds, presentMilliseconds, ownerWorkMilliseconds; ///< Nested wall scopes in ms; owner work excludes acquire/present.
+    std::array<std::optional<double>,7> gpuStages; ///< Preprocess, Scan, AssignKeys, RadixSort, TileBounds, Render, Pipeline ms.
+    std::array<uint32_t,7> gpuStatus{}; ///< Independent availability codes.
+    uint32_t sortStatus = 0; ///< GPU count availability code.
+    std::optional<uint32_t> sortOverflow; ///< Same-origin GPU overflow flag; count saturates on overflow.
+    std::array<float,3> cameraPosition{}; ///< Submitted scene coordinates.
+    float cameraYaw=0, cameraPitch=0, cameraDistance=0; ///< Orbit state; ignored for external camera.
+    bool externalCamera=false; ///< Position remains valid for external cameras.
+};
 /** Immutable published telemetry: no references to live pipeline/worker objects. */
 struct FViewerDiagnosticsSnapshot {
     uint64_t frameId = 0; ///< Recording associated with this snapshot, zero if no frame.
@@ -103,6 +117,7 @@ struct FViewerDiagnosticsSnapshot {
     FViewerConfig requestedConfig; ///< User settings prior to admission/clamping.
     std::optional<FViewerConfig> effectiveConfig; ///< Absent before successful admission.
     FViewerFrameCounters counters; ///< Actual counters with explicit availability.
+    FViewerFrameMeasurement measurement; ///< Per-origin measurement.
     std::vector<FViewerCapabilityState> capabilities; ///< Partial capability/probe observations.
     FSplatBudgetSnapshot budget; ///< Consistent aggregate backing accounting.
     bool degraded = false; ///< Fallback image or reduced quality is active.

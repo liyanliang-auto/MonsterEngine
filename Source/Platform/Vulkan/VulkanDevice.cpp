@@ -866,7 +866,7 @@ namespace MonsterRender::RHI::Vulkan {
             if (m_deviceLost) { m_frameResult.status = EFrameResult::DeviceLost; return m_frameResult; }
             if (!m_swapchain || m_presentationStopped) return m_frameResult;
             const VkFence frameFence = getInFlightFence(m_currentFrame);
-            const VkResult wait = f.vkWaitForFences(m_device, 1, &frameFence, VK_TRUE, timeoutNs);
+            const VkResult wait = [&] { MonsterEngine::Profiling::Scope scope("vulkan.frame_fence", m_profilingContext); const VkResult observed = f.vkWaitForFences(m_device, 1, &frameFence, VK_TRUE, timeoutNs); scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed)); return observed; }();
             if (wait != VK_SUCCESS) {
                 m_frameResult.acquireResult = wait;
                 m_frameResult.status = m_frameResult.acquireStatus = ClassifyFrameResult(wait);
@@ -874,8 +874,8 @@ namespace MonsterRender::RHI::Vulkan {
                 return m_frameResult;
             }
             // Reset belongs immediately before submit, never before acquisition.
-            const VkResult acquire = f.vkAcquireNextImageKHR(m_device, m_swapchain, timeoutNs,
-                getImageAvailableSemaphore(m_currentFrame), VK_NULL_HANDLE, &m_currentImageIndex);
+            const VkResult acquire = [&] { MonsterEngine::Profiling::Scope scope("vulkan.acquire", m_profilingContext); const VkResult observed = f.vkAcquireNextImageKHR(m_device, m_swapchain, timeoutNs,
+                getImageAvailableSemaphore(m_currentFrame), VK_NULL_HANDLE, &m_currentImageIndex); scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed)); return observed; }();
             m_frameResult.acquireResult = acquire;
             m_frameResult.status = m_frameResult.acquireStatus = ClassifyFrameResult(acquire);
             if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR) {
@@ -891,7 +891,7 @@ namespace MonsterRender::RHI::Vulkan {
         }
         const VkFence imageFence = m_imagesInFlight[m_currentImageIndex];
         if (imageFence) {
-            const VkResult wait = f.vkWaitForFences(m_device, 1, &imageFence, VK_TRUE, timeoutNs);
+            const VkResult wait = [&] { MonsterEngine::Profiling::Scope scope("vulkan.image_fence", m_profilingContext); const VkResult observed = f.vkWaitForFences(m_device, 1, &imageFence, VK_TRUE, timeoutNs); scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed)); return observed; }();
             if (wait != VK_SUCCESS) {
                 if (wait == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
                 m_frameResult.status = ClassifyFrameResult(wait); return m_frameResult;
@@ -899,7 +899,7 @@ namespace MonsterRender::RHI::Vulkan {
         }
         if (m_presentMaintenanceEnabled && m_currentImageIndex < m_presentFences.size() &&
             m_presentFencePending[m_currentImageIndex]) {
-            const VkResult wait = f.vkWaitForFences(m_device, 1, &m_presentFences[m_currentImageIndex], VK_TRUE, timeoutNs);
+            const VkResult wait = [&] { MonsterEngine::Profiling::Scope scope("vulkan.present_fence", m_profilingContext); const VkResult observed = f.vkWaitForFences(m_device, 1, &m_presentFences[m_currentImageIndex], VK_TRUE, timeoutNs); scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed)); return observed; }();
             if (wait != VK_SUCCESS) {
                 if (wait == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
                 m_frameResult.status = ClassifyFrameResult(wait); return m_frameResult;
@@ -923,6 +923,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     void VulkanDevice::RecordSubmitFailure(VkResult result, VkFence fence) {
+        MonsterEngine::Profiling::EventWithContext("vulkan.submit_status",m_profilingContext,MonsterEngine::Profiling::EncodeSignedValue(result));
         m_lastSubmitResult = result;
         if (result == VK_ERROR_DEVICE_LOST) { m_deviceLost = true; m_presentationStopped = true; return; }
         // A failed submit attaches no work to the reset fence. Replace frame fences
@@ -953,14 +954,14 @@ namespace MonsterRender::RHI::Vulkan {
         VkSwapchainPresentFenceInfoEXT fenceInfo{};
         if (m_presentMaintenanceEnabled) {
             VkFence& fence = m_presentFences[m_currentImageIndex];
-            const VkResult reset = f.vkResetFences(m_device, 1, &fence);
+            const VkResult reset = [&] { MonsterEngine::Profiling::Scope scope("vulkan.present_fence_reset",m_profilingContext);const auto observed=f.vkResetFences(m_device, 1, &fence);scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed));return observed;}();
             if (reset != VK_SUCCESS) { m_presentationStopped = true; m_frameAcquired = false; return reset; }
             fenceInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT;
             fenceInfo.swapchainCount = 1; fenceInfo.pFences = &fence;
             info.pNext = &fenceInfo;
         }
 #endif
-        const VkResult result = f.vkQueuePresentKHR(m_presentQueue, &info);
+        const VkResult result = [&] { MonsterEngine::Profiling::Scope scope("vulkan.queue_present", m_profilingContext); const VkResult observed = f.vkQueuePresentKHR(m_presentQueue, &info); scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed)); return observed; }();
         // Even OUT_OF_DATE/SURFACE_LOST queue the semaphore wait as specified by WSI.
         if (m_presentMaintenanceEnabled && (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR ||
             result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_ERROR_SURFACE_LOST_KHR))
@@ -995,6 +996,7 @@ namespace MonsterRender::RHI::Vulkan {
         m_frameResult.submitResult = VK_SUCCESS;
         m_frameResult.submitStatus = EFrameResult::Success;
         m_frameResult.submitted = true; m_frameResult.token = token;
+        m_profilingContext.submissionId = token.value;
         m_imagesInFlight[m_currentImageIndex] = getInFlightFence(m_currentFrame);
         const VkResult result = queueCurrentPresent();
         m_frameResult.presentResult = result;
@@ -1035,7 +1037,7 @@ namespace MonsterRender::RHI::Vulkan {
         submit.commandBufferCount = 1; submit.pCommandBuffers = &command;
         submit.signalSemaphoreCount = 1; submit.pSignalSemaphores = &signal;
         if (result == VK_SUCCESS) result = f.vkResetFences(m_device, 1, &fence);
-        if (result == VK_SUCCESS) result = f.vkQueueSubmit(m_graphicsQueue, 1, &submit, fence);
+        if (result == VK_SUCCESS) result = [&] { MonsterEngine::Profiling::Scope scope("vulkan.cancel_submit", m_profilingContext); const auto observed=f.vkQueueSubmit(m_graphicsQueue, 1, &submit, fence);scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed));return observed;}();
         m_frameResult.submitResult = result;
         m_frameResult.submitStatus = ClassifyFrameResult(result);
         m_frameResult.token = {}; m_frameResult.submitted = false;
@@ -1044,6 +1046,8 @@ namespace MonsterRender::RHI::Vulkan {
         }
         trackSubmission(command, fence);
         m_frameResult.submitted = true; m_frameResult.token = getLastSubmissionToken();
+        m_profilingContext.submissionId=m_frameResult.token.value;
+        MonsterEngine::Profiling::EventWithContext("vulkan.cancel_submitted",m_profilingContext);
         m_imagesInFlight[m_currentImageIndex] = fence;
         const VkResult presented = queueCurrentPresent();
         m_frameResult.presentResult = presented;

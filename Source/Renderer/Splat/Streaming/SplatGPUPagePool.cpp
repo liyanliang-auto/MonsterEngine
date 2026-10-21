@@ -9,7 +9,13 @@
 #include <stdexcept>
 
 namespace MonsterRender::Splat {
+namespace Profile = MonsterEngine::Profiling;
 namespace {
+Profile::Context PageContext(Profile::Context context, uint32_t page, uint64_t generation) {
+    context.sceneId = generation;
+    context.pageId = page == SplatInvalidId ? 0 : uint64_t(page) + 1;
+    return context;
+}
 struct Range {
     uint32_t start = 0, count = 0;
 };
@@ -56,6 +62,7 @@ struct FSplatGPUPagePool::FImpl {
         bool allocated = false, ready = false, protectedCut = false;
         std::vector<RHI::FGPUCompletionToken> uses, uploads;
         uint32_t unsubmitted = 0;
+        Profile::Context origin, lastUpload;
     };
     struct Staged {
         Range range;
@@ -83,6 +90,7 @@ struct FSplatGPUPagePool::FImpl {
     FSplatGPUPagePoolStats stats;
     FSplatGPUPagePoolAllocationStats allocations;
     bool transitionAdmitted = true;
+    Profile::Context recording;
     std::function<bool(RHI::FGPUCompletionToken)> completionGate;
     bool RootPage(uint32_t id) const {
         if (manifest.rootNode == SplatInvalidId) return false;
@@ -90,6 +98,8 @@ struct FSplatGPUPagePool::FImpl {
         return std::find(ids.begin(), ids.end(), id) != ids.end();
     }
     void Record(RHI::IRHICommandList* command, const Staged& chunk) {
+        const auto context = PageContext(recording, chunk.page, sceneGeneration);
+        Profile::Scope profileRecord("Stream/UploadCopyRecord", context, chunk.range.count);
         uint32_t widths[5] = {16, 16, 16, 4, stride - 52};
         uint32_t cursor = chunk.range.start;
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> destinations[5] = {
@@ -111,6 +121,8 @@ struct FSplatGPUPagePool::FImpl {
                 p.ready = true;
                 ++residencyVersion;
                 ++stats.uploadedPages;
+                const auto id = uint32_t(&p - pages.data());
+                Profile::EventWithContext("Stream/Resident", PageContext(p.lastUpload, id, sceneGeneration), uint64_t(p.count) * stride);
             }
         }
         for (size_t i = 0; i < staged.size();) {
@@ -138,6 +150,7 @@ struct FSplatGPUPagePool::FImpl {
         });
         for (auto id : victims) {
             auto& p = pages[id];
+            Profile::EventWithContext("Stream/EvictCapacity", PageContext(p.lastUpload, id, sceneGeneration), uint64_t(p.count) * stride);
             FreeRange(freeSlots, {p.offset, p.count});
             p = Page{};
             ++stats.evictedPages;
@@ -149,6 +162,7 @@ struct FSplatGPUPagePool::FImpl {
     void Release(Pending& p) {
         uint32_t id = p.result.pageId;
         uint64_t generation = p.result.sceneGeneration;
+        Profile::EventWithContext("Stream/UploadPayloadReleased", PageContext(p.result.profiling, id, generation), p.chargedBytes);
         pendingBytes -= p.chargedBytes;
         FSplatPageResult empty;
         std::swap(empty, p.result); // storage dies before the lease is exposed
@@ -289,26 +303,32 @@ bool FSplatGPUPagePool::Initialize(RHI::IRHIDevice* device, const FSplatSceneMan
 
 bool FSplatGPUPagePool::TryQueueUpload(FSplatPageResult&& result, std::string& error) {
     auto& s = *Impl;
-    auto reject = [&](const char* reason) {
+    auto reject = [&](const char* reason, const char* eventName) {
+        // Stable, bounded reason suffix; no formatting or allocation for tracing.
+        if (Profile::IsEnabled()) {
+            const auto context = PageContext(result.profiling, result.pageId, result.sceneGeneration);
+            Profile::EventWithContext("Stream/UploadRejected", context);
+            Profile::EventWithContext(eventName, context);
+        }
         error = reason;
         ++s.stats.rejectedUploads;
         s.stats.degraded = true;
         return false;
     };
-    if (!s.device) return reject("Pool not initialized");
-    if (!result.error.empty()) return reject("Cannot upload failed page");
-    if (result.pageId >= s.pages.size() || !result.sceneGeneration) return reject("Invalid page identity/generation");
-    if (s.sceneGeneration && result.sceneGeneration != s.sceneGeneration) return reject("Stale scene generation");
+    if (!s.device) return reject("Pool not initialized", "Stream/UploadRejectedNotInitialized");
+    if (!result.error.empty()) return reject("Cannot upload failed page", "Stream/UploadRejectedFailedPage");
+    if (result.pageId >= s.pages.size() || !result.sceneGeneration) return reject("Invalid page identity/generation", "Stream/UploadRejectedInvalid");
+    if (s.sceneGeneration && result.sceneGeneration != s.sceneGeneration) return reject("Stale scene generation", "Stream/UploadRejectedStale");
     const auto& info = s.manifest.pages[result.pageId];
-    if (result.decodedGaussians.size() != info.gaussianCount) return reject("Decoded count mismatch");
+    if (result.decodedGaussians.size() != info.gaussianCount) return reject("Decoded count mismatch", "Stream/UploadRejectedCount");
     if (s.pages[result.pageId].allocated ||
         std::any_of(s.pending.begin(), s.pending.end(),
             [&](const auto& p) { return p.result.pageId == result.pageId; })) {
-        return reject("Duplicate page upload");
+        return reject("Duplicate page upload", "Stream/UploadRejectedDuplicate");
     }
     uint64_t bytes = PayloadBytes(result);
     if (bytes > s.config.cpuCacheBytes || s.pendingBytes > s.config.cpuCacheBytes - bytes) {
-        return reject("Pending CPU budget exhausted");
+        return reject("Pending CPU budget exhausted", "Stream/UploadRejectedCPUBudget");
     }
     if (!s.sceneGeneration) s.sceneGeneration = result.sceneGeneration;
     // Allocate the queue node before moving its charged payload. A failed node
@@ -317,6 +337,8 @@ bool FSplatGPUPagePool::TryQueueUpload(FSplatPageResult&& result, std::string& e
     s.pending.back().result = std::move(result);
     s.pending.back().chargedBytes = bytes;
     s.pendingBytes += bytes;
+    Profile::EventWithContext("Stream/UploadQueued", PageContext(s.pending.back().result.profiling,
+        s.pending.back().result.pageId, s.pending.back().result.sceneGeneration), bytes);
     s.stats.degraded = false;
     error.clear();
     return true;
@@ -388,6 +410,7 @@ void FSplatGPUPagePool::ProtectSelection(const FSplatLODSelection& selection) {
     for (auto it = s.pending.begin(); it != s.pending.end();) {
         const auto id = it->result.pageId;
         if (!s.pages[id].allocated && !wanted[id]) {
+            Profile::EventWithContext("Stream/UploadCancelledObsolete", PageContext(it->result.profiling, id, it->result.sceneGeneration));
             s.Release(*it);
             it = s.pending.erase(it);
         } else {
@@ -396,8 +419,10 @@ void FSplatGPUPagePool::ProtectSelection(const FSplatLODSelection& selection) {
     }
 }
 
-void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation) {
+void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation, const Profile::Context& recordingContext) {
     auto& s = *Impl;
+    s.recording = recordingContext; s.recording.submissionId = 0; s.recording.sceneId = generation;
+    Profile::Scope profileTick("Stream/PoolTick", s.recording);
     if (!s.device || !command || !generation) return;
     if (s.sceneGeneration && s.sceneGeneration != generation) {
         s.stats.degraded = true;
@@ -423,6 +448,7 @@ void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation)
         auto& page = s.pages[result.pageId];
         if (!page.allocated) {
             if (!s.transitionAdmitted && !s.manifest.pages[result.pageId].pinned && !s.RootPage(result.pageId)) {
+                Profile::EventWithContext("Stream/UploadRejectedTransition", PageContext(result.profiling, result.pageId, generation));
                 s.Release(*it);
                 it = s.pending.erase(it);
                 ++s.stats.rejectedUploads;
@@ -430,11 +456,14 @@ void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation)
             }
             uint32_t offset;
             if (!s.Reserve(uint32_t(result.decodedGaussians.size()), offset)) {
+                Profile::EventWithContext("Stream/UploadDeferredCapacity", PageContext(result.profiling, result.pageId, generation));
                 s.stats.degraded = true;
                 ++it;
                 continue;
             }
             page.allocated = true;
+            page.origin = PageContext(result.profiling, result.pageId, generation);
+            Profile::EventWithContext("Stream/SourceAllocated", page.origin, uint64_t(result.decodedGaussians.size()) * s.stride);
             page.offset = offset;
             page.count = uint32_t(result.decodedGaussians.size());
             page.generation = s.nextSlotGeneration++;
@@ -446,6 +475,7 @@ void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation)
         uint32_t stagingOffset = 0;
         while (rows && !Allocate(s.freeStaging, rows * s.stride, stagingOffset, s.ringCursor)) rows /= 2;
         if (!rows) {
+            Profile::EventWithContext("Stream/UploadDeferredStaging", PageContext(result.profiling, result.pageId, generation));
             ++it;
             continue;
         }
@@ -455,9 +485,11 @@ void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation)
         if (!mapped) {
             FreeRange(s.freeStaging, {stagingOffset, rows * s.stride});
             s.stats.degraded = true;
+            Profile::EventWithContext("Stream/UploadMapFailed", PageContext(result.profiling, result.pageId, generation));
             return;
         }
         uint32_t widths[5] = {16, 16, 16, 4, s.stride - 52};
+        Profile::Scope profilePack("Stream/UploadPackAndRecord", PageContext(s.recording, result.pageId, generation), uint64_t(rows) * s.stride);
         uint32_t channelStart[5] = {};
         uint32_t cursor = stagingOffset;
         for (int k = 0; k < 5; ++k) {
@@ -488,6 +520,8 @@ void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation)
             ++it;
         }
     }
+    if (!s.pending.empty() && remaining < s.stride)
+        Profile::EventWithContext("Stream/UploadDeferredFrameBudget", s.recording, s.pending.size());
     command->resourceBarrier();
 }
 
@@ -664,8 +698,12 @@ void FSplatGPUPagePool::MarkFrameSubmitted(RHI::FGPUCompletionToken token) {
     for (auto& chunk : s.staged) {
         if (!chunk.token.value) {
             chunk.token = token;
+            auto context = PageContext(s.recording, chunk.page, s.sceneGeneration);
+            context.submissionId = token.value;
+            Profile::EventWithContext("Stream/UploadSubmitted", context, chunk.range.count);
             s.stats.uploadedBytes += chunk.range.count;
             auto& p = s.pages[chunk.page];
+            p.lastUpload = context;
             if (std::none_of(p.uploads.begin(), p.uploads.end(), [&](auto t) { return t.value == token.value; })) {
                 p.uploads.push_back(token);
             }
@@ -675,6 +713,10 @@ void FSplatGPUPagePool::MarkFrameSubmitted(RHI::FGPUCompletionToken token) {
     for (auto id : s.framePages) {
         auto& p = s.pages[id];
         if (p.allocated) p.uses.push_back(token);
+        if (p.allocated && Profile::IsEnabled()) {
+            auto context = PageContext(s.recording, id, s.sceneGeneration); context.submissionId = token.value;
+            Profile::EventWithContext("Stream/PageUsedSubmitted", context, uint64_t(p.count) * s.stride);
+        }
     }
     s.framePages.clear();
 }
@@ -711,6 +753,7 @@ void FSplatGPUPagePool::TrimUnprotected() {
             else ++it;
         }
         FreeRange(s.freeSlots, {page.offset, page.count});
+        Profile::EventWithContext("Stream/EvictTrim", PageContext(page.lastUpload, id, s.sceneGeneration), uint64_t(page.count) * s.stride);
         page = FImpl::Page{};
         ++s.stats.evictedPages;
         ++s.residencyVersion;

@@ -33,7 +33,7 @@ namespace MonsterRender::RHI::Vulkan {
         if (m_presentMaintenanceEnabled) {
             for (size_t i = 0; i < m_presentFences.size(); ++i) {
                 if (!m_presentFencePending[i]) continue;
-                const VkResult result = f.vkWaitForFences(m_device, 1, &m_presentFences[i], VK_TRUE, timeoutNs);
+                const VkResult result = [&] { MonsterEngine::Profiling::Scope scope("vulkan.retire_present_fence",m_profilingContext);const auto observed=f.vkWaitForFences(m_device, 1, &m_presentFences[i], VK_TRUE, timeoutNs);scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed));return observed;}();
                 if (result != VK_SUCCESS) return result;
                 m_presentFencePending[i] = false;
             }
@@ -42,7 +42,7 @@ namespace MonsterRender::RHI::Vulkan {
         // Unextended WSI has no spec-level presentation completion primitive.
         // This is a teardown-only platform assumption, never a normal frame wait.
         MR_LOG_WARNING("Present teardown uses queue/device idle fallback; precise presentation completion unavailable");
-        return m_presentQueue ? f.vkQueueWaitIdle(m_presentQueue) : VK_SUCCESS;
+        return m_presentQueue ? [&] { MonsterEngine::Profiling::Scope scope("vulkan.present_queue_idle",m_profilingContext);const auto observed=f.vkQueueWaitIdle(m_presentQueue);scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed));return observed;}() : VK_SUCCESS;
     }
 
     bool VulkanDevice::createImageSynchronization() {
@@ -144,6 +144,7 @@ namespace MonsterRender::RHI::Vulkan {
     }
 
     bool VulkanDevice::recreateSwapchain(uint32 width, uint32 height) {
+        MonsterEngine::Profiling::Scope scope("vulkan.recreate_swapchain",m_profilingContext);
         if (!width || !height || !m_device || !m_surface || m_deviceLost) return false;
         std::shared_ptr<void> nextLease;
         uint64 envelope = 0;

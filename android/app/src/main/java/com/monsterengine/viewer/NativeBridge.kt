@@ -133,10 +133,26 @@ object NativeBridge {
 
     /** Request lifecycle transition, reporting unavailable JNI explicitly. */
     fun resume(handle: NativeHandle, resumed: Boolean): NativeResult = command(handle) { nativeResume(handle.value, resumed) }
+    /** Actual optional profiler gate; existing built-in diagnostics remain active. */
+    @Volatile var profilingEnabled: Boolean = false
+        private set
+    /** Capture control is separate from persisted quality settings. */
+    fun setProfiling(handle: NativeHandle, enabled: Boolean, clear: Boolean = false): NativeResult {
+        val observed = withHandle(handle) { nativeSettings(handle.value, JSONObject().put("schemaVersion", VIEWER_SCHEMA_VERSION)
+            .put("profilingControl", JSONObject().put("enabled", enabled).put("clear", clear)).toString()) }
+        if (observed.ok) profilingEnabled = observed.payload.optBoolean("profilingEnabled", false)
+        return observed
+    }
+    /** Same-thread ATrace scope; no trace calls while disabled. */
+    internal inline fun <T> profileScope(name: String, block: () -> T): T {
+        val active = profilingEnabled
+        if (active) android.os.Trace.beginSection(name)
+        return try { block() } finally { if (active) android.os.Trace.endSection() }
+    }
     /** Submit a monotonic frame timestamp, without a second scheduling loop. */
     fun frame(handle: NativeHandle, frameNanos: Long): NativeResult {
         require(frameNanos >= 0)
-        return command(handle) { nativeFrame(handle.value, frameNanos) }
+        return profileScope("ME/kotlin.frame") { command(handle) { nativeFrame(handle.value, frameNanos) } }
     }
     /** Send a serialized validated gesture. */
     fun input(handle: NativeHandle, event: CameraInputState): NativeResult = command(handle) {
@@ -156,8 +172,8 @@ object NativeBridge {
     fun retry(handle: NativeHandle): NativeResult = withHandle(handle) { nativeRetry(handle.value) }
     /** Snapshot request defaults to diagnostics without any private-path inclusion. */
     fun snapshot(handle: NativeHandle, request: JSONObject = JSONObject().put("schemaVersion", VIEWER_SCHEMA_VERSION)
-        .put("kind", "diagnostics").put("includePrivatePaths", false)): NativeResult = withHandle(handle) {
-        nativeSnapshot(handle.value, request.toString())
+        .put("kind", "diagnostics").put("includePrivatePaths", false)): NativeResult = profileScope("ME/kotlin.snapshot") {
+        withHandle(handle) { nativeSnapshot(handle.value, request.toString()) }
     }
     /** Releasing the invalid token is a safe no-op; stale nonzero tokens are checked natively. */
     fun destroy(handle: NativeHandle): NativeResult = if (handle.value == 0L) NativeResult(true, "already_destroyed")

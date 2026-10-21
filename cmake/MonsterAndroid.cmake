@@ -17,7 +17,7 @@ endif()
 file(GLOB_RECURSE MONSTER_BUILTIN_LOD_FILES CONFIGURE_DEPENDS "${MONSTER_ANDROID_BUILTIN_LOD_DIR}/*/scene/*")
 set(MONSTER_ANDROID_ABI_ASSET_DIR "${MONSTER_ANDROID_ASSET_DIR}/${ANDROID_ABI}")
 add_library(monster_android SHARED ${MONSTER_ANDROID_SOURCES})
-option(MONSTER_ANDROID_FPS_OVERLAY "Compile observed FPS diagnostics support" OFF)
+option(MONSTER_ANDROID_FPS_OVERLAY "Compile observed FPS diagnostics support" ON)
 if(MONSTER_ANDROID_FPS_OVERLAY)
     target_compile_definitions(monster_android PRIVATE MONSTER_ANDROID_FPS_OVERLAY=1)
 endif()
@@ -25,6 +25,8 @@ monster_compile_settings(monster_android)
 target_include_directories(monster_android PRIVATE "${VULKAN_LOCAL_DIR}" "${PROJECT_SOURCE_DIR}/3rd-party")
 target_link_libraries(monster_android PRIVATE MonsterCore MonsterVulkan MonsterSplatRuntime
     MonsterMemoryRuntime android log dl vulkan Threads::Threads)
+# The bounded profiler travels with MonsterMemoryRuntime on desktop, CPU tools
+# and Android. MONSTER_PROFILING_ATRACE only mirrors explicitly enabled captures.
 target_link_options(monster_android PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384" "-Wl,--no-undefined")
 # APK assets use logical names; no host shader directory is compiled into Android.
 set(MONSTER_ASSET_MANIFEST "${MONSTER_ANDROID_ABI_ASSET_DIR}/asset-manifest.json")

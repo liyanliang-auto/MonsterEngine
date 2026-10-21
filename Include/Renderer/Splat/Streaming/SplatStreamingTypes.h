@@ -1,6 +1,7 @@
 // Copyright Monster Engine. All Rights Reserved.
 #pragma once
 #include "Renderer/Splat/LOD/SplatLODTypes.h"
+#include "Profiling/MonsterProfiler.h"
 namespace MonsterRender::Splat {
 /** Independent hard limits; logical residency is not allocator capacity. */
 struct FSplatStreamingConfig {
@@ -18,6 +19,7 @@ struct FSplatPageRequest {
     uint32_t pageId = SplatInvalidId; ///< Page to load.
     double priority = 0; ///< Larger values load first.
     uint64_t sceneGeneration = 0; ///< Cancels stale scene work.
+    MonsterEngine::Profiling::Context profiling; ///< Original accepted work cause; unchanged by deduplication.
 };
 /** Movable completion; nonempty error indicates a terminal failure. */
 struct FSplatPageResult {
@@ -26,6 +28,7 @@ struct FSplatPageResult {
     std::vector<uint8_t> bytes; ///< Verified encoded range.
     std::vector<FSplatGaussian> decodedGaussians; ///< Activated page records.
     std::string error; ///< Terminal read/checksum/decode failure.
+    MonsterEngine::Profiling::Context profiling; ///< Original cause preserved through worker/upload ownership.
 };
 /** Observable bounded I/O/cache lifecycle counters. */
 struct FSplatStreamingStats {

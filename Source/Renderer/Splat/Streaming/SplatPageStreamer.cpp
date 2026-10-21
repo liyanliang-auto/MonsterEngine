@@ -18,7 +18,14 @@
 #endif
 
 namespace MonsterRender::Splat {
+namespace Profile = MonsterEngine::Profiling;
 namespace {
+Profile::Context PageContext(Profile::Context context, uint32_t page, uint64_t generation) {
+    context.sceneId = generation;
+    context.pageId = page == SplatInvalidId ? 0 : uint64_t(page) + 1;
+    context.submissionId = 0; // Reads cannot imply a GPU submission.
+    return context;
+}
 using Clock = std::chrono::steady_clock;
 constexpr uint64_t TaskCharge = 1024;
 constexpr uint64_t CacheCharge = 128;
@@ -69,11 +76,13 @@ struct FSplatPageStreamer::FImpl {
         Clock::time_point due{};
         uint64_t reserved = TaskCharge;
         bool obsolete = false;
+        Profile::Context profiling;
         FSplatPageResult result;
     };
     struct CacheEntry {
         std::shared_ptr<const std::vector<uint8_t>> bytes;
         uint64_t lastUse = 0;
+        Profile::Context profiling;
     };
     struct Lease {
         uint64_t reserved = 0, payload = 0;
@@ -111,6 +120,7 @@ struct FSplatPageStreamer::FImpl {
             }
             if (oldest == cache.end()) return false;
             const auto n = uint64_t(oldest->second.bytes->capacity());
+            Profile::EventWithContext("Stream/CacheEvictBudget", oldest->second.profiling, n);
             cache.erase(oldest);
             used -= n + CacheCharge;
             cacheBytes -= n;
@@ -121,6 +131,7 @@ struct FSplatPageStreamer::FImpl {
         for (auto it = tasks.begin(); it != tasks.end();) {
             if (Cancelled(it->first.generation) && it->second.state != State::Reading) {
                 const auto charge = it->second.reserved;
+                Profile::EventWithContext("Stream/RequestCancelled", it->second.profiling);
                 it = tasks.erase(it); // Destroy payload before releasing reservation.
                 used -= charge;
                 ++stats.cancelled;
@@ -215,6 +226,7 @@ struct FSplatPageStreamer::FImpl {
         } catch (const std::exception& e) { error = e.what(); return false; }
     }
     bool TakeWork(Key& key, uint32_t& attempt,
+                  Profile::Context& context,
                   std::shared_ptr<const std::vector<uint8_t>>& cached,
                   bool& reserveCache,
                   std::function<FSplatPageReadFault(uint32_t,uint32_t)>& fault,
@@ -261,7 +273,10 @@ struct FSplatPageStreamer::FImpl {
                 task.reserved += extra;
                 task.state = State::Reading;
                 key = candidate; attempt = task.attempt; fault = injector;
+                context = task.profiling;
+                Profile::EventWithContext("Stream/WorkerStart", context, attempt);
                 if (cached) { ++stats.cacheHits; cache.at(candidate.page).lastUse = ++order; }
+                Profile::EventWithContext(cached ? "Stream/CacheHit" : "Stream/CacheMiss", context);
                 return true;
             }
             // A saturated metadata queue must not deadlock its own payload reads.
@@ -279,6 +294,7 @@ struct FSplatPageStreamer::FImpl {
             }
             if (haveCandidate && !canReleaseLater && pending > 1 && lowest != tasks.end()) {
                 const auto charge = lowest->second.reserved;
+                Profile::EventWithContext("Stream/RequestRejectedMetadataDisplaced", lowest->second.profiling);
                 tasks.erase(lowest);
                 used -= charge;
                 ++stats.failed;
@@ -290,6 +306,8 @@ struct FSplatPageStreamer::FImpl {
                 task.state = State::Ready;
                 task.result.pageId = task.key.page;
                 task.result.sceneGeneration = task.key.generation;
+                task.result.profiling = task.profiling;
+                Profile::EventWithContext("Stream/RequestRejectedFailureHistory", task.profiling);
                 task.result.error = "CPU streaming budget retained by terminal failure history";
                 task.completionOrder = ++order;
                 ++stats.failed; lastError = task.result.error;
@@ -303,15 +321,18 @@ struct FSplatPageStreamer::FImpl {
     void RunWorker() {
         for (;;) {
             Key key{}; uint32_t attempt = 0;
+            Profile::Context context;
             std::shared_ptr<const std::vector<uint8_t>> cached;
             bool reserveCache = false;
             std::function<FSplatPageReadFault(uint32_t,uint32_t)> fault;
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                if (!TakeWork(key, attempt, cached, reserveCache, fault, lock)) return;
+                if (!TakeWork(key, attempt, context, cached, reserveCache, fault, lock)) return;
             }
             FSplatPageResult result;
             result.pageId = key.page; result.sceneGeneration = key.generation;
+            result.profiling = context;
+            Profile::Scope workerScope("Stream/WorkerAttempt", context, attempt);
             std::shared_ptr<const std::vector<uint8_t>> newCache;
             uint64_t bytesRead = 0;
             bool success = false;
@@ -325,19 +346,32 @@ struct FSplatPageStreamer::FImpl {
                 if (Cancelled(key.generation)) result.error = "Cancelled";
                 else if (decision.failRead) result.error = "Injected range-read failure";
                 else {
-                    if (cached) { result.bytes = *cached; success = true; }
-                    else success = Read(manifest.pages[key.page], key.generation, result.bytes, bytesRead, result.error);
+                    if (cached) {
+                        Profile::Scope copyScope("Stream/CacheCopy", context);
+                        result.bytes = *cached; success = true;
+                        copyScope.SetValue(result.bytes.size());
+                    } else {
+                        Profile::Scope readScope("Stream/FileReadRange", context);
+                        success = Read(manifest.pages[key.page], key.generation, result.bytes, bytesRead, result.error);
+                        readScope.SetValue(bytesRead);
+                        Profile::EventWithContext(success ? "Stream/ReadSucceeded" : "Stream/ReadFailed", context, bytesRead);
+                    }
                     if (success && !Cancelled(key.generation)) {
                         if (decision.truncateBytes) result.bytes.resize(result.bytes.size() -
                             static_cast<size_t>((std::min)(decision.truncateBytes, uint64_t(result.bytes.size()))));
                         if (decision.corruptChecksum && !result.bytes.empty()) result.bytes.back() ^= 1;
-                        success = FSplatSceneFormat::DecodePage(manifest, key.page, result.bytes,
-                                                               result.decodedGaussians, result.error);
+                        {
+                            Profile::Scope decodeScope("Stream/DecodePageValidate", context);
+                            success = FSplatSceneFormat::DecodePage(manifest, key.page, result.bytes,
+                                                                   result.decodedGaussians, result.error);
+                            decodeScope.SetValue(success ? 1 : 0);
+                        }
                         if (success && reserveCache) newCache = std::make_shared<const std::vector<uint8_t>>(result.bytes);
                     } else success = false;
                 }
             } catch (const std::exception& e) { success = false; result.error = e.what(); }
             catch (...) { success = false; result.error = "Unexpected page worker failure"; }
+            workerScope.SetValue(success && !Cancelled(key.generation) ? 1 : 0);
             // Release pinned cache references before eviction/reservation updates.
             cached.reset();
             if (!success || Cancelled(key.generation)) {
@@ -360,6 +394,7 @@ struct FSplatPageStreamer::FImpl {
                 tasks.erase(it);
                 used -= charge;
                 ++stats.cancelled;
+                Profile::EventWithContext("Stream/WorkerCancelled", context);
                 lock.unlock(); wake.notify_all(); continue;
             }
             if (success) {
@@ -374,7 +409,7 @@ struct FSplatPageStreamer::FImpl {
                     newCache.reset();
                 } else {
                     if (newCache) {
-                        cache.emplace(key.page, CacheEntry{newCache, ++order});
+                        cache.emplace(key.page, CacheEntry{newCache, ++order, context});
                         cacheBytes += newCacheSize;
                     }
                     used -= task.reserved - retained;
@@ -383,6 +418,7 @@ struct FSplatPageStreamer::FImpl {
                     task.state = State::Ready;
                     task.completionOrder = ++order;
                     ++stats.completed;
+                    Profile::EventWithContext("Stream/Ready", context, payload);
                     newCache.reset();
                     lock.unlock(); wake.notify_all(); continue;
                 }
@@ -391,6 +427,7 @@ struct FSplatPageStreamer::FImpl {
             task.reserved = TaskCharge;
             if (task.attempt < config.retries) {
                 ++task.attempt; ++stats.retries;
+                Profile::EventWithContext("Stream/Retry", context, task.attempt);
                 const uint64_t delay = (std::min)(uint64_t(60000),
                     uint64_t(config.retryDelayMilliseconds) << (std::min)(task.attempt - 1, 16u));
                 task.due = Clock::now() + std::chrono::milliseconds(delay);
@@ -403,6 +440,7 @@ struct FSplatPageStreamer::FImpl {
                 task.state = State::Ready;
                 task.completionOrder = ++order;
                 ++stats.failed;
+                Profile::EventWithContext("Stream/TerminalFailure", context);
             }
             lock.unlock(); wake.notify_all();
         }
@@ -483,36 +521,45 @@ void FSplatPageStreamer::Request(const std::vector<FSplatPageRequest>& requests)
         if (!s.opened || s.stopping.load()) { s.lastError = "Page streamer is not open"; return; }
         for (const auto& request : requests) {
             ++s.stats.requests;
+            const auto context = PageContext(request.profiling, request.pageId, request.sceneGeneration);
+            Profile::EventWithContext("Stream/PageRequest", context);
             if (request.pageId >= s.manifest.pages.size() || !std::isfinite(request.priority)) {
-                ++s.stats.failed; s.lastError = "Invalid page request ID or priority"; continue;
+                ++s.stats.failed; s.lastError = "Invalid page request ID or priority";
+                Profile::EventWithContext("Stream/RequestRejectedInvalid", context); continue;
             }
             if (s.hasCancellation.load() && request.sceneGeneration <= s.cancelledThrough.load()) {
-                ++s.stats.cancelled; continue;
+                ++s.stats.cancelled; Profile::EventWithContext("Stream/RequestRejectedCancelled", context); continue;
             }
             if (!s.hasGeneration.load() || request.sceneGeneration > s.generation.load()) {
                 s.generation = request.sceneGeneration; s.hasGeneration = true;
                 s.RemoveCancelledOwned();
             }
-            if (request.sceneGeneration != s.generation.load()) { ++s.stats.cancelled; continue; }
+            if (request.sceneGeneration != s.generation.load()) { ++s.stats.cancelled; Profile::EventWithContext("Stream/RequestRejectedStale", context); continue; }
             const Key key{request.pageId, request.sceneGeneration};
-            if (s.transfers.find(key) != s.transfers.end()) continue;
+            if (s.transfers.find(key) != s.transfers.end()) { Profile::EventWithContext("Stream/RequestMergedTransfer", context); continue; }
             auto found = s.tasks.find(key);
             if (found != s.tasks.end()) {
                 found->second.priority = (std::max)(found->second.priority, request.priority);
                 found->second.obsolete = false;
+                Profile::EventWithContext("Stream/RequestMergedTask", context);
                 continue;
             }
             if (s.tasks.size() + s.transfers.size() >= MaximumTasks || !s.MakeRoom(TaskCharge)) {
-                ++s.stats.failed; s.lastError = "CPU request metadata budget exhausted"; continue;
+                ++s.stats.failed; s.lastError = "CPU request metadata budget exhausted";
+                Profile::EventWithContext("Stream/RequestRejectedMetadataBudget", context); continue;
             }
             FImpl::Task task;
             task.key = key; task.priority = request.priority; task.order = ++s.order;
+            task.profiling = context;
+            Profile::EventWithContext("Stream/RequestAccepted", context);
             task.due = Clock::now();
             const auto& page = s.manifest.pages[key.page];
             const uint64_t worst = page.byteSize + page.decodedByteSize;
             if (worst > s.config.cpuCacheBytes - TaskCharge) {
                 task.state = FImpl::State::Ready;
                 task.result.pageId = key.page; task.result.sceneGeneration = key.generation;
+                task.result.profiling = context;
+                Profile::EventWithContext("Stream/RequestRejectedPayloadBudget", context);
                 task.result.error = "Page exceeds CPU streaming budget";
                 task.completionOrder = ++s.order;
                 ++s.stats.failed; s.lastError = task.result.error;
@@ -535,7 +582,7 @@ void FSplatPageStreamer::UpdateRequests(const std::vector<FSplatPageRequest>& re
             auto found=wanted.find(it->first);
             if(found!=wanted.end()){it->second.priority=found->second;it->second.obsolete=false;++it;}
             else if(it->second.state==FImpl::State::Reading){it->second.obsolete=true;++it;}
-            else {auto charge=it->second.reserved;it=s.tasks.erase(it);s.used-=charge;++s.stats.cancelled;}
+            else {Profile::EventWithContext("Stream/RequestCancelledObsolete",it->second.profiling);auto charge=it->second.reserved;it=s.tasks.erase(it);s.used-=charge;++s.stats.cancelled;}
         }
     }
     Request(requests);
@@ -568,6 +615,7 @@ std::vector<FSplatPageResult> FSplatPageStreamer::DrainReady() {
     }
     for (const auto& key : keys) {
         auto it = s.tasks.find(key);
+        Profile::EventWithContext("Stream/ReadyTransferred", it->second.profiling, PayloadBytes(it->second.result));
         output.push_back(std::move(it->second.result));
         s.tasks.erase(it);
     }
@@ -617,6 +665,7 @@ void FSplatPageStreamer::OnMemoryPressure() {
         for (auto it = s.cache.begin(); it != s.cache.end();) {
             if (it->second.bytes.use_count() != 1) { ++it; continue; }
             const auto bytes = uint64_t(it->second.bytes->capacity());
+            Profile::EventWithContext("Stream/CacheEvictPressure", it->second.profiling, bytes);
             it = s.cache.erase(it);
             s.used -= bytes + CacheCharge;
             s.cacheBytes -= bytes;

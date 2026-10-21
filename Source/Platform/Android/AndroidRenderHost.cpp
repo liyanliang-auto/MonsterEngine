@@ -1,5 +1,6 @@
 // Copyright Monster Engine. All Rights Reserved.
 #include "Platform/Android/AndroidRenderHost.h"
+#include "Profiling/MonsterProfiler.h"
 #include "Core/RuntimeLease.h"
 #include "Core/Logging/OutputDeviceDebug.h"
 #include "Core/Logging/OutputDeviceRedirector.h"
@@ -22,6 +23,7 @@
 
 namespace MonsterRender::Splat {
 namespace {
+namespace Profile = MonsterEngine::Profiling;
 using namespace RHI;
 using namespace RHI::Vulkan;
 FViewerStatus OK(const char* code="queued") { return {true,code,{}}; }
@@ -64,6 +66,8 @@ struct FWindow {
     bool attached=false,detachRequested=false,retired=false;
     ~FWindow(){if(window)ReleaseWindow(window);}
 };
+struct FFrameToken { uint64_t first=0; EAndroidFrameScheduler second{}; uint64_t requestId=0, receivedNs=0; };
+std::atomic<uint64_t> NextFrameRequest{1};
 struct FAck {bool done=false;FViewerStatus status;};
 enum class EControl { Scene,Settings,Input,Pressure,Thermal,Release,Retry };
 struct FControl {
@@ -99,7 +103,7 @@ struct FAndroidRenderHost::FImpl {
     uint64_t highestSceneRequest=0;
     std::map<uint64_t,std::shared_ptr<FWindow>> windows;
     std::deque<FControl> controls;
-    std::optional<std::pair<uint64_t,EAndroidFrameScheduler>> frame;
+    std::optional<FFrameToken> frame;
     std::shared_ptr<const FAndroidRenderHostSnapshot> snapshot=std::make_shared<FAndroidRenderHostSnapshot>();
     std::optional<FViewerScreenshot> screenshot;
     std::unique_ptr<VulkanDevice> device;
@@ -122,7 +126,11 @@ struct FAndroidRenderHost::FImpl {
     std::unique_ptr<FAndroidOwnerLog> ownerLog;
 #endif
     explicit FImpl(FAndroidRenderHostCreateInfo value):runtime(FProcessRuntimeLease::Acquire()),info(std::move(value)){}
+    std::chrono::steady_clock::time_point nextMeasurementExport{};
+    std::string cachedDiagnostics,cachedFrames;
+    uint64_t exportedScene=0,exportedSurface=0,exportedConfig=0;
     void Publish() {
+        Profile::Scope publishScope("diagnostics.publish");
 #if PLATFORM_ANDROID
         if(ownerLog)ownerLog->Poll();
 #endif
@@ -133,7 +141,14 @@ struct FAndroidRenderHost::FImpl {
         value->windowInUse=current&&current->inUse.load(std::memory_order_acquire);
         value->manualRetryRequired=manualRetry;value->pressureRetired=pressureRetired;
         value->presentationReservationEstimate=device?device->GetPresentationReservationEstimate():0;
-        if(session){value->diagnosticsJSON=session->Diagnostics().SnapshotJSON();value->framesCSV=session->Diagnostics().FramesCSV();}
+        if(session){
+            const auto now=std::chrono::steady_clock::now();
+            const auto observation=session->Snapshot();
+            const bool changed=observation&&(observation->sceneGeneration!=exportedScene||observation->surfaceGeneration!=exportedSurface||observation->configGeneration!=exportedConfig);
+            if(changed){exportedScene=observation->sceneGeneration;exportedSurface=observation->surfaceGeneration;exportedConfig=observation->configGeneration;}
+            if(changed||now>=nextMeasurementExport){Profile::Scope serializeScope("diagnostics.serialize");cachedDiagnostics=session->Diagnostics().SnapshotJSON();cachedFrames=session->Diagnostics().FramesCSV();nextMeasurementExport=now+std::chrono::seconds(1);}
+            value->diagnosticsJSON=cachedDiagnostics;value->framesCSV=cachedFrames;
+        }else {cachedDiagnostics.clear();cachedFrames.clear();nextMeasurementExport={};}
         std::shared_ptr<const FAndroidRenderHostSnapshot> immutable=std::move(value);
         std::atomic_store_explicit(&snapshot,std::move(immutable),std::memory_order_release);
     }
@@ -277,6 +292,7 @@ struct FAndroidRenderHost::FImpl {
         pending.observation.surfaceGeneration=current->generation;readback=std::move(pending);return true;
     }
     bool RetireWindow(std::shared_ptr<FWindow> window) {
+        Profile::Scope scope("owner.retire_surface",0,0,0,window->generation);
         window->valid.store(false,std::memory_order_release);
         if(window==current){
             if(device){
@@ -361,12 +377,22 @@ struct FAndroidRenderHost::FImpl {
         if(submitted.status==EFrameResult::DeviceLost)LostDevice();
         else if(submitted.status!=EFrameResult::Success)status=Fail("surface_prime_failed");
     }
-    void Render(uint64_t timestamp,EAndroidFrameScheduler source) {
-        if(!performance.AcceptFrame(source,timestamp)||!resumed||manualRetry||!current||!current->valid.load(std::memory_order_acquire)||!current->attached||!device||!session)return;
+    void Render(uint64_t timestamp,EAndroidFrameScheduler source,uint64_t requestId) {
+        Profile::Scope renderScope("owner.render",requestId);
+        if(!performance.AcceptFrame(source,timestamp)||!resumed||manualRetry||!current||!current->valid.load(std::memory_order_acquire)||!current->attached||!device||!session){Profile::Event("owner.policy_rejected",requestId);return;}
+        Profile::Context profileContext{requestId,0,0,scene.generation,0};
+        device->SetProfilingContext(profileContext);
+        struct FContextReset { std::unique_ptr<VulkanDevice>& device; ~FContextReset(){if(device)device->SetProfilingContext({});} } contextReset{device};
+        Profile::EventWithContext("owner.surface_generation",profileContext,current->generation);
+        Profile::EventWithContext("owner.config_generation",profileContext,info.config.generation);
         current->inUse.store(true,std::memory_order_release);
         if(!current->valid.load(std::memory_order_acquire)){current->inUse.store(false,std::memory_order_release);return;}
+        const auto nowNanos=[](){return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());};
+        FViewerFrameMeasurement owner;owner.ownerStartNanoseconds=nowNanos();
         PollReadback();PollScreenshot();
+        const auto acquireStart=nowNanos();
         const auto acquired=device->beginFrame(1000000);
+        owner.acquireMilliseconds=double(nowNanos()-acquireStart)/1000000.0;
         if(acquired.status==EFrameResult::DeviceLost){LostDevice();return;}
         if(acquired.status==EFrameResult::OutOfDate){
             if(acquired.acquired)device->cancelFrame();
@@ -398,7 +424,10 @@ struct FAndroidRenderHost::FImpl {
             FViewerFrameRequest request;request.commandList=command;request.monotonicNanoseconds=timestamp;
             request.sceneGeneration=scene.generation;request.surfaceGeneration=current->generation;request.configGeneration=info.config.generation;
             const auto viewport=device->getSwapchainExtent();request.viewportWidth=viewport.width;request.viewportHeight=viewport.height;
+            session->SetProfilingRequestId(requestId);
             recorded=session->TickAndRecord(request);command->endRenderPass();status=recorded.status;
+            profileContext.frameId=recorded.pipelineFrameId;device->SetProfilingContext(profileContext);
+            Profile::EventWithContext("frame.recorded",profileContext);
             if(recorded.outputTexture){
                 session->PrepareOutputForCompute(*command);
                 if(!splatObserved&&!readback){auto* texture=dynamic_cast<VulkanTexture*>(recorded.outputTexture.Get());if(texture)RecordReadback(*command,texture->getImage(),VK_IMAGE_LAYOUT_GENERAL,recorded.outputTexture->getWidth(),recorded.outputTexture->getHeight(),false,recorded.pipelineFrameId);}
@@ -430,9 +459,13 @@ struct FAndroidRenderHost::FImpl {
         }
         // A recorded upload-only frame has no output but must still be submitted.
         command->end();
+        const auto presentStart=nowNanos();
         const auto submitted=device->presentFrame();
+        owner.presentReturnNanoseconds=nowNanos();owner.presentMilliseconds=double(owner.presentReturnNanoseconds-presentStart)/1000000.0;
+        owner.ownerWorkMilliseconds=double(presentStart-owner.ownerStartNanoseconds)/1000000.0-*owner.acquireMilliseconds;
+        if(submitted.submitted){profileContext.submissionId=submitted.token.value;Profile::EventWithContext("frame.submitted",profileContext,Profile::EncodeSignedValue(submitted.presentResult));}
         submissionLock.unlock();
-        if(submitted.submitted&&submitted.token.value){if(!graphics)session->OnSubmitted(submitted.token);if(readback&&!readback->token.value){readback->token=submitted.token;readback->observation.vkResult=submitted.presentResult;}}
+        if(submitted.submitted&&submitted.token.value){if(!graphics)session->OnSubmitted(submitted.token,&owner);if(readback&&!readback->token.value){readback->token=submitted.token;readback->observation.vkResult=submitted.presentResult;}}
         if(!submitted.submitted){
             if(readback&&!readback->token.value){retiredReadbacks.push_back(std::move(*readback));readback.reset();}
             session->Diagnostics().Shutdown();FailScreenshot("screenshot_submission_failed");
@@ -483,7 +516,7 @@ struct FAndroidRenderHost::FImpl {
         case EControl::Thermal:Pressure(performance.OnThermalStatus(command.value));break;
         case EControl::Release:
             TeardownDevice();scene={};sceneLease.reset();manualRetry=true;
-            {std::deque<FControl> discarded;{std::lock_guard lock(mutex);discarded.swap(controls);frame.reset();}for(auto& pending:discarded)Ack(pending.ack,Fail("control_cancelled_by_release"));}
+            {std::deque<FControl> discarded;{std::lock_guard lock(mutex);discarded.swap(controls);if(frame)Profile::Event("frame.request_cancelled",frame->requestId,0,0,2);frame.reset();}for(auto& pending:discarded)Ack(pending.ack,Fail("control_cancelled_by_release"));}
             status=OK("scene_released");Ack(command.ack,status);break;
         case EControl::Retry:
             performance.RequestManualRecovery();manualRetry=false;autoRetryUsed=false;TeardownDevice();
@@ -503,7 +536,7 @@ struct FAndroidRenderHost::FImpl {
             // owner thread; nothing is created here before the first attach/scene.
             Publish();
             for(;;){
-                std::shared_ptr<FWindow> detach,attach;std::optional<FControl> control;std::optional<std::pair<uint64_t,EAndroidFrameScheduler>> token;
+                std::shared_ptr<FWindow> detach,attach;std::optional<FControl> control;std::optional<FFrameToken> token;
                 bool lifecycle=false,resume=false,shouldQuit=false;
                 {
                     std::unique_lock lock(mutex);
@@ -513,6 +546,7 @@ struct FAndroidRenderHost::FImpl {
                     if(screenshotInFlight&&screenshotRecorded&&!screenshot&&std::chrono::steady_clock::now()<screenshotDeadline)
                         changed.wait_until(lock,std::min(screenshotDeadline,std::chrono::steady_clock::now()+std::chrono::milliseconds(100)),ready);
                     else changed.wait(lock,ready);
+                    Profile::Event("owner.wake_signal");
                     screenshotWake=false;shouldQuit=quit;
                     for(const auto& item:windows)if(item.second->detachRequested||!item.second->valid.load()){detach=item.second;break;}
                     if(!detach&&!shouldQuit&&!manualRetry)for(const auto& item:windows)if(!item.second->attached){attach=item.second;break;}
@@ -521,11 +555,11 @@ struct FAndroidRenderHost::FImpl {
                         auto selected=std::find_if(controls.begin(),controls.end(),[](const auto& c){return c.kind==EControl::Release||c.kind==EControl::Pressure||c.kind==EControl::Thermal||c.kind==EControl::Retry;});
                         if(selected==controls.end())selected=controls.begin();control=std::move(*selected);controls.erase(selected);
                     }
-                    if(!detach&&!attach&&!shouldQuit&&!control){token=frame;frame.reset();}
+                    if(!detach&&!attach&&!shouldQuit&&!control){token=frame;if(token)Profile::Event("owner.dequeue",token->requestId,0,0,Profile::IsEnabled()&&token->receivedNs?Profile::NowNs()-token->receivedNs:0);frame.reset();}
                 }
                 if(shouldQuit){if(current&&!RetireWindow(current)){std::unique_lock lock(mutex);changed.wait_for(lock,std::chrono::milliseconds(16));continue;}break;}
                 if(detach){if(!RetireWindow(detach)){std::unique_lock lock(mutex);changed.wait_for(lock,std::chrono::milliseconds(16));}Publish();continue;}
-                if(lifecycle){resumed=resume;if(session){if(resume&&current)ResizeForWindow(current);else session->Suspend();}}
+                if(lifecycle){Profile::Event("owner.lifecycle",0,0,0,resume?1:0);resumed=resume;if(session){if(resume&&current)ResizeForWindow(current);else session->Suspend();}}
                 if(attach){
                     if(current&&current!=attach){if(!RetireWindow(current)){std::unique_lock lock(mutex);changed.wait_for(lock,std::chrono::milliseconds(16));continue;}}
                     // Do not create a second VkSurfaceKHR for the same producer.
@@ -542,7 +576,8 @@ struct FAndroidRenderHost::FImpl {
                 }else if(control)Control(std::move(*control));
                 else if(token){
                     if(retryPending&&device&&current){retryPending=false;if(device->recreateSwapchain(current->width,current->height))ResizeForWindow(current);}
-                    Render(token->first,token->second);
+                    Profile::Event("owner.wake",token->requestId,0,0,Profile::IsEnabled()&&token->receivedNs?Profile::NowNs()-token->receivedNs:0);
+                    Render(token->first,token->second,token->requestId);
                 }else retryPending=false;
                 PollScreenshot();Publish();
             }
@@ -554,7 +589,7 @@ struct FAndroidRenderHost::FImpl {
         {
             std::lock_guard lock(mutex);
             for(auto& [generation,window]:windows){window->inUse.store(false);window->valid.store(false);if(window->window){ReleaseWindow(window->window);window->window=nullptr;}window->retired=true;}
-            windows.clear();current.reset();controls.clear();frame.reset();stopped=true;
+            windows.clear();current.reset();controls.clear();if(frame)Profile::Event("frame.request_cancelled",frame->requestId,0,0,3);frame.reset();stopped=true;
         }
         Publish();changed.notify_all();
     }
@@ -580,6 +615,7 @@ uint64_t FAndroidRenderHost::Create(FAndroidRenderHostCreateInfo info,std::strin
 std::shared_ptr<FAndroidRenderHost> FAndroidRenderHost::Acquire(uint64_t handle){std::lock_guard lock(RegistryMutex);auto it=Registry.find(handle);return it==Registry.end()?nullptr:it->second;}
 bool FAndroidRenderHost::Destroy(uint64_t handle){std::shared_ptr<FAndroidRenderHost> host;{std::lock_guard lock(RegistryMutex);auto it=Registry.find(handle);if(it==Registry.end())return false;host=std::move(it->second);Registry.erase(it);}host->Impl->Stop();return true;}
 FViewerStatus FAndroidRenderHost::Attach(ANativeWindow* window,uint64_t generation,uint32_t width,uint32_t height,uint32_t displayWidth,uint32_t displayHeight){
+    Profile::Event("owner.attach_request",0,0,0,generation);
 #if !PLATFORM_ANDROID
     (void)window;(void)generation;(void)width;(void)height;(void)displayWidth;(void)displayHeight;return Fail("android_unavailable");
 #else
@@ -598,8 +634,21 @@ FViewerStatus FAndroidRenderHost::Detach(uint64_t generation,std::chrono::millis
     if(!i.changed.wait_for(lock,std::clamp(timeout,std::chrono::milliseconds(0),std::chrono::milliseconds(10000)),[&]{return window->retired||i.stopped;}))return Fail("surface_detach_timeout","Ownership retained; retry detach acknowledgement");
     return window->retired?OK("surface_released"):Fail("host_stopped");
 }
-FViewerStatus FAndroidRenderHost::SetResumed(bool value){std::lock_guard lock(Impl->mutex);if(Impl->quit)return Fail("host_stopping");Impl->resumeRequested=value;Impl->lifecycleDirty=true;if(!value)Impl->frame.reset();Impl->changed.notify_one();return OK();}
-FViewerStatus FAndroidRenderHost::RequestFrame(uint64_t nanos,EAndroidFrameScheduler source){if(!nanos)return Fail("invalid_frame_timestamp");std::lock_guard lock(Impl->mutex);if(Impl->quit)return Fail("host_stopping");if(!Impl->frame||nanos>Impl->frame->first)Impl->frame=std::make_pair(nanos,source);Impl->changed.notify_one();return OK();}
+FViewerStatus FAndroidRenderHost::SetResumed(bool value){std::lock_guard lock(Impl->mutex);if(Impl->quit)return Fail("host_stopping");Impl->resumeRequested=value;Impl->lifecycleDirty=true;if(!value){if(Impl->frame)Profile::Event("frame.request_cancelled",Impl->frame->requestId,0,0,1);Impl->frame.reset();}Impl->changed.notify_one();return OK();}
+FViewerStatus FAndroidRenderHost::RequestFrame(uint64_t nanos,EAndroidFrameScheduler source){
+    const uint64_t id=NextFrameRequest.fetch_add(1,std::memory_order_relaxed);
+    const uint64_t received=Profile::IsEnabled()?Profile::NowNs():0;
+    Profile::Scope requestScope("jni.frame",id,0,0,nanos);
+    Profile::Event("frame.request_received",id,0,0,nanos);
+    if(!nanos){Profile::Event("frame.request_rejected",id,0,0,1);return Fail("invalid_frame_timestamp");}
+    std::lock_guard lock(Impl->mutex);
+    if(Impl->quit){Profile::Event("frame.request_rejected",id,0,0,2);return Fail("host_stopping");}
+    if(!Impl->frame||nanos>Impl->frame->first){
+        if(Impl->frame)Profile::Event("frame.request_replaced",Impl->frame->requestId,0,0,id);
+        Impl->frame=FFrameToken{nanos,source,id,received};Profile::Event("frame.request_accepted",id);
+    }else Profile::Event("frame.request_coalesced",id,0,0,Impl->frame->requestId);
+    Impl->changed.notify_one();return OK();
+}
 FViewerStatus FAndroidRenderHost::OpenScene(FSceneDescriptor scene,std::shared_ptr<void> lease){if(scene.sceneId.empty()||scene.sceneId.size()>512||!scene.generation||!lease||scene.directory.size()>4096||scene.sourcePLY.size()>4096||scene.manifestPath.size()>4096)return Fail("invalid_scene_or_lease");FControl c;c.kind=EControl::Scene;c.scene=std::move(scene);c.lease=std::move(lease);return Impl->Queue(std::move(c),true);}
 FViewerStatus FAndroidRenderHost::ApplySettings(FViewerConfig config){if(!config.generation||config.configHash.size()>128||config.shaderIdentity.size()>128)return Fail("invalid_settings");FControl c;c.kind=EControl::Settings;c.config=std::move(config);return Impl->Queue(std::move(c),true);}
 FViewerStatus FAndroidRenderHost::CameraInput(FCameraInputState input){

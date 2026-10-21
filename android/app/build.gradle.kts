@@ -14,7 +14,7 @@ val hostTools = hostToolNames.mapNotNull { name ->
 }.toMap()
 val fpsOverlayEnabled = providers.gradleProperty("MONSTER_ANDROID_FPS_OVERLAY")
     .map { it.equals("ON", ignoreCase = true) || it.equals("true", ignoreCase = true) }
-    .orElse(false).get()
+    .orElse(true).get()
 val signingNames = listOf("MONSTER_KEYSTORE", "MONSTER_KEYSTORE_PASSWORD", "MONSTER_KEY_ALIAS", "MONSTER_KEY_PASSWORD")
 val signingValues = signingNames.associateWith { providers.environmentVariable(it).orNull }
 val signingAvailable = signingValues.values.all { !it.isNullOrBlank() }

@@ -1,6 +1,7 @@
 // Copyright Monster Engine. All Rights Reserved.
 #pragma once
 #include "Renderer/Splat/SplatStreamingController.h"
+#include "Renderer/Splat/SplatPipeline.h"
 #include "Renderer/Splat/LOD/SplatBuildTypes.h"
 #include <memory>
 
@@ -26,6 +27,10 @@ public:
     void Record(const FViewerDiagnosticsSnapshot& snapshot,
         const FSplatStreamingControllerSnapshot* streaming = nullptr,
         RHI::FGPUCompletionToken token = {}, uint64_t presentReturnNanos = 0);
+    /** Nonblocking original-frame join. Pipeline lifetime rejects restarted IDs. */
+    void Resolve(uint64_t pipelineGeneration,const FSplatPipelineFrameStats&);
+    /** Break interval continuity across suspension without discarding observations. */
+    void ResetCadence();
     /** Versioned privacy-safe diagnostics; unknown values are null with reasons. */
     std::string SnapshotJSON() const;
     /** Numeric-only frame/streaming CSV. Missing values are empty cells. */

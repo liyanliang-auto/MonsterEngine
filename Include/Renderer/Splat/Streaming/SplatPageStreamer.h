@@ -44,6 +44,7 @@ public:
     bool Open(const FSplatSceneManifest& manifest, const std::string& directory,
               const FSplatStreamingConfig& config, std::string& error);
     /** Deduplicates page/generation pairs; greater priorities execute first.
+     * Newly accepted work retains profiling context; deduplication does not replace its cause.
      * Saturated metadata requests may be rejected with observable diagnostics.
      * Terminal failures are deduplicated until their generation is cancelled. */
     void Request(const std::vector<FSplatPageRequest>& requests);

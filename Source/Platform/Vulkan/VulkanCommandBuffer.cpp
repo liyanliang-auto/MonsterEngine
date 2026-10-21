@@ -311,7 +311,7 @@ namespace MonsterRender::RHI::Vulkan {
         // Reset fence before submission
         VkFence fence = m_activeCmdBuffer->getFence();
         if (!m_device->prepareSubmissionFenceReset(fence)) return false;
-        const VkResult resetResult = functions.vkResetFences(m_device->getLogicalDevice(), 1, &fence);
+        const VkResult resetResult = [&] { MonsterEngine::Profiling::Scope scope("vulkan.submit_fence_reset",m_device->GetProfilingContext());const auto observed=functions.vkResetFences(m_device->getLogicalDevice(), 1, &fence);scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed));return observed;}();
         if (resetResult != VK_SUCCESS) {
             m_device->RecordSubmitFailure(resetResult, VK_NULL_HANDLE);
             MR_LOG_ERROR("Submission fence reset failed");
@@ -343,7 +343,7 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Submit to queue with fence
-        VkResult result = functions.vkQueueSubmit(queue, 1, &submitInfo, fence);
+        VkResult result = [&] { MonsterEngine::Profiling::Scope scope("vulkan.queue_submit", m_device->GetProfilingContext()); const auto observed = functions.vkQueueSubmit(queue, 1, &submitInfo, fence); scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed)); return observed; }();
         if (result != VK_SUCCESS) {
             m_device->RecordSubmitFailure(result, fence);
             MR_LOG_ERROR("Failed to submit command buffer: " + std::to_string(result));
@@ -351,6 +351,9 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         m_device->trackSubmission(cmdBuffer, fence);
+        auto profileContext = m_device->GetProfilingContext();
+        profileContext.submissionId = m_device->getLastSubmissionToken().value;
+        MonsterEngine::Profiling::EventWithContext("vulkan.submitted", profileContext);
         m_activeCmdBuffer->markSubmitted(fence, m_device->getLastSubmissionToken());
         
         MR_LOG_DEBUG("Command buffer submitted to GPU");
@@ -384,10 +387,10 @@ namespace MonsterRender::RHI::Vulkan {
         if (!m_device->prepareSubmissionFenceReset(fence)) return false;
         // Reset immediately before submit, after prior submission ownership retired.
         if (fence != VK_NULL_HANDLE) {
-            VkResult fenceStatus = functions.vkGetFenceStatus(device, fence);
+            VkResult fenceStatus = [&] { MonsterEngine::Profiling::Scope scope("vulkan.submit_fence_status",m_device->GetProfilingContext());const auto observed=functions.vkGetFenceStatus(device, fence);scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed));return observed;}();
             if (fenceStatus == VK_SUCCESS) {
                 if (!m_device->prepareSubmissionFenceReset(fence)) return false;
-                const VkResult reset = functions.vkResetFences(device, 1, &fence);
+                const VkResult reset = [&] { MonsterEngine::Profiling::Scope scope("vulkan.submit_fence_reset",m_device->GetProfilingContext());const auto observed=functions.vkResetFences(device, 1, &fence);scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed));return observed;}();
                 if (reset != VK_SUCCESS) { m_device->RecordSubmitFailure(reset, VK_NULL_HANDLE); return false; }
             }
             else if (fenceStatus != VK_NOT_READY) {
@@ -423,7 +426,7 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         // Submit to queue with the provided fence (for frame synchronization)
-        VkResult result = functions.vkQueueSubmit(queue, 1, &submitInfo, fence);
+        VkResult result = [&] { MonsterEngine::Profiling::Scope scope("vulkan.queue_submit", m_device->GetProfilingContext()); const auto observed = functions.vkQueueSubmit(queue, 1, &submitInfo, fence); scope.SetValue(MonsterEngine::Profiling::EncodeSignedValue(observed)); return observed; }();
         if (result != VK_SUCCESS) {
             m_device->RecordSubmitFailure(result, fence);
             MR_LOG_ERROR("Failed to submit command buffer with fence: " + std::to_string(result));
@@ -431,6 +434,9 @@ namespace MonsterRender::RHI::Vulkan {
         }
         
         m_device->trackSubmission(cmdBuffer, fence);
+        auto profileContext = m_device->GetProfilingContext();
+        profileContext.submissionId = m_device->getLastSubmissionToken().value;
+        MonsterEngine::Profiling::EventWithContext("vulkan.submitted", profileContext);
         m_activeCmdBuffer->markSubmitted(fence, m_device->getLastSubmissionToken());
         
         MR_LOG_DEBUG("Command buffer submitted to GPU with external fence");

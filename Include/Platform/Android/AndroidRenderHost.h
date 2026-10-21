@@ -30,7 +30,7 @@ struct FAndroidRenderHostSnapshot {
     bool pressureRetired = false; ///< True only after requested owner action safely completed.
     uint64_t presentationReservationEstimate = 0; ///< Conservative WSI envelope, never measured driver backing.
     bool driverPresentationBackingMeasured = false; ///< Opaque WSI allocation remains unavailable.
-    std::string diagnosticsJSON, framesCSV; ///< Privacy-filtered bounded exports.
+    std::string diagnosticsJSON, framesCSV; ///< Privacy-filtered bounded exports cached at most once per second; rows retain their original identities.
 };
 /** Registry-safe JNI facade; Acquire pins an owner before using any handle.
  * Exactly one native thread owns Vulkan/session mutation. No UI callbacks. */

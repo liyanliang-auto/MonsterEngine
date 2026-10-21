@@ -1,5 +1,6 @@
 // Copyright Monster Engine. All Rights Reserved.
 #include "Platform/Android/AndroidJNI.h"
+#include "Profiling/MonsterProfiler.h"
 #if PLATFORM_ANDROID
 #include "Platform/Android/AndroidBuildJobHost.h"
 #include "Platform/Android/AndroidRenderHost.h"
@@ -32,7 +33,7 @@ namespace MonsterRender::Splat {
 namespace {
 namespace fs = std::filesystem;
 constexpr uint64_t DefaultAggregatePolicy = 768ull << 20;
-constexpr size_t CommandBytes = 65536, OutputBytes = 4u << 20;
+constexpr size_t CommandBytes = 65536, OutputBytes = 16u << 20;
 constexpr uint64_t RenderGeneration = 0xa11d0001ull;
 constexpr uint64_t TicketGeneration = 0xc11d0001ull;
 JavaVM* VM = nullptr;
@@ -153,7 +154,7 @@ jstring JString(JNIEnv* env,const std::string& s){
     }return env->NewString(out.data(),jsize(out.size()));
 }
 template<class F> jstring StringBoundary(JNIEnv* env,F&& f) noexcept{
-    try{return JString(env,Dump(f()));}
+    try{MonsterEngine::Profiling::Scope responseScope("jni.string_response");return JString(env,Dump(f()));}
     catch(const std::exception& e){env->ExceptionClear();try{return JString(env,Dump(Result(false,"native_error",e.what())));}catch(...){return env->NewStringUTF("{\"schemaVersion\":1,\"ok\":false,\"code\":\"native_error\",\"message\":\"Failure\",\"payload\":{}}");}}
     catch(...){env->ExceptionClear();return env->NewStringUTF("{\"schemaVersion\":1,\"ok\":false,\"code\":\"native_error\",\"message\":\"Unexpected native exception\",\"payload\":{}}");}
 }
@@ -679,7 +680,7 @@ jstring Detach(JNIEnv* env,jobject,jlong token,jlong generation){
     return StringBoundary(env,[&]{Need(generation>0,"Invalid Surface generation");auto host=Host(Lookup(uint64_t(token)));return Result(host->Detach(uint64_t(generation),std::chrono::milliseconds(100)));});
 }
 void Resume(JNIEnv* env,jobject,jlong token,jboolean resumed){VoidBoundary(env,[&]{auto s=Host(Lookup(uint64_t(token)))->SetResumed(resumed);Need(s.ok,s.code);});}
-void Frame(JNIEnv* env,jobject,jlong token,jlong timestamp){VoidBoundary(env,[&]{Need(timestamp>0,"Invalid frame timestamp");auto s=Host(Lookup(uint64_t(token)))->RequestFrame(uint64_t(timestamp));Need(s.ok,s.code);});}
+void Frame(JNIEnv* env,jobject,jlong token,jlong timestamp){MonsterEngine::Profiling::Scope boundaryScope("jni.frame_boundary",0,0,0,uint64_t(timestamp));VoidBoundary(env,[&]{Need(timestamp>0,"Invalid frame timestamp");auto s=Host(Lookup(uint64_t(token)))->RequestFrame(uint64_t(timestamp));Need(s.ok,s.code);});}
 void Input(JNIEnv* env,jobject,jlong token,jstring command){
     VoidBoundary(env,[&]{
         auto j=Parser(String(env,command),CommandBytes).parse();Version(j);Known(j,{"schemaVersion","phase","pointerId","orbitX","orbitY","panX","panY","pinchScale","reset","surfaceGeneration"});
@@ -749,6 +750,17 @@ jstring Settings(JNIEnv* env,jobject,jlong token,jstring command){
         auto j=Parser(String(env,command),CommandBytes).parse();Version(j);
         if(j.has("budgetControl")){Known(j,{"schemaVersion","budgetControl"});WorkerOnly(env);return BudgetControl(uint64_t(token),j.at("budgetControl"));}
         auto e=Lookup(uint64_t(token));auto host=Host(e);
+        if(j.has("profilingControl")){
+            Known(j,{"schemaVersion","profilingControl"});auto c=j.at("profilingControl");Known(c,{"enabled","clear"});
+            const bool enabled=c.at("enabled").boolean();
+            if(c.has("clear")&&c.at("clear").boolean()){
+                MonsterEngine::Profiling::SetEnabled(false);
+                MonsterEngine::Profiling::Clear();
+            }
+            MonsterEngine::Profiling::SetEnabled(enabled);
+            Json payload=Json::Obj();payload["profilingEnabled"]=MonsterEngine::Profiling::IsEnabled();
+            return Result(true,"profiling_configured","",std::move(payload));
+        }
         if(j.has("viewerControl")){
             Known(j,{"schemaVersion","viewerControl"});auto c=j.at("viewerControl");Known(c,{"action"});
             Need(c.at("action").str()=="releaseScene","Unknown viewer control");WorkerOnly(env);return Result(host->ReleaseScene(std::chrono::milliseconds(2000)));
@@ -784,10 +796,20 @@ jstring RetireOwner(JNIEnv* env,jobject,jlong token){
         Json payload=Json::Obj();payload["budgetAfterRetirement"]=Budget(Account()->Snapshot());return Result(status,std::move(payload));});
 }
 Json Diagnostics(const std::shared_ptr<Entry>& e,const std::shared_ptr<const FAndroidRenderHostSnapshot>& s){
+    MonsterEngine::Profiling::Scope snapshotScope("jni.snapshot");
     Json payload=Json::Obj();payload["schemaVersion"]=uint32_t(1);payload["status"]=Status(s->status);
+    payload["profilingEnabled"]=MonsterEngine::Profiling::IsEnabled();
+    payload["profiling"]=Json::Obj();payload["profiling"]["schemaVersion"]=uint32_t(1);
+    payload["profiling"]["enabled"]=MonsterEngine::Profiling::IsEnabled();
+    payload["profiling"]["rawJSONField"]="profilingRawJSON";
+    if(MonsterEngine::Profiling::IsEnabled()){
+        MonsterEngine::Profiling::Scope exportScope("diagnostics.profiling_export");
+        payload["profilingRawJSON"]=MonsterEngine::Profiling::ExportJson();
+    }
     payload["diagnostics"]=s->diagnosticsJSON.empty()?Json::Obj():Parser(s->diagnosticsJSON).parse();
     payload["diagnostics"]["available"]=!s->diagnosticsJSON.empty();
     if(s->diagnosticsJSON.empty())payload["diagnostics"]["reason"]="no_session_observation";
+    payload["measurementSchemaVersion"]=uint32_t(2);
     payload["framesCSV"]=s->framesCSV;payload["capabilities"]=s->capabilities.json.empty()?Json::Obj():Parser(s->capabilities.json).parse();
     payload["budget"]=Budget(Account()->Snapshot());payload["surfaceGeneration"]=s->surfaceGeneration;payload["resumed"]=s->resumed;payload["windowInUse"]=s->windowInUse;
     {auto& p=State();std::lock_guard lock(p.mutex);payload["bridgeLastErrorAvailable"]=!p.lastError.empty();}
