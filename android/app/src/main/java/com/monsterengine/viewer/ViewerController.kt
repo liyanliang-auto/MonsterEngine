@@ -26,7 +26,9 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
         val effective: ViewerConfig? = null, val selectedSceneId: String = "",
         val nativeAvailable: Boolean = false, val detachPending: Boolean = false,
         val buildBlocked: Boolean = false, val pendingImport: ImportOutcome.BuildRequired? = null,
-        val diagnostics: JSONObject = NativeBridge.partialDiagnostics(), val observedFps: Double? = null)
+        val diagnostics: JSONObject = NativeBridge.partialDiagnostics(), val observedFps: Double? = null,
+        val presentation: ViewerPresentation = ViewerPresentation.INITIALIZING,
+        val retryAvailable: Boolean = false, val importInProgress: Boolean = false)
     private data class Drawable(val surface: Surface, val generation: Long, val width: Int, val height: Int,
         val displayWidth: Int, val displayHeight: Int)
     private data class PrivateFailure(val operation: String, val code: String,
@@ -40,6 +42,20 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
     private val pollQueued = AtomicBoolean(false)
     private val initializing = AtomicBoolean(false)
     private val fpsSampler = ObservedFpsSampler() // main-thread only
+    private var presentationSample: ObservedFpsSample? = null
+    private var presentationObservedAt = 0L
+    private val freshnessWatch = object : Runnable {
+        override fun run() {
+            if (closed || !resumed) return
+            if (state.presentation == ViewerPresentation.READY &&
+                SystemClock.elapsedRealtime() - presentationObservedAt >= FPS_FRESHNESS_MILLIS) {
+                presentationSample = null
+                update(state.copy(presentation=ViewerPresentation.PREPARING, effective=null,
+                    retryAvailable=true, message="画面更新尚未确认；可等待、重试或导出报告"))
+            }
+            main.postDelayed(this, 1000)
+        }
+    }
     private var observationEpoch = 0L
     private var lastObservationAt = SystemClock.elapsedRealtime()
     private var pollScheduled = false
@@ -84,7 +100,7 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
             // but the user can export diagnostics or retry instead of an endless
             // "validating scene resources" state.
             update(state.copy(busy=false,nativeAvailable=handle.isValid,
-                message="初始化耗时较长（已超过 ${INIT_WATCHDOG_MILLIS/1000} 秒）；可导出报告或稍后重试"))
+                presentation=ViewerPresentation.FAILED,retryAvailable=true,message="初始化耗时较长（已超过 ${INIT_WATCHDOG_MILLIS/1000} 秒）；可导出报告或稍后重试"))
         }
         initWatchdog=watchdog
         main.postDelayed(watchdog,INIT_WATCHDOG_MILLIS)
@@ -113,8 +129,9 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
                     if (closed) return@post
                     initialized=created.isValid
                     handle=created
-                    update(state.copy(busy=false,requested=saved.requested,effective=saved.effective,selectedSceneId=saved.selectedSceneId,scenes=scenes,jobs=jobs,builtin=builtin,
+                    update(state.copy(busy=false,requested=saved.requested,effective=null,selectedSceneId=saved.selectedSceneId,scenes=scenes,jobs=jobs,builtin=builtin,
                         nativeAvailable=created.isValid,diagnostics=diagnostics,
+                        presentation=if(created.isValid)ViewerPresentation.PREPARING else ViewerPresentation.FAILED,retryAvailable=!created.isValid,
                         message=if(created.isValid)"请选择场景，或打开内置示例" else if(blockedRetirement)"旧画面未安全释放；请关闭并重新启动应用，原场景与设置已保留" else "渲染初始化失败；已保留场景与设置，可重试或导出报告"))
                     attachCurrent();NativeBridge.resume(handle,resumed)
                     if(created.isValid&&!LodBuildService.hasActiveJob()) {
@@ -137,7 +154,7 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
             } catch (_: Exception) {
                 main.post {
                     initializing.set(false);main.removeCallbacks(watchdog);initWatchdog=null
-                    handle=nativeOwner.get();update(state.copy(busy=false,nativeAvailable=handle.isValid,message="初始化未完成；已保留原设置和场景，请检查设置兼容性或导出报告"))
+                    handle=nativeOwner.get();update(state.copy(busy=false,nativeAvailable=handle.isValid,presentation=ViewerPresentation.FAILED,retryAvailable=true,message="初始化未完成；已保留原设置和场景，请检查设置兼容性或导出报告"))
                 }
             }
         }
@@ -190,33 +207,23 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
                 if(closed||token!=attachToken||pendingAttachGeneration!=target.generation)return@post
                 pendingAttachGeneration=0
                 if(result.ok){attachedGeneration=target.generation;attachPendingSince=SystemClock.elapsedRealtime();armStallWatch();scheduleFrames();observeSurface(owner,target.generation)}
-                else {attachRequestedGeneration=0;resetFps();update(state.copy(message="画面暂不可用，可点击重试"))}
+                else {attachRequestedGeneration=0;resetFps();update(state.copy(presentation=ViewerPresentation.FAILED,retryAvailable=true,message="画面暂不可用，可点击重试"))}
             }
         }
     }
-    /** Bounded lifecycle status observation, also in FPS-OFF builds. No FPS
-     * sampling or permanent diagnostics polling is scheduled by this path. */
+    /** Bounded startup observations complement the low-frequency GUI status poll. */
     private fun observeSurface(owner: NativeHandle, generation: Long, attempt: Int = 0) {
         if(closed||!resumed||owner!=handle||generation!=attachedGeneration)return
+        val epoch=observationEpoch;val requestedAt=SystemClock.elapsedRealtime()
         worker.execute {
             val result=NativeBridge.snapshot(owner,request("diagnostics"))
             main.post {
-                if(closed||!resumed||owner!=handle||generation!=attachedGeneration)return@post
-                val nativeStatus=result.payload.optJSONObject("status")
-                val latest=result.payload.optJSONObject("diagnostics")?.optJSONObject("latest")
-                val ready=latest!=null&&latest.optJSONObject("status")?.optBoolean("ok")==true&&
-                    latest.optLong("frameId",0)>0&&latest.optLong("submissionToken",0)>0&&
-                    latest.optLong("surfaceGeneration",0)==generation
-                if(!result.ok||nativeStatus?.optBoolean("ok")==false){
-                    stopFrames()
-                    update(state.copy(busy=false,diagnostics=result.payload,
-                        message="画面暂不可用（${nativeStatus?.optString("code")?:result.code}）；可重试或导出报告"))
-                }else if(ready){
-                    update(state.copy(diagnostics=result.payload,message=if(state.busy)state.message else "画面已就绪"))
-                }else if(attempt<STARTUP_OBSERVATION_ATTEMPTS){
+                if(closed||!resumed||owner!=handle||generation!=attachedGeneration||epoch!=observationEpoch||
+                    SystemClock.elapsedRealtime()-requestedAt>=FPS_FRESHNESS_MILLIS)return@post
+                val ready = observePresentation(result)
+                if (!ready && attempt < STARTUP_OBSERVATION_ATTEMPTS && state.presentation != ViewerPresentation.FAILED)
                     main.postDelayed({observeSurface(owner,generation,attempt+1)},500)
-                }else update(state.copy(busy=false,diagnostics=result.payload,
-                    message="画面准备耗时较长；可重试或导出报告"))
+
             }
         }
     }
@@ -282,7 +289,11 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
         }
     }
     fun setResumed(value: Boolean) {
-        resumed=value;if(!value){stopFrames();main.removeCallbacks(pollTask);pollScheduled=false};if(!NativeBridge.resume(handle,value).ok)resetFps()
+        resumed=value
+        main.removeCallbacks(freshnessWatch)
+        if(value)main.post(freshnessWatch)
+        else update(state.copy(presentation=ViewerPresentation.PAUSED,effective=null))
+        if(!value){stopFrames();main.removeCallbacks(pollTask);pollScheduled=false};if(!NativeBridge.resume(handle,value).ok)resetFps()
         if(value){attachCurrent();scheduleFrames();schedulePoll();if(attachedGeneration>0)observeSurface(handle,attachedGeneration)}
     }
     private fun scheduleFrames() {
@@ -292,6 +303,9 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
     }
     private fun resetFps() {
         observationEpoch++
+        presentationSample=null
+        if(state.effective!=null||state.presentation==ViewerPresentation.READY)
+            update(state.copy(effective=null,presentation=if(resumed)ViewerPresentation.PREPARING else ViewerPresentation.PAUSED))
         lastObservationAt=SystemClock.elapsedRealtime()
         fpsSampler.reset()
         if(state.observedFps!=null)update(state.copy(observedFps=null))
@@ -304,7 +318,7 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
         if(!closed&&resumed&&attachedGeneration>0&&pendingDetach==0L&&openAccepted&&!state.buildBlocked){if(!NativeBridge.frame(handle,frameTimeNanos).ok)resetFps();scheduleFrames()}
     }
     fun cameraInput(input: CameraInputState) {if(!closed&&input.surfaceGeneration==attachedGeneration&&!state.buildBlocked)NativeBridge.input(handle,input)}
-    fun trim(level: Int) {NativeBridge.trim(handle,level);if(level>=80){stopFrames();openAccepted=false;update(state.copy(message="内存不足，已暂停画面；可手动重试"))}}
+    fun trim(level: Int) {NativeBridge.trim(handle,level);if(level>=80){stopFrames();openAccepted=false;update(state.copy(presentation=ViewerPresentation.PAUSED,retryAvailable=true,message="内存不足，已暂停画面；可手动重试"))}}
     private fun control(owner: NativeHandle, action: String): NativeResult {
         if(!owner.isValid)return if(!nativeOwner.get().isValid&&sceneLease==null)NativeResult(true,"no_native_owner") else NativeResult(false,"invalid_handle")
         return try {NativeResult.fromJson(NativeBridge.nativeSettings(owner.value,JSONObject().put("schemaVersion",VIEWER_SCHEMA_VERSION)
@@ -341,7 +355,7 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
                 if(!result.ok){
                     lastOpenFailure=PrivateFailure("open",result.code,detail=result.message.take(MAX_PRIVATE_FAILURE_DETAIL))
                     candidateLease?.close();candidateLease=null
-                    main.post { update(state.copy(busy=false,message="场景暂时无法打开，请重试或查看报告"));scheduleFrames() }
+                    main.post { update(state.copy(busy=false,presentation=ViewerPresentation.FAILED,retryAvailable=true,message="场景暂时无法打开，请重试或查看报告"));scheduleFrames() }
                     return@execute
                 }
                 val previousLease=sceneLease
@@ -351,13 +365,13 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
                 settingsStore.save(state.requested,state.effective,descriptor.sceneId)
                 main.post {
                     stopFrames();openAccepted=true
-                    update(state.copy(busy=false,buildBlocked=false,selectedSceneId=descriptor.sceneId,message="正在准备画面"))
-                    scheduleFrames()
+                    update(state.copy(busy=false,buildBlocked=false,selectedSceneId=descriptor.sceneId,effective=null,presentation=ViewerPresentation.PREPARING,retryAvailable=false,message="正在准备画面"))
+                    scheduleFrames();if(attachedGeneration>0)observeSurface(handle,attachedGeneration)
                 }
             }catch(error: Exception){
                 candidateLease?.close()
                 lastOpenFailure=PrivateFailure("open","open_failed",error)
-                main.post { update(state.copy(busy=false,message="场景载入未完成，原资源仍受保护；请重试"));scheduleFrames() }
+                main.post { update(state.copy(busy=false,presentation=ViewerPresentation.FAILED,retryAvailable=true,message="场景载入未完成，原资源仍受保护；请重试"));scheduleFrames() }
             }
         }
     }
@@ -365,6 +379,7 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
         if(closed)return
         if(initializing.get()){update(state.copy(message="初始化仍在进行；完成后再试或导出报告"));return}
         if(!working("正在重试"))return
+        resetFps()
         if(!handle.isValid||!::repository.isInitialized||!::jobStore.isInitialized||!::settingsStore.isInitialized){initialize();return}
         val owner=handle
         worker.execute {
@@ -378,14 +393,16 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
     }
     fun importDocument(uri: Uri) {
         if(!working("正在复制并检查文件"))return;importCancelled.set(false)
+        update(state.copy(importInProgress=true))
         worker.execute {try {
             val result=SceneImportController(app,repository).importDocument(uri,importCancelled::get)
             val scenes=repository.list()
             lastImportFailure=null
-            main.post {update(state.copy(busy=false,scenes=scenes,pendingImport=result as? ImportOutcome.BuildRequired,
+            main.post {update(state.copy(busy=false,importInProgress=false,scenes=scenes,pendingImport=result as? ImportOutcome.BuildRequired,
                 message=if(result is ImportOutcome.BuildRequired)"文件已导入，需要先构建才能观看" else "导入完成，请从场景库打开"))}
         }catch(error: Exception){
             lastImportFailure=PrivateFailure("import",importFailureCode(error),error)
+            main.post { update(state.copy(importInProgress=false)) }
             fail(if(importCancelled.get())"导入已取消" else "无法导入，请检查文件格式和剩余空间")
         }}
     }
@@ -399,12 +416,12 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
     }
     /** User start/resume is completed by visible Activity only after safe release. */
     fun prepareBuild(onReady: (NativeResult)->Unit) {
-        if(!working("正在释放画面，准备构建"))return
-        stopFrames();openAccepted=false;update(state.copy(buildBlocked=true));val owner=handle
+        if(!working("正在释放画面，准备构建")){onReady(NativeResult(false,"build_busy"));return}
+        stopFrames();openAccepted=false;update(state.copy(buildBlocked=true,presentation=ViewerPresentation.PAUSED,effective=null,retryAvailable=false));val owner=handle
         worker.execute {val result=releaseScene(owner);main.post{update(state.copy(busy=false,message=if(result.ok)"画面已暂停，可开始构建" else "仍在释放画面，请稍后重试"));onReady(result)}}
     }
     fun applySettings(config: ViewerConfig) {
-        if(!working("正在保存设置"))return;val owner=handle
+        if(!working("正在保存设置"))return;resetFps();val owner=handle
         worker.execute {try {
             val requested=ViewerSettingsStore.validate(config);settingsStore.save(requested,state.effective)
             val result=NativeBridge.settings(owner,requested)
@@ -426,20 +443,18 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
         worker.execute{try{jobStore.cleanupRetired(id,true);val jobs=jobStore.list();main.post{update(state.copy(busy=false,jobs=jobs,message="任务和临时源文件已清理"))}}catch(_: Exception){fail("任务仍在使用或共享源文件，请等待后重试")}}
     }
     private fun schedulePoll() {
-        if(BuildConfig.FPS_OVERLAY_ENABLED&&!closed&&resumed&&!pollScheduled){pollScheduled=true;main.postDelayed(pollTask,1500)}
+        if(!closed&&resumed&&!pollScheduled){pollScheduled=true;main.postDelayed(pollTask,1500)}
     }
     private fun poll() {
         // Expire on the main thread even when imports or diagnostics block the worker.
         if(BuildConfig.FPS_OVERLAY_ENABLED&&SystemClock.elapsedRealtime()-lastObservationAt>=FPS_FRESHNESS_MILLIS)resetFps()
-        if(!BuildConfig.FPS_OVERLAY_ENABLED||closed||!resumed||!::repository.isInitialized||!::jobStore.isInitialized||!::settingsStore.isInitialized||!pollQueued.compareAndSet(false,true))return
+        if(closed||!resumed||!::repository.isInitialized||!::jobStore.isInitialized||!::settingsStore.isInitialized||!pollQueued.compareAndSet(false,true))return
         val owner=handle;val epoch=observationEpoch
         val requestedAt=SystemClock.elapsedRealtime()
         worker.execute{try {
             val result=NativeBridge.snapshot(owner,request("diagnostics"))
             if(result.ok)runCatching{File(app.filesDir,"viewer-last-diagnostics.json").writeText(result.payload.toString().take(32768))}
             val scenes=repository.list();val jobs=jobStore.list()
-            val effective=result.payload.optJSONObject("effectiveConfig")?.let{ViewerConfig.fromJson(it)}
-            if(result.ok&&effective!=null)settingsStore.save(state.requested,effective)
             main.post {
                 // A reply requested before pause/detach/open must not repopulate the overlay.
                 if(closed||epoch!=observationEpoch)return@post
@@ -455,13 +470,49 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
                     latest.optLong("surfaceGeneration",0),latest.optJSONObject("timing")
                         ?.optDouble("presentReturnCadenceMilliseconds",Double.NaN)?:Double.NaN) else null
                 if(sample!=null)lastObservationAt=SystemClock.elapsedRealtime()
-                update(state.copy(diagnostics=result.payload,observedFps=fpsSampler.observe(sample),
-                    scenes=scenes,jobs=jobs,effective=effective?:state.effective,
+                observePresentation(result)
+                update(state.copy(diagnostics=result.payload,observedFps=if(BuildConfig.FPS_OVERLAY_ENABLED)fpsSampler.observe(sample) else null,
+                    scenes=scenes,jobs=jobs,
                     message=when {state.busy->state.message;LodBuildService.hasActiveJob()->"正在后台构建，可在任务页暂停或取消";state.detachPending->"正在释放旧画面";
-                        valid&&state.message in setOf("画面暂不可用，可点击重试","暂时无法恢复，可导出报告","正在准备画面","已请求恢复，请选择场景")->"画面已就绪";else->state.message}))
+                        else->state.message}))
             }
         }catch(_: Exception){main.post {if(epoch==observationEpoch)resetFps()}}
         finally{pollQueued.set(false)}}
+    }
+    /** Advancing submissions in the current epoch prove readiness, never saved state or a single old frame. */
+    private fun observePresentation(result: NativeResult): Boolean {
+        if(!canObserveFrames())return false
+        val payload=result.payload
+        val latest=payload.optJSONObject("diagnostics")?.optJSONObject("latest")
+        val status=payload.optJSONObject("status")
+        if(!result.ok||status?.optBoolean("ok")==false) {
+            stopFrames()
+            update(state.copy(effective=null,presentation=ViewerPresentation.FAILED,retryAvailable=true,
+                diagnostics=payload,message="画面暂不可用；可重试或导出报告"))
+            return false
+        }
+        val valid=canObserveFrames()&&payload.optBoolean("resumed")&&payload.optBoolean("windowInUse")&&
+            payload.optLong("surfaceGeneration",0)==attachedGeneration&&
+            latest?.optLong("surfaceGeneration",0)==attachedGeneration&&
+            latest?.optLong("sceneGeneration",0)==sceneIds.get()&&
+            latest?.optJSONObject("status")?.optBoolean("ok")==true
+        if(!valid||latest==null) { presentationSample=null;return false }
+        val sample=ObservedFpsSample(latest.optLong("frameId",0),latest.optLong("submissionToken",0),
+            latest.optLong("sceneGeneration",0),latest.optLong("surfaceGeneration",0),Double.NaN)
+        if(sample.frameId<=0||sample.submissionToken<=0)return false
+        val before=presentationSample
+        presentationSample=sample
+        val advancing=before!=null&&before.sceneGeneration==sample.sceneGeneration&&
+            before.surfaceGeneration==sample.surfaceGeneration&&sample.frameId>before.frameId&&
+            sample.submissionToken>before.submissionToken
+        if(advancing) {
+            presentationObservedAt=SystemClock.elapsedRealtime()
+            val effective=runCatching { payload.optJSONObject("effectiveConfig")?.let{ViewerConfig.fromJson(it)} }.getOrNull()
+                ?.takeIf { it.generation==state.requested.generation }
+            update(state.copy(presentation=ViewerPresentation.READY,retryAvailable=false,effective=effective,
+                diagnostics=payload))
+        }
+        return advancing
     }
     /** Diagnostics export stays available during a bounded/slow initialization. */
     fun exportDiagnostics(onReady: (File)->Unit) {

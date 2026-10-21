@@ -291,6 +291,18 @@ class LodBuildService : Service() {
         private val WORKER = Executors.newSingleThreadExecutor { task -> Thread(task, "MonsterLODBuilder") }
         fun hasActiveJob(): Boolean = active.get() != null
 
+        /** Read-only process observation; a stop request is not a retirement acknowledgement.
+         * @property jobId The actual user job holding the worker.
+         * @property stopRequested Whether its existing sticky stop signal is set. */
+        data class GuiRunState(val jobId: String, val stopRequested: Boolean)
+
+        /** Read existing atomics only; maintenance reservations have no user job. */
+        fun guiRunState(): GuiRunState? {
+            val run = active.get() ?: return null
+            if (run.id.isEmpty()) return null
+            return GuiRunState(run.id, run.control.get().isNotEmpty())
+        }
+
         /** Claim maintenance without blocking Activity startup on filesystem I/O.
          * A competing start fails admission until cleanup/discovery releases it. */
         internal fun <T> withRetiredJobAccess(block: () -> T): T {

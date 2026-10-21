@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="gui_background">#11171E</color>
+    <color name="gui_surface">#1B252F</color>
+    <color name="gui_text">#F1F5F9</color>
+    <color name="gui_muted">#B4C2D0</color>
+    <color name="gui_accent">#70D8FF</color>
+    <color name="gui_danger">#FFB5BA</color>
+</resources>

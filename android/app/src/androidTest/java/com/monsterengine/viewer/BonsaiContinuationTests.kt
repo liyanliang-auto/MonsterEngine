@@ -120,7 +120,7 @@ object BonsaiContinuationTests {
             check(store.load().selectedSceneId == "saved-low-quality")
             check(runCatching { ViewerConfig.highQualityPreset(ViewerConfig(generation = Long.MAX_VALUE)) }.isFailure)
         } }
-        test("controller_blocked_diagnostics_expires_fps_or_disabled_schedules_no_poll") {
+        test("controller_blocked_diagnostics_expires_fps_and_gui_readiness_independent_of_fps_switch") {
             // Scheduler-only contract: this fixture makes no rendering/GPU acceptance claim.
             val root = File(context.cacheDir, "bonsai-controller-${UUID.randomUUID()}")
             check(root.mkdirs())
@@ -149,7 +149,15 @@ object BonsaiContinuationTests {
                         sampler.observe(sample()); val fps = sampler.observe(sample(2)); check(fps == 50.0)
                         field("state").set(c, c.state.copy(observedFps = fps))
                         (field("pollQueued").get(c) as AtomicBoolean).set(true)
-                    } else check(field("pollScheduled").get(c) == false)
+                    } else {
+                        // GUI status observations now run with FPS disabled; stale READY
+                        // must expire on the main thread even when that worker is blocked.
+                        check(c.state.observedFps == null)
+                        field("state").set(c, c.state.copy(presentation = ViewerPresentation.READY,
+                            effective = ViewerConfig()))
+                        field("presentationObservedAt").setLong(c, android.os.SystemClock.elapsedRealtime())
+                        (field("pollQueued").get(c) as AtomicBoolean).set(true)
+                    }
                 }
                 val elapsed = CountDownLatch(1); main.postDelayed({ elapsed.countDown() }, 4600)
                 check(elapsed.await(10, TimeUnit.SECONDS))
@@ -157,7 +165,12 @@ object BonsaiContinuationTests {
                     val c = controller.get()
                     if (BuildConfig.FPS_OVERLAY_ENABLED)
                         check(c.state.observedFps == null) { "Stale FPS survives blocked diagnostics for more than two refresh periods" }
-                    else check(field("pollScheduled").get(c) == false)
+                    else {
+                        check(c.state.observedFps == null)
+                        check(c.state.presentation != ViewerPresentation.READY && c.state.effective == null) {
+                            "Stale GUI readiness/effective settings survive blocked diagnostics with FPS disabled"
+                        }
+                    }
                 }
             } finally {
                 onMain { controller.get()?.close() }; root.deleteRecursively()

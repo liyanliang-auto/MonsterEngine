@@ -35,6 +35,9 @@ class ObservedFpsSampler {
     }
 }
 
+/** Transient GUI status; READY requires advancing current scene/window submissions. */
+enum class ViewerPresentation { INITIALIZING, PREPARING, READY, PAUSED, FAILED }
+
 /** JNI and persisted JSON protocol version. Unknown versions must be rejected. */
 const val VIEWER_SCHEMA_VERSION = 1
 

@@ -21,12 +21,28 @@ public class VerificationDocumentsProvider extends DocumentsProvider {
     /** Test setup only: grant from the URI owner's process, never impersonate an
      * ungranted target URI. Caller UID must actually own the fixed target package. */
     @Override public Bundle call(String method, String arg, Bundle extras) {
-        if (!"grant-test-document".equals(method)) return super.call(method, arg, extras);
+        if (!"grant-test-document".equals(method) && !"install-gui-package".equals(method) && !"remove-gui-package".equals(method)) return super.call(method, arg, extras);
         final String target = "com.monsterengine.viewer.debug";
         String[] packages = getContext().getPackageManager().getPackagesForUid(Binder.getCallingUid());
         boolean allowed = false;
         if (packages != null) for (String name : packages) if (target.equals(name)) allowed = true;
         if (!allowed) throw new SecurityException("Only the verification target may request fixture grants");
+        if (!"grant-test-document".equals(method)) {
+            if (!"gui-20261021-075317-slfq.monsterlod".equals(arg)) throw new SecurityException("Not the isolated GUI fixture");
+            long identity = Binder.clearCallingIdentity();
+            try {
+                File file = new File(fixtureDirectory(), arg);
+                if ("remove-gui-package".equals(method)) {
+                    if (file.exists() && !file.delete()) throw new IllegalStateException("Fixture cleanup failed");
+                } else {
+                    byte[] bytes = extras == null ? null : extras.getByteArray("bytes");
+                    if (bytes == null || bytes.length == 0 || bytes.length > 1024 * 1024) throw new SecurityException("Fixture size invalid");
+                    try (java.io.FileOutputStream stream = new java.io.FileOutputStream(file)) { stream.write(bytes); stream.getFD().sync(); }
+                    catch (java.io.IOException error) { throw new IllegalStateException(error); }
+                }
+                Bundle result = new Bundle(); result.putBoolean("ok", true); return result;
+            } finally { Binder.restoreCallingIdentity(identity); }
+        }
         if (!"small.ply".equals(arg) && !"slow.ply".equals(arg) && !"malformed.ply".equals(arg)) throw new SecurityException("Not a generated test fixture");
         long identity = Binder.clearCallingIdentity();
         try {

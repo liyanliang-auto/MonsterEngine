@@ -1,9 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MonsterEngine" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.MonsterEngine" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#246A9C</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">@color/gui_accent</item>
+        <item name="android:colorBackground">@color/gui_background</item>
+        <item name="android:windowBackground">@color/gui_background</item>
+        <item name="android:textColorPrimary">@color/gui_text</item>
+        <item name="android:textColorSecondary">@color/gui_muted</item>
+        <item name="android:colorControlNormal">@color/gui_muted</item>
+        <item name="android:colorControlActivated">@color/gui_accent</item>
+        <item name="android:colorButtonNormal">@color/gui_surface</item>
+        <item name="android:statusBarColor">@color/gui_background</item>
+        <item name="android:navigationBarColor">@color/gui_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:alertDialogTheme">@style/Theme.MonsterEngine.Dialog</item>
         <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="Theme.MonsterEngine.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@color/gui_accent</item>
+        <item name="android:colorBackground">@color/gui_surface</item>
+        <item name="android:windowBackground">@color/gui_surface</item>
+        <item name="android:textColorPrimary">@color/gui_text</item>
+        <item name="android:textColorSecondary">@color/gui_muted</item>
+        <item name="android:windowMinWidthMajor">80%</item>
+        <item name="android:windowMinWidthMinor">92%</item>
     </style>
 </resources>

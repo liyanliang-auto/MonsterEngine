@@ -17,6 +17,7 @@ class ViewerSurfaceView(context: Context, private val controller: ViewerControll
             if (destroyed && surfaces == 0 && !released) { released = true; texture.release() }
         }
     }
+    private var cameraInputEnabled = true
     private var backing: Backing? = null
     private var producer: Surface? = null
     private var generation = 0L
@@ -26,7 +27,7 @@ class ViewerSurfaceView(context: Context, private val controller: ViewerControll
     init {
         surfaceTextureListener = this
         isOpaque = true
-        setOnTouchListener { _, event -> touch.onTouch(event) }
+        setOnTouchListener { _, event -> if (cameraInputEnabled) touch.onTouch(event) else true }
         contentDescription = "三维场景；单指旋转，双指平移或缩放，双击复位"
         isFocusable = true
     }
@@ -104,5 +105,10 @@ class ViewerSurfaceView(context: Context, private val controller: ViewerControll
     /** Explicit retry uses a new monotonic producer generation, never a hidden
      * visibility toggle or an automatic surface recreation loop. */
     fun retrySurface() { retireProducer(); attach(width, height) }
+    /** Cancel gestures before a covering page/panel consumes subsequent camera inputs. */
+    fun setCameraInputEnabled(enabled: Boolean) {
+        if (cameraInputEnabled && !enabled) touch.cancel()
+        cameraInputEnabled = enabled
+    }
     fun resetCamera() = touch.reset()
 }

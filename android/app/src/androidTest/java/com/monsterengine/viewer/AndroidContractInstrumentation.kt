@@ -15,10 +15,14 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Framework-only instrumentation: every native and import call uses production code. */
 class AndroidContractInstrumentation : Instrumentation() {
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private var cleanupGuiJob: String? = null
+    private var caseFilter: Regex? = null
+    private var pauseOnly = false
+    override fun onCreate(arguments: Bundle?) { cleanupGuiJob=arguments?.getString("cleanupGuiJob"); caseFilter=arguments?.getString("caseFilter")?.toRegex(); pauseOnly=arguments?.getString("pauseOnly")=="true"; super.onCreate(arguments); start() }
     override fun onStart() {
         val cases = JSONArray()
         fun run(name: String, body: () -> Unit) {
+            if(caseFilter?.matches(name)==false)return
             val result = JSONObject().put("name", name)
             try { body(); result.put("passed", true) }
             catch (error: Throwable) { result.put("passed", false).put("error", error.toString().take(4096)) }
@@ -153,6 +157,7 @@ class AndroidContractInstrumentation : Instrumentation() {
             check(error.message == "Unsupported scene document")
             check(inventory(repository) == before)
         } }
+        AndroidGuiTests.run(this, ::run, cleanupGuiJob, pauseOnly)
         val failed = (0 until cases.length()).count { !cases.getJSONObject(it).getBoolean("passed") }
         val report = JSONObject().put("schemaVersion", 1).put("total", cases.length()).put("passed", cases.length() - failed)
             .put("failed", failed).put("cases", cases).put("coverage", "not_instrumented")
