@@ -2,6 +2,7 @@
 #pragma once
 
 #include "VideoTo3D/ProjectRepository.h"
+#include "VideoTo3D/ProjectInput.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -45,6 +46,10 @@ public:
     const ProjectSnapshot& Snapshot() const noexcept;
     /** Physical project directory held by the owned repository. */
     const std::filesystem::path& Directory() const noexcept;
+    /** Import one video under the existing owned repository lease. */
+    InputManifest ImportVideo(const std::filesystem::path& source);
+    /** Verify current owned input under the existing repository lease; NoInput if absent. */
+    InputManifest InspectInput();
     /** Persist an immutable Pending request and return its new run ID. */
     std::string AddPlannedRun(const std::string& requestBytes);
     /** Swap with an adjacent Pending run in direction -1 or +1; false at a boundary. */

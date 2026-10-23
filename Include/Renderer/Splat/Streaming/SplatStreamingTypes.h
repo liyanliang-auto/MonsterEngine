@@ -14,12 +14,25 @@ struct FSplatStreamingConfig {
     uint32_t retries = 2; ///< Additional reads after a failure.
     uint32_t retryDelayMilliseconds = 25; ///< Retry backoff base.
 };
+/** Immutable controller origin; zero ids/generations mean unavailable, never export-frame aliases. */
+struct FSplatUpstreamOrigin {
+    uint64_t id=0; ///< Scene-scoped demand lifetime; not a pool demandSequence or work id.
+    MonsterEngine::Profiling::Context context; ///< Actual originating page/frame/request/scene.
+    uint64_t surface=0, config=0, pipeline=0; ///< Known origin generations; zero unavailable.
+    uint32_t representationFlags=0; ///< Desired=1, selected fallback=2, mandatory=4, prefetch=8.
+};
+/** Immutable accepted physical work cause, separate from later coalesced origins. */
+struct FSplatPageCausality {
+    FSplatUpstreamOrigin origin; ///< First accepted upstream origin; never replaced by coalescing.
+    uint64_t workId=0; ///< Scene-scoped monotonic accepted task identity, zero unavailable.
+};
 /** Generation-tagged scheduler request. */
 struct FSplatPageRequest {
     uint32_t pageId = SplatInvalidId; ///< Page to load.
     double priority = 0; ///< Larger values load first.
     uint64_t sceneGeneration = 0; ///< Cancels stale scene work.
     MonsterEngine::Profiling::Context profiling; ///< Original accepted work cause; unchanged by deduplication.
+    FSplatUpstreamOrigin upstream; ///< Actual controller-origin lifetime, including resident demand.
 };
 /** Movable completion; nonempty error indicates a terminal failure. */
 struct FSplatPageResult {
@@ -29,6 +42,7 @@ struct FSplatPageResult {
     std::vector<FSplatGaussian> decodedGaussians; ///< Activated page records.
     std::string error; ///< Terminal read/checksum/decode failure.
     MonsterEngine::Profiling::Context profiling; ///< Original cause preserved through worker/upload ownership.
+    FSplatPageCausality causality; ///< Immutable accepted work identity through transferred ownership.
 };
 /** Observable bounded I/O/cache lifecycle counters. */
 struct FSplatStreamingStats {

@@ -109,7 +109,7 @@ bool FSplatPipeline::PreflightTemporaryBuffers(uint64_t& bytes) {
     bytes += required;
     return true;
 }
-bool FSplatPipeline::MeasureTemporaryBuffers(uint64_t& bytes) const {
+bool FSplatPipeline::MeasureTemporaryBuffers(uint64_t& bytes) {
     auto buffers = m_preprocess.GetOwnedBuffers();
     for (auto b : m_prefixSum.GetOwnedBuffers()) buffers.push_back(b);
     for (auto b : m_radixSort.GetOwnedBuffers()) buffers.push_back(b);
@@ -121,7 +121,10 @@ bool FSplatPipeline::MeasureTemporaryBuffers(uint64_t& bytes) const {
         buffers.push_back(m_fusionGroupsBuffers[0]); buffers.push_back(m_fusionGroupsBuffers[1]);
         buffers.push_back(m_fusionCounter); buffers.push_back(m_fusionCache);
     }
-    bytes = 0; std::set<uint64_t> seen;
+    bytes = 0; std::set<uint64_t> seen;std::set<const void*> seenBuffers;
+    m_stats.temporaryLogicalBytes=m_stats.temporaryRequiredBytes=m_stats.temporaryAlignmentBytes=0;
+    m_stats.sortLogicalBytes=m_stats.sortRequiredBytes=m_stats.sortAlignmentBytes=0;
+    const auto radix=m_radixSort.GetOwnedBuffers();
     auto add = [&](const RHI::FBufferAllocationInfo& info) {
         if (!info.backingId || !info.backingBytes) return false;
         if (seen.insert(info.backingId).second) {
@@ -131,11 +134,25 @@ bool FSplatPipeline::MeasureTemporaryBuffers(uint64_t& bytes) const {
         return true;
     };
     for (const auto& b : buffers) {
+        if(!seenBuffers.insert(b.Get()).second)continue;
         RHI::FBufferAllocationInfo info{};
         if (!b || !b->getAllocationInfo(info) || !add(info)) return false;
+        uint64_t required=0,alignment=0;
+        if(!m_device->getBufferAllocationRequirements(b->getDesc(),required,alignment))return false;
+        m_stats.temporaryLogicalBytes+=b->getSize();m_stats.temporaryRequiredBytes+=required;
+        m_stats.temporaryAlignmentBytes=std::max(m_stats.temporaryAlignmentBytes,alignment);
+        if(std::find(radix.begin(),radix.end(),b)!=radix.end()){
+            m_stats.sortLogicalBytes+=b->getSize();m_stats.sortRequiredBytes+=required;
+            m_stats.sortAlignmentBytes=std::max(m_stats.sortAlignmentBytes,alignment);
+        }
     }
     RHI::FBufferAllocationInfo image{};
-    return m_render.getOutputTexture()->getAllocationInfo(image) && add(image);
+    if(!m_render.getOutputTexture()->getAllocationInfo(image)||!add(image)||
+        !m_device->getTextureAllocationRequirements(OutputDesc(m_imageWidth,m_imageHeight),m_stats.outputRequiredBytes,m_stats.outputAlignmentBytes))return false;
+    m_stats.outputLogicalBytes=uint64_t(m_imageWidth)*m_imageHeight*4;
+    m_stats.temporaryLogicalBytes+=m_stats.outputLogicalBytes;m_stats.temporaryRequiredBytes+=m_stats.outputRequiredBytes;
+    m_stats.temporaryAlignmentBytes=std::max(m_stats.temporaryAlignmentBytes,m_stats.outputAlignmentBytes);
+    return true;
 }
 bool FSplatPipeline::QueryTemporaryBytes(RHI::IRHIDevice* device, uint32 count, uint32 width, uint32 height, uint64_t& bytes) {
     if (m_bInitialized || !device || !width || !height || width > 65535u * 16u || height > 65535u * 16u ||
@@ -440,9 +457,20 @@ MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICom
     m_frameReserved = false;
     m_stats.countRecordingSkipped = true;
     const uint64_t activeSize = m_hasActiveSet ? m_activeSet.sourceIndices.size() : m_gaussianCount;
-    m_stats.degraded = false; m_stats.degradationReason.clear();
+    m_stats.degraded = false; m_stats.degradationReason.clear();m_stats.degradationCode.clear();m_stats.activeConsumptionRecorded=false;
     auto fail = [&](const char* reason) {
         m_stats.degraded = true; m_stats.degradationReason = reason;
+        // Mapping is based only on fixed renderer constants; unknown text is never exported.
+        static constexpr std::pair<const char*,const char*> reasons[]={
+            {"Missing valid input data or camera","input_or_camera_unavailable"},
+            {"Active count exceeds compact capacity","active_capacity_exceeded"},
+            {"Fusion groups do not exactly partition the current original active mapping","fusion_partition_invalid"},
+            {"Invalid source index mapping","source_mapping_invalid"},
+            {"Mapped input slots still referenced by GPU submissions","mapped_input_gpu_in_flight"},
+            {"Mapped input upload failed","mapped_input_upload_failed"},
+            {"Fusion descriptor upload failed","fusion_descriptor_upload_failed"}};
+        m_stats.degradationCode="unknown_reason";
+        for(const auto& entry:reasons)if(m_stats.degradationReason==entry.first)m_stats.degradationCode=entry.second;
         return (m_outputCleared || m_pendingOutputClear) ? m_render.getOutputTexture() : MonsterEngine::TSharedPtr<IRHITexture>{};
     };
     if (!m_hasCamera || (activeSize && !m_hasGaussianData)) return fail("Missing valid input data or camera");
@@ -457,7 +485,7 @@ MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICom
     m_recordedFrameSlot = frameSlot; m_beforeSubmission = m_device->getLastSubmissionToken();
     m_stats.activeCount = uint32(activeSize);
     m_stats.selectionVersion = m_activeSet.selectionVersion; m_stats.residencyVersion = m_activeSet.residencyVersion;
-    if (m_stats.overflow) { m_stats.degraded = true; m_stats.degradationReason = "Sort overflow: prior output retained; tighten selection budget"; }
+    if (m_stats.overflow) { m_stats.degraded = true; m_stats.degradationCode="sort_capacity_overflow_previous_complete_image_retained";m_stats.degradationReason = "Sort overflow: prior output retained; tighten selection budget"; }
     const uint32 count = uint32(activeSize);
     m_preprocess.SelectFrameSlot(frameSlot); m_assignKeys.SelectFrameSlot(frameSlot);
     m_tileBoundaries.SelectFrameSlot(frameSlot); m_render.SelectFrameSlot(frameSlot);
@@ -503,6 +531,7 @@ MonsterEngine::TSharedPtr<RHI::IRHITexture> FSplatPipeline::execute(RHI::IRHICom
     }
     m_stats.countRecordingSkipped = m_pendingTelemetry < 0;
     if (m_pendingTelemetry < 0) ++m_stats.telemetrySkippedFrames;
+    m_stats.activeConsumptionRecorded=true;
     return m_render.getOutputTexture();
 }
 } // namespace MonsterRender::Splat

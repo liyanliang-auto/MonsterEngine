@@ -98,6 +98,14 @@ const std::filesystem::path& ReconstructionQueue::Directory() const noexcept {
     return repository_->Directory();
 }
 
+InputManifest ReconstructionQueue::ImportVideo(const std::filesystem::path& source) {
+    return ProjectInput::Import(*repository_, InputKind::Video, source);
+}
+
+InputManifest ReconstructionQueue::InspectInput() {
+    return ProjectInput::Inspect(*repository_);
+}
+
 std::string ReconstructionQueue::AddPlannedRun(const std::string& requestBytes) {
     if (requestBytes.empty()) {
         throw ProjectError(ProjectErrorCode::InvalidInput,

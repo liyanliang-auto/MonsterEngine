@@ -46,6 +46,11 @@ struct FSplatPipelineFrameStats {
     bool countRecordingSkipped = false; ///< Current recording has no free count readback slot.
     bool timingAvailable = false; ///< Hardware timestamp capability.
     std::string degradationReason; ///< Configuration/capacity failure.
+    std::string degradationCode; ///< Privacy-safe reason independent of explanatory text.
+    bool activeConsumptionRecorded=false; ///< Full consuming compute recorded, false for retained-image fallback.
+    uint64_t temporaryLogicalBytes=0, temporaryRequiredBytes=0, temporaryAlignmentBytes=0; ///< Cached real allocation query totals.
+    uint64_t outputLogicalBytes=0, outputRequiredBytes=0, outputAlignmentBytes=0; ///< Real output image creation requirements.
+    uint64_t sortLogicalBytes=0, sortRequiredBytes=0, sortAlignmentBytes=0; ///< Dedicated radix allocation queries.
     uint32 tightTileCullingRequested = 0, tightTileCullingEffective = 0; ///< Count/emit mode selected for this pipeline.
     std::string tightTileCullingFallback; ///< Explicit compatibility fallback reason, empty if none.
     uint32 radixSortBlocksPerWorkgroupRequested = RADIX_SORT_BLOCKS_PER_WG; ///< Validated requested workload.
@@ -108,7 +113,7 @@ private:
     bool CreateFusionPass();
     bool ExecuteFusion(RHI::IRHICommandList*, uint32_t frameSlot, uint32_t sourceCount);
     bool PreflightTemporaryBuffers(uint64_t& bytes);
-    bool MeasureTemporaryBuffers(uint64_t& bytes) const;
+    bool MeasureTemporaryBuffers(uint64_t& bytes);
     void PollTelemetry();
     struct FTelemetrySlot {
         MonsterEngine::TSharedPtr<RHI::IRHIBuffer> buffer;

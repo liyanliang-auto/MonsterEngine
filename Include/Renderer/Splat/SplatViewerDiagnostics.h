@@ -31,7 +31,11 @@ public:
     void Resolve(uint64_t pipelineGeneration,const FSplatPipelineFrameStats&);
     /** Break interval continuity across suspension without discarding observations. */
     void ResetCadence();
-    /** Versioned privacy-safe diagnostics; unknown values are null with reasons. */
+    /** Extra fixed upper charge for v2 lifecycle fields retained by at most512 frame rows.
+     * Existing base diagnostics allocation is accounted separately. */
+    static constexpr uint64_t LifecycleMetadataBytes = 512ull*(16*(sizeof(FSplatUpstreamOrigin)+2*sizeof(uint64_t))+256);
+    /** Versioned privacy-safe diagnostics, additive diagnosticsP0 per original row;
+     * bounded detail deltas retain causal identities and explicit queue losses. */
     std::string SnapshotJSON() const;
     /** Numeric-only frame/streaming CSV. Missing values are empty cells. */
     std::string FramesCSV() const;

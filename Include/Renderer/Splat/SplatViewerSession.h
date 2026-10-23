@@ -32,8 +32,8 @@ public:
     FViewerStatus Initialize(RHI::IRHIDevice&, IResourceProvider&, const FViewerConfig&);
     /** Queue bounded worker preparation; accepted is loading, never ready. */
     FViewerStatus OpenScene(const FSceneDescriptor&);
-    /** Touch deltas modify shared orbital camera; stale Surface inputs are rejected. */
-    void ApplyCameraInput(const FCameraInputState&);
+    /** Touch deltas modify the same orbital camera; returns owner disposition, never submission proof. */
+    EViewerCameraInputDisposition ApplyCameraInput(const FCameraInputState&);
     /** Validate an orbit pose without requiring a device. */
     static bool IsValidOrbitCameraPreset(const FViewerOrbitCameraPreset&);
     /** Owner-only startup/reset pose; null restores the original generic orbit. */
@@ -45,12 +45,15 @@ public:
     FViewerFrameResult TickAndRecord(const FViewerFrameRequest&);
     /** Owner sets the incoming request before recording; zero clears unavailable cause. */
     void SetProfilingRequestId(uint64_t requestId);
-    /** Associate only a new actual device submission with the preceding recording. */
+    /** Associate only a new actual device submission with the preceding recording.
+     * Successful active consumption alone publishes the exact native cut fingerprint. */
     void OnSubmitted(RHI::FGPUCompletionToken,const FViewerFrameMeasurement* owner=nullptr);
     /** Clamp to admitted maximum edge/pixels; recreate with old+new overlap charged. */
     FViewerStatus ResizeInternal(uint32_t, uint32_t);
     /** Owner-only metadata for the attached visible view; zero/invalid clears external filtering policy. */
     void SetPresentationDisplayExtent(uint32_t width, uint32_t height);
+    /** Owner-provided WSI estimate; never promoted to measured backing. */
+    void SetPresentationReservationEstimate(uint64_t bytes);
     /** Pure bounded policy; native upscaling and absent/invalid display extents retain zero extra gain. */
     static FViewerPresentationScalePolicy EvaluatePresentationScale(uint32_t renderWidth, uint32_t renderHeight,
         uint32_t presentationWidth, uint32_t presentationHeight, uint32_t displayWidth, uint32_t displayHeight);

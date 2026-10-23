@@ -12,6 +12,7 @@
 #include "SplatRasterSharedTests.h"
 #include "SplatSHStorageTests.h"
 #include "SplatPresentationTests.h"
+#include "SplatCameraProvenanceTests.h"
 #include "SplatPresentationFragmentTests.h"
 using namespace SplatVerification;
 int main(int argc,char** argv){if(argc>1&&std::string(argv[1])=="--radix-benchmark"){try{return RunRadixMicrobenchmark(argc,argv);}catch(const std::exception& e){std::cerr<<"MICROBENCHMARK FAIL "<<e.what()<<char(10);return 1;}}fs::create_directories("TestFile/3DGSLODStreaming/verification/logs");InitializeLogging((ArtifactRoot()/"logs/gpu-engine.log").string().c_str(),false,true,ELogVerbosity::Warning);Suite suite;
@@ -21,7 +22,7 @@ int main(int argc,char** argv){if(argc>1&&std::string(argv[1])=="--radix-benchma
         int result=suite.Finish();ShutdownLogging();return result;
     }
     try{Device d;
-        RunPresentationPolicyTests(suite,d);
+        RunPresentationPolicyTests(suite,d); RunCameraProvenanceTests(suite,d);
         RunPresentationFragmentTests(suite,d);
         suite.Test("T09 real completion tokens reject zero future recording",[&]{Require(!d.rhi->isSubmissionComplete({0}),"zero completed");auto previous=d.rhi->getLastSubmissionToken();Require(!d.rhi->isSubmissionComplete({previous.value+100}),"unknown future completed");auto c=d.Begin();Require(d.rhi->getLastSubmissionToken().value==previous.value,"recording minted token");c->writeGPUTimestamp(901,"FormalEmpty",true);c->writeGPUTimestamp(901,"FormalEmpty",false);auto token=d.Submit(c);Require(token.value>previous.value,"token did not increase");Require(d.rhi->supportsGPUTimestamps(),"ENV: hardware timestamps unavailable");auto samples=d.rhi->pollGPUTimestamps();Require(std::any_of(samples.begin(),samples.end(),[](const auto& s){return s.frame==901&&s.label=="FormalEmpty"&&std::isfinite(s.milliseconds)&&s.milliseconds>=0;}),"hardware timestamp absent after real fence");});
         for(unsigned n:{1u,2u,255u,256u,257u,1025u})suite.Test("T11 actual GPU inclusive scan tail N="+std::to_string(n),[&d,n]{FSplatPrefixSumPass scan;Require(scan.initialize(d.rhi,n),"scan init");std::vector<unsigned> input(n),oracle(n);for(unsigned i=0;i<n;++i)input[i]=(i%7)+1;std::partial_sum(input.begin(),input.end(),oracle.begin());auto upload=Buffer(d.rhi,n*4,EMemoryUsage::Upload,input.data());auto c=d.Begin();c->copyBuffer(scan.getBufferA(),upload,n*4);c->resourceBarrier();scan.execute(c,n);d.Submit(c);Require(d.ReadBuffer<unsigned>(scan.getResultBuffer(),n)==oracle,"inclusive scan differs from CPU oracle including nonzero tail");});

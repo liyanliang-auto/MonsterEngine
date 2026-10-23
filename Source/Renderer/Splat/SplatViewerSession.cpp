@@ -85,9 +85,13 @@ struct FSplatViewerSession::FImpl {
     uint32_t width=1280,height=720,uploaded=0,recordedRows=0,uploadRows=0;
     uint32_t presentationWidth=0,presentationHeight=0,displayWidth=0,displayHeight=0;
     FViewerPresentationScalePolicy presentationScale;
+    uint64_t presentationReservationEstimate=0;
     std::chrono::steady_clock::time_point nextMemoryObservation{};
     std::optional<uint64_t> managedLiveBytes,managedBackingBytes,pooledUnusedBytes;
     FViewerFrameMeasurement measurement;
+    FViewerCameraProvenance appliedCamera,pendingCamera;
+    uint64_t cameraRevision=0;
+    bool pendingCameraConsumed=false;
     uint64_t profilingRequestId=0;
     uint64_t pipelineGeneration=0;
     uint64_t highestScene=0,surface=0,streamedFrame=0,recordNanos=0;
@@ -125,6 +129,7 @@ struct FSplatViewerSession::FImpl {
         next->displayWidth=displayWidth;next->displayHeight=displayHeight;
         next->presentationDisplayScale=presentationScale.displayScale;
         next->presentationSharpeningStrength=presentationScale.sharpeningStrength;
+        next->presentationReservationEstimate=presentationReservationEstimate;
         if(initialized)next->effectiveConfig=config;
         if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(device)) {
             const VkFormat format=vk->getSwapchainFormat();
@@ -156,8 +161,32 @@ struct FSplatViewerSession::FImpl {
             // measured GPU interval instead of leaving Android timing unavailable.
             for(const auto& sample:p.timestampSamples)if(sample.label=="WholeFrame"||sample.label=="Pipeline") {next->counters.gpuMilliseconds=sample.milliseconds;next->counters.gpuTimingFrame=sample.frame;}
             next->degraded=p.degraded||p.overflow;next->degradationReason=p.overflow?"sort_capacity_overflow_previous_complete_image_retained":p.degradationReason;
+            auto& cause=next->pipelineDegradation;cause.status=p.frame==frame?"observed":"stale_identity";
+            if(p.degraded)cause.codes.push_back(p.degradationCode.empty()?"unknown_reason":p.degradationCode);
+            if(p.overflow&&std::find(cause.codes.begin(),cause.codes.end(),"sort_capacity_overflow_previous_complete_image_retained")==cause.codes.end())
+                cause.codes.push_back("sort_capacity_overflow_previous_complete_image_retained");
+            cause.counters={{"sourceFrameId",p.frame?std::optional<uint64_t>(p.frame):std::nullopt},
+                {"sortCountFrame",p.countAvailable?std::optional<uint64_t>(p.countFrame):std::nullopt},
+                {"sortOverflow",p.countAvailable?std::optional<uint64_t>(p.overflow?1:0):std::nullopt},
+                {"activeCount",p.activeCount},{"activeCapacity",p.activeCapacity},{"sortCapacity",p.sortCapacity},
+                {"activeConsumptionRecorded",p.activeConsumptionRecorded?1:0},{"telemetrySkippedFrames",p.telemetrySkippedFrames}};
+            next->resourceCosts["temporary"]={"actual",p.temporaryLogicalBytes,p.temporaryRequiredBytes,p.temporaryBytes,p.temporaryAlignmentBytes,std::nullopt,"temporary_gpu_includes_sort_output"};
+            next->resourceCosts["sort"]={"overlapping",p.sortLogicalBytes,p.sortRequiredBytes,p.radixKeysBytes+p.radixValuesBytes+p.radixHistogramBytes,p.sortAlignmentBytes,std::nullopt,"included_in_temporary_gpu"};
+            next->resourceCosts["output"]={"overlapping",p.outputLogicalBytes,p.outputRequiredBytes,p.outputImageBytes,p.outputAlignmentBytes,std::nullopt,"included_in_temporary_gpu"};
         }
-        if(streaming){const auto s=streaming->Snapshot();next->counters.uploadedBytes=s.pool.uploadedBytes;next->counters.residentBytes=s.pool.residentBytes;next->counters.cpuLeaseBytes=s.cpu.totalReservedBytes;next->degraded|=s.degraded;if(s.degraded)next->degradationReason=s.degradationReason;}
+        if(streaming){const auto s=streaming->Snapshot();next->counters.uploadedBytes=s.pool.uploadedBytes;next->counters.residentBytes=s.pool.residentBytes;next->counters.cpuLeaseBytes=s.cpu.totalReservedBytes;next->degraded|=s.degraded;if(s.degraded)next->degradationReason=s.degradationReason;
+            auto& cause=next->streamingDegradation;cause.status=s.frameId==frame&&s.sceneGeneration==scene.generation&&
+                s.surfaceGeneration==surface&&s.configGeneration==config.generation&&s.pipelineGeneration==pipelineGeneration?"observed":"stale_identity";
+            cause.codes=s.degradationCodes;if(s.degraded&&cause.codes.empty())cause.codes.push_back("unknown_reason");
+            cause.counters={{"sourceFrameId",s.frameId},{"memoryPressure",s.memoryPressure?1:0},{"terminalPageFailures",s.terminalPageFailures},
+                {"deferredPages",s.deferredPages},{"poolDegraded",s.pool.degraded?1:0},{"rejectedUploads",s.pool.rejectedUploads},
+                {"pendingReads",s.io.pendingReads},{"activeReads",s.io.activeReads},{"pendingUploads",s.pool.pendingUploads}};
+            const auto& a=s.allocations;
+            next->resourceCosts["source"]={"actual",a.sourceLogicalBytes,a.sourceReservedBytes,a.sourceBackingBytes,a.sourceAlignmentBytes,std::nullopt,"source_gpu_disjoint"};
+            next->resourceCosts["staging"]={"actual",a.stagingLogicalBytes,a.stagingReservedBytes,a.stagingBackingBytes,a.stagingAlignmentBytes,std::nullopt,"staging_gpu_disjoint"};
+            next->resourceCosts["worker"]={"overlapping",s.cpu.inFlightReservedBytes,std::nullopt,std::nullopt,std::nullopt,std::nullopt,"included_in_cpu_cache"};
+            next->resourceCosts["transition"]={"overlapping",a.transitionRequiredRecords*(52+12*(gpu.shDegree+1)*(gpu.shDegree+1)),std::nullopt,std::nullopt,std::nullopt,std::nullopt,"protected_union_within_source_gpu"};
+        }
         else if(gpu.isValid()){next->counters.residentBytes=gpu.sourceLogicalBytes;next->counters.uploadedBytes=gpu.uploadedBytes;}
         std::shared_ptr<const FViewerDiagnosticsSnapshot> immutable=std::move(next);
         std::atomic_store_explicit(&snapshot,std::move(immutable),std::memory_order_release);
@@ -228,7 +257,7 @@ FViewerStatus FSplatViewerSession::Initialize(RHI::IRHIDevice& d,IResourceProvid
 #if PLATFORM_ANDROID
         ShaderCompiler::setResourceProvider(std::shared_ptr<IResourceProvider>(&p,[](IResourceProvider*){}));
 #endif
-        i.metadata=i.Reserve(ESplatBudgetComponent::Metadata,65536);
+        i.metadata=i.Reserve(ESplatBudgetComponent::Metadata,65536+FSplatViewerDiagnostics::LifecycleMetadataBytes+ViewerCameraMetadataBytes);
         i.width=1280;i.height=720;i.Clamp(i.width,i.height);i.initialized=true;i.status=Good();i.Publish();return i.status;
     }catch(const std::exception& e){
 #if PLATFORM_ANDROID
@@ -285,13 +314,31 @@ FViewerStatus FSplatViewerSession::AdoptDesktopGPUData(const FSplatGPUData& data
         if(!i.MakePipeline(w,h))throw std::runtime_error("Desktop pipeline allocation failed");i.status=Good();i.suspended=false;
     }catch(const std::exception& e){i.status=Bad("adopt_failed",e.what());}i.Publish();return i.status;
 }
-void FSplatViewerSession::ApplyCameraInput(const FCameraInputState& input) {
-    auto& i=*Impl;if(input.surfaceGeneration!=i.surface&&i.surface)return;
-    if(input.phase==EViewerPointerPhase::Cancel)return;
+EViewerCameraInputDisposition FSplatViewerSession::ApplyCameraInput(const FCameraInputState& input) {
+    auto& i=*Impl;if(input.surfaceGeneration!=i.surface&&i.surface)return EViewerCameraInputDisposition::StaleSurface;
+    if(input.phase==EViewerPointerPhase::Cancel){i.appliedCamera.gestureBeginRequestId=0;return EViewerCameraInputDisposition::CancelledNoMotion;}
     if(input.reset)i.ResetOrbit();
-    if(!std::isfinite(input.orbitX)||!std::isfinite(input.orbitY)||!std::isfinite(input.panX)||!std::isfinite(input.panY)||!std::isfinite(input.pinchScale)||input.pinchScale<=0)return;
+    if(!std::isfinite(input.orbitX)||!std::isfinite(input.orbitY)||!std::isfinite(input.panX)||!std::isfinite(input.panY)||!std::isfinite(input.pinchScale)||input.pinchScale<=0){i.appliedCamera={};return EViewerCameraInputDisposition::InvalidInput;}
     i.yaw+=input.orbitX*6.2831853f;i.pitch=std::clamp(i.pitch+input.orbitY*3.1415927f,-1.5f,1.5f);
     i.distance=std::clamp(i.distance/input.pinchScale,0.1f,100000.0f);i.target[0]-=input.panX*i.distance;i.target[1]+=input.panY*i.distance;i.externalCamera=false;
+    const bool motion=input.reset||input.orbitX!=0||input.orbitY!=0||input.panX!=0||input.panY!=0||input.pinchScale!=1;
+    if(motion&&i.cameraRevision!=UINT64_MAX)++i.cameraRevision;
+    auto& p=i.appliedCamera;
+    const bool changed=p.requestScope!=input.requestScope||p.sceneGeneration!=i.scene.generation||p.surfaceGeneration!=input.surfaceGeneration||p.configGeneration!=i.config.generation||p.pipelineGeneration!=i.pipelineGeneration;
+    if(input.reset||changed){p={};p.lineageComplete=input.lineageComplete;}
+    p.requestScope=input.requestScope;p.sceneGeneration=i.scene.generation;p.surfaceGeneration=input.surfaceGeneration;
+    p.configGeneration=i.config.generation;p.pipelineGeneration=i.pipelineGeneration;p.cameraRevision=i.cameraRevision;
+    p.lastAppliedRequestId=input.requestId;p.applicationGroup=input.applicationGroup;p.phase=input.phase;
+    if(input.phase==EViewerPointerPhase::Begin)p.gestureBeginRequestId=input.requestId;
+    if(input.reset)p.lastResetRequestId=input.lastResetRequestId;
+    const uint32_t members=input.contributorCount?input.contributorCount:1;
+    for(uint32_t n=0;n<std::min<uint32_t>(members,ViewerCameraContributorCapacity);++n)
+        if(uint64_t(p.contributorCount)+n<ViewerCameraContributorCapacity)p.contributorIds[p.contributorCount+n]=input.contributorCount?input.contributorIds[n]:input.requestId;
+    p.contributorCount=uint32_t(std::min<uint64_t>(UINT32_MAX,uint64_t(p.contributorCount)+members));
+    p.lineageComplete=p.lineageComplete&&input.lineageComplete&&p.contributorCount<=ViewerCameraContributorCapacity&&i.cameraRevision!=UINT64_MAX;
+    if(!input.requestScope||!input.requestId)return EViewerCameraInputDisposition::UnavailableLegacy;
+    if(!p.lineageComplete)return EViewerCameraInputDisposition::LineageOverflow;
+    return motion?EViewerCameraInputDisposition::AppliedMotion:EViewerCameraInputDisposition::AppliedNoMotion;
 }
 bool FSplatViewerSession::IsValidOrbitCameraPreset(const FViewerOrbitCameraPreset& p) {
     float delta[3];
@@ -307,7 +354,7 @@ bool FSplatViewerSession::IsValidOrbitCameraPreset(const FViewerOrbitCameraPrese
 }
 FViewerStatus FSplatViewerSession::SetOrbitCameraPreset(std::optional<FViewerOrbitCameraPreset> preset) {
     if(preset&&!IsValidOrbitCameraPreset(*preset))return Bad("invalid_camera_preset","");
-    Impl->orbitPreset=std::move(preset);Impl->ResetOrbit();return Good("camera_preset_applied");
+    Impl->orbitPreset=std::move(preset);Impl->ResetOrbit();Impl->appliedCamera={};Impl->pendingCamera={};return Good("camera_preset_applied");
 }
 void FSplatViewerSession::ApplySettings(const FViewerConfig& c) {
     auto& i=*Impl;if(c.generation<i.config.generation)return;
@@ -320,14 +367,17 @@ void FSplatViewerSession::ApplySettings(const FViewerConfig& c) {
     i.config=c;if(i.streaming){std::string error;if(!i.streaming->ApplySettings(c.runtime.lod,error))i.status=Bad("settings_failed",error);}i.Publish();
 }
 FSplatStreamingFrameResult FSplatViewerSession::UpdateStreaming(RHI::IRHICommandList* command,const FSplatLODView& view,uint64_t frame) {
-    auto& i=*Impl;if(!i.streaming)return {};auto result=i.streaming->UpdateAndRecord(command,view,frame,i.profilingRequestId);i.streamedFrame=frame;
+    auto& i=*Impl;if(!i.streaming)return {};i.streaming->SetDiagnosticFrameIdentity(frame,i.profilingRequestId,i.surface,i.config.generation,i.pipelineGeneration);
+    auto result=i.streaming->UpdateAndRecord(command,view,frame,i.profilingRequestId);i.streamedFrame=frame;
     if(i.pipeline)i.pipeline->SetActiveSet(result.activeSet);i.status=result.status;return result;
 }
-void FSplatViewerSession::SetCameraUniforms(const FCameraUniforms& c){Impl->camera=c;Impl->externalCamera=true;if(Impl->pipeline)Impl->pipeline->setCamera(c);}
+void FSplatViewerSession::SetCameraUniforms(const FCameraUniforms& c){Impl->appliedCamera={};Impl->pendingCamera={};Impl->camera=c;Impl->externalCamera=true;if(Impl->pipeline)Impl->pipeline->setCamera(c);}
 void FSplatViewerSession::SetRenderSettings(const FSplatRenderSettings& s){Impl->settings=s;if(Impl->pipeline)Impl->pipeline->setRenderSettings(s);}
 void FSplatViewerSession::PrepareOutputForCompute(RHI::IRHICommandList& command){auto& i=*Impl;if(i.shaderRead&&i.pipeline){command.transitionResource(i.pipeline->getOutputTexture(),RHI::EResourceUsage::ShaderResource,RHI::EResourceUsage::UnorderedAccess);i.shaderRead=false;}}
 FViewerFrameResult FSplatViewerSession::RecordCompute(const FViewerFrameRequest& request,bool frameAlreadyReserved) {
     auto& i=*Impl;FViewerFrameResult result;i.measurement={};
+    // Invalidate before every early return, including stale/loading/upload-only calls.
+    i.pendingCamera={};i.pendingCameraConsumed=false;
     if(!i.initialized||!request.commandList||!request.viewportWidth||!request.viewportHeight){result.status=Bad("not_drawable","");return result;}
     if(request.sceneGeneration!=i.scene.generation||request.configGeneration!=i.config.generation||
        (i.surface&&request.surfaceGeneration<i.surface)){result.status=Bad("stale_generation","");return result;}
@@ -373,13 +423,30 @@ FViewerFrameResult FSplatViewerSession::RecordCompute(const FViewerFrameRequest&
         if(!i.pipeline){result.status=i.status.ok?Good("loading"):i.status;return result;}
         const auto frame=frameAlreadyReserved?i.pipeline->GetFrameStats().frame:i.pipeline->ReserveFrameId();
         if(!i.externalCamera)i.OrbitCamera();i.pipeline->setCamera(i.camera);
+        // Freeze the actual uniform consumer before later Publish/live camera mutations.
+        i.pendingCamera=i.appliedCamera;auto& consumed=i.pendingCamera;
+        consumed.frameId=frame;consumed.sceneGeneration=i.scene.generation;consumed.surfaceGeneration=i.surface;
+        consumed.configGeneration=i.config.generation;consumed.pipelineGeneration=i.pipelineGeneration;
+        consumed.lineageComplete=consumed.lineageComplete&&i.appliedCamera.sceneGeneration==i.scene.generation&&
+            i.appliedCamera.surfaceGeneration==i.surface&&i.appliedCamera.configGeneration==i.config.generation&&i.appliedCamera.pipelineGeneration==i.pipelineGeneration;
+        const bool sameCameraScope=i.appliedCamera.sceneGeneration==i.scene.generation&&i.appliedCamera.surfaceGeneration==i.surface&&
+            i.appliedCamera.configGeneration==i.config.generation&&i.appliedCamera.pipelineGeneration==i.pipelineGeneration;
+        consumed.unavailable=!consumed.requestScope?EViewerCameraProvenanceUnavailable::Legacy:
+            !sameCameraScope?EViewerCameraProvenanceUnavailable::ScopeChange:EViewerCameraProvenanceUnavailable::LineageOverflow;
+        std::memcpy(consumed.uniforms.data(),&i.camera,sizeof(i.camera));
+        // Canonicalize only unused evidence bytes; never modify GPU uniforms.
+        std::fill_n(consumed.uniforms.begin()+140,4,0);std::fill_n(consumed.uniforms.begin()+172,4,0);
+        std::copy_n(i.target,3,consumed.target.begin());std::copy_n(i.camera.camPos,3,consumed.position.begin());
+        consumed.yaw=i.yaw;consumed.pitch=i.pitch;consumed.distance=i.distance;consumed.externalCamera=i.externalCamera;
         auto renderSettings=i.settings;
         if(i.orbitPreset){renderSettings.nearPlane=i.orbitPreset->nearPlane;renderSettings.farPlane=i.orbitPreset->farPlane;}
         i.pipeline->setRenderSettings(renderSettings);
         if(i.streaming&&i.streamedFrame!=frame){FSplatLODView view;std::copy_n(i.camera.viewMatrix,16,view.view);std::copy_n(i.camera.projMatrix,16,view.projection);std::copy_n(i.camera.camPos,3,view.cameraPosition);view.width=i.width;view.height=i.height;view.nearPlane=i.orbitPreset?i.orbitPreset->nearPlane:i.settings.nearPlane;view.farPlane=i.orbitPreset?i.orbitPreset->farPlane:i.settings.farPlane;view.gaussianScale=i.settings.gaussianScale;UpdateStreaming(request.commandList,view,frame);}
         PrepareOutputForCompute(*request.commandList);result.outputTexture=i.pipeline->execute(request.commandList);i.diagnostics.Resolve(i.pipelineGeneration,i.pipeline->GetFrameStats());result.recorded=bool(result.outputTexture);i.pendingRecording=result.recorded;result.pipelineFrameId=frame;
+        i.pendingCameraConsumed=result.recorded&&i.pipeline->GetFrameStats().frame==frame&&i.pipeline->GetFrameStats().activeConsumptionRecorded;
+        i.pendingCamera.recorded=i.pendingCameraConsumed;
         i.status=result.outputTexture?Good():Bad("compute_failed",i.pipeline->GetFrameStats().degradationReason);i.Publish(frame);result.counters=i.snapshot->counters;result.diagnostics=i.snapshot;result.status=i.status;
-    }catch(const std::exception& e){i.status=Bad("record_failed",e.what());i.Publish();result.status=i.status;result.diagnostics=i.snapshot;}return result;
+    }catch(const std::exception& e){i.pendingCamera={};i.pendingCameraConsumed=false;i.status=Bad("record_failed",e.what());i.Publish();result.status=i.status;result.diagnostics=i.snapshot;}return result;
 }
 FViewerStatus FSplatViewerSession::RecordPresent(RHI::IRHICommandList& command,MonsterEngine::TSharedPtr<RHI::IRHITexture> output,uint32_t w,uint32_t h) {
     auto& i=*Impl;if(!output||!w||!h)return Bad("not_drawable","");if(!i.MakePresent())return Bad("present_pipeline_failed","");
@@ -400,19 +467,43 @@ FViewerStatus FSplatViewerSession::RecordPresent(RHI::IRHICommandList& command,M
     command.draw(3,0);return Good();
 }
 void FSplatViewerSession::SetProfilingRequestId(uint64_t requestId){Impl->profilingRequestId=requestId;}
+void FSplatViewerSession::SetPresentationReservationEstimate(uint64_t bytes){Impl->presentationReservationEstimate=bytes;}
 FViewerFrameResult FSplatViewerSession::TickAndRecord(const FViewerFrameRequest& request) {
     const auto start=Now();auto result=RecordCompute(request);if(result.outputTexture){auto status=RecordPresent(*request.commandList,result.outputTexture,request.viewportWidth,request.viewportHeight);if(!status.ok)result.status=status;}Impl->measurement.sessionMilliseconds=double(Now()-start)/1000000.0;return result;
 }
 void FSplatViewerSession::OnSubmitted(RHI::FGPUCompletionToken token,const FViewerFrameMeasurement* owner) {
-    auto& i=*Impl;if(!i.pendingRecording||!token.value||token.value==i.lastSubmission.value||token.value==i.baseline.value)return;
+    auto& i=*Impl;if(!i.pendingRecording||!token.value||token.value==i.lastSubmission.value||token.value==i.baseline.value){i.pendingCamera={};i.pendingCameraConsumed=false;return;}
+    const bool freshCameraToken=token.value>i.lastSubmission.value&&token.value>i.baseline.value;
     // Tokens are accepted only if observed on this device, never synthesized frame IDs.
-    if(i.device->getLastSubmissionToken().value!=token.value)return;i.lastSubmission=token;i.pendingRecording=false;i.committedShaderRead=i.shaderRead;
+    if(i.device->getLastSubmissionToken().value!=token.value){i.pendingCamera={};i.pendingCameraConsumed=false;return;}i.lastSubmission=token;i.pendingRecording=false;i.committedShaderRead=i.shaderRead;
+    const bool uploadOnly=i.recordedRows!=0;
     if(i.recordedRows){i.uploaded+=i.recordedRows;i.gpu.uploadedBytes=uint64_t(i.uploaded)*(52+3*(i.gpu.shDegree+1)*(i.gpu.shDegree+1)*4);i.recordedRows=0;i.uploadToken=token;}
-    if(i.pipeline)i.pipeline->MarkFrameSubmitted(token);if(i.streaming)i.streaming->OnSubmitted(token);
+    // This path is the only source of successful consumed-cut fingerprints; a recording alone cannot bind quality.
+    if(i.pipeline)i.pipeline->MarkFrameSubmitted(token);if(i.streaming)i.streaming->OnSubmitted(token,i.pipeline&&i.pipeline->GetFrameStats().activeConsumptionRecorded);
     if(owner){i.measurement.ownerStartNanoseconds=owner->ownerStartNanoseconds;i.measurement.presentReturnNanoseconds=owner->presentReturnNanoseconds;
         i.measurement.acquireMilliseconds=owner->acquireMilliseconds;i.measurement.presentMilliseconds=owner->presentMilliseconds;i.measurement.ownerWorkMilliseconds=owner->ownerWorkMilliseconds;}
-    i.diagnostics.OnScreenshotSubmitted(token);i.diagnostics.PollScreenshot();i.Publish(i.pipeline?i.pipeline->GetFrameStats().frame:0);
-    const auto stream=i.streaming?std::optional<FSplatStreamingControllerSnapshot>(i.streaming->Snapshot()):std::nullopt;i.diagnostics.Record(*i.snapshot,stream?&*stream:nullptr,token,owner?owner->presentReturnNanoseconds:Now());
+    i.diagnostics.OnScreenshotSubmitted(token);i.Publish(i.pipeline?i.pipeline->GetFrameStats().frame:0);
+    auto submitted=*i.snapshot;
+    if(uploadOnly)submitted.cameraProvenance.unavailable=EViewerCameraProvenanceUnavailable::UploadOnly;
+    // Success belongs only to this immutable original compute row, never current Publish.
+    const auto& camera=i.pendingCamera;
+    const bool cameraSubmitted=freshCameraToken&&i.pendingCameraConsumed&&camera.recorded&&camera.frameId&&i.pipeline&&
+        camera.frameId==submitted.frameId&&camera.sceneGeneration==submitted.sceneGeneration&&
+        camera.surfaceGeneration==submitted.surfaceGeneration&&camera.configGeneration==submitted.configGeneration&&
+        camera.pipelineGeneration==submitted.measurement.pipelineGeneration&&i.pipeline->GetFrameStats().activeConsumptionRecorded;
+    if(cameraSubmitted) {
+        submitted.cameraProvenance=camera;submitted.cameraProvenance.submissionToken=token.value;
+        submitted.measurement.cameraPosition=camera.position;submitted.measurement.cameraYaw=camera.yaw;
+        submitted.measurement.cameraPitch=camera.pitch;submitted.measurement.cameraDistance=camera.distance;submitted.measurement.externalCamera=camera.externalCamera;
+        // A later owner input must remain pending even if a split-phase caller applies it before submission.
+        if(i.appliedCamera.requestScope==camera.requestScope&&i.appliedCamera.lastAppliedRequestId==camera.lastAppliedRequestId&&
+            i.appliedCamera.applicationGroup==camera.applicationGroup) {
+            i.appliedCamera.contributorIds={};i.appliedCamera.contributorCount=0;
+        }
+    }
+    i.pendingCamera={};i.pendingCameraConsumed=false;
+    const auto stream=i.streaming?std::optional<FSplatStreamingControllerSnapshot>(i.streaming->Snapshot()):std::nullopt;i.diagnostics.Record(submitted,stream?&*stream:nullptr,token,owner?owner->presentReturnNanoseconds:Now());
+    i.diagnostics.PollScreenshot();
 }
 FViewerStatus FSplatViewerSession::ResizeInternal(uint32_t w,uint32_t h) {
     auto& i=*Impl;if(!w||!h)return Bad("not_drawable","");i.suspended=false;i.Clamp(w,h);if(w==i.width&&h==i.height)return Good();
@@ -437,12 +528,12 @@ void FSplatViewerSession::SetPresentationDisplayExtent(uint32_t w,uint32_t h) {
     i.displayWidth=w;i.displayHeight=h;i.presentationWidth=i.presentationHeight=0;
     i.presentationScale={};i.Publish();
 }
-void FSplatViewerSession::Suspend(){Impl->suspended=true;Impl->diagnostics.ResetCadence();Impl->measurement={};}
+void FSplatViewerSession::Suspend(){Impl->pendingCamera={};Impl->pendingCameraConsumed=false;Impl->suspended=true;Impl->diagnostics.ResetCadence();Impl->measurement={};}
 void FSplatViewerSession::ReleaseScene() {
     if(!Impl)return;auto& i=*Impl;if(i.control)i.control->RequestCancel();if(i.preparation.valid()){i.preparation.wait();i.preparation.get();}i.control.reset();
     if(i.device){i.device->waitForIdle();if(auto* command=i.device->getImmediateCommandList())command->reset();for(auto& set:i.sets)set.Reset();i.diagnostics.Shutdown();}if(i.streaming)i.streaming->Shutdown();i.streaming.reset();i.pipeline.reset();i.gpu.release();i.upload.Reset();
     i.records.clear();i.records.shrink_to_fit();if(auto* vk=dynamic_cast<RHI::Vulkan::VulkanDevice*>(i.device))vk->DrainCompletedDestructions();
-    i.cpu.reset();i.source.reset();i.stagingLease.reset();i.temporary.reset();i.scene={};i.uploaded=i.recordedRows=0;i.uploadToken={};i.shaderRead=i.committedShaderRead=i.pendingRecording=false;i.streamedFrame=0;i.status=Good("scene_released");i.Publish();
+    i.cpu.reset();i.source.reset();i.stagingLease.reset();i.temporary.reset();i.appliedCamera={};i.pendingCamera={};i.pendingCameraConsumed=false;i.scene={};i.uploaded=i.recordedRows=0;i.uploadToken={};i.shaderRead=i.committedShaderRead=i.pendingRecording=false;i.streamedFrame=0;i.status=Good("scene_released");i.Publish();
 }
 void FSplatViewerSession::Shutdown() {
     if(!Impl||!Impl->initialized)return;ReleaseScene();auto& i=*Impl;i.device->waitForIdle();for(auto& set:i.sets)set.Reset();i.sampler.Reset();i.presentPipeline.Reset();i.presentLayout.Reset();i.setLayout.Reset();i.vertex.Reset();i.fragment.Reset();

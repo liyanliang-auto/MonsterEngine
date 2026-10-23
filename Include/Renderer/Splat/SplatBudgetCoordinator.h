@@ -23,6 +23,22 @@ struct FSplatBudgetSnapshot {
     uint64_t peakBytes = 0; ///< High-water aggregate charge.
     std::array<uint64_t, static_cast<std::size_t>(ESplatBudgetComponent::Count)> components{}; ///< Disjoint charges.
     bool exclusiveBuild = false; ///< Heavy viewer allocations are prohibited.
+    uint64_t admissionSequence=0, admissionRequestedBytes=0, admissionAvailableBytes=0; ///< Last operation at decision time.
+    ESplatBudgetComponent admissionComponent=ESplatBudgetComponent::Metadata; ///< Last attempted reservation tag.
+    bool admissionGranted=false; ///< Meaningful only when admissionSequence is positive.
+    std::string admissionReason; ///< Stable allowlisted decision code; never private detail.
+};
+/** Immutable facts for one admission operation, captured under the account lock.
+ * reservedBytes is the pre-operation charge, including other live readers. */
+struct FSplatBudgetAdmissionReceipt {
+    uint64_t accountSequence=0; ///< Account decision sequence, including refusals.
+    uint64_t requestedBytes=0; ///< Exact bytes requested by this operation.
+    uint64_t availableBytes=0; ///< Headroom immediately before this decision.
+    uint64_t limitBytes=0; ///< Aggregate policy at this decision.
+    uint64_t reservedBytes=0; ///< Aggregate live charge before this operation.
+    ESplatBudgetComponent component=ESplatBudgetComponent::Metadata; ///< Attempted charge tag.
+    bool granted=false; ///< Whether this exact operation obtained a lease.
+    std::string reason; ///< Stable account decision code, never private detail.
 };
 /** Thread-safe aggregate admission. Reserve peak overlap before allocating, then
  * release only after CPU ownership/GPU completion has actually retired backing.
@@ -60,6 +76,10 @@ public:
      * Exclusive build admits only Builder/Metadata; zero bytes do not bypass tags. */
     std::optional<FReservation> TryReserve(ESplatBudgetComponent component,
         uint64_t bytes, std::string& error);
+    /** Same admission, with operation-local facts; never consult last-admission
+     * Snapshot fields to attribute a potentially concurrent decision. */
+    std::optional<FReservation> TryReserveWithReceipt(ESplatBudgetComponent component,
+        uint64_t bytes, std::string& error, FSplatBudgetAdmissionReceipt& receipt);
     /** Release only this coordinator's lease. Wrong-account/empty returns false. */
     bool Release(FReservation& reservation) noexcept;
     /** Obtain a consistent immutable value snapshot without exposing account locks. */

@@ -331,6 +331,7 @@ ProcessResult WindowsProcessHost::Run(const ProcessRequest& request,
                 Fail(result, GetLastError(), "ResumeThread failed");
             } else {
                 for (;;) {
+                    if (request.observeTick) request.observeTick();
                     if (observeStop()) break;
                     const DWORD wait = WaitForSingleObject(process.value, 10);
                     if (wait == WAIT_FAILED) { Fail(result, GetLastError(), "WaitForSingleObject failed"); break; }

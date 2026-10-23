@@ -7,6 +7,7 @@
 #include "Platform/Vulkan/VulkanRHICommandList.h"
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -105,9 +106,173 @@ MeasurementFields Fields(const FViewerDiagnosticsSnapshot& s,const FSplatStreami
     stream("streamLoading",v.loading?1:0);stream("streamRootReady",v.rootReady?1:0);stream("streamRequests",v.io.requests);
     return f;
 }
+std::string CauseCode(const std::string& value) {
+    static constexpr const char* allowed[]={"unknown_reason","input_or_camera_unavailable","active_capacity_exceeded",
+        "fusion_partition_invalid","source_mapping_invalid","mapped_input_gpu_in_flight","mapped_input_upload_failed",
+        "fusion_descriptor_upload_failed","sort_capacity_overflow_previous_complete_image_retained",
+        "memory_pressure_coarse_fallback","fine_page_failed_ancestor_retained","pool_capacity_or_upload_degraded",
+        "transition_reserve_refused","invalid_camera_or_lod_settings","invalid_hierarchy_or_representation",
+        "coarse_fallback_budget_exceeded","zero_sort_capacity","frozen_cut_budget_reduced","refinement_budget_blocked",
+        "coarsening_transition_reserve_missing","coarse_fallback_not_resident","refinement_transition_reserve_missing",
+        "refinement_waiting_child_residency","resident_cut_budget_exceeded","streaming_failed","streaming_cancelled"};
+    for(const auto* code:allowed)if(value==code)return code;
+    return "unknown_reason";
+}
+bool StreamMatches(const FViewerDiagnosticsSnapshot& s,const FSplatStreamingControllerSnapshot* t) {
+    return t&&t->frameId==s.frameId&&t->sceneGeneration==s.sceneGeneration&&
+        t->surfaceGeneration==s.surfaceGeneration&&t->configGeneration==s.configGeneration&&
+        t->pipelineGeneration==s.measurement.pipelineGeneration;
+}
+std::string Cause(const FViewerDegradationObservation& observation) {
+    Object o;const auto& status=observation.status;
+    o.Add("status",Quote(status=="observed"||status=="stale_identity"?status:"unavailable"));
+    std::string codes="[";std::vector<std::string> seen;
+    for(size_t i=0;i<std::min<size_t>(observation.codes.size(),16);++i){
+        auto code=CauseCode(observation.codes[i]);if(std::find(seen.begin(),seen.end(),code)!=seen.end())continue;
+        if(codes.size()>1)codes+=',';codes+=Quote(code);seen.push_back(code);
+    }
+    if(codes.size()==1&&status!="observed")codes+=Quote("unknown_reason");
+    o.Add("codes",codes+']');Object counters;size_t count=0;
+    for(const auto& [key,value]:observation.counters){if(count++==32)break;auto code=Code(key);if(code!="redacted")counters.Add(code.c_str(),Optional(value));}
+    o.Add("counters",counters.End());return o.End();
+}
+constexpr const char* ComponentNames[]={"CPUCache","DecodedReady","SourceGPU","StagingGPU","TemporaryGPU","Swapchain","Metadata","Builder","Java","Native"};
+std::string Detail(const FSplatStreamingControllerSnapshot* stream) {
+    Object o;o.Add("clockDomain","\"native_clock_monotonic_nanoseconds\"");
+    o.Add("clockMapping","null");o.Add("capacity",stream&&stream->detailCapacity?Number(stream->detailCapacity):"null");
+    o.Add("maximumCapacity",Number(FSplatDetailDiagnostics::Capacity));
+    o.Add("perFrameExportLimit","16");o.Add("status",stream?"\"observed\"":"\"unavailable\"");
+    o.Add("captureEnabled",MonsterEngine::Profiling::IsEnabled()?"true":"false");
+    o.Add("overwritten",stream?Number(stream->detailOverwritten):"null");
+    o.Add("dropped",stream?Number(stream->detailDropped):"null");
+    o.Add("schemaVersion","2");o.Add("retryAttemptIdentity","\"unavailable_repeated_read_stages_not_unique_attempts\"");
+    o.Add("unsupportedStages","[]");o.Add("historyBeforeCapture","\"unavailable\"");
+    o.Add("originRegistryCapacity","64");o.Add("generationMappingStatus","\"bounded_registry_null_if_unavailable_or_ambiguous\"");
+    o.Add("gpuCompleteMeaning","\"cpu_poll_observed_completion_not_gpu_timestamp\"");
+    static constexpr const char* names[]={"demand","prefetch","queued","cache_hit","read_started","read_complete","cpu_ready",
+        "upload_recorded","upload_submitted","gpu_complete","active_ready","first_use","cancelled","failed","evicted","already_resident","upstream_demand","upstream_retired","work_coalesced","validated","ready_transferred","work_rejected"};
+    std::string events="[";
+    if(stream)for(size_t i=0;i<std::min<size_t>(stream->detailEvents.size(),16);++i){
+        const auto& e=stream->detailEvents[i];const auto& c=e.context;Object row;
+        row.Add("sequence",Number(e.sequence));row.Add("stage",Quote(size_t(e.stage)<std::size(names)?names[size_t(e.stage)]:"unknown"));
+        row.Add("timestampNanoseconds",Number(e.timestampNanoseconds));
+        auto id=[&](const char* key,uint64_t n){row.Add(key,n?Number(n):"null");};
+        id("sceneGeneration",c.sceneId);id("frameId",c.frameId);id("requestId",c.requestId);
+        row.Add("pageId",c.pageId?Number(c.pageId-1):"null");id("submissionToken",c.submissionId);
+        id("selectionVersion",e.selectionVersion);id("residencyVersion",e.residencyVersion);
+        id("pageLifetime",e.pageLifetime);id("demandFrameId",e.demandFrameId);id("demandRequestId",e.demandRequestId);
+        id("demandSequence",e.demandSequence);
+        id("upstreamOriginId",e.upstream.id);id("workId",e.workId);id("workOriginId",e.workOriginId);
+        id("originSceneGeneration",e.upstream.context.sceneId);row.Add("originPageId",e.upstream.context.pageId?Number(e.upstream.context.pageId-1):"null");
+        id("originFrameId",e.upstream.context.frameId);id("originRequestId",e.upstream.context.requestId);
+        id("originSurfaceGeneration",e.upstream.surface);id("originConfigGeneration",e.upstream.config);id("originPipelineGeneration",e.upstream.pipeline);
+        row.Add("representationFlags",Number(e.upstream.representationFlags));
+        row.Add("surfaceGeneration",Optional(e.surfaceGeneration));row.Add("configGeneration",Optional(e.configGeneration));
+        row.Add("pipelineGeneration",Optional(e.pipelineGeneration));row.Add("demandSurfaceGeneration",Optional(e.demandSurfaceGeneration));
+        row.Add("demandConfigGeneration",Optional(e.demandConfigGeneration));row.Add("demandPipelineGeneration",Optional(e.demandPipelineGeneration));
+        if(events.size()>1)events+=',';events+=row.End();
+    }
+    o.Add("events",events+']');return o.End();
+}
+std::string DiagnosticP0(const FViewerDiagnosticsSnapshot& s,const FSplatStreamingControllerSnapshot* stream,RHI::FGPUCompletionToken token) {
+    const bool matched=StreamMatches(s,stream);
+    const auto* t=matched?stream:nullptr;Object o;o.Add("schemaVersion","1");Object identity;
+    identity.Add("frameId",Number(s.frameId));identity.Add("submissionToken",token.value?Number(token.value):"null");
+    identity.Add("sceneGeneration",Number(s.sceneGeneration));identity.Add("surfaceGeneration",Number(s.surfaceGeneration));
+    identity.Add("configGeneration",Number(s.configGeneration));identity.Add("pipelineGeneration",Number(s.measurement.pipelineGeneration));
+    o.Add("identity",identity.End());Object degradation;
+    degradation.Add("pipeline",Cause(s.pipelineDegradation));degradation.Add("streaming",Cause(s.streamingDegradation));
+    o.Add("degradation",degradation.End());Object resources;
+    resources.Add("status",s.effectiveConfig?"\"observed\"":"\"unavailable\"");
+    resources.Add("aggregateLimitBytes",Number(s.budget.limitBytes));resources.Add("reservedBytes",Number(s.budget.reservedBytes));resources.Add("peakBytes",Number(s.budget.peakBytes));
+    Object charges;for(size_t i=0;i<std::size(ComponentNames);++i)charges.Add(ComponentNames[i],Number(s.budget.components[i]));
+    resources.Add("componentCharges",charges.End());Object quotas;
+    const auto quota=[&](const char* key,uint64_t requested,std::optional<uint64_t> effective,const char* unit){
+        Object q;q.Add("requested",Number(requested));q.Add("effective",Optional(effective));q.Add("unit",Quote(unit));quotas.Add(key,q.End());
+    };
+    const auto& r=s.requestedConfig.runtime;const auto* effective=s.effectiveConfig?&s.effectiveConfig->runtime:nullptr;
+    quota("source",r.streaming.sceneGPUBytes,effective?std::optional<uint64_t>(effective->streaming.sceneGPUBytes):std::nullopt,"bytes");
+    quota("active",r.activeCapacity,effective?std::optional<uint64_t>(effective->activeCapacity):std::nullopt,"records");
+    quota("sort",r.sortCapacity,effective?std::optional<uint64_t>(effective->sortCapacity):std::nullopt,"entries");
+    quota("temporary",r.streaming.temporaryGPUBytes,effective?std::optional<uint64_t>(effective->streaming.temporaryGPUBytes):std::nullopt,"bytes");
+    quota("staging",r.streaming.stagingBytes,effective?std::optional<uint64_t>(effective->streaming.stagingBytes):std::nullopt,"bytes");
+    quota("cpuCache",r.streaming.cpuCacheBytes,effective?std::optional<uint64_t>(effective->streaming.cpuCacheBytes):std::nullopt,"bytes");
+    resources.Add("quotas",quotas.End());Object costs;
+    for(const auto* name:{"source","sort","staging","output","transition","worker","wsi","driver","temporary"}){
+        FViewerResourceCost cost;auto found=s.resourceCosts.find(name);if(found!=s.resourceCosts.end())cost=found->second;
+        if(std::string(name)=="wsi"&&s.presentationReservationEstimate){cost.kind="estimate";cost.estimateBytes=s.presentationReservationEstimate;cost.accounting="swapchain_charge_estimate";}
+        Object c;c.Add("kind",Quote(cost.kind));c.Add("logicalBytes",Optional(cost.logicalBytes));c.Add("requiredBytes",Optional(cost.requiredBytes));
+        c.Add("backingBytes",Optional(cost.backingBytes));c.Add("alignmentBytes",Optional(cost.alignmentBytes));c.Add("estimateBytes",Optional(cost.estimateBytes));
+        c.Add("accounting",Quote(Code(cost.accounting)));costs.Add(name,c.End());
+    }
+    resources.Add("costs",costs.End());Object admission;const auto& b=s.budget;
+    admission.Add("status",b.admissionSequence?(b.admissionGranted?"\"admitted\"":"\"refused\""):"\"unknown\"");
+    admission.Add("reasonCodes",b.admissionSequence?'['+Quote(Code(b.admissionReason))+']':"[]");
+    admission.Add("requestedBytes",b.admissionSequence?Number(b.admissionRequestedBytes):"null");
+    admission.Add("availableBytes",b.admissionSequence?Number(b.admissionAvailableBytes):"null");
+    const auto component=static_cast<size_t>(b.admissionComponent);
+    admission.Add("component",b.admissionSequence&&component<std::size(ComponentNames)?Quote(ComponentNames[component]):"null");
+    admission.Add("sequence",Number(b.admissionSequence));admission.Add("scope","\"last_aggregate_reservation_operation_not_all_possible_cuts\"");
+    resources.Add("admission",admission.End());Object cut;
+    const FSplatStreamingControllerSnapshot blank;const auto& v=t?*t:blank;
+#define CUT(name, value) cut.Add(name,t?Number(value):"null")
+    CUT("desiredNodes",v.desiredNodes);CUT("selectedNodes",v.selectedNodes);CUT("requestPages",v.requestPages);CUT("prefetchPages",v.prefetchPages);
+    CUT("selectedLeafNodes",v.selectedLeafNodes);CUT("selectedProxyNodes",v.selectedProxyNodes);CUT("activeCount",v.activeCount);
+    CUT("maxSelectedProxyErrorPixels",v.maxSelectedProxyErrorPixels);CUT("selectionVersion",v.selectionVersion);CUT("residencyVersion",v.residencyVersion);
+    CUT("controllerReservedBytes",v.controllerReservedBytes);CUT("minimumProgressBytes",v.minimumProgressBytes);
+    CUT("selectedPageCount",v.allocations.selectedPageCount);CUT("usedSelectedPages",v.allocations.usedSelectedPages);
+    CUT("transitionRequiredRecords",v.allocations.transitionRequiredRecords);CUT("transitionCapacityRecords",v.allocations.transitionCapacityRecords);
+#undef CUT
+    cut.Add("rootReady",t?(v.rootReady?"true":"false"):"null");cut.Add("loading",t?(v.loading?"true":"false"):"null");
+    cut.Add("transitionAdmitted",t?(v.allocations.transitionAdmitted?"true":"false"):"null");cut.Add("qualitySatisfied","null");
+    cut.Add("consumptionSubmissionToken",t&&v.submittedFrameId==s.frameId&&v.lastSubmission.value==token.value&&token.value&&v.allocations.consumedCutSubmissionToken==token.value&&!v.allocations.consumedCutHash.empty()?Number(token.value):"null");
+    const bool exactConsumed=t&&v.allocations.consumedCutFrameId==s.frameId&&v.allocations.consumedCutSubmissionToken==token.value&&token.value&&!v.allocations.consumedCutHash.empty();
+    cut.Add("consumedCutHash",exactConsumed?Quote(v.allocations.consumedCutHash):"null");
+    cut.Add("consumedCutHashAlgorithm","\"sha256_le64_selected_node_page_slot_v1\"");
+    cut.Add("consumedCutFrameId",exactConsumed?Number(v.allocations.consumedCutFrameId):"null");
+    cut.Add("consumedCutSubmissionToken",exactConsumed?Number(v.allocations.consumedCutSubmissionToken):"null");
+    cut.Add("qualityEvidence","\"independent_reference_required\"");resources.Add("cut",cut.End());Object managed;
+    managed.Add("liveBytes",Optional(s.vulkanManagedLiveBytes));managed.Add("backingBytes",Optional(s.vulkanManagedBackingBytes));
+    managed.Add("pooledUnusedBytes",Optional(s.vulkanPooledUnusedBytes));managed.Add("accounting","\"overlaps_component_charges_not_additive\"");
+    managed.Add("driverBackingBytes","null");managed.Add("processPssBytes","null");managed.Add("processRssBytes","null");
+    resources.Add("vulkanManagedMemory",managed.End());o.Add("resources",resources.End());o.Add("detail",Detail(t));return o.End();
+}
+std::string CameraProvenance(const FViewerDiagnosticsSnapshot& s,RHI::FGPUCompletionToken token) {
+    const auto& p=s.cameraProvenance;Object o;o.Add("version","1");
+    const bool matched=p.recorded&&p.frameId&&token.value&&p.submissionToken==token.value&&p.frameId==s.frameId&&
+        p.sceneGeneration==s.sceneGeneration&&p.surfaceGeneration==s.surfaceGeneration&&p.configGeneration==s.configGeneration&&p.pipelineGeneration==s.measurement.pipelineGeneration;
+    static_assert(std::endian::native==std::endian::little,"Camera evidence encoding requires little endian");
+    const bool little=std::endian::native==std::endian::little;
+    const bool complete=matched&&little&&p.lineageComplete&&p.requestScope&&p.sceneGeneration&&p.surfaceGeneration&&p.configGeneration&&p.pipelineGeneration;
+    const char* status=complete?"consumed":!matched?
+        (p.unavailable==EViewerCameraProvenanceUnavailable::UploadOnly?"unavailable_upload_only":"unavailable_unsubmitted"):
+        !p.requestScope?"unavailable_legacy":p.unavailable==EViewerCameraProvenanceUnavailable::ScopeChange?"unavailable_scope_change":"unavailable_lineage_overflow";
+    o.Add("status",Quote(status));o.Add("requestScope",p.requestScope?Quote(Number(p.requestScope)):"null");
+    o.Add("frameId",matched?Number(p.frameId):"null");o.Add("submissionToken",matched?Number(token.value):"null");
+    o.Add("sceneGeneration",Number(p.sceneGeneration));o.Add("surfaceGeneration",Number(p.surfaceGeneration));
+    o.Add("configGeneration",Number(p.configGeneration));o.Add("pipelineGeneration",Number(p.pipelineGeneration));
+    o.Add("cameraRevision",Number(p.cameraRevision));o.Add("lastAppliedRequestId",p.lastAppliedRequestId?Number(p.lastAppliedRequestId):"null");
+    o.Add("lastResetRequestId",p.lastResetRequestId?Number(p.lastResetRequestId):"null");
+    o.Add("gestureBeginRequestId",p.gestureBeginRequestId?Number(p.gestureBeginRequestId):"null");
+    o.Add("applicationGroup",p.applicationGroup?Number(p.applicationGroup):"null");
+    std::string ids="[";for(size_t n=0;n<std::min<size_t>(p.contributorCount,ViewerCameraContributorCapacity);++n){if(n)ids+=',';ids+=Number(p.contributorIds[n]);}ids+=']';
+    o.Add("contributorIds",ids);o.Add("contributorCount",Number(p.contributorCount));o.Add("lineageComplete",complete?"true":"false");
+    const char* phase=p.phase==EViewerPointerPhase::Begin?"Begin":p.phase==EViewerPointerPhase::End?"End":p.phase==EViewerPointerPhase::Cancel?"Cancel":"Move";
+    o.Add("phase",matched?Quote(phase):"\"unavailable\"");o.Add("uniformsEncoding","\"std140_le_hex176_unused_zero\"");
+    std::string hex;hex.reserve(352);static constexpr char digits[]="0123456789abcdef";
+    if(matched&&little)for(auto byte:p.uniforms){hex+=digits[byte>>4];hex+=digits[byte&15];}
+    o.Add("uniformsHex",matched&&little?Quote(hex):"null");
+    if(matched&&little){Object orbit;orbit.Add("target","["+Number(p.target[0])+","+Number(p.target[1])+","+Number(p.target[2])+"]");
+        orbit.Add("yaw",Number(p.yaw));orbit.Add("pitch",Number(p.pitch));orbit.Add("distance",Number(p.distance));
+        orbit.Add("external",p.externalCamera?"true":"false");o.Add("orbit",orbit.End());
+    }else o.Add("orbit","null");
+    auto text=o.End();if(text.size()>2048)throw std::runtime_error("Camera provenance export limit");return text;
+}
 std::string Snapshot(const FViewerDiagnosticsSnapshot& s, const FSplatStreamingControllerSnapshot* stream,
                      RHI::FGPUCompletionToken token, std::optional<double> cadence) {
     Object o;
+    o.Add("diagnosticsP0",DiagnosticP0(s,stream,token));
+    o.Add("cameraProvenance",CameraProvenance(s,token));
     o.Add("schemaVersion", "2"); o.Add("frameId", Number(s.frameId));
     Object measurement;for(const auto& field:Fields(s,stream))measurement.Add(field.first.c_str(),field.second);o.Add("measurement",measurement.End());
     o.Add("sceneGeneration", Number(s.sceneGeneration)); o.Add("surfaceGeneration", Number(s.surfaceGeneration));
@@ -154,7 +319,7 @@ std::string Snapshot(const FViewerDiagnosticsSnapshot& s, const FSplatStreamingC
         item.Add("reason", Quote(Code(c.reason))); if (i) caps += ','; caps += item.End();
     }
     o.Add("capabilities", caps + ']');
-    if (stream && stream->frameId == s.frameId && stream->sceneGeneration == s.sceneGeneration) {
+    if (StreamMatches(s,stream)) {
         Object t;
 #define STREAM(name, value) t.Add(name, Number(stream->value))
         STREAM("frameId", frameId); STREAM("sceneGeneration", sceneGeneration); STREAM("submittedFrameId", submittedFrameId);
@@ -258,7 +423,16 @@ void FSplatViewerDiagnostics::Record(const FViewerDiagnosticsSnapshot& input,con
         if(old.sortStatus==0||std::find(old.gpuStatus.begin(),old.gpuStatus.end(),0u)!=old.gpuStatus.end())++p.unresolvedOverwritten;
         p.frames.pop_front();++p.dropped;
     }
-    const bool matched=stream&&stream->frameId==s.frameId&&stream->sceneGeneration==s.sceneGeneration;
+    const bool matched=StreamMatches(s,stream);
+    // Attach the successful original-frame observation before encoding the PNG sidecar.
+    // RecordScreenshot receives pre-submit state, which cannot prove active consumption.
+    if(p.readback&&p.token.value==token.value&&token.value&&!p.metadata.empty()){
+        auto metadata=p.metadata;metadata.pop_back();
+        metadata+=",\"pipelineGeneration\":"+Number(s.measurement.pipelineGeneration)+
+            ",\"diagnosticsP0\":"+DiagnosticP0(s,matched?stream:nullptr,token)+
+            ",\"viewerFrame\":"+Snapshot(s,matched?stream:nullptr,token,cadence)+'}';
+        p.metadata=std::move(metadata);
+    }
     p.frames.push_back({std::move(s),matched?std::optional<FSplatStreamingControllerSnapshot>(*stream):std::nullopt,token,cadence});
 }
 void FSplatViewerDiagnostics::ResetCadence(){auto& p=*Impl;std::lock_guard lock(p.mutex);p.previousPresent=0;p.previousSurface=p.previousScene=p.previousConfig=p.previousPipeline=0;}
@@ -291,7 +465,17 @@ std::string FSplatViewerDiagnostics::SnapshotJSON() const {
     o.Add("unmatchedGPURecords",Number(p.unmatchedGPURecords));o.Add("capacity",Number(p.maximumFrames));
     auto encode=[](const FImpl::Row& r){return Snapshot(r.snapshot,r.stream?&*r.stream:nullptr,r.token,r.cadence);};
     o.Add("latest",p.frames.empty()?"null":encode(p.frames.back()));
-    std::string frames="[";for(const auto& row:p.frames){if(frames.size()>1)frames+=',';frames+=encode(row);}o.Add("frames",frames+']');
+    // Leave room in the existing 16 MiB transport for the profiler, CSV and platform envelope.
+    // Prefer newest rows; distinguish serialization omissions from actual frame-ring eviction.
+    constexpr size_t MaximumExportBytes=8ull<<20;
+    size_t bytes=o.text.size(),omitted=0;std::vector<std::string> rows;
+    for(auto row=p.frames.rbegin();row!=p.frames.rend();++row){
+        auto encoded=encode(*row);
+        if(encoded.size()+bytes+4096>MaximumExportBytes){++omitted;continue;}
+        bytes+=encoded.size()+1;rows.push_back(std::move(encoded));
+    }
+    std::string frames="[";for(auto row=rows.rbegin();row!=rows.rend();++row){if(frames.size()>1)frames+=',';frames+=*row;}o.Add("frames",frames+']');
+    o.Add("exportOmittedFrames",Number(omitted));o.Add("exportMaximumBytes",Number(MaximumExportBytes));
     o.Add("unavailableReason","\"pending_until_nonblocking_resolve_or_ring_overwrite\"");return o.End();
 }
 std::string FSplatViewerDiagnostics::FramesCSV() const {

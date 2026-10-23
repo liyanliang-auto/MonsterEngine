@@ -63,6 +63,13 @@ struct FSplatGPUPagePool::FImpl {
         std::vector<RHI::FGPUCompletionToken> uses, uploads;
         uint32_t unsubmitted = 0;
         Profile::Context origin, lastUpload;
+        bool firstUse=false; ///< Successful consuming submission, independent of upload completion.
+        bool diagnosticObserved=false; ///< First observed successful use in an enabled capture.
+        uint64_t demandSequence=0,lastSelectionSerial=0; ///< Bounded per-page re-selection identity.
+        bool demandConsumed=false; ///< First successful use for this re-selection.
+        Profile::Context activeDemand; ///< New already-resident demands retain their own origin.
+        FSplatPageCausality causality; ///< Original physical work retained for the entire slot lifetime.
+        uint64_t consumedOriginId=0; ///< Last actual upstream origin successfully consumed in this slot.
     };
     struct Staged {
         Range range;
@@ -79,6 +86,7 @@ struct FSplatGPUPagePool::FImpl {
     FSplatGPUData data;
     MonsterEngine::TSharedPtr<RHI::IRHIBuffer> staging;
     std::vector<Page> pages;
+    std::vector<FSplatUpstreamOrigin> upstreamOrigins; ///< Fixed scene-page bound, controller-accounted.
     std::vector<Range> freeSlots, freeStaging;
     std::deque<Pending> pending;
     std::vector<Staged> staged;
@@ -87,11 +95,20 @@ struct FSplatGPUPagePool::FImpl {
     uint64_t sceneGeneration = 0, residencyVersion = 1, nextSlotGeneration = 1, tick = 0, pendingBytes = 0,
              lastSubmitted = 0, recordingBaseline = 0;
     uint32_t stride = 0, ringCursor = 0;
+    uint64_t selectionSerial=0,nextDemandSequence=0,currentSelectionVersion=0;
     FSplatGPUPagePoolStats stats;
     FSplatGPUPagePoolAllocationStats allocations;
     bool transitionAdmitted = true;
     Profile::Context recording;
+    std::string recordedCutHash; ///< Hash of actual immutable active input, independent of profiling.
     std::function<bool(RHI::FGPUCompletionToken)> completionGate;
+    std::shared_ptr<FSplatDetailDiagnostics> detail;
+    void Detail(ESplatDetailStage stage,const Profile::Context& context,const Page& page) {
+        const bool consumption=stage==ESplatDetailStage::FirstUse||stage==ESplatDetailStage::AlreadyResident||stage==ESplatDetailStage::Demand;
+        if(detail)detail->Emit(stage,context,page.generation,consumption?&page.activeDemand:&page.origin,
+            consumption?currentSelectionVersion:0,residencyVersion,consumption?page.demandSequence:0,&page.causality,
+            consumption && context.pageId && context.pageId<=upstreamOrigins.size()?&upstreamOrigins[size_t(context.pageId-1)]:nullptr);
+    }
     bool RootPage(uint32_t id) const {
         if (manifest.rootNode == SplatInvalidId) return false;
         const auto& ids = manifest.nodes[manifest.rootNode].pageIds;
@@ -123,6 +140,8 @@ struct FSplatGPUPagePool::FImpl {
                 ++stats.uploadedPages;
                 const auto id = uint32_t(&p - pages.data());
                 Profile::EventWithContext("Stream/Resident", PageContext(p.lastUpload, id, sceneGeneration), uint64_t(p.count) * stride);
+                Detail(ESplatDetailStage::GPUComplete,PageContext(p.lastUpload,id,sceneGeneration),p);
+                Detail(ESplatDetailStage::ActiveReady,PageContext(p.lastUpload,id,sceneGeneration),p);
             }
         }
         for (size_t i = 0; i < staged.size();) {
@@ -151,6 +170,7 @@ struct FSplatGPUPagePool::FImpl {
         for (auto id : victims) {
             auto& p = pages[id];
             Profile::EventWithContext("Stream/EvictCapacity", PageContext(p.lastUpload, id, sceneGeneration), uint64_t(p.count) * stride);
+            Detail(ESplatDetailStage::Evicted,PageContext(p.lastUpload,id,sceneGeneration),p);
             FreeRange(freeSlots, {p.offset, p.count});
             p = Page{};
             ++stats.evictedPages;
@@ -261,11 +281,14 @@ bool FSplatGPUPagePool::Initialize(RHI::IRHIDevice* device, const FSplatSceneMan
         next->stride = stride;
         next->data.gaussianCount = uint32_t(capacity);
         next->data.shDegree = int32_t(manifest.shDegree);
-        next->pages.resize(manifest.pages.size());
+        next->pages.resize(manifest.pages.size());next->upstreamOrigins.resize(manifest.pages.size());
         next->freeSlots.push_back({0, uint32_t(capacity)});
         next->freeStaging.push_back({0, stagingLogical});
         auto buffer = [&](uint32_t bytes, RHI::EResourceUsage flags, bool cpu, const char* name) {
             auto desc = describe(bytes, flags, cpu, name);
+            uint64_t physical=0,alignment=0;
+            if(!device->getBufferAllocationRequirements(desc,physical,alignment))
+                throw std::runtime_error("Allocation requirements unavailable");
             auto result = device->createBuffer(desc);
             RHI::FBufferAllocationInfo info;
             if (!result.IsValid() || !result->getAllocationInfo(info) ||
@@ -273,9 +296,13 @@ bool FSplatGPUPagePool::Initialize(RHI::IRHIDevice* device, const FSplatSceneMan
                 throw std::runtime_error(std::string("Cannot obtain dedicated measured allocation for ") + name);
             }
             if (cpu) {
+                next->allocations.stagingLogicalBytes=bytes;
+                next->allocations.stagingAlignmentBytes=alignment;
                 next->allocations.stagingReservedBytes = info.reservationBytes;
                 next->allocations.stagingBackingBytes = info.backingBytes;
             } else {
+                next->allocations.sourceLogicalBytes+=bytes;
+                next->allocations.sourceAlignmentBytes=std::max(next->allocations.sourceAlignmentBytes,alignment);
                 next->allocations.sourceReservedBytes += info.reservationBytes;
                 next->allocations.sourceBackingBytes += info.backingBytes;
             }
@@ -395,6 +422,9 @@ void FSplatGPUPagePool::ProtectSelection(const FSplatLODSelection& selection) {
         if (wanted[i]) transitionCount += s.manifest.pages[i].gaussianCount;
     }
     s.transitionAdmitted = transitionCount <= s.data.gaussianCount;
+    s.allocations.transitionRequiredRecords=transitionCount;
+    s.allocations.transitionCapacityRecords=s.data.gaussianCount;
+    s.allocations.transitionAdmitted=s.transitionAdmitted;
     if (s.transitionAdmitted) {
         for (uint32_t i = 0; i < wanted.size(); ++i) {
             if (wanted[i]) s.pages[i].protectedCut = true;
@@ -411,6 +441,7 @@ void FSplatGPUPagePool::ProtectSelection(const FSplatLODSelection& selection) {
         const auto id = it->result.pageId;
         if (!s.pages[id].allocated && !wanted[id]) {
             Profile::EventWithContext("Stream/UploadCancelledObsolete", PageContext(it->result.profiling, id, it->result.sceneGeneration));
+            if(s.detail)s.detail->Emit(ESplatDetailStage::Cancelled,PageContext(it->result.profiling,id,it->result.sceneGeneration),0,nullptr,0,0,0,&it->result.causality);
             s.Release(*it);
             it = s.pending.erase(it);
         } else {
@@ -463,6 +494,7 @@ void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation,
             }
             page.allocated = true;
             page.origin = PageContext(result.profiling, result.pageId, generation);
+            page.causality = result.causality;
             Profile::EventWithContext("Stream/SourceAllocated", page.origin, uint64_t(result.decodedGaussians.size()) * s.stride);
             page.offset = offset;
             page.count = uint32_t(result.decodedGaussians.size());
@@ -510,6 +542,7 @@ void FSplatGPUPagePool::Tick(RHI::IRHICommandList* command, uint64_t generation,
         }
         s.staged.push_back({{stagingOffset, rows * s.stride}, result.pageId, page.offset + page.recordedRows, rows, {}});
         s.Record(command, s.staged.back());
+        s.Detail(ESplatDetailStage::UploadRecorded,PageContext(s.recording,result.pageId,generation),page);
         ++page.unsubmitted;
         page.recordedRows += rows;
         remaining -= uint64_t(rows) * s.stride;
@@ -544,6 +577,7 @@ FSplatActiveSet FSplatGPUPagePool::BuildActiveSet(const FSplatLODSelection& sele
     bool sparseFusion) {
     auto& s = *Impl;
     FSplatActiveSet out;
+    s.recordedCutHash.clear();s.allocations.consumedCutHash.clear();s.allocations.consumedCutFrameId=0;s.allocations.consumedCutSubmissionToken=0;
     out.sceneGeneration = s.sceneGeneration;
     out.selectionVersion = selection.selectionVersion;
     out.residencyVersion = s.residencyVersion;
@@ -578,12 +612,31 @@ FSplatActiveSet FSplatGPUPagePool::BuildActiveSet(const FSplatLODSelection& sele
         std::none_of(s.staged.begin(), s.staged.end(), [](const auto& chunk) { return !chunk.token.value; })) {
         s.recordingBaseline = s.device ? s.device->getLastSubmissionToken().value : 0;
     }
+    ++s.selectionSerial;s.currentSelectionVersion=selection.selectionVersion;
     for (auto id : ids) {
         auto& page = s.pages[id];
+        if(page.lastSelectionSerial+1!=s.selectionSerial||!page.demandSequence){
+            page.demandSequence=++s.nextDemandSequence;page.demandConsumed=false;
+            // First allocation demand joins back to its queued/read origin; later resident re-selection has a new origin.
+            page.activeDemand=page.firstUse?PageContext(s.recording,id,s.sceneGeneration):page.origin;
+            s.Detail(ESplatDetailStage::Demand,page.activeDemand,page);
+        }
+        page.lastSelectionSerial=s.selectionSerial;
+        if(!Profile::IsEnabled())page.diagnosticObserved=false;
         for (uint32_t i = 0; i < page.count; ++i) out.sourceIndices.push_back(page.offset + i);
         page.lastUse = s.tick;
         if (std::find(s.framePages.begin(), s.framePages.end(), id) == s.framePages.end()) s.framePages.push_back(id);
     }
+    s.allocations.selectedPageCount=ids.size();s.allocations.usedSelectedPages=0;
+    s.allocations.consumedCutHash.clear();s.allocations.consumedCutFrameId=0;s.allocations.consumedCutSubmissionToken=0;
+    // Bounded scratch is explicitly reserved by the controller; no GPU facts are inferred here.
+    std::vector<uint8_t> cutBytes;
+    cutBytes.reserve(8*(5+2*selection.selectedNodeIds.size()+4*ids.size()));
+    const auto le64=[&](uint64_t value){for(unsigned i=0;i<8;++i)cutBytes.push_back(uint8_t(value>>(8*i)));};
+    le64(1);le64(s.sceneGeneration);le64(selection.selectionVersion);le64(s.residencyVersion);le64(selection.selectedNodeIds.size());
+    for(auto node:selection.selectedNodeIds){le64(node);le64(s.manifest.nodes[node].pageIds.size());
+        for(auto id:s.manifest.nodes[node].pageIds){const auto& page=s.pages[id];le64(id);le64(page.offset);le64(page.count);le64(page.generation);}}
+    s.recordedCutHash=FSplatSceneFormat::SHA256(cutBytes);
     if (projectedFusion && s.manifest.version >= 4) {
         out.fusionGroups.reserve(size_t(sparseFusion ? count / 2 : count));
         std::vector<uint32_t> mapped;
@@ -688,7 +741,7 @@ FSplatGPUPagePoolStats FSplatGPUPagePool::GetStats() const {
 
 FSplatGPUPagePoolAllocationStats FSplatGPUPagePool::GetAllocationStats() const { return Impl->allocations; }
 
-void FSplatGPUPagePool::MarkFrameSubmitted(RHI::FGPUCompletionToken token) {
+void FSplatGPUPagePool::MarkFrameSubmitted(RHI::FGPUCompletionToken token,bool activeConsumed) {
     auto& s = *Impl;
     if (!s.device || !token.value || token.value <= s.lastSubmitted || token.value <= s.recordingBaseline ||
         s.device->getLastSubmissionToken().value != token.value) {
@@ -701,6 +754,7 @@ void FSplatGPUPagePool::MarkFrameSubmitted(RHI::FGPUCompletionToken token) {
             auto context = PageContext(s.recording, chunk.page, s.sceneGeneration);
             context.submissionId = token.value;
             Profile::EventWithContext("Stream/UploadSubmitted", context, chunk.range.count);
+            s.Detail(ESplatDetailStage::UploadSubmitted,context,s.pages[chunk.page]);
             s.stats.uploadedBytes += chunk.range.count;
             auto& p = s.pages[chunk.page];
             p.lastUpload = context;
@@ -713,10 +767,27 @@ void FSplatGPUPagePool::MarkFrameSubmitted(RHI::FGPUCompletionToken token) {
     for (auto id : s.framePages) {
         auto& p = s.pages[id];
         if (p.allocated) p.uses.push_back(token);
+        if(p.allocated&&p.ready&&activeConsumed&&p.lastSelectionSerial==s.selectionSerial){
+            ++s.allocations.usedSelectedPages;
+            if(p.firstUse&&!p.diagnosticObserved&&Profile::IsEnabled()){
+                auto context=PageContext(s.recording,id,s.sceneGeneration);context.submissionId=token.value;
+                s.Detail(ESplatDetailStage::AlreadyResident,context,p);
+            }
+            const auto upstreamId=id<s.upstreamOrigins.size()?s.upstreamOrigins[id].id:0;
+            if(!p.demandConsumed||(upstreamId&&p.consumedOriginId!=upstreamId)){
+                auto context=PageContext(s.recording,id,s.sceneGeneration);context.submissionId=token.value;
+                s.Detail(ESplatDetailStage::FirstUse,context,p);p.firstUse=true;p.demandConsumed=true;p.consumedOriginId=upstreamId;
+            }
+            if(Profile::IsEnabled())p.diagnosticObserved=true;
+        }
         if (p.allocated && Profile::IsEnabled()) {
             auto context = PageContext(s.recording, id, s.sceneGeneration); context.submissionId = token.value;
             Profile::EventWithContext("Stream/PageUsedSubmitted", context, uint64_t(p.count) * s.stride);
         }
+    }
+    if(activeConsumed&&s.allocations.usedSelectedPages==s.allocations.selectedPageCount&&!s.recordedCutHash.empty()){
+        s.allocations.consumedCutHash=s.recordedCutHash;s.allocations.consumedCutFrameId=s.recording.frameId;
+        s.allocations.consumedCutSubmissionToken=token.value;
     }
     s.framePages.clear();
 }
@@ -754,6 +825,7 @@ void FSplatGPUPagePool::TrimUnprotected() {
         }
         FreeRange(s.freeSlots, {page.offset, page.count});
         Profile::EventWithContext("Stream/EvictTrim", PageContext(page.lastUpload, id, s.sceneGeneration), uint64_t(page.count) * s.stride);
+        s.Detail(ESplatDetailStage::Evicted,PageContext(page.lastUpload,id,s.sceneGeneration),page);
         page = FImpl::Page{};
         ++s.stats.evictedPages;
         ++s.residencyVersion;
@@ -762,6 +834,15 @@ void FSplatGPUPagePool::TrimUnprotected() {
 
 void FSplatGPUPagePool::SetCompletionGate(std::function<bool(RHI::FGPUCompletionToken)> gate) {
     Impl->completionGate = std::move(gate);
+}
+void FSplatGPUPagePool::SetDetailDiagnostics(std::shared_ptr<FSplatDetailDiagnostics> detail) { Impl->detail=std::move(detail); }
+void FSplatGPUPagePool::SetUpstreamOrigin(uint32_t id,const FSplatUpstreamOrigin& origin) {
+    auto& s=*Impl;if(id>=s.upstreamOrigins.size())return;
+    const bool changed=s.upstreamOrigins[id].id!=origin.id;s.upstreamOrigins[id]=origin;
+    if(changed&&origin.id&&s.pages[id].allocated&&s.pages[id].ready&&s.detail){
+        const auto& page=s.pages[id];
+        s.detail->Emit(ESplatDetailStage::AlreadyResident,origin.context,page.generation,nullptr,0,s.residencyVersion,0,&page.causality,&origin);
+    }
 }
 
 void FSplatGPUPagePool::Shutdown() {

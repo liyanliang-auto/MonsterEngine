@@ -40,21 +40,37 @@ void FSplatBudgetCoordinator::FReservation::Reset() noexcept {
 FSplatBudgetCoordinator::FSplatBudgetCoordinator(uint64_t limitBytes) : State(std::make_shared<FState>(limitBytes)) {}
 std::optional<FSplatBudgetCoordinator::FReservation> FSplatBudgetCoordinator::TryReserve(
     ESplatBudgetComponent component, uint64_t bytes, std::string& error) {
+    FSplatBudgetAdmissionReceipt receipt;
+    return TryReserveWithReceipt(component,bytes,error,receipt);
+}
+std::optional<FSplatBudgetCoordinator::FReservation> FSplatBudgetCoordinator::TryReserveWithReceipt(
+    ESplatBudgetComponent component, uint64_t bytes, std::string& error, FSplatBudgetAdmissionReceipt& receipt) {
     const auto index = static_cast<size_t>(component);
-    if (index >= static_cast<size_t>(ESplatBudgetComponent::Count)) { error = "invalid_budget_component"; return std::nullopt; }
     std::lock_guard lock(State->mutex);
     auto& snapshot = State->snapshot;
+    ++snapshot.admissionSequence; snapshot.admissionRequestedBytes=bytes;
+    snapshot.admissionAvailableBytes=snapshot.limitBytes-snapshot.reservedBytes;
+    snapshot.admissionComponent=component; snapshot.admissionGranted=false;
+    receipt={snapshot.admissionSequence,bytes,snapshot.admissionAvailableBytes,
+        snapshot.limitBytes,snapshot.reservedBytes,component,false,{}};
+    const auto refuse=[&](const char* code)->std::optional<FReservation>{
+        receipt.reason=snapshot.admissionReason=error=code;return std::nullopt;
+    };
+    if (index >= static_cast<size_t>(ESplatBudgetComponent::Count)) return refuse("invalid_budget_component");
     if (snapshot.exclusiveBuild && component != ESplatBudgetComponent::Builder && component != ESplatBudgetComponent::Metadata) {
-        error = "exclusive_build_active"; return std::nullopt;
+        return refuse("exclusive_build_active");
     }
     if (component == ESplatBudgetComponent::Builder && !snapshot.exclusiveBuild) {
-        error = "exclusive_build_required"; return std::nullopt;
+        return refuse("exclusive_build_required");
     }
     if (bytes > snapshot.limitBytes - snapshot.reservedBytes || State->leases[index] == UINT64_MAX) {
-        error = "aggregate_budget_exceeded"; return std::nullopt;
+        return refuse("aggregate_budget_exceeded");
     }
+    // Complete fallible string assignments before changing live accounting.
+    receipt.reason="reservation_admitted";snapshot.admissionReason="reservation_admitted";
     snapshot.reservedBytes += bytes; snapshot.components[index] += bytes;
     ++State->leases[index]; snapshot.peakBytes = std::max(snapshot.peakBytes, snapshot.reservedBytes);
+    snapshot.admissionGranted=true;receipt.granted=true;
     error.clear(); return FReservation(State, component, bytes);
 }
 bool FSplatBudgetCoordinator::Release(FReservation& reservation) noexcept {

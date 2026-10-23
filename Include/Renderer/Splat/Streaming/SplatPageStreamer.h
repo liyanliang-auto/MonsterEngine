@@ -3,8 +3,54 @@
 #include "Renderer/Splat/Streaming/SplatStreamingTypes.h"
 #include <functional>
 #include <memory>
+#include <array>
+#include <mutex>
+#include <optional>
+#include <atomic>
 
 namespace MonsterRender::Splat {
+/** Privacy-safe lifecycle stages, independent of profiler string exports. */
+enum class ESplatDetailStage : uint8_t { Demand, Prefetch, Queued, CacheHit, ReadStarted, ReadComplete,
+    CPUReady, UploadRecorded, UploadSubmitted, GPUComplete, ActiveReady, FirstUse,
+    Cancelled, Failed, Evicted, AlreadyResident, UpstreamDemand, UpstreamRetired, WorkCoalesced, Validated, ReadyTransferred, WorkRejected };
+/** Original causal identity is retained even when this row is drained on a later frame. */
+struct FSplatDetailEvent {
+    uint64_t sequence=0, timestampNanoseconds=0; ///< Log sequence and native monotonic clock.
+    ESplatDetailStage stage=ESplatDetailStage::Demand; ///< Stable allowlisted stage.
+    MonsterEngine::Profiling::Context context; ///< Actual event request/frame/page/submission.
+    uint64_t demandFrameId=0, demandRequestId=0, pageLifetime=0; ///< Original demand and physical slot generation.
+    uint64_t selectionVersion=0, residencyVersion=0; ///< Actual mapping versions when known.
+    uint64_t demandSequence=0; ///< Identified re-selection lifetime; zero when only an upstream origin is known.
+    FSplatUpstreamOrigin upstream; ///< Exact immutable upstream lifetime (not pool selection).
+    uint64_t workId=0, workOriginId=0; ///< Accepted physical work and original upstream cause, separate namespaces.
+    std::optional<uint64_t> surfaceGeneration,configGeneration,pipelineGeneration; ///< Event origin, never export-frame aliases.
+    std::optional<uint64_t> demandSurfaceGeneration,demandConfigGeneration,demandPipelineGeneration; ///< Separate original demand identity.
+};
+/** Shared bounded worker/owner diagnostic queue. No strings, heap allocation or GPU queries in Emit.
+ * Capture is cheap while profiling is disabled; retained rows can still be drained afterward. */
+class FSplatDetailDiagnostics {
+public:
+    static constexpr size_t Capacity=256; ///< Fixed pending event bound, distinct from exported frame ring.
+    explicit FSplatDetailDiagnostics(size_t capacity=Capacity);
+    size_t PendingCapacity() const noexcept { return EventCapacity; }
+    uint64_t AllocatedBytes() const noexcept { return sizeof(*this)+EventCapacity*sizeof(FSplatDetailEvent); }
+    void Emit(ESplatDetailStage, const MonsterEngine::Profiling::Context&, uint64_t lifetime=0,
+        const MonsterEngine::Profiling::Context* demand=nullptr, uint64_t selection=0, uint64_t residency=0, uint64_t demandSequence=0,
+        const FSplatPageCausality* work=nullptr, const FSplatUpstreamOrigin* upstream=nullptr) noexcept;
+    void Drain(std::vector<FSplatDetailEvent>& output, size_t maximum, uint64_t& overwritten, uint64_t& dropped);
+    /** Bounded origin registry. Evicted or ambiguous origins export null rather than a false join. */
+    void BindFrame(const MonsterEngine::Profiling::Context&,uint64_t surface,uint64_t config,uint64_t pipeline);
+private:
+    struct FOrigin { MonsterEngine::Profiling::Context context; uint64_t surface=0,config=0,pipeline=0; }; ///< Registry entry.
+    std::mutex Mutex; ///< Serializes worker and owner operations; never held across I/O.
+    const size_t EventCapacity; ///< Scene-sized fixed bound, at most Capacity; immutable before workers start.
+    std::unique_ptr<FSplatDetailEvent[]> Events; ///< Exact allocated row count; overwritten events are counted.
+    size_t Begin=0, Count=0; ///< Pending ring range.
+    uint64_t Sequence=0, Overwritten=0; ///< Lifetime counters; never reset at frame boundaries.
+    std::atomic<uint64_t> Dropped{0}; ///< Emit failures cannot interrupt rendering or race worker counters.
+    std::array<FOrigin,64> Origins{}; ///< Bounded lookup; late workers may explicitly lose generation association.
+    size_t NextOrigin=0; ///< Monotonic replacement cursor within the origin registry.
+};
 /** Worker-side fault decision; no arbitrary blocking reader is installed. */
 struct FSplatPageReadFault {
     uint32_t delayMilliseconds = 0; ///< Cancellation-aware latency before read.
@@ -71,6 +117,8 @@ public:
     /** Fault decisions run on workers and must return promptly. The delay itself is
      * handled internally and wakes immediately on cancellation/shutdown. */
     void SetFaultInjector(std::function<FSplatPageReadFault(uint32_t pageId, uint32_t attempt)> injector);
+    /** Install before Open starts workers; null disables lifecycle collection. */
+    void SetDetailDiagnostics(std::shared_ptr<FSplatDetailDiagnostics>);
 private:
     struct FImpl;
     std::unique_ptr<FImpl> m_impl;

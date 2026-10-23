@@ -90,6 +90,11 @@ set(MONSTER_SPLAT_SOURCES
     Source/Renderer/Splat/SplatBudgetCoordinator.cpp
 )
 
+# Studio owns a native Win32 surface and constructs VulkanDevice directly. The
+# desktop RHI factory also references OpenGL; keep it out of this isolated target.
+set(MONSTER_STUDIO_VULKAN_SOURCES ${MONSTER_VULKAN_SOURCES})
+list(REMOVE_ITEM MONSTER_STUDIO_VULKAN_SOURCES Source/RHI/RHI.cpp)
+
 set(MONSTER_CPU_SPLAT_SOURCES
     Source/Renderer/Splat/SplatPLYLoader.cpp
     Source/Renderer/Splat/SplatPLYStream.cpp

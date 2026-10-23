@@ -120,6 +120,11 @@ struct FSplatStreamingController::FImpl {
     FSplatStreamingControllerSnapshot snapshot;
     uint64_t generation = 0, lastFrame = 0, submissionBaseline = 0, selectionVersion = 0, previousResidency = 0;
     MonsterEngine::Profiling::Context recording;
+    std::shared_ptr<FSplatDetailDiagnostics> detail;
+    std::vector<uint32_t> previousDemand, previousPrefetch;
+    std::vector<FSplatUpstreamOrigin> upstreamOrigins; ///< Fixed manifest-page identity registry.
+    std::vector<uint8_t> originRoles; ///< Fixed scratch; all desired pages, fallback and mandatory representation.
+    uint64_t nextOriginId=0; ///< Monotonic within scene; retirement never reuses an id.
     bool initialized = false, cancelled = false, failed = false, pressure = false, awaitingSubmission = false;
 
     bool Mandatory(uint32_t page) const {
@@ -169,6 +174,39 @@ struct FSplatStreamingController::FImpl {
         snapshot.degraded = selection.degraded || snapshot.pool.degraded || pressure || snapshot.terminalPageFailures;
         snapshot.degradationReason = pressure ? "memory_pressure_coarse_fallback" :
             snapshot.terminalPageFailures ? "fine_page_failed_ancestor_retained" : selection.degradationReason;
+        snapshot.degradationCodes.clear();
+        if(pressure)snapshot.degradationCodes.push_back("memory_pressure_coarse_fallback");
+        if(snapshot.terminalPageFailures)snapshot.degradationCodes.push_back("fine_page_failed_ancestor_retained");
+        if(snapshot.pool.degraded)snapshot.degradationCodes.push_back("pool_capacity_or_upload_degraded");
+        if(!snapshot.allocations.transitionAdmitted)snapshot.degradationCodes.push_back("transition_reserve_refused");
+        // Selector combines independent private explanations with '; '. Only known constants cross export.
+        static constexpr std::pair<const char*,const char*> reasons[]={
+            {"invalid camera or LOD settings","invalid_camera_or_lod_settings"},
+            {"invalid hierarchy or representation","invalid_hierarchy_or_representation"},
+            {"coarse fallback exceeds hard active/source budget","coarse_fallback_budget_exceeded"},
+            {"zero sort capacity for nonempty scene","zero_sort_capacity"},
+            {"frozen cut reduced by changed budgets","frozen_cut_budget_reduced"},
+            {"refinement blocked by hard active/source budget","refinement_budget_blocked"},
+            {"coarsening lacks parent-child transition reserve","coarsening_transition_reserve_missing"},
+            {"coarse fallback loading or source mapping unavailable","coarse_fallback_not_resident"},
+            {"refinement lacks parent-child transition reserve","refinement_transition_reserve_missing"},
+            {"target refinement waiting for complete child residency","refinement_waiting_child_residency"},
+            {"resident cut exceeds changed hard budget","resident_cut_budget_exceeded"}};
+        if(selection.degraded){
+            size_t start=0;
+            do {
+                const auto end=selection.degradationReason.find("; ",start);
+                const auto text=selection.degradationReason.substr(start,end==std::string::npos?end:end-start);
+                bool known=false;
+                for(const auto& item:reasons)if(text==item.first){snapshot.degradationCodes.push_back(item.second);known=true;break;}
+                if(!known&&text!="memory_pressure_coarse_fallback")snapshot.degradationCodes.push_back("unknown_reason");
+                if(end==std::string::npos)break;start=end+2;
+            }
+            while(start<=selection.degradationReason.size());
+        }
+        if(failed)snapshot.degradationCodes.push_back("streaming_failed");
+        if(cancelled)snapshot.degradationCodes.push_back("streaming_cancelled");
+        detail->Drain(snapshot.detailEvents,16,snapshot.detailOverwritten,snapshot.detailDropped);
         if (failed || cancelled) { snapshot.degraded = true; snapshot.loading = false; }
         else snapshot.status = {true, snapshot.loading ? "streaming_loading" : "streaming_ready", {}};
     }
@@ -186,14 +224,39 @@ struct FSplatStreamingController::FImpl {
         return out;
     }
     void Requests() {
+        std::fill(originRoles.begin(),originRoles.end(),uint8_t(0));
+        for(auto node:selection.desiredNodeIds)if(node<manifest.nodes.size())
+            for(auto page:manifest.nodes[node].pageIds)originRoles[page]|=1;
+        for(auto node:selection.selectedNodeIds)if(node<manifest.nodes.size())
+            for(auto page:manifest.nodes[node].pageIds)if(!(originRoles[page]&1))originRoles[page]|=2;
+        if(manifest.rootNode!=SplatInvalidId)for(auto page:manifest.nodes[manifest.rootNode].pageIds)originRoles[page]|=4;
+        for(const auto& page:manifest.pages)if(page.pinned)originRoles[page.id]|=4;
+        if(!pressure)for(auto page:selection.prefetchPageIds)if(page<originRoles.size())originRoles[page]|=8;
+        for(size_t page=0;page<upstreamOrigins.size();++page){
+            auto& origin=upstreamOrigins[page];const auto roles=originRoles[page];
+            // Role changes retire the immutable old representation lifetime before a new origin.
+            if(origin.id&&origin.representationFlags!=roles){
+                auto event=recording;event.sceneId=generation;event.pageId=page+1;
+                detail->Emit(ESplatDetailStage::UpstreamRetired,event,0,nullptr,selection.selectionVersion,snapshot.residencyVersion,0,nullptr,&origin);
+                origin={};
+            }
+            if(roles&&!origin.id){
+                origin.id=++nextOriginId;origin.context=recording;origin.context.sceneId=generation;origin.context.pageId=page+1;
+                if(recording.frameId){origin.surface=snapshot.surfaceGeneration;origin.config=snapshot.configGeneration;origin.pipeline=snapshot.pipelineGeneration;}
+                origin.representationFlags=roles;
+                detail->Emit(ESplatDetailStage::UpstreamDemand,origin.context,0,nullptr,selection.selectionVersion,snapshot.residencyVersion,0,nullptr,&origin);
+            }
+            pool->SetUpstreamOrigin(uint32_t(page),origin);
+        }
         std::vector<FSplatPageRequest> requests;
         std::vector<bool> seen(manifest.pages.size());
         const auto append = [&](uint32_t page, double priority) {
             if (page >= seen.size() || seen[page] || terminal[page] || pool->HasPage(page, generation)) return;
             seen[page] = true; requests.push_back({page, priority, generation});
-            if (MonsterEngine::Profiling::IsEnabled()) {
+            {
                 auto& context = requests.back().profiling;
                 context = recording; context.sceneId = generation; context.pageId = uint64_t(page) + 1;
+                requests.back().upstream=upstreamOrigins[page];
             }
         };
         // Root priority cannot be displaced by refinement or an offscreen camera.
@@ -281,6 +344,11 @@ bool FSplatStreamingController::InitializePrepared(RHI::IRHIDevice* device, cons
         next->settings.sortBudget = std::min<uint64_t>(runtime.sortCapacity, runtime.lod.sortBudget);
         next->streaming = runtime.streaming;
         next->terminal.assign(next->manifest.pages.size(), false);
+        // Small scenes do not need to allocate the maximum ring. This is storage
+        // admission only: the original large Android scene keeps all 256 rows.
+        const auto detailCapacity=std::max<size_t>(16,std::min<size_t>(64,next->manifest.pages.size())*4);
+        next->snapshot.detailCapacity=static_cast<uint32_t>(detailCapacity);
+        next->upstreamOrigins.resize(next->manifest.pages.size());next->originRoles.resize(next->manifest.pages.size());
         for (uint32_t i = 0; i < next->manifest.nodes.size(); ++i)
             if (next->manifest.nodes[i].children.empty()) next->leaves.push_back(i);
         if (next->manifest.rootNode != SplatInvalidId) {
@@ -303,6 +371,12 @@ bool FSplatStreamingController::InitializePrepared(RHI::IRHIDevice* device, cons
         uint64_t metadata = Multiply(ManifestStorage(next->manifest), 3);
         metadata = Add(metadata, Multiply(next->manifest.nodes.size(), 512));
         metadata = Add(metadata, Multiply(next->manifest.pages.size(), 256));
+        // Additional bounded causal carriers in controller/pool/results/requests, fixed event storage,
+        // and canonical hash bytes. Existing payload metadata must not absorb hidden storage.
+        // Include shared ownership bookkeeping and both controller objects during replacement.
+        metadata = Add(metadata, sizeof(FSplatDetailDiagnostics)+Multiply(detailCapacity,sizeof(FSplatDetailEvent))+64+2*sizeof(FImpl));
+        metadata = Add(metadata, Multiply(next->manifest.pages.size(),4*sizeof(FSplatUpstreamOrigin)+sizeof(FSplatPageCausality)+64));
+        metadata = Add(metadata, Multiply(next->manifest.nodes.size(),16));
         metadata = Add(metadata, Multiply(runtime.activeCapacity, 2 * sizeof(uint32_t)));
         if (runtime.projectedFusion) metadata = Add(metadata, Multiply(runtime.activeCapacity, 2 * sizeof(FSplatFusionGroup)));
         if (metadata >= next->streaming.cpuCacheBytes) throw std::runtime_error("Streaming metadata and selection workspace exceed CPU budget");
@@ -312,10 +386,13 @@ bool FSplatStreamingController::InitializePrepared(RHI::IRHIDevice* device, cons
         if (!FSplatPageStreamer::EstimateMinimumProgressBytes(next->manifest, next->streaming, minimum, error)) return false;
         next->snapshot.minimumProgressBytes = Add(metadata, minimum);
         if (minimum > next->streaming.cpuCacheBytes) throw std::runtime_error("CPU budget cannot sustain worker/lease minimum progress");
+        next->detail=std::make_shared<FSplatDetailDiagnostics>(detailCapacity);
         next->pool = std::make_unique<FSplatGPUPagePool>();
         if (!next->pool->Initialize(device, next->manifest, next->streaming, error)) return false;
+        next->pool->SetDetailDiagnostics(next->detail);
         next->settings.sourceBudget = next->pool->GetGPUData().gaussianCount;
         next->streamer = std::make_unique<FSplatPageStreamer>();
+        next->streamer->SetDetailDiagnostics(next->detail);
         if (!next->streamer->Open(next->manifest, directory.string(), next->streaming, error)) return false;
         next->initialized = true;
         next->Requests(); next->Capture();
@@ -337,6 +414,7 @@ FSplatStreamingFrameResult FSplatStreamingController::UpdateAndRecord(RHI::IRHIC
     s.snapshot.lodSelectionMilliseconds.reset();s.snapshot.uploadRecordMilliseconds.reset();
     try {
         s.lastFrame = frameId;
+        s.snapshot.detailEvents.clear();
         s.recording = {requestId, frameId, 0, s.generation, 0};
         MonsterEngine::Profiling::Scope profileUpdate("Stream/UpdateAndRecord", s.recording);
         const auto residency = s.pool->GetResidency();
@@ -381,11 +459,11 @@ FSplatStreamingFrameResult FSplatStreamingController::UpdateAndRecord(RHI::IRHIC
     return result;
 }
 
-void FSplatStreamingController::OnSubmitted(RHI::FGPUCompletionToken token) {
+void FSplatStreamingController::OnSubmitted(RHI::FGPUCompletionToken token,bool activeConsumed) {
     auto& s = *Impl;
     if (!s.initialized || !s.awaitingSubmission || !token.value || token.value <= s.submissionBaseline ||
         token.value <= s.snapshot.lastSubmission.value || s.device->getLastSubmissionToken().value != token.value) return;
-    s.pool->MarkFrameSubmitted(token);
+    s.pool->MarkFrameSubmitted(token,activeConsumed&&s.snapshot.status.ok&&!s.failed&&!s.cancelled);
     s.awaitingSubmission = false;
     s.snapshot.lastSubmission = token; s.snapshot.submittedFrameId = s.lastFrame;
     s.ReleasePoolTransfers(); s.Capture();
@@ -394,7 +472,13 @@ void FSplatStreamingController::OnSubmitted(RHI::FGPUCompletionToken token) {
 void FSplatStreamingController::CancelGeneration() {
     auto& s = *Impl;
     if (!s.initialized || s.cancelled) return;
-    s.cancelled = true; s.streamer->CancelGeneration(s.generation); s.ClearDeferred();
+    s.cancelled = true;
+    for(size_t page=0;page<s.upstreamOrigins.size();++page){auto& origin=s.upstreamOrigins[page];if(!origin.id)continue;
+        MonsterEngine::Profiling::Context context{};context.sceneId=s.generation;context.pageId=page+1;
+        s.detail->Emit(ESplatDetailStage::UpstreamRetired,context,0,nullptr,s.selection.selectionVersion,s.snapshot.residencyVersion,0,nullptr,&origin);
+        origin={};s.pool->SetUpstreamOrigin(uint32_t(page),origin);
+    }
+    s.streamer->CancelGeneration(s.generation); s.ClearDeferred();
     s.snapshot.status = {false, "streaming_cancelled", "Scene generation cancelled"}; s.Capture();
 }
 
@@ -424,6 +508,10 @@ bool FSplatStreamingController::ApplySettings(const FSplatLODSettings& settings,
 }
 
 FSplatStreamingControllerSnapshot FSplatStreamingController::Snapshot() const { return Impl->snapshot; }
+void FSplatStreamingController::SetDiagnosticFrameIdentity(uint64_t frame,uint64_t request,uint64_t surface,uint64_t config,uint64_t pipeline) {
+    Impl->snapshot.surfaceGeneration=surface;Impl->snapshot.configGeneration=config;Impl->snapshot.pipelineGeneration=pipeline;
+    if(Impl->detail)Impl->detail->BindFrame({request,frame,0,Impl->generation,0},surface,config,pipeline);
+}
 const FSplatGPUData& FSplatStreamingController::GetGPUData() const {
     if (!Impl->initialized || !Impl->pool) throw std::runtime_error("Streaming source is unavailable");
     return Impl->pool->GetGPUData();

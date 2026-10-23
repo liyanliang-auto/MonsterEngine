@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -26,6 +27,10 @@ struct ProcessRequest {
     std::chrono::milliseconds timeout{30000};
     /** Maximum retained prefix per stream; excess bytes are still drained. */
     std::size_t maxCapturedBytesPerStream{1048576};
+    /** Optional bounded worker tick for external event files. Never called on pipe readers.
+     * An exception is a host failure and retires the isolated tree. It must not block.
+     */
+    std::function<void()> observeTick;
 };
 
 /** Lifecycle and bounded raw-byte diagnostics; termination never implies saved state. */

@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <array>
+#include <map>
 
 namespace MonsterRender::Splat {
 /** A result is successful only when explicitly set; stable codes are machine-readable. */
@@ -64,6 +65,43 @@ struct FViewerConfig {
 };
 /** Pointer lifecycle; cancellation clears gesture history without applying motion. */
 enum class EViewerPointerPhase : uint8_t { Begin, Move, End, Cancel };
+/** Fixed camera evidence limits; overflow is unavailable, never implicit coverage. */
+inline constexpr size_t ViewerCameraContributorCapacity=16, ViewerCameraReceiptCapacity=64;
+/** Incremental retained/copying evidence charges inside the existing aggregate cap. */
+inline constexpr uint64_t ViewerCameraMetadataBytes=4ull<<20, AndroidCameraReceiptMetadataBytes=128ull<<10;
+/** Request acceptance, owner application and successful consumption are independent. */
+enum class EViewerCameraInputDisposition : uint8_t {
+    Queued, Coalesced, AppliedMotion, AppliedNoMotion, CancelledNoMotion, StaleSurface,
+    NoSession, QueueFull, HostStopping, LineageOverflow, UnavailableLegacy,
+    CancelledByRelease, HostStopped, InvalidInput
+};
+/** Stable privacy-safe vocabulary shared by the typed native receipt producer. */
+inline const char* ViewerCameraInputDispositionName(EViewerCameraInputDisposition d) {
+    switch(d) {
+    case EViewerCameraInputDisposition::Queued:return "queued";
+    case EViewerCameraInputDisposition::Coalesced:return "coalesced";
+    case EViewerCameraInputDisposition::AppliedMotion:return "applied_motion";
+    case EViewerCameraInputDisposition::AppliedNoMotion:return "applied_no_motion";
+    case EViewerCameraInputDisposition::CancelledNoMotion:return "cancelled_no_motion";
+    case EViewerCameraInputDisposition::StaleSurface:return "stale_surface";
+    case EViewerCameraInputDisposition::NoSession:return "no_session";
+    case EViewerCameraInputDisposition::QueueFull:return "control_queue_full";
+    case EViewerCameraInputDisposition::HostStopping:return "host_stopping";
+    case EViewerCameraInputDisposition::LineageOverflow:return "lineage_overflow";
+    case EViewerCameraInputDisposition::CancelledByRelease:return "control_cancelled_by_release";
+    case EViewerCameraInputDisposition::HostStopped:return "host_stopped";
+    case EViewerCameraInputDisposition::InvalidInput:return "invalid_input";
+    default:return "unavailable_legacy";
+    }
+}
+/** One bounded receipt; queue status is not proof of motion or submission. */
+struct FViewerCameraInputReceipt {
+    uint64_t requestScope=0,requestId=0,surfaceGeneration=0,applicationGroup=0; ///< Exact input and aggregate identities.
+    EViewerPointerPhase phase=EViewerPointerPhase::Move; ///< Original lifecycle, before coalescing.
+    EViewerCameraInputDisposition disposition=EViewerCameraInputDisposition::UnavailableLegacy; ///< Actual last disposition.
+    bool reset=false; ///< Original reset request, not aggregate OR.
+};
+static_assert(sizeof(FViewerCameraInputReceipt)<=64,"Camera receipt bound");
 /** Owner-queued gesture delta, derived using stable pointer IDs by platform input. */
 struct FCameraInputState {
     EViewerPointerPhase phase = EViewerPointerPhase::Move; ///< Gesture lifecycle.
@@ -73,7 +111,29 @@ struct FCameraInputState {
     float pinchScale = 1; ///< Positive multiplicative zoom; one means no change.
     bool reset = false; ///< Reset camera and discard gesture history.
     uint64_t surfaceGeneration = 0; ///< Discard input from a detached/replaced Surface.
+    uint64_t requestScope=0,requestId=0,applicationGroup=0,lastResetRequestId=0; ///< Optional validated handle scope and aggregate lineage.
+    std::array<uint64_t,ViewerCameraContributorCapacity> contributorIds{}; ///< Exact aggregate members; never an ID range.
+    uint32_t contributorCount=0; ///< Total contributors including omitted overflow members.
+    bool lineageComplete=false; ///< False for legacy, mixed scope or contributor overflow.
 };
+static_assert(sizeof(FCameraInputState)<=256,"Queued camera lineage bound");
+/** Why a tuple cannot establish request-to-successful-camera matching. */
+enum class EViewerCameraProvenanceUnavailable : uint8_t { Unsubmitted, UploadOnly, Legacy, ScopeChange, LineageOverflow };
+/** Immutable evidence frozen at compute uniform consumption; only a submitted copy gets a token. */
+struct FViewerCameraProvenance {
+    uint64_t requestScope=0,cameraRevision=0,lastAppliedRequestId=0,lastResetRequestId=0; ///< Camera-state lineage.
+    uint64_t gestureBeginRequestId=0,applicationGroup=0; ///< Lifecycle and coalesced aggregate identity.
+    uint64_t frameId=0,submissionToken=0,sceneGeneration=0,surfaceGeneration=0,configGeneration=0,pipelineGeneration=0; ///< Exact original consumer scope.
+    std::array<uint64_t,ViewerCameraContributorCapacity> contributorIds{}; ///< Members applied since preceding successful compute.
+    uint32_t contributorCount=0; ///< Total members, may exceed the fixed list capacity.
+    bool lineageComplete=false,recorded=false,externalCamera=false; ///< Missing lineage and unsubmitted recording remain distinct.
+    EViewerPointerPhase phase=EViewerPointerPhase::Move; ///< Most recent applied lifecycle event.
+    EViewerCameraProvenanceUnavailable unavailable=EViewerCameraProvenanceUnavailable::Unsubmitted; ///< Explicit association failure reason.
+    std::array<uint8_t,176> uniforms{}; ///< Canonical evidence copy; unused camPos.w/pad0 bytes zero, GPU data unchanged.
+    std::array<float,3> target{},position{}; ///< Actual consumed orbit target and camera position.
+    float yaw=0,pitch=0,distance=0; ///< Frozen orbit state.
+};
+static_assert(sizeof(FViewerCameraProvenance)<=1024,"Retained camera provenance bound");
 /** Partial probes distinguish unknown from observed unsupported/disabled/failed. */
 enum class EViewerObservation : uint8_t { Unknown, No, Yes };
 /** One capability's support, enablement and execution evidence remain independent. */
@@ -109,6 +169,18 @@ struct FViewerFrameMeasurement {
     float cameraYaw=0, cameraPitch=0, cameraDistance=0; ///< Orbit state; ignored for external camera.
     bool externalCamera=false; ///< Position remains valid for external cameras.
 };
+/** Independent privacy-safe cause observations; unavailable is distinct from an observed empty cause list. */
+struct FViewerDegradationObservation {
+    std::string status="unavailable"; ///< observed, unavailable or stale_identity.
+    std::vector<std::string> codes; ///< Allowlisted stable codes, unknown prose becomes unknown_reason.
+    std::map<std::string,std::optional<uint64_t>> counters; ///< Source counters and original-frame identity.
+};
+/** Cached allocation observation. Missing optional values remain explicitly unknown. */
+struct FViewerResourceCost {
+    std::string kind="unknown"; ///< actual, estimate, unknown or overlapping.
+    std::optional<uint64_t> logicalBytes, requiredBytes, backingBytes, alignmentBytes, estimateBytes; ///< Independent byte facts.
+    std::string accounting="unavailable"; ///< Stable disjoint or overlapping account description.
+};
 /** Immutable published telemetry: no references to live pipeline/worker objects. */
 struct FViewerDiagnosticsSnapshot {
     uint64_t frameId = 0; ///< Recording associated with this snapshot, zero if no frame.
@@ -118,8 +190,9 @@ struct FViewerDiagnosticsSnapshot {
     std::optional<FViewerConfig> effectiveConfig; ///< Absent before successful admission.
     FViewerFrameCounters counters; ///< Actual counters with explicit availability.
     FViewerFrameMeasurement measurement; ///< Per-origin measurement.
+    FViewerCameraProvenance cameraProvenance; ///< Additive separately versioned JSON evidence; CSV remains unchanged.
     std::vector<FViewerCapabilityState> capabilities; ///< Partial capability/probe observations.
-    FSplatBudgetSnapshot budget; ///< Consistent aggregate backing accounting.
+    FSplatBudgetSnapshot budget; ///< Consistent aggregate backing accounting; quality receipts bind this original row, not later totals.
     bool degraded = false; ///< Fallback image or reduced quality is active.
     uint32_t presentationFormat = 0; ///< Actual selected swapchain VkFormat; zero when unavailable.
     uint32_t presentationColorSpace = 0; ///< Actual selected swapchain VkColorSpaceKHR; zero when unavailable.
@@ -133,6 +206,9 @@ struct FViewerDiagnosticsSnapshot {
     std::optional<uint64_t> vulkanManagedBackingBytes; ///< Live bytes plus unused pools, excluding opaque WSI/driver/fallback allocations.
     std::optional<uint64_t> vulkanPooledUnusedBytes; ///< Reserved pool bytes currently free; not free device VRAM.
     std::string degradationReason; ///< Stable explanation; empty when not degraded.
+    FViewerDegradationObservation pipelineDegradation, streamingDegradation; ///< Independent simultaneous causes.
+    std::map<std::string,FViewerResourceCost> resourceCosts; ///< Cached queried/allocated facts; no per-frame Vulkan queries.
+    uint64_t presentationReservationEstimate=0; ///< Owner-reported opaque WSI estimate, never actual driver backing.
     FViewerStatus status; ///< Last operation/error state.
 };
 /** External display filtering policy; does not allocate pixels or change internal quality. */

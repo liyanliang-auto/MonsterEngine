@@ -10,6 +10,7 @@ namespace MonsterRender::Splat {
 struct FSplatStreamingControllerSnapshot {
     FViewerStatus status; ///< Loading, active, cancelled or failed operation state.
     uint64_t sceneGeneration = 0, frameId = 0, submittedFrameId = 0; ///< Original identities.
+    uint64_t surfaceGeneration=0, configGeneration=0, pipelineGeneration=0; ///< Original camera/mapping owner generations.
     RHI::FGPUCompletionToken lastSubmission{}; ///< Last observed new actual submission.
     FSplatStreamingStats io; ///< Bounded scheduler counters and total charged cache.
     FSplatPageStreamerMemoryStats cpu; ///< Transferred ownership remains charged.
@@ -24,6 +25,11 @@ struct FSplatStreamingControllerSnapshot {
     uint32_t terminalPageFailures = 0, deferredPages = 0; ///< Bounded failure/backpressure state.
     bool rootReady = false, loading = true, degraded = false, memoryPressure = false; ///< Observed state.
     std::string degradationReason; ///< Stable reason; absent means no degradation.
+    std::vector<std::string> degradationCodes; ///< Independent observed causes, never private prose.
+    std::vector<FSplatDetailEvent> detailEvents; ///< At most sixteen deltas per original frame, not an entire global ring.
+    uint64_t detailOverwritten=0, detailDropped=0; ///< Cumulative pending queue losses; not frame drops.
+    uint32_t detailCapacity=0; ///< Actual allocated pending rows; maximum256, zero unavailable.
+    // allocations.consumedCutHash belongs only to its exact consumedCutFrameId/token; never an attempted cut.
 };
 /** One recording's compact active input; recording alone never implies submission. */
 struct FSplatStreamingFrameResult {
@@ -55,7 +61,9 @@ public:
     FSplatStreamingFrameResult UpdateAndRecord(RHI::IRHICommandList* command,
                                                const FSplatLODView& camera, uint64_t frameId, uint64_t requestId = 0);
     /** Call only for the new successful submission containing the returned active set/uploads. */
-    void OnSubmitted(RHI::FGPUCompletionToken token);
+    void OnSubmitted(RHI::FGPUCompletionToken token, bool activeConsumed=true);
+    /** Bind source camera frame to owner generations; unavailable historical identities remain null. */
+    void SetDiagnosticFrameIdentity(uint64_t frame, uint64_t request, uint64_t surface, uint64_t config, uint64_t pipeline);
     /** Invalidates this scene and all queued I/O results; GPU ownership retires at Shutdown. */
     void CancelGeneration();
     /** Retains complete coarse coverage, cancels speculative I/O; fixed backing stays accounted. */

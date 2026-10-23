@@ -1,0 +1,4 @@
+// Exercise the exact exclusive publisher used by owned execution configuration.
+#include "../../Source/VideoTo3D/ProjectReconstruction.cpp"
+#include <iostream>
+int wmain(int argc,wchar_t**argv){if(argc!=2)return 2;try{const std::filesystem::path root=argv[1];if(std::filesystem::exists(root))return 3;std::filesystem::create_directories(root);const auto target=root/L"resolved-config.json";MonsterEngine::VideoTo3D::Publish(target,"original admitted bytes");bool rejected=false;try{MonsterEngine::VideoTo3D::Publish(target,"different bytes");}catch(...){rejected=true;}if(!rejected||MonsterEngine::VideoTo3D::Read(target)!="original admitted bytes")throw std::runtime_error("exclusive config publication replaced prior identity");std::cout<<"PASS exclusive_owned_config_collision_preserves_original_bytes\n";return 0;}catch(const std::exception&e){std::cerr<<e.what()<<std::endl;return 1;}}

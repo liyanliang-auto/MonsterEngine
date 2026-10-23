@@ -8,9 +8,10 @@ if(WIN32 AND NOT ANDROID)
         "${PROJECT_SOURCE_DIR}/Source/VideoTo3D/PreflightWindowsPath.cpp"
         "${PROJECT_SOURCE_DIR}/Source/VideoTo3D/ProjectPreflight.cpp"
         "${PROJECT_SOURCE_DIR}/Source/VideoTo3D/ProjectCompatibility.cpp"
+        "${PROJECT_SOURCE_DIR}/Source/VideoTo3D/ProjectReconstruction.cpp"
         "${PROJECT_SOURCE_DIR}/Source/VideoTo3D/ReconstructionQueue.cpp")
     monster_compile_settings(MonsterVideoTo3DServices)
-    target_link_libraries(MonsterVideoTo3DServices PRIVATE bcrypt PUBLIC ole32)
+    target_link_libraries(MonsterVideoTo3DServices PRIVATE bcrypt PUBLIC ole32 shell32 uuid)
 
     add_executable(MonsterVideoTo3DInput "${PROJECT_SOURCE_DIR}/Tools/VideoTo3DInput/main.cpp")
     monster_compile_settings(MonsterVideoTo3DInput)
@@ -20,8 +21,24 @@ if(WIN32 AND NOT ANDROID)
     monster_compile_settings(MonsterVideoTo3DPreflight)
     target_link_libraries(MonsterVideoTo3DPreflight PRIVATE MonsterVideoTo3DServices)
 
+    add_executable(MonsterVideoTo3DReconstruction "${PROJECT_SOURCE_DIR}/Tools/VideoTo3DReconstruction/main.cpp")
+    monster_compile_settings(MonsterVideoTo3DReconstruction)
+    target_link_libraries(MonsterVideoTo3DReconstruction PRIVATE MonsterVideoTo3DServices)
+
     if(MONSTER_BUILD_ENGINE)
         enable_language(RC)
+        add_library(MonsterStudioPreview STATIC
+            "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/StudioPreviewHost.cpp"
+            "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/StudioPreviewHost.h"
+            ${MONSTER_STUDIO_VULKAN_SOURCES})
+        monster_compile_settings(MonsterStudioPreview)
+        target_include_directories(MonsterStudioPreview PUBLIC "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio"
+            "${PROJECT_SOURCE_DIR}/3rd-party" "${VULKAN_LOCAL_DIR}" "${VULKAN_LOCAL_DIR}/vulkan"
+            "${VULKAN_LOCAL_DIR}/vk_video")
+        target_precompile_headers(MonsterStudioPreview PRIVATE "${PROJECT_SOURCE_DIR}/Include/Core/MonsterEnginePCH.h")
+        target_link_libraries(MonsterStudioPreview PUBLIC MonsterCore MonsterSplatRuntime MonsterMemoryRuntime
+            "${VULKAN_LOCAL_DIR}/lib/vulkan-1.lib" user32 gdi32)
+        add_dependencies(MonsterStudioPreview SplatShaders)
         add_executable(MonsterStudio WIN32
             "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/main.cpp"
             "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/StudioWindow.cpp"
@@ -30,9 +47,10 @@ if(WIN32 AND NOT ANDROID)
             "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/MonsterStudio.rc"
             "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/MonsterStudio.manifest")
         monster_compile_settings(MonsterStudio)
-        target_link_libraries(MonsterStudio PRIVATE MonsterVideoTo3DServices
+        target_link_libraries(MonsterStudio PRIVATE MonsterVideoTo3DServices MonsterStudioPreview
             shell32 comctl32 user32 gdi32 uuid)
         set_property(TARGET MonsterStudio PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+        add_dependencies(MonsterStudio SplatShaders)
     endif()
 
     set(admission_descriptor "${PROJECT_SOURCE_DIR}/Tools/VideoTo3D/brush-admission.json")
