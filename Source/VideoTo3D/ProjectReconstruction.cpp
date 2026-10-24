@@ -14,6 +14,9 @@
 #include <charconv>
 #include <cmath>
 #include <cstring>
+#include <chrono>
+#include <limits>
+#include <cstdio>
 #include <set>
 #include <fstream>
 #include <map>
@@ -207,9 +210,52 @@ ExecutionState State(const std::string& s) {
     for (auto state : {ExecutionState::None, ExecutionState::Preparing, ExecutionState::Training, ExecutionState::Pausing, ExecutionState::Saving, ExecutionState::Paused, ExecutionState::Restoring, ExecutionState::Completed, ExecutionState::Failed, ExecutionState::Stopped, ExecutionState::Interrupted}) if (s == ExecutionStateName(state)) return state;
     Bad("Unknown execution state");
 }
-fs::path VerifyReference(const fs::path& root, const Json& reference) {
+std::string UtcNow() {
+    SYSTEMTIME t{};GetSystemTime(&t);char text[32]{};
+    std::snprintf(text,sizeof(text),"%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,t.wMilliseconds);return text;
+}
+void ValidateUtc(const std::string& text) {
+    if(text.size()!=24||text[4]!='-'||text[7]!='-'||text[10]!='T'||text[13]!=':'||text[16]!=':'||text[19]!='.'||text[23]!='Z')Bad("Invalid UTC timestamp");
+    for(std::size_t i=0;i<text.size();++i)if(i!=4&&i!=7&&i!=10&&i!=13&&i!=16&&i!=19&&i!=23&&(text[i]<'0'||text[i]>'9'))Bad("Invalid UTC digits");
+    auto number=[&](std::size_t offset,std::size_t length){unsigned value=0;for(std::size_t i=offset;i<offset+length;++i)value=value*10+static_cast<unsigned>(text[i]-'0');return value;};
+    const auto year=number(0,4),month=number(5,2),day=number(8,2);
+    if(!year||month<1||month>12||number(11,2)>23||number(14,2)>59||number(17,2)>59)Bad("Invalid UTC calendar value");
+    constexpr unsigned days[]={31,28,31,30,31,30,31,31,30,31,30,31};
+    const auto maximum=days[month-1]+(month==2&&year%4==0&&(year%100!=0||year%400==0)?1u:0u);
+    if(day<1||day>maximum)Bad("Invalid UTC calendar day");
+}
+void ValidateStartedBoundary(const std::string& boundary) {
+    if(boundary!="preparation_start_v1"&&boundary!="execution_start_v1")Bad("Unsupported timing start boundary");
+}
+std::uint64_t AddTime(std::uint64_t a,std::uint64_t b) {
+    if(b>std::numeric_limits<std::uint64_t>::max()-a)Bad("Active time exceeds supported range");return a+b;
+}
+std::string OptionalNumber(const std::optional<std::uint64_t>& n){return n?std::to_string(*n):"null";}
+std::string OptionalText(const std::optional<std::string>& t){return t?Q(*t):"null";}
+void ReadObservations(const Json& pointer,ExecutionSnapshot& s) {
+    if(const auto it=pointer.object.find("progress");it!=pointer.object.end()){
+        const auto& p=it->second;if(p.kind!=Json::Kind::Object||p.object.size()!=5||p.At("schemaVersion").Number()!=1)Bad("Unsupported progress metadata");
+        auto number=[&](const char* name)->std::optional<std::uint64_t>{const auto& v=p.At(name);return v.kind==Json::Kind::Null?std::nullopt:std::optional<std::uint64_t>(v.Number());};
+        s.progress={number("observedIteration"),number("completedIterations"),number("totalIterations"),number("sampleSequence")};const auto& v=s.progress;
+        if((v.totalIterations&&(!*v.totalIterations||*v.totalIterations>10000000))||(v.completedIterations&&v.totalIterations&&*v.completedIterations>*v.totalIterations)||(v.observedIteration&&v.totalIterations&&*v.observedIteration>=*v.totalIterations))Bad("Invalid progress bounds");
+        if(s.state!=ExecutionState::Completed&&v.completedIterations&&v.totalIterations&&*v.completedIterations==*v.totalIterations)Bad("Unpublished target progress");
+    }
+    if(const auto it=pointer.object.find("timing");it!=pointer.object.end()){
+        const auto& t=it->second;if(t.kind!=Json::Kind::Object||(t.object.size()!=5&&t.object.size()!=6)||t.At("schemaVersion").Number()!=1)Bad("Unsupported timing metadata");
+        if(t.object.size()==6&&!t.object.contains("startedBoundary"))Bad("Unsupported timing metadata field");
+        const auto& ms=t.At("activeMilliseconds");if(ms.kind!=Json::Kind::Null)s.timing.activeMilliseconds=ms.Number();
+        auto text=[&](const char* name)->std::optional<std::string>{const auto& v=t.At(name);if(v.kind==Json::Kind::Null)return {};auto result=v.String();ValidateUtc(result);return result;};
+        s.timing.startedUtc=text("startedUtc");s.timing.completedUtc=text("completedUtc");s.timing.activeTimeComplete=t.At("activeTimeComplete").Bool();
+        if(const auto boundary=t.object.find("startedBoundary");boundary!=t.object.end()){
+            s.timing.startedBoundary=boundary->second.String();ValidateStartedBoundary(*s.timing.startedBoundary);
+            if(!s.timing.startedUtc)Bad("Timing start boundary requires recorded start");
+        }
+        if(s.timing.activeTimeComplete&&!s.timing.activeMilliseconds)Bad("Complete time requires recorded intervals");if(s.timing.completedUtc&&s.state!=ExecutionState::Completed)Bad("Completion UTC on unpublished execution");
+    }
+}
+fs::path VerifyReference(const fs::path& root, const Json& reference,std::uint64_t byteLimit=kMaxInputFileBytes) {
     const auto path = Relative(root, reference.At("relativePath").String());
-    if (fs::file_size(path) != reference.At("bytes").Number()) Bad("Published execution reference length mismatch");
+    if (reference.At("bytes").Number()>byteLimit||fs::file_size(path) != reference.At("bytes").Number()) Bad("Published execution reference length mismatch");
     Hash(path, reference.At("sha256").String()); return path;
 }
 // COLMAP binaries are little endian. Bounds are checked before every read/skip;
@@ -352,10 +398,21 @@ struct ProjectReconstruction::Impl {
     std::atomic_bool cancel{false};
     fs::path controls; std::uint64_t generation{0};
     std::uint64_t configuredSteps{0};
+    std::optional<std::uint64_t> preparationPrefix;
+    std::optional<std::string> preparationStartedUtc;
+    bool timingRunning{false};
+    std::chrono::steady_clock::time_point intervalStart{};
+    std::uint64_t intervalBase{0};
     bool forcePending{false}; std::string checkpoint;
     std::string pauseRequest;
     explicit Impl(ReconstructionQueue& q, fs::path config, std::optional<ReconstructionProfile> selected={}) : queue(q), configPath(std::move(config)),profile(selected) {}
-    ExecutionSnapshot Copy() const { std::lock_guard lock(mutex); return snapshot; }
+    ExecutionSnapshot Copy() const {
+        std::lock_guard lock(mutex);auto copy=snapshot;
+        if(timingRunning)copy.timing.activeMilliseconds=AddTime(intervalBase,static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-intervalStart).count()));return copy;
+    }
+    void FinishTiming(ExecutionSnapshot& s) {
+        std::lock_guard lock(mutex);if(timingRunning){s.timing.activeMilliseconds=AddTime(intervalBase,static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-intervalStart).count()));timingRunning=false;snapshot.timing=s.timing;}
+    }
     bool Pause(std::uint64_t nextIteration, bool scheduled) {
         std::lock_guard lock(mutex); auto& s=snapshot;
         if (!s.active || !s.pauseAvailable || s.controlPending || forcePending || controls.empty() || (scheduled && (nextIteration<1 || nextIteration>configuredSteps))) return false;
@@ -371,12 +428,13 @@ struct ProjectReconstruction::Impl {
     fs::path Pointer() const { return Root() / L"latest.json"; }
     // This pointer is separate from the immutable attempts and never changes v1 files.
     void Persist(const ExecutionSnapshot& s, const InputManifest& input, const std::string& configHash, const std::string& candidatePath = {}, const std::string& candidateHash = {}) {
-        const std::string bytes = "{\"schemaVersion\":"+std::string(configurationJSON.empty()?"1":"2")+",\"projectId\":"+Q(queue.Snapshot().projectId)+",\"executionId\":"+Q(s.executionId)+",\"generation\":"+std::to_string(generation)+",\"input\":"+InputJson(input)+",\"configSha256\":"+Q(configHash)+",\"state\":"+Q(ExecutionStateName(s.state))+",\"message\":"+Q(s.message)+",\"candidatePath\":"+Q(candidatePath)+",\"candidateSha256\":"+Q(candidateHash)+(configurationJSON.empty()?"":",\"configuration\":"+configurationJSON)+"}";
+        const std::string bytes = "{\"schemaVersion\":"+std::string(configurationJSON.empty()?"1":"2")+",\"projectId\":"+Q(queue.Snapshot().projectId)+",\"executionId\":"+Q(s.executionId)+",\"generation\":"+std::to_string(generation)+",\"input\":"+InputJson(input)+",\"configSha256\":"+Q(configHash)+",\"state\":"+Q(ExecutionStateName(s.state))+",\"message\":"+Q(s.message)+",\"candidatePath\":"+Q(candidatePath)+",\"candidateSha256\":"+Q(candidateHash)+(configurationJSON.empty()?"":",\"configuration\":"+configurationJSON)+
+            ",\"progress\":{\"schemaVersion\":1,\"observedIteration\":"+OptionalNumber(s.progress.observedIteration)+",\"completedIterations\":"+OptionalNumber(s.progress.completedIterations)+",\"totalIterations\":"+OptionalNumber(s.progress.totalIterations)+",\"sampleSequence\":"+OptionalNumber(s.progress.sampleSequence)+"},\"timing\":{\"schemaVersion\":1,\"activeMilliseconds\":"+OptionalNumber(s.timing.activeMilliseconds)+",\"startedUtc\":"+OptionalText(s.timing.startedUtc)+",\"completedUtc\":"+OptionalText(s.timing.completedUtc)+",\"activeTimeComplete\":"+(s.timing.activeTimeComplete?"true":"false")+(s.timing.startedBoundary?",\"startedBoundary\":"+Q(*s.timing.startedBoundary):"")+"}}";
         Publish(s.directory / (L"native-state-"+std::to_wstring(generation)+L".json"), bytes, true);
         Publish(Pointer(), bytes, true);
     }
     Json Candidate(const Json& pointer, const InputManifest& input, const fs::path& directory) {
-        const auto candidatePath = Relative(directory, pointer.At("candidatePath").String()); Hash(candidatePath, pointer.At("candidateSha256").String());
+        const auto candidatePath = Relative(directory, pointer.At("candidatePath").String()); if(fs::file_size(candidatePath)>kMetadataLimit)Bad("Candidate metadata exceeds byte limit");Hash(candidatePath, pointer.At("candidateSha256").String());
         if (candidatePath.lexically_normal()!=(directory/(L"attempt-"+std::to_wstring(pointer.At("generation").Number()))/L"result-candidate.json").lexically_normal()) Bad("Candidate is outside its exact execution attempt");
         const auto candidate = Decoder(Read(candidatePath)).Parse();
         if (candidate.At("schemaVersion").Number() != 1 || candidate.At("projectId").String() != queue.Snapshot().projectId || candidate.At("executionId").String() != pointer.At("executionId").String() || candidate.At("generation").Number() != pointer.At("generation").Number() || candidate.At("configSha256").String() != pointer.At("configSha256").String()) Bad("Execution candidate identity mismatch");
@@ -384,25 +442,84 @@ struct ProjectReconstruction::Impl {
         const auto attempt=candidatePath.parent_path();
         const auto seal=Decoder(Read(attempt/L"native-seal.json")).Parse();
         if (seal.At("schemaVersion").Number()!=1 || !seal.At("treeRetired").Bool() || seal.At("state").String()!=pointer.At("state").String() || seal.At("candidateSha256").String()!=pointer.At("candidateSha256").String()) Bad("Invalid native execution seal");
+        if(fs::file_size(attempt/L"host-result.json")>kMetadataLimit)Bad("Host metadata exceeds byte limit");
         Hash(attempt/L"host-result.json",seal.At("hostResultSha256").String());
         const auto host=Decoder(Read(attempt/L"host-result.json")).Parse();
         if (host.At("schemaVersion").Number()!=1 || !host.At("launched").Bool() || !host.At("exited").Bool() || !host.At("treeRetired").Bool() || host.At("exitCode").Number()!=0 || host.At("win32Error").Number()!=0 || host.At("timedOut").Bool() || host.At("cancelled").Bool()) Bad("Native execution seal lacks successful exit/retirement");
         return candidate;
     }
-    ExecutionSnapshot InspectOwned() {
-        const auto input = Input(); ExecutionSnapshot s;
+    // Only immediate execution/native-state entries are enumerated; attempts,
+    // logs, datasets and outputs are never recursively scanned.
+    std::map<std::string,fs::path> HistoryPointers() const {
+        std::map<std::string,fs::path> result;
+        Safe(Root(),true);if(!fs::exists(Root()))return result;
+        std::size_t entries=0,files=0;std::uint64_t metadataBytes=0;
+        for(const auto& entry:fs::directory_iterator(Root())){
+            if(++entries>2048)Bad("Execution history directory-entry limit exceeded");
+            const auto id=Utf8(entry.path().filename());if(!Uuid(id))continue;
+            Safe(entry.path());if(!entry.is_directory())Bad("Execution UUID entry is not a directory");
+            if(result.size()>=1024)Bad("Execution history exceeds 1024 entries");
+            std::uint64_t newest=0;fs::path chosen;
+            for(const auto& record:fs::directory_iterator(entry.path())){
+                if(++files>16384)Bad("Execution history file-entry limit exceeded");
+                const auto name=Utf8(record.path().filename());
+                if(!name.starts_with("native-state-")||!name.ends_with(".json"))continue;
+                const auto digits=std::string_view(name).substr(13,name.size()-18);std::uint64_t value=0;
+                const auto [end,ec]=std::from_chars(digits.data(),digits.data()+digits.size(),value);
+                if(ec!=std::errc{}||end!=digits.data()+digits.size()||!value||value>100000||std::to_string(value)!=digits)Bad("Invalid native state generation filename");
+                Safe(record.path());if(!record.is_regular_file())Bad("Native state is not a regular file");
+                const auto size=record.file_size();if(size>kMetadataLimit||size>64ULL*1024*1024-metadataBytes)Bad("Execution history metadata byte limit exceeded");metadataBytes+=size;
+                if(value>newest){newest=value;chosen=record.path();}
+            }
+            if(!chosen.empty())result.emplace(id,chosen);
+        }
+        // A rejected resume deliberately restores its previous safe pointer.
+        // Honor that authoritative latest record without rewriting any history.
+        Safe(Pointer(),true);if(fs::exists(Pointer())){
+            const auto latest=Decoder(Read(Pointer())).Parse();const auto id=latest.At("executionId").String();
+            if(!Uuid(id)||latest.At("projectId").String()!=queue.Snapshot().projectId)Bad("Invalid latest history identity");
+            if(result.contains(id))result[id]=Pointer();
+        }
+        return result;
+    }
+    ExecutionSnapshot HistorySummary(const std::string& id,const fs::path& path) const {
+        const auto p=Decoder(Read(path)).Parse();const auto schema=p.At("schemaVersion").Number();
+        if((schema!=1&&schema!=2)||p.At("projectId").String()!=queue.Snapshot().projectId||p.At("executionId").String()!=id)Bad("Foreign or unsupported history metadata");
+        const auto g=p.At("generation").Number();if(!g||g>100000)Bad("Invalid history generation");
+        if(path!=Pointer()&&path.filename()!=fs::path(L"native-state-"+std::to_wstring(g)+L".json"))Bad("History filename/generation mismatch");
+        ExecutionSnapshot s;s.executionId=id;s.directory=Root()/Path(id);s.state=State(p.At("state").String());s.message=p.At("message").String();ReadObservations(p,s);
+        if(schema==2){const auto& c=p.At("configuration");if(c.At("schemaVersion").Number()!=1)Bad("Unsupported history configuration");s.profileName=c.At("profile").String();}
+        if(s.state==ExecutionState::Preparing||s.state==ExecutionState::Training||s.state==ExecutionState::Restoring||s.state==ExecutionState::Pausing||s.state==ExecutionState::Saving){s.state=ExecutionState::Interrupted;s.timing.activeTimeComplete=false;}
+        return s; // Deliberately no output, generation, camera or resumability claim.
+    }
+    ExecutionSnapshot InspectOwned(const fs::path& selectedPointer={}) {
+        ExecutionSnapshot s;std::optional<InputManifest> currentInput;if(selectedPointer.empty())currentInput=Input();
         Safe(Root(), true); if (!fs::exists(Root())) return s;
-        Safe(Pointer(), true); if (!fs::exists(Pointer())) return s;
-        const auto pointer = Decoder(Read(Pointer())).Parse();
+        const auto pointerPath=selectedPointer.empty()?Pointer():selectedPointer;
+        Safe(pointerPath,true);if(!fs::exists(pointerPath))return s;
+        const auto pointer=Decoder(Read(pointerPath)).Parse();
         const auto schema=pointer.At("schemaVersion").Number();
         if ((schema!=1&&schema!=2) || pointer.At("projectId").String() != queue.Snapshot().projectId) Bad("Unsupported or foreign execution metadata");
+        InputManifest input;
+        if(selectedPointer.empty())input=*currentInput;
+        else {
+            // Historical imports remain owned media generations even after the
+            // current input pointer changes. Verify the selected sealed identity.
+            const auto& recorded=pointer.At("input");input.projectId=queue.Snapshot().projectId;input.inputId=recorded.At("id").String();input.revision=recorded.At("revision").Number();
+            if(!Uuid(input.inputId)||!input.revision)Bad("Invalid historical input identity");
+            const auto relative=Path(recorded.At("relativePath").String());std::vector<fs::path> components;for(const auto& component:relative)components.push_back(component);
+            if(components.size()!=3||components[0]!=L"media"||components[1]!=Path(input.inputId))Bad("Historical media is outside its owned input generation");
+            const auto media=Relative(LocalPath(queue.Directory()),recorded.At("relativePath").String());const auto bytes=recorded.At("bytes").Number();
+            if(bytes>kMaxInputFileBytes||fs::file_size(media)!=bytes)Bad("Historical input size mismatch");Hash(media,recorded.At("sha256").String());
+            input.files.push_back({recorded.At("relativePath").String(),bytes,recorded.At("sha256").String()});
+        }
         MatchInput(pointer.At("input"), input); s.executionId = pointer.At("executionId").String(); if (!Uuid(s.executionId)) Bad("Invalid execution UUID");
         s.directory = Root()/Path(s.executionId); Safe(s.directory); generation = pointer.At("generation").Number(); if (!generation || generation > 100000) Bad("Invalid execution generation");
         configurationJSON.clear();s.configurationSha256=pointer.At("configSha256").String();
         if(schema==2){
             const auto& reference=pointer.At("configuration");
             if(reference.kind!=Json::Kind::Object||reference.object.size()!=6||reference.At("schemaVersion").Number()!=1||reference.At("relativePath").String()!="resolved-config.json"||reference.At("sha256").String()!=s.configurationSha256)Bad("Invalid owned execution configuration reference");
-            s.configurationPath=VerifyReference(s.directory,reference);
+            s.configurationPath=VerifyReference(s.directory,reference,1024*1024);
             const auto owned=Decoder(Read(s.configurationPath,1024*1024)).Parse();
             if(owned.At("schemaVersion").Number()!=1)Bad("Unsupported owned configuration schema");
             ValidateSettings(owned.At("settings"));
@@ -413,16 +530,18 @@ struct ProjectReconstruction::Impl {
                 known=true;if(p!=ReconstructionProfile::Advanced){const auto fixed=GetReconstructionProfileSettings(p);if(fixed.brushSteps!=s.effectiveSettings.brushSteps||fixed.maxResolution!=s.effectiveSettings.maxResolution||fixed.maxSplats!=s.effectiveSettings.maxSplats)Bad("Owned profile/settings mismatch");}break;
             }if(!known)Bad("Unknown owned reconstruction profile");configurationJSON=Encode(reference);
         }else if(pointer.object.contains("configuration"))Bad("Legacy execution cannot contain an owned configuration reference");
-        s.state = State(pointer.At("state").String()); s.message = pointer.At("message").String(); checkpoint.clear();
-        if (s.state == ExecutionState::Preparing || s.state == ExecutionState::Training || s.state == ExecutionState::Pausing || s.state == ExecutionState::Saving || s.state == ExecutionState::Restoring) { s.state = ExecutionState::Interrupted; s.message = "Unconfirmed active execution found; no saved checkpoint is inferred"; }
+        s.state = State(pointer.At("state").String()); s.message = pointer.At("message").String(); ReadObservations(pointer,s); if(schema==2&&s.progress.totalIterations&&*s.progress.totalIterations!=s.effectiveSettings.brushSteps)Bad("Progress target differs from owned configuration");checkpoint.clear();
+        if (s.state == ExecutionState::Preparing || s.state == ExecutionState::Training || s.state == ExecutionState::Pausing || s.state == ExecutionState::Saving || s.state == ExecutionState::Restoring) { s.timing.activeTimeComplete=false; s.state = ExecutionState::Interrupted; s.message = "Unconfirmed active execution found; no saved checkpoint is inferred"; }
         if (s.state == ExecutionState::Paused || s.state == ExecutionState::Completed) {
             const auto candidate = Candidate(pointer,input,s.directory);
             if (candidate.At("outcome").String() != ExecutionStateName(s.state)) Bad("Execution seal/candidate outcome mismatch");
             if (s.state == ExecutionState::Paused) {
                 checkpoint = candidate.At("checkpointId").String(); if (checkpoint.empty() || checkpoint.size() > 256) Bad("Invalid checkpoint identity");
-                VerifyReference(s.directory, candidate.At("resumeContract")); s.resumeAvailable = true;
+                VerifyReference(s.directory, candidate.At("resumeContract"),kMetadataLimit); s.resumeAvailable = true;
             } else {
+                if(!candidate.At("output").At("validationPassed").Bool())Bad("Output validation was not successful");
                 s.output = VerifyReference(s.directory, candidate.At("output"));
+                std::ifstream ply(s.output,std::ios::binary);char magic[4]{};if(!ply.read(magic,4)||std::string_view(magic,4)!="ply\n")Bad("Output is not a PLY file");
                 s.outputSha256=candidate.At("output").At("sha256").String();
                 s.resultGeneration=generation;s.initialView=InitialView(s.directory,candidate);
             }
@@ -430,16 +549,32 @@ struct ProjectReconstruction::Impl {
         return s;
     }
     ExecutionSnapshot Execute(bool resume, const ExecutionObserver& observer) {
+        const auto started=std::chrono::steady_clock::now();const auto startedUtc=UtcNow();
+        ExecutionTiming newTiming;
         {
             std::lock_guard lock(mutex);
             if (snapshot.active) Bad("A reconstruction operation is already active");
+            if(!resume){
+                newTiming.activeMilliseconds=preparationPrefix.value_or(0);
+                newTiming.startedUtc=preparationStartedUtc.value_or(startedUtc);
+                newTiming.startedBoundary=preparationStartedUtc?"preparation_start_v1":"execution_start_v1";
+                newTiming.activeTimeComplete=true;
+                snapshot=ExecutionSnapshot{};snapshot.timing=newTiming;
+                intervalStart=started;intervalBase=*newTiming.activeMilliseconds;timingRunning=true;
+            }
+            // Take the pending preparation once before any fallible admission.
+            // Resume discards it rather than contaminating the original start.
+            preparationPrefix.reset();preparationStartedUtc.reset();
             snapshot.active = true; snapshot.resumeAvailable = false; snapshot.pauseAvailable = false; snapshot.controlPending = false;
             cancel.store(false); forcePending = false; pauseRequest.clear();
         }
         InputManifest input; Config config; bool persistent = false; bool hadPause = false; ExecutionSnapshot old;
         fs::path attempt; std::string candidateRelative, priorPausedBytes;
         try {
-            if (resume) { old = InspectOwned(); hadPause = old.state == ExecutionState::Paused && old.resumeAvailable; if (!hadPause) Bad("No verified persisted paused execution is available"); }
+            if (resume) {
+                old=InspectOwned();hadPause=old.state==ExecutionState::Paused&&old.resumeAvailable;if(!hadPause)Bad("No verified persisted paused execution is available");
+                std::lock_guard lock(mutex);snapshot=old;snapshot.active=true;snapshot.resumeAvailable=false;intervalStart=started;intervalBase=old.timing.activeMilliseconds.value_or(0);timingRunning=true;
+            }
             input = Input();
             // Owned Resume is resolved first, without consulting future-start
             // dropdown, Advanced path, environment or persistent runtime defaults.
@@ -473,6 +608,10 @@ struct ProjectReconstruction::Impl {
                     configurationJSON="{\"schemaVersion\":1,\"profile\":"+Q(current.profileName)+",\"relativePath\":\"resolved-config.json\",\"bytes\":"+std::to_string(bytes.size())+",\"sha256\":"+Q(config.hash)+",\"settings\":"+Encode(settings)+"}";
                 }
             }
+            current.timing.completedUtc.reset();
+            if(!resume)current.timing=newTiming;
+            {std::lock_guard lock(mutex);intervalStart=started;intervalBase=current.timing.activeMilliseconds.value_or(0);timingRunning=true;}
+            current.progress.totalIterations=config.json.At("settings").At("brushSteps").Number();
             current.active = true; current.resumeAvailable = false; current.output.clear(); current.message = resume ? "Revalidating checkpoint and launching a fresh process" : "Admitting pinned tools and preparing owned video";
             attempt = current.directory/(L"attempt-"+std::to_wstring(generation)); Safe(attempt,true);
             if (!fs::create_directory(attempt)) Bad("Execution attempt already exists; prior evidence retained"); Safe(attempt);
@@ -481,9 +620,9 @@ struct ProjectReconstruction::Impl {
             const std::string request = "{\"schemaVersion\":1,\"action\":"+Q(resume?"resume":"start")+",\"executionId\":"+Q(current.executionId)+",\"generation\":"+std::to_string(generation)+",\"projectId\":"+Q(input.projectId)+",\"projectDirectory\":"+Q(Utf8(LocalPath(queue.Directory())))+",\"input\":"+InputJson(input)+",\"executionDirectory\":"+Q(Utf8(current.directory))+",\"configPath\":"+Q(Utf8(executionConfig))+",\"configSha256\":"+Q(config.hash)+",\"controlDirectory\":"+Q(Utf8(controlPath))+(resume ? ",\"resumeCheckpoint\":"+Q(checkpoint) : "")+"}";
             Publish(attempt/L"request.json", request);
             if (resume) Publish(attempt/L"previous-paused-state.json",priorPausedBytes);
-            Persist(current,input,config.hash);
+            Persist(Copy(),input,config.hash);
             persistent = true; Emit(observer);
-            std::uint64_t offset = 0, sequence = 0; std::string pending, observationFailure; bool completedCandidate = false, pausedCandidate = false, restoredValidated = !resume, restored = !resume;
+            std::uint64_t offset = 0, sequence = 0; std::optional<std::uint64_t> observedInAttempt;std::string pending, observationFailure; bool completedCandidate = false, pausedCandidate = false, restoredValidated = !resume, restored = !resume;
             auto poll = [&] {
                 const auto eventPath = attempt/L"events.jsonl"; Safe(eventPath,true); if (!fs::exists(eventPath)) return;
                 const auto size = fs::file_size(eventPath); if (size < offset || size > kEventsLimit) Bad("Runner event stream truncated or exceeded limit");
@@ -502,7 +641,17 @@ struct ProjectReconstruction::Impl {
                         else if (kind=="BrushReady") { if (!resume || restored) { snapshot.state=ExecutionState::Training; snapshot.pauseAvailable=!snapshot.controlPending && !forcePending; } }
                         else if (kind=="RestoreValidated") restoredValidated=true;
                         else if (kind=="Restored") { if (!restoredValidated) Bad("Restore observed without validation"); restored=true; snapshot.state=ExecutionState::Training; }
-                        else if (kind=="Sample") { if (!restored) Bad("Training sample before restored acknowledgement"); if (!snapshot.controlPending) snapshot.state=ExecutionState::Training; }
+                        else if (kind=="Sample") {
+                            if(!restored)Bad("Training sample before restored acknowledgement");
+                            const bool hasIteration=event.object.contains("iteration"),hasSample=event.object.contains("sampleSequence");
+                            if(hasIteration!=hasSample)Bad("Incomplete structured sample");
+                            if(hasIteration){
+                            const auto iteration=event.At("iteration").Number(),sample=event.At("sampleSequence").Number();
+                            if(iteration>=configuredSteps||sample!=iteration||(observedInAttempt&&iteration<=*observedInAttempt))Bad("Invalid pre-step sample progress");
+                            observedInAttempt=iteration;snapshot.progress.observedIteration=iteration;snapshot.progress.completedIterations=iteration;snapshot.progress.totalIterations=configuredSteps;snapshot.progress.sampleSequence=sample;
+                            }
+                            if(!snapshot.controlPending)snapshot.state=ExecutionState::Training;
+                        }
                         else if (kind=="Saving") { if (!snapshot.controlPending || pauseRequest.empty() || event.At("requestId").String()!=pauseRequest) Bad("Unexpected saving observation without matching native request"); snapshot.state=ExecutionState::Saving; }
                         else if (kind=="SaveFailed") { const auto id=event.At("requestId").String(); if (!id.empty() && id!=pauseRequest) Bad("Foreign save failure request identity"); snapshot.controlPending=false; snapshot.pauseAvailable=!forcePending; snapshot.state=ExecutionState::Training; }
                         else if (kind=="PausedCandidate") { if (!snapshot.controlPending || forcePending || pauseRequest.empty() || event.At("requestId").String()!=pauseRequest) Bad("Unexpected paused candidate"); pausedCandidate=true; snapshot.pauseAvailable=false; }
@@ -549,7 +698,7 @@ struct ProjectReconstruction::Impl {
                 } else if (outcome=="Paused" && pausedCandidate && !completedCandidate) {
                     if (!candidate.At("checkpoint").At("validated").Bool()) Bad("Checkpoint validation was not successful");
                     checkpoint=candidate.At("checkpointId").String(); if (checkpoint.empty() || checkpoint.size()>256) Bad("Invalid committed checkpoint ID");
-                    VerifyReference(current.directory,candidate.At("resumeContract")); terminal.state=ExecutionState::Paused; terminal.resumeAvailable=true; terminal.message="Durable checkpoint validated; runner exited and entire tree retired";
+                    VerifyReference(current.directory,candidate.At("resumeContract"),kMetadataLimit); terminal.state=ExecutionState::Paused; terminal.resumeAvailable=true; terminal.message="Durable checkpoint validated; runner exited and entire tree retired";
                 } else if (outcome=="Completed" && completedCandidate && restored) {
                     terminal.output=VerifyReference(current.directory,candidate.At("output"));
                     if (!candidate.At("output").At("validationPassed").Bool()) Bad("Output validation was not successful");
@@ -561,6 +710,13 @@ struct ProjectReconstruction::Impl {
                 // host-result is immutable, and this seal binds that exact observation.
                 Publish(attempt/L"native-seal.json","{\"schemaVersion\":1,\"candidateSha256\":"+Q(Hash(candidatePath))+",\"hostResultSha256\":"+Q(Hash(attempt/L"host-result.json"))+",\"treeRetired\":true,\"state\":"+Q(ExecutionStateName(terminal.state))+"}");
             }
+            if(terminal.state==ExecutionState::Completed){
+                terminal.outputSha256=Hash(terminal.output);terminal.resultGeneration=generation;
+                const auto sealed=Decoder(Read(attempt/L"result-candidate.json")).Parse();terminal.initialView=InitialView(current.directory,sealed);
+                terminal.progress.completedIterations=configuredSteps;
+            }
+            FinishTiming(terminal);
+            if(terminal.state==ExecutionState::Completed)terminal.timing.completedUtc=UtcNow();
             if (resume && terminal.state!=ExecutionState::Paused && terminal.state!=ExecutionState::Completed) {
                 terminal.message += "; previous paused checkpoint retained";
                 Publish(Pointer(),priorPausedBytes,true);
@@ -569,6 +725,7 @@ struct ProjectReconstruction::Impl {
             Emit(observer); return terminal;
         } catch (const std::exception& e) {
             auto failed=Copy(); failed.active=false; failed.pauseAvailable=false; failed.controlPending=false; failed.resumeAvailable=false; failed.state=ExecutionState::Failed; failed.message=e.what();
+            FinishTiming(failed);
             if (hadPause) failed.message += "; previous paused execution/checkpoint retained";
             if (persistent && resume && !priorPausedBytes.empty()) { try { Publish(Pointer(),priorPausedBytes,true); } catch (const std::exception& saved) { failed.message += "; previous pause pointer could not be restored: "+std::string(saved.what()); } }
             if (persistent && !resume) { try { Persist(failed,input,config.hash); } catch (const std::exception& saved) { failed.message += "; metadata publication failed: "+std::string(saved.what()); } }
@@ -584,6 +741,35 @@ ExecutionSnapshot ProjectReconstruction::Snapshot() const { return impl_->Copy()
 ExecutionSnapshot ProjectReconstruction::Inspect() {
     { std::lock_guard lock(impl_->mutex); if (impl_->snapshot.active) Bad("Cannot inspect while execution is active"); }
     auto observed=impl_->InspectOwned(); { std::lock_guard lock(impl_->mutex); impl_->snapshot=observed; } return observed;
+}
+std::vector<ExecutionSnapshot> ProjectReconstruction::ListExecutions() {
+    {std::lock_guard lock(impl_->mutex);if(impl_->snapshot.active)Bad("Cannot enumerate history while execution is active");}
+    std::vector<ExecutionSnapshot> results;
+    for(const auto& [id,path]:impl_->HistoryPointers())results.push_back(impl_->HistorySummary(id,path));
+    std::stable_sort(results.begin(),results.end(),[](const auto& a,const auto& b){
+        if(a.timing.completedUtc!=b.timing.completedUtc)return a.timing.completedUtc>b.timing.completedUtc;
+        if(a.timing.startedUtc!=b.timing.startedUtc)return a.timing.startedUtc>b.timing.startedUtc;
+        return a.executionId>b.executionId;
+    });return results;
+}
+ExecutionSnapshot ProjectReconstruction::InspectExecution(const std::string& executionId) {
+    if(!Uuid(executionId))Bad("Invalid selected execution UUID");
+    {std::lock_guard lock(impl_->mutex);if(impl_->snapshot.active)Bad("Cannot inspect history while execution is active");}
+    const auto pointers=impl_->HistoryPointers();const auto found=pointers.find(executionId);
+    if(found==pointers.end())Bad("Selected execution is not in this project history");
+    impl_->HistorySummary(executionId,found->second); // Enforce filename/metadata identity before full verification.
+    Impl inspection(impl_->queue,impl_->configPath,impl_->profile);
+    return inspection.InspectOwned(found->second);
+}
+void ProjectReconstruction::SetPreparationActiveMilliseconds(std::uint64_t milliseconds) {
+    std::lock_guard lock(impl_->mutex);if(impl_->snapshot.active)Bad("Cannot change preparation timing during execution");if(milliseconds>std::numeric_limits<std::uint64_t>::max()/2)Bad("Preparation duration exceeds supported range");impl_->preparationPrefix=milliseconds;impl_->preparationStartedUtc.reset();
+}
+void ProjectReconstruction::SetPreparationTiming(const PreparationTiming& timing) {
+    std::lock_guard lock(impl_->mutex);
+    if(impl_->snapshot.active)Bad("Cannot change preparation timing during execution");
+    if(timing.activeMilliseconds>std::numeric_limits<std::uint64_t>::max()/2)Bad("Preparation duration exceeds supported range");
+    ValidateUtc(timing.startedUtc);
+    impl_->preparationPrefix=timing.activeMilliseconds;impl_->preparationStartedUtc=timing.startedUtc;
 }
 ExecutionSnapshot ProjectReconstruction::RunNew(const ExecutionObserver& observer) { return impl_->Execute(false,observer); }
 ExecutionSnapshot ProjectReconstruction::Resume(const ExecutionObserver& observer) { return impl_->Execute(true,observer); }

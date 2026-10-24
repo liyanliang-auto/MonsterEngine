@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <locale>
 #include <map>
@@ -127,7 +128,7 @@ bool FSplatPLYStream::Probe(const std::string& path, FSplatPLYHeader& output,
         Require(limits.maxHeaderBytes > 0 && limits.maxHeaderBytes <= (16u << 20) &&
             limits.maxRecordBytes > 0 && limits.maxRecordBytes <= (16u << 20) &&
             limits.maxProperties > 0 && limits.maxProperties <= 4096, "Invalid PLY parser limits");
-        std::ifstream file(path, std::ios::binary);
+        std::ifstream file(std::filesystem::u8path(path), std::ios::binary);
         Require(bool(file), "Cannot open PLY");
         file.seekg(0, std::ios::end);
         FSplatPLYHeader header;
@@ -215,7 +216,7 @@ bool FSplatPLYStream::StreamRecords(const std::string& path, const FSplatPLYHead
             "PLY header/source identity changed");
         // Use the freshly parsed metadata; a caller cannot tamper property indices.
         const auto& h = checked;
-        std::ifstream file(path, std::ios::binary); Require(bool(file), "Cannot open PLY records");
+        std::ifstream file(std::filesystem::u8path(path), std::ios::binary); Require(bool(file), "Cannot open PLY records");
         const bool ascii = h.format == ESplatPLYFormat::ASCII;
         const auto index = Indices(h);
         uint64_t originalId = resume.nextOriginalId;

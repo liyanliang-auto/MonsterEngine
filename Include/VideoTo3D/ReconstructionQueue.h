@@ -39,6 +39,10 @@ public:
                                                        const std::string& name);
     /** Open a project and durably interrupt all persisted active runs. */
     static std::unique_ptr<ReconstructionQueue> Open(const std::filesystem::path& directory);
+    /** Open with one continuous repository lease, without recovering active planning records.
+     * History/result inspection keeps this same lease for its entire observation.
+     * Intended for inspection clients; other queue mutation APIs retain their normal semantics. */
+    static std::unique_ptr<ReconstructionQueue> OpenForInspection(const std::filesystem::path& directory);
     /** Release the owned repository and its directory lease. */
     ~ReconstructionQueue();
 

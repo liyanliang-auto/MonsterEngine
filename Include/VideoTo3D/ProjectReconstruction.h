@@ -8,6 +8,7 @@
 #include <array>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace MonsterEngine::VideoTo3D {
 /** Observed execution state, independent of v1 planning records. */
@@ -37,6 +38,26 @@ struct ReconstructionView {
     double aspectRatio{1};
     std::string camerasSha256, imagesSha256, imageName;
 };
+/** Actual training observations; absent values remain unknown. */
+struct ExecutionProgress {
+    std::optional<std::uint64_t> observedIteration; ///< Zero-based pre-step iteration.
+    std::optional<std::uint64_t> completedIterations; ///< Proven previous steps; target requires publication.
+    std::optional<std::uint64_t> totalIterations; ///< Immutable admitted target.
+    std::optional<std::uint64_t> sampleSequence; ///< Actual sample sequence.
+};
+/** Known active intervals, independent of wall-clock changes. */
+struct ExecutionTiming {
+    std::optional<std::uint64_t> activeMilliseconds; ///< Monotonic accumulated intervals, excluding paused waiting.
+    std::optional<std::string> startedUtc; ///< Recorded start; absent for legacy records.
+    std::optional<std::string> completedUtc; ///< Verified publication UTC only.
+    bool activeTimeComplete{false}; ///< False when any prior interval is unknown.
+    std::optional<std::string> startedBoundary; ///< preparation_start_v1 or execution_start_v1; absent on legacy records.
+};
+/** Actual caller-captured preparation start paired with a monotonic active prefix. */
+struct PreparationTiming {
+    std::uint64_t activeMilliseconds{0}; ///< Measured preparation interval, never wall-clock subtraction.
+    std::string startedUtc; ///< Actual preparation start in UTC ISO8601 milliseconds with terminal Z.
+};
 /** Copyable worker observation; helper candidates are never terminal successes. */
 struct ExecutionSnapshot {
     ExecutionState state{ExecutionState::None}; ///< Last verified state.
@@ -52,6 +73,8 @@ struct ExecutionSnapshot {
     std::string configurationSha256; ///< Exact execution configuration identity.
     std::string profileName; ///< Actual owned profile; empty for legacy metadata.
     ReconstructionProfileSettings effectiveSettings{}; ///< Actual three training settings.
+    ExecutionProgress progress; ///< Actual training-only counts.
+    ExecutionTiming timing; ///< Optional durable timing.
     bool active{false}; ///< Worker still owns an execution process lifecycle.
     bool pauseAvailable{false}; ///< Actual Brush control protocol is ready.
     bool resumeAvailable{false}; ///< Persisted safe pause can be submitted for full restore validation.
@@ -76,6 +99,15 @@ public:
     ~ProjectReconstruction();
     /** Inspect latest separate execution metadata without reopening the project. */
     ExecutionSnapshot Inspect();
+    /** Bounded metadata history; output usability requires InspectExecution. */
+    std::vector<ExecutionSnapshot> ListExecutions();
+    /** Fully verify selected execution without changing current state or latest. */
+    ExecutionSnapshot InspectExecution(const std::string& executionId);
+    /** Worker-only measured preparation prefix for the next RunNew; active calls reject. */
+    void SetPreparationActiveMilliseconds(std::uint64_t milliseconds);
+    /** Worker-only actual preparation timing for the next RunNew; active calls reject.
+     * Consumed once, including failed admission; Resume never replaces recorded start. */
+    void SetPreparationTiming(const PreparationTiming& timing);
     /** Admit a new input-bound execution and block until the entire tree retires. */
     ExecutionSnapshot RunNew(const ExecutionObserver& observer = {});
     /** Revalidate persisted pause and start a fresh runner/Brush process attempt. */

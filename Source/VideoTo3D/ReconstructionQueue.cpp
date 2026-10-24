@@ -90,6 +90,13 @@ std::unique_ptr<ReconstructionQueue> ReconstructionQueue::Open(
     return std::unique_ptr<ReconstructionQueue>(new ReconstructionQueue(std::move(repository)));
 }
 
+std::unique_ptr<ReconstructionQueue> ReconstructionQueue::OpenForInspection(
+    const std::filesystem::path& directory) {
+    // Selected execution inspection must not recover or rewrite planning runs.
+    return std::unique_ptr<ReconstructionQueue>(
+        new ReconstructionQueue(ProjectRepository::Open(directory)));
+}
+
 const ProjectSnapshot& ReconstructionQueue::Snapshot() const noexcept {
     return repository_->Snapshot();
 }

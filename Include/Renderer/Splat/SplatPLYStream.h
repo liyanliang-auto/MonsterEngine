@@ -40,7 +40,9 @@ struct FSplatPLYHeader {
  */
 using FSplatPLYBatchSink = std::function<bool(std::span<const FSplatGaussian>,
     const FSplatBuildSourceCursor&, std::string&)>;
-/** CPU-only shared Gaussian parser. No renderer, Vulkan or input-sized storage. */
+/** CPU-only shared Gaussian parser. Paths are UTF-8.
+ * No renderer, Vulkan or input-sized storage.
+ */
 class FSplatPLYStream {
 public:
     /** Parse only bounded header and payload range metadata; output changes on success. */

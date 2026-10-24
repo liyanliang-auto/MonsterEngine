@@ -51,6 +51,44 @@ if(WIN32 AND NOT ANDROID)
             shell32 comctl32 user32 gdi32 uuid)
         set_property(TARGET MonsterStudio PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
         add_dependencies(MonsterStudio SplatShaders)
+        if(MONSTER_BUILD_STUDIO_QT_HOST OR MONSTER_BUILD_STUDIO_QT_PRODUCT)
+            if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+                message(FATAL_ERROR "MonsterStudio Qt targets require a 64-bit Windows toolchain")
+            endif()
+            find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Widgets)
+        endif()
+        if(MONSTER_BUILD_STUDIO_QT_HOST)
+            add_executable(MonsterStudioQtHost WIN32
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/main.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/HostValidationWindow.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/HostValidationWindow.h"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/NativePreviewWidget.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/NativePreviewWidget.h")
+            monster_compile_settings(MonsterStudioQtHost)
+            set_target_properties(MonsterStudioQtHost PROPERTIES AUTOMOC ON
+                VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+            target_link_libraries(MonsterStudioQtHost PRIVATE MonsterStudioPreview
+                MonsterVideoTo3DServices Qt6::Core Qt6::Gui Qt6::Widgets)
+            add_dependencies(MonsterStudioQtHost SplatShaders)
+        endif()
+        if(MONSTER_BUILD_STUDIO_QT_PRODUCT)
+            add_executable(MonsterStudioQt WIN32
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/product_main.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/WorkbenchWindow.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/WorkbenchWindow.h"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/WorkbenchController.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/WorkbenchController.h"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/LocalSettings.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/LocalSettings.h"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/NativePreviewWidget.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/NativePreviewWidget.h")
+            monster_compile_settings(MonsterStudioQt)
+            set_target_properties(MonsterStudioQt PROPERTIES AUTOMOC ON
+                VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+            target_link_libraries(MonsterStudioQt PRIVATE MonsterStudioPreview
+                MonsterVideoTo3DServices Qt6::Core Qt6::Gui Qt6::Widgets)
+            add_dependencies(MonsterStudioQt SplatShaders)
+        endif()
     endif()
 
     set(admission_descriptor "${PROJECT_SOURCE_DIR}/Tools/VideoTo3D/brush-admission.json")
