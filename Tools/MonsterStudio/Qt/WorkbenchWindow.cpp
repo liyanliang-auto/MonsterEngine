@@ -18,6 +18,8 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPlainTextEdit>
+#include <QPixmap>
+#include <QDebug>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
@@ -61,7 +63,11 @@ WorkbenchWindow::WorkbenchWindow(QWidget* parent):QMainWindow(parent) {
     auto* shell=new QWidget(this); auto* shellLayout=new QVBoxLayout(shell); shellLayout->setContentsMargins(0,0,0,0); shellLayout->setSpacing(0);
     auto* body=new QHBoxLayout; body->setContentsMargins(12,12,12,12); body->setSpacing(20); shellLayout->addLayout(body,1);
     nav_=new QWidget; nav_->setObjectName(QStringLiteral("navigation")); nav_->setFixedWidth(136); auto* navigation=new QVBoxLayout(nav_); navigation->setContentsMargins(12,20,12,12); navigation->setSpacing(8);
-    auto* mark=Title(QStringLiteral("M"),"brandMark");mark->setAlignment(Qt::AlignCenter);mark->setFixedSize(36,36);navigation->addWidget(mark);
+    auto* mark=Title({},"brandMark");mark->setAccessibleName(QStringLiteral("M"));mark->setAlignment(Qt::AlignCenter);mark->setFixedSize(36,36);
+    QPixmap brand(QStringLiteral(":/monster/monster.png"));
+    if (brand.isNull()) qWarning("Embedded Monster brand image is missing");
+    else { brand=brand.scaled(QSize(36,36)*devicePixelRatioF(),Qt::KeepAspectRatio,Qt::SmoothTransformation);brand.setDevicePixelRatio(devicePixelRatioF());mark->setPixmap(brand); }
+    navigation->addWidget(mark);
     navigation->addWidget(Title(QStringLiteral("MONSTER\nSTUDIO"),"brand"));navigation->addWidget(Title(QStringLiteral("本地三维重建"),"support"));navigation->addSpacing(28);
     auto* tasks=Button(QStringLiteral("任务"),navigation); auto* results=Button(QStringLiteral("结果"),navigation); navigation->addStretch(); auto* settings=Button(QStringLiteral("设置"),navigation);
     for(auto* button:{tasks,results,settings}){button->setObjectName(QStringLiteral("navButton"));button->setCheckable(true);}
@@ -220,7 +226,7 @@ QLabel#taskTitle { font-size:19px; font-weight:500; padding-top:6px; }
 QLabel#support, QLabel#emptyState { color:%5; font-size:12px; }
 QLabel#emptyState { padding:24px 8px; }
 QLabel#brand { font-size:14px; font-weight:600; padding-top:8px; }
-QLabel#brandMark { background:#2468dd; color:white; border-radius:10px; font-size:23px; font-weight:600; }
+QLabel#brandMark { background:transparent; }
 QLabel#importMark { color:%8; font-size:18px; font-weight:600; }
 QLabel#stage { color:%8; font-size:14px; padding:6px 0; }
 QWidget#navigation { background:%3; border:1px solid %6; border-radius:14px; }

@@ -659,4 +659,12 @@
     <ClInclude Include="Include\Renderer\Splat\SplatPipeline.h" />
     <ClInclude Include="Include\Renderer\Splat\SplatViewerDiagnostics.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{8F2E6A3B-C79D-4FA2-AF29-B2F56239D8D6}</UniqueIdentifier>
+    </Filter>
+    <ResourceCompile Include="resources\icons\MonsterApp.rc"><Filter>Resources</Filter></ResourceCompile>
+    <ClInclude Include="resources\icons\MonsterAppResource.h"><Filter>Resources</Filter></ClInclude>
+    <Image Include="resources\icons\monster.ico"><Filter>Resources</Filter></Image>
+  </ItemGroup>
 </Project>

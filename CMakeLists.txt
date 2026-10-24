@@ -20,6 +20,19 @@ option(MONSTER_PROFILING_ATRACE "Mirror opt-in profiling to Android ATrace (API 
 include(cmake/MonsterSources.cmake)
 find_package(Threads REQUIRED)
 
+if(WIN32 AND NOT ANDROID AND MONSTER_BUILD_ENGINE)
+    enable_language(RC)
+    # The RC compiler resolves both includes and ICON filenames through this
+    # source directory, independent of the build or runtime working directory.
+    set(MONSTER_APP_ICON_RC "${PROJECT_SOURCE_DIR}/resources/icons/MonsterApp.rc")
+    set_source_files_properties("${MONSTER_APP_ICON_RC}" PROPERTIES
+        OBJECT_DEPENDS "${PROJECT_SOURCE_DIR}/resources/icons/monster.ico;${PROJECT_SOURCE_DIR}/resources/icons/MonsterAppResource.h")
+    function(monster_windows_app_icon target)
+        target_sources(${target} PRIVATE "${MONSTER_APP_ICON_RC}")
+        target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/resources/icons")
+    endfunction()
+endif()
+
 function(monster_compile_settings target)
     target_compile_features(${target} PUBLIC cxx_std_20)
     target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/Include")
@@ -88,6 +101,7 @@ if(MONSTER_BUILD_ENGINE)
         list(REMOVE_ITEM MONSTER_WINDOWS_SOURCES main.cpp)
         set_property(TARGET MonsterWindowsShell PROPERTY SOURCES "${MONSTER_WINDOWS_SOURCES}")
         add_executable(MonsterEngine main.cpp)
+        monster_windows_app_icon(MonsterEngine)
         monster_compile_settings(MonsterEngine)
         target_link_libraries(MonsterEngine PRIVATE MonsterWindowsShell MonsterCore MonsterVulkan
             MonsterSplatRuntime MonsterMemoryRuntime "${VULKAN_LOCAL_DIR}/lib/vulkan-1.lib"

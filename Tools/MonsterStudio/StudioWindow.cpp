@@ -1,5 +1,6 @@
 #include "StudioWindow.h"
 #include "resource.h"
+#include "../../resources/icons/MonsterAppResource.h"
 #include "VideoTo3D/ProjectPreflight.h"
 
 #include <shobjidl.h>
@@ -132,7 +133,12 @@ bool StudioWindow::Create() {
     type.lpszClassName = L"MonsterStudioWindow";
     type.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     type.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    type.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    // LR_SHARED handles belong to the module and must not be destroyed by us.
+    type.hIcon = static_cast<HICON>(LoadImageW(instance_, MAKEINTRESOURCEW(IDI_MONSTER_APP),
+        IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_SHARED));
+    type.hIconSm = static_cast<HICON>(LoadImageW(instance_, MAKEINTRESOURCEW(IDI_MONSTER_APP),
+        IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED));
+    if (!type.hIcon || !type.hIconSm) return false;
     if (!RegisterClassExW(&type) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
     const auto title = String(instance_, IDS_APP_TITLE);
     window_ = CreateWindowExW(0, type.lpszClassName, title.c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,

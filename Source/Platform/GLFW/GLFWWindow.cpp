@@ -17,6 +17,7 @@
     #define GLFW_EXPOSE_NATIVE_WIN32
     #include <GLFW/glfw3native.h>
     #include <windows.h>
+    #include "../../../resources/icons/MonsterAppResource.h"
 #elif PLATFORM_LINUX
     #define GLFW_EXPOSE_NATIVE_X11
     #include <GLFW/glfw3native.h>
@@ -386,6 +387,23 @@ namespace MonsterRender::Platform::GLFW {
             glfwTerminate();
             return false;
         }
+
+#if PLATFORM_WINDOWS
+        // Windows owns LR_SHARED module resources for the process lifetime.
+        // Set per-window icons only: GLFW owns its window class and HWND.
+        const HINSTANCE instance = GetModuleHandleW(nullptr);
+        const HWND nativeWindow = glfwGetWin32Window(m_window);
+        const auto largeIcon = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_MONSTER_APP),
+            IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_SHARED));
+        const auto smallIcon = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_MONSTER_APP),
+            IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED));
+        if (nativeWindow && largeIcon && smallIcon) {
+            SendMessageW(nativeWindow, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(largeIcon));
+            SendMessageW(nativeWindow, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
+        } else {
+            MR_LOG_WARNING("Embedded Monster window icon is unavailable");
+        }
+#endif
         
         // Store this instance in GLFW window user pointer
         glfwSetWindowUserPointer(m_window, this);

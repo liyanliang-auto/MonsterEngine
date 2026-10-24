@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/monster">
+        <file alias="monster.png">../../../resources/icons/monster.png</file>
+        <file alias="monster.ico">../../../resources/icons/monster.ico</file>
+    </qresource>
+</RCC>

@@ -26,7 +26,6 @@ if(WIN32 AND NOT ANDROID)
     target_link_libraries(MonsterVideoTo3DReconstruction PRIVATE MonsterVideoTo3DServices)
 
     if(MONSTER_BUILD_ENGINE)
-        enable_language(RC)
         add_library(MonsterStudioPreview STATIC
             "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/StudioPreviewHost.cpp"
             "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/StudioPreviewHost.h"
@@ -47,6 +46,7 @@ if(WIN32 AND NOT ANDROID)
             "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/MonsterStudio.rc"
             "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/MonsterStudio.manifest")
         monster_compile_settings(MonsterStudio)
+        monster_windows_app_icon(MonsterStudio)
         target_link_libraries(MonsterStudio PRIVATE MonsterVideoTo3DServices MonsterStudioPreview
             shell32 comctl32 user32 gdi32 uuid)
         set_property(TARGET MonsterStudio PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
@@ -60,12 +60,14 @@ if(WIN32 AND NOT ANDROID)
         if(MONSTER_BUILD_STUDIO_QT_HOST)
             add_executable(MonsterStudioQtHost WIN32
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/main.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/MonsterBrand.qrc"
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/HostValidationWindow.cpp"
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/HostValidationWindow.h"
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/NativePreviewWidget.cpp"
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/NativePreviewWidget.h")
             monster_compile_settings(MonsterStudioQtHost)
-            set_target_properties(MonsterStudioQtHost PROPERTIES AUTOMOC ON
+            monster_windows_app_icon(MonsterStudioQtHost)
+            set_target_properties(MonsterStudioQtHost PROPERTIES AUTOMOC ON AUTORCC ON
                 VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
             target_link_libraries(MonsterStudioQtHost PRIVATE MonsterStudioPreview
                 MonsterVideoTo3DServices Qt6::Core Qt6::Gui Qt6::Widgets)
@@ -74,6 +76,7 @@ if(WIN32 AND NOT ANDROID)
         if(MONSTER_BUILD_STUDIO_QT_PRODUCT)
             add_executable(MonsterStudioQt WIN32
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/product_main.cpp"
+                "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/MonsterBrand.qrc"
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/WorkbenchWindow.cpp"
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/WorkbenchWindow.h"
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/WorkbenchController.cpp"
@@ -83,7 +86,8 @@ if(WIN32 AND NOT ANDROID)
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/NativePreviewWidget.cpp"
                 "${PROJECT_SOURCE_DIR}/Tools/MonsterStudio/Qt/NativePreviewWidget.h")
             monster_compile_settings(MonsterStudioQt)
-            set_target_properties(MonsterStudioQt PROPERTIES AUTOMOC ON
+            monster_windows_app_icon(MonsterStudioQt)
+            set_target_properties(MonsterStudioQt PROPERTIES AUTOMOC ON AUTORCC ON
                 VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
             target_link_libraries(MonsterStudioQt PRIVATE MonsterStudioPreview
                 MonsterVideoTo3DServices Qt6::Core Qt6::Gui Qt6::Widgets)

@@ -1,0 +1,3 @@
+#include "MonsterAppResource.h"
+
+IDI_MONSTER_APP ICON "monster.ico"
