@@ -1,0 +1,106 @@
+#include <string>
+#include <vector>
+#include <map>
+#include <charconv>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <cstdint>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <atomic>
+#include <mutex>
+#include <thread>
+#include <condition_variable>
+#include <chrono>
+#include <functional>
+#include <process.h>
+#include "Renderer/Splat/SplatBudgetCoordinator.h"
+using namespace MonsterRender::Splat;
+constexpr size_t OutputBytes=16u<<20;
+std::atomic<int> snapshots{0}, copies{0};
+std::atomic<bool> throwExport{false};
+std::string profile;
+namespace MonsterEngine::Profiling {
+struct Scope {Scope(const char*){}};
+uint64_t NowNs(){return std::chrono::steady_clock::now().time_since_epoch().count();}
+bool IsEnabled(){return true;}
+std::string ExportJson(){if(throwExport)throw std::runtime_error("injected export failure");return profile;}
+}
+uint64_t gettid(){return std::hash<std::thread::id>{}(std::this_thread::get_id())&INT64_MAX;}
+@PARSER@
+@RESULT@
+using jchar=char16_t; using jsize=int;using jstring=std::u16string*;
+std::shared_ptr<FSplatBudgetCoordinator> account;
+uint64_t baseBytes=0;bool pauseCopy=false,copyEntered=false,releaseCopy=false;
+std::mutex copyMutex;std::condition_variable copyCV;
+struct JNIEnv {
+ int fail=0;bool exception=false;
+ bool ExceptionCheck(){return exception;}void ExceptionClear(){exception=false;}
+ jstring NewString(const jchar* data,jsize count){
+  Need(DiagnosticCheck(),"gate or charge retired before JVM copy");++copies;
+  if(pauseCopy){std::unique_lock lock(copyMutex);copyEntered=true;copyCV.notify_all();copyCV.wait(lock,[]{return releaseCopy;});}
+  if(fail){auto f=fail;fail=0;if(f==2)exception=true;return nullptr;}
+  return new std::u16string(data,data+count);
+ }
+ bool DiagnosticCheck();
+ jstring NewStringUTF(const char* s){return new std::u16string(s,s+std::char_traits<char>::length(s));}
+};
+void JavaOK(JNIEnv* env){if(env->ExceptionCheck()){env->ExceptionClear();throw std::runtime_error("Java operation failed");}}
+@JSTRING@
+const char* Components[]={"CPUCache","DecodedReady","SourceGPU","StagingGPU","TemporaryGPU","Swapchain","Metadata","Builder","Java","Native"};
+@HELPERS@
+bool JNIEnv::DiagnosticCheck(){return DiagnosticReaders.load()>0 && account->Snapshot().reservedBytes>=baseBytes+(snapshots.load()>0?(32ull<<20):0);}
+struct SnapshotData {std::string diagnosticsJSON="{}",framesCSV="\"\\\n",capabilitiesJSON="{}";struct {std::string json="{}";} capabilities;};
+struct Host {std::shared_ptr<SnapshotData> data=std::make_shared<SnapshotData>();auto Snapshot(){++snapshots;return data;}};
+auto Account(){return account;}
+Json Diagnostics(int,std::shared_ptr<SnapshotData> s,std::string profiling){Json p=Json::Obj();Json n;n.kind=Json::NativeDiagnostics;n.text=s->diagnosticsJSON;p["diagnostics"]=n;p["framesCSV"]=s->framesCSV;p["profilingRawJSON"]=profiling;return p;}
+jstring Invoke(JNIEnv* env,Host* host){DiagnosticReader reader;std::optional<FSplatBudgetCoordinator::FReservation> transport,transportExtra;int e=0;return StringBoundary(env,[&]{
+@BRANCH@
+});}
+std::string utf8(jstring j){std::string s;for(size_t i=0;i<j->size();++i){uint32_t c=(*j)[i];if(c>=0xd800&&c<=0xdbff)c=0x10000+((c-0xd800)<<10)+((*j)[++i]-0xdc00);UTF8(s,c);}delete j;return s;}
+Json run(JNIEnv& env,Host& h){auto raw=utf8(Invoke(&env,&h));auto j=Parser(raw).parse();if(j.at("code").str()!="native_error"){
+ auto& t=j.at("payload").at("diagnosticTransport");auto& l=t.at("lengths");Need(l.at("encodedOutput").at("value").u64()==raw.size(),"exact UTF8 output mismatch");Need(l.at("encodedOutputUTF16").at("value").u64()==UTF16Units(raw),"exact UTF16 output mismatch");
+ Need(t.at("activeExportReaders").u64()==1,"multiple active readers");
+}return j;}
+int main(int argc,char** argv){try{
+ std::string mode=argv[1],error;uint64_t cap=805306368;baseBytes=690583200;
+ if(mode=="bootstrap")cap=baseBytes+(32ull<<20)-1;
+ if(mode=="growth")cap=baseBytes+(32ull<<20);
+ account=std::make_shared<FSplatBudgetCoordinator>(cap);auto base=account->TryReserve(ESplatBudgetComponent::Native,baseBytes,error);Need(bool(base),"base failed");
+ Host host;JNIEnv env;profile="{\"unicode\":\"\xf0\x9f\x8e\xb9\xe9\x94\xae\",\"escape\":\"\\\\\\\"\\n\"}";
+ if(mode=="growth")host.data->diagnosticsJSON="{"+std::string(8*1024*1024-2,' ')+"}";
+ if(mode=="caps")host.data->diagnosticsJSON=std::string((8u<<20)+1,' ');
+ if(mode=="exception")throwExport=true;
+ if(mode=="jvm-null")env.fail=1;if(mode=="jvm-exception")env.fail=2;
+ if(mode=="overflow"){bool refused=false;try{CheckedTransportAdd(UINT64_MAX,1);}catch(...){refused=true;}Need(refused,"overflow admitted");bool capped=false;try{QuotedBytes(std::string(OutputBytes,'\n'));}catch(...){capped=true;}Need(capped,"escaped output cap bypassed");}
+ else if(mode=="receipt-race"){
+  FSplatBudgetAdmissionReceipt first;auto a=account->TryReserveWithReceipt(ESplatBudgetComponent::Metadata,17,error,first);auto saved=first;
+  std::thread t([&]{for(int i=0;i<1000;++i){std::string e;FSplatBudgetAdmissionReceipt r;auto x=account->TryReserveWithReceipt(ESplatBudgetComponent::Java,UINT64_MAX,e,r);Need(!x&&r.requestedBytes==UINT64_MAX,"race receipt");}});t.join();
+  Need(first.accountSequence==saved.accountSequence&&first.requestedBytes==17&&first.availableBytes==cap-baseBytes&&first.reservedBytes==baseBytes&&first.component==ESplatBudgetComponent::Metadata&&first.granted,"per-call receipt changed");a.reset();
+ }
+ else if(mode=="concurrency"||mode=="teardown"){
+  pauseCopy=true;std::exception_ptr failure;Json a,b;
+  std::thread first([&]{try{JNIEnv e;a=run(e,host);}catch(...){failure=std::current_exception();}});
+  {std::unique_lock lock(copyMutex);Need(copyCV.wait_for(lock,std::chrono::seconds(5),[]{return copyEntered;}),"copy not entered");}
+  std::thread second([&]{try{JNIEnv e;b=run(e,host);}catch(...){failure=std::current_exception();}});
+  for(int i=0;i<1000&&DiagnosticReaders.load()<2;++i)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  Need(DiagnosticReaders.load()==2,"waiting reader not observed");Need(snapshots==1&&copies==1,"second caller entered before first JVM copy retired");
+  Need(account->Snapshot().reservedBytes>=baseBytes+(32ull<<20),"reservation released before copy");
+  if(mode=="teardown"){auto pin=host.data;host.data=std::make_shared<SnapshotData>();Need(pin.use_count()==1,"snapshot did not retire before JVM copy");}
+  {std::lock_guard lock(copyMutex);releaseCopy=true;copyCV.notify_all();}first.join();second.join();if(failure)std::rethrow_exception(failure);
+  Need(a.at("ok").boolean()&&b.at("ok").boolean(),"serialized readers refused");Need(snapshots==2&&copies==2,"readers not completed");
+ }
+ else {
+  auto j=run(env,host);auto code=j.at("code").str();
+  if(mode=="caps"||mode=="exception"||mode=="jvm-null"||mode=="jvm-exception")Need(code=="native_error","injected failure did not propagate");
+  else {auto& t=j.at("payload").at("diagnosticTransport");auto& r=t.at("admission");
+   Need(r.at("limitBytes").u64()==cap&&r.at("component").str()=="Metadata","receipt policy/tag mismatch");
+   if(mode=="bootstrap"){Need(!j.at("ok").boolean()&&t.at("stage").str()=="bootstrap_admission","bootstrap not refused");Need(r.at("requestedBytes").u64()==(32ull<<20)&&r.at("availableBytes").u64()==cap-baseBytes&&r.at("reservedBytes").u64()==baseBytes,"bootstrap receipt bytes");Need(t.at("lengths").at("nativeInput").at("value").kind==Json::Null&&snapshots==0,"bootstrap claimed unknown lengths or pinned snapshot");}
+   else if(mode=="growth"){Need(!j.at("ok").boolean()&&t.at("stage").str()=="growth_admission","growth not refused");Need(r.at("availableBytes").u64()==0&&r.at("reservedBytes").u64()==baseBytes+(32ull<<20)&&r.at("requestedBytes").u64()==t.at("lengths").at("encodedInputParts").at("value").u64()*8+(2ull<<20)-(32ull<<20),"growth exact receipt");Need(t.at("lengths").at("nativeInput").at("value").u64()==8ull<<20,"growth known length lost");}
+   else Need(j.at("ok").boolean(),"success refused");
+  }
+ }
+ Need(account->Snapshot().reservedBytes==baseBytes,"transport reservation leak");Need(DiagnosticReaders==0,"reader lifecycle leaked");base.reset();Need(account->Snapshot().reservedBytes==0,"base leak");std::cout<<"PASS "<<mode;return 0;
+ }catch(const std::exception& e){std::cerr<<e.what();return 1;}}

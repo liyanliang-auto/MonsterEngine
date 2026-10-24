@@ -16,6 +16,7 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #if PLATFORM_ANDROID
 #include <android/native_window.h>
@@ -103,6 +104,36 @@ struct FAndroidRenderHost::FImpl {
     uint64_t highestSceneRequest=0;
     std::map<uint64_t,std::shared_ptr<FWindow>> windows;
     std::deque<FControl> controls;
+    std::array<FViewerCameraInputReceipt,ViewerCameraReceiptCapacity> cameraReceipts{};
+    size_t cameraReceiptNext=0,cameraReceiptSize=0;
+    uint64_t cameraReceiptLost=0,cameraRequestScope=0,highestCameraRequest=0,nextCameraGroup=0;
+    // Caller holds mutex; fixed storage never grows with event/frame count.
+    void CameraReceipt(const FCameraInputState& input,EViewerCameraInputDisposition disposition) {
+        if(!input.requestScope||!input.requestId)return;
+        cameraReceipts[cameraReceiptNext]={input.requestScope,input.requestId,input.surfaceGeneration,input.applicationGroup,input.phase,disposition,input.reset};
+        cameraReceiptNext=(cameraReceiptNext+1)%ViewerCameraReceiptCapacity;
+        if(cameraReceiptSize<ViewerCameraReceiptCapacity)++cameraReceiptSize;else ++cameraReceiptLost;
+    }
+    // Caller holds mutex. Update only still-retained exact members of one aggregate.
+    void CameraGroupDisposition(uint64_t group,EViewerCameraInputDisposition disposition) {
+        if(!group)return;
+        for(auto& receipt:cameraReceipts)if(receipt.applicationGroup==group&&receipt.requestId)
+            receipt.disposition=disposition;
+    }
+    std::string CameraReceiptsJSON() {
+        // Copy-free trusted typed producer. Names/status/phase are fixed vocabularies.
+        std::lock_guard lock(mutex);std::string out="{\"version\":1,\"capacity\":64,\"lost\":"+std::to_string(cameraReceiptLost)+",\"receipts\":[";
+        for(size_t n=0;n<cameraReceiptSize;++n) {
+            const auto& r=cameraReceipts[(cameraReceiptNext+ViewerCameraReceiptCapacity-cameraReceiptSize+n)%ViewerCameraReceiptCapacity];
+            if(n)out+=',';
+            const char* phase=r.phase==EViewerPointerPhase::Begin?"Begin":r.phase==EViewerPointerPhase::End?"End":r.phase==EViewerPointerPhase::Cancel?"Cancel":"Move";
+            out+="{\"requestScope\":\""+std::to_string(r.requestScope)+"\",\"requestId\":"+std::to_string(r.requestId)+
+                ",\"surfaceGeneration\":"+std::to_string(r.surfaceGeneration)+",\"applicationGroup\":"+std::to_string(r.applicationGroup)+
+                ",\"phase\":\""+phase+"\",\"reset\":"+(r.reset?"true":"false")+",\"disposition\":\""+ViewerCameraInputDispositionName(r.disposition)+"\"}";
+            if(out.size()>32700)throw std::runtime_error("Camera receipt export limit");
+        }
+        out+="]}";if(out.size()>32768)throw std::runtime_error("Camera receipt export limit");return out;
+    }
     std::optional<FFrameToken> frame;
     std::shared_ptr<const FAndroidRenderHostSnapshot> snapshot=std::make_shared<FAndroidRenderHostSnapshot>();
     std::optional<FViewerScreenshot> screenshot;
@@ -135,6 +166,7 @@ struct FAndroidRenderHost::FImpl {
         if(ownerLog)ownerLog->Poll();
 #endif
         auto value=std::make_shared<FAndroidRenderHostSnapshot>();value->status=status;
+        value->cameraInputReceiptsJSON=CameraReceiptsJSON();
         value->viewer=session?session->Snapshot():nullptr;value->capabilities=capabilities;
         value->performance=performance.Snapshot();value->budget=info.budget->Snapshot();
         value->surfaceGeneration=current?current->generation:0;value->resumed=resumed;
@@ -425,6 +457,7 @@ struct FAndroidRenderHost::FImpl {
             request.sceneGeneration=scene.generation;request.surfaceGeneration=current->generation;request.configGeneration=info.config.generation;
             const auto viewport=device->getSwapchainExtent();request.viewportWidth=viewport.width;request.viewportHeight=viewport.height;
             session->SetProfilingRequestId(requestId);
+            session->SetPresentationReservationEstimate(device->GetPresentationReservationEstimate());
             recorded=session->TickAndRecord(request);command->endRenderPass();status=recorded.status;
             profileContext.frameId=recorded.pipelineFrameId;device->SetProfilingContext(profileContext);
             Profile::EventWithContext("frame.recorded",profileContext);
@@ -511,12 +544,18 @@ struct FAndroidRenderHost::FImpl {
                 }else if(observed->effectiveConfig&&observed->effectiveConfig->generation==command.config.generation){info.config=std::move(command.config);status=observed->status;}
                 else status=observed->status;
             }else{info.config=std::move(command.config);status=OK("settings_applied");}break;
-        case EControl::Input:if(session&&current&&current->valid.load()&&command.input.surfaceGeneration==current->generation)session->ApplyCameraInput(command.input);break;
+        case EControl::Input: {
+            auto disposition=EViewerCameraInputDisposition::NoSession;
+            if(current&&current->valid.load()&&command.input.surfaceGeneration==current->generation) {
+                if(session)disposition=session->ApplyCameraInput(command.input);
+            }else disposition=EViewerCameraInputDisposition::StaleSurface;
+            std::lock_guard lock(mutex);CameraGroupDisposition(command.input.applicationGroup,disposition);break;
+        }
         case EControl::Pressure:Pressure(performance.OnMemoryPressure(command.value));break;
         case EControl::Thermal:Pressure(performance.OnThermalStatus(command.value));break;
         case EControl::Release:
             TeardownDevice();scene={};sceneLease.reset();manualRetry=true;
-            {std::deque<FControl> discarded;{std::lock_guard lock(mutex);discarded.swap(controls);if(frame)Profile::Event("frame.request_cancelled",frame->requestId,0,0,2);frame.reset();}for(auto& pending:discarded)Ack(pending.ack,Fail("control_cancelled_by_release"));}
+            {std::deque<FControl> discarded;{std::lock_guard lock(mutex);discarded.swap(controls);for(const auto& pending:discarded)if(pending.kind==EControl::Input)CameraGroupDisposition(pending.input.applicationGroup,EViewerCameraInputDisposition::CancelledByRelease);if(frame)Profile::Event("frame.request_cancelled",frame->requestId,0,0,2);frame.reset();}for(auto& pending:discarded)Ack(pending.ack,Fail("control_cancelled_by_release"));}
             status=OK("scene_released");Ack(command.ack,status);break;
         case EControl::Retry:
             performance.RequestManualRecovery();manualRetry=false;autoRetryUsed=false;TeardownDevice();
@@ -589,7 +628,7 @@ struct FAndroidRenderHost::FImpl {
         {
             std::lock_guard lock(mutex);
             for(auto& [generation,window]:windows){window->inUse.store(false);window->valid.store(false);if(window->window){ReleaseWindow(window->window);window->window=nullptr;}window->retired=true;}
-            windows.clear();current.reset();controls.clear();if(frame)Profile::Event("frame.request_cancelled",frame->requestId,0,0,3);frame.reset();stopped=true;
+            windows.clear();current.reset();for(const auto& pending:controls)if(pending.kind==EControl::Input)CameraGroupDisposition(pending.input.applicationGroup,EViewerCameraInputDisposition::HostStopped);controls.clear();if(frame)Profile::Event("frame.request_cancelled",frame->requestId,0,0,3);frame.reset();stopped=true;
         }
         Publish();changed.notify_all();
     }
@@ -605,7 +644,7 @@ uint64_t FAndroidRenderHost::Create(FAndroidRenderHostCreateInfo info,std::strin
     if(!info.resources||!info.budget||!info.config.generation||info.probe.shaderManifestJSON.size()>(4ull<<20)){error="Invalid native host resources/account/config/manifest";return 0;}
     try {
         auto host=std::shared_ptr<FAndroidRenderHost>(new FAndroidRenderHost(std::move(info)));
-        std::string reason;host->Impl->metadataLease=host->Impl->info.budget->TryReserve(ESplatBudgetComponent::Metadata,16ull<<20,reason);
+        std::string reason;host->Impl->metadataLease=host->Impl->info.budget->TryReserve(ESplatBudgetComponent::Metadata,(16ull<<20)+AndroidCameraReceiptMetadataBytes,reason);
         if(!host->Impl->metadataLease){error=reason;return 0;}
         host->Impl->owner=std::thread([raw=host->Impl.get()]{raw->Run();});
         std::lock_guard lock(RegistryMutex);if(!NextHandle){error="Native handle space exhausted";return 0;}
@@ -653,9 +692,30 @@ FViewerStatus FAndroidRenderHost::OpenScene(FSceneDescriptor scene,std::shared_p
 FViewerStatus FAndroidRenderHost::ApplySettings(FViewerConfig config){if(!config.generation||config.configHash.size()>128||config.shaderIdentity.size()>128)return Fail("invalid_settings");FControl c;c.kind=EControl::Settings;c.config=std::move(config);return Impl->Queue(std::move(c),true);}
 FViewerStatus FAndroidRenderHost::CameraInput(FCameraInputState input){
     if(!input.surfaceGeneration||!std::isfinite(input.orbitX)||!std::isfinite(input.orbitY)||!std::isfinite(input.panX)||!std::isfinite(input.panY)||!std::isfinite(input.pinchScale)||input.pinchScale<=0)return Fail("invalid_input");
-    auto& i=*Impl;std::lock_guard lock(i.mutex);if(i.quit)return Fail("host_stopping");
-    if(input.phase==EViewerPointerPhase::Move&&!i.controls.empty()){auto& last=i.controls.back();if(last.kind==EControl::Input&&last.input.phase==input.phase&&last.input.pointerId==input.pointerId&&last.input.surfaceGeneration==input.surfaceGeneration){last.input.orbitX=std::clamp(last.input.orbitX+input.orbitX,-16.0f,16.0f);last.input.orbitY=std::clamp(last.input.orbitY+input.orbitY,-16.0f,16.0f);last.input.panX=std::clamp(last.input.panX+input.panX,-16.0f,16.0f);last.input.panY=std::clamp(last.input.panY+input.panY,-16.0f,16.0f);last.input.pinchScale=std::clamp(last.input.pinchScale*input.pinchScale,0.001f,1000.0f);last.input.reset|=input.reset;i.changed.notify_one();return OK();}}
-    if(i.controls.size()>=MaximumControls)return Fail("control_queue_full");FControl c;c.kind=EControl::Input;c.input=input;i.controls.push_back(std::move(c));i.changed.notify_one();return OK();
+    auto& i=*Impl;std::lock_guard lock(i.mutex);
+    if(input.requestScope||input.requestId) {
+        if(!input.requestScope||!input.requestId||input.requestId>INT64_MAX||(i.cameraRequestScope&&input.requestScope!=i.cameraRequestScope)||input.requestId<=i.highestCameraRequest) {
+            i.CameraReceipt(input,EViewerCameraInputDisposition::InvalidInput);return Fail("invalid_input");
+        }
+        i.cameraRequestScope=input.requestScope;i.highestCameraRequest=input.requestId;
+    }
+    if(i.quit){i.CameraReceipt(input,EViewerCameraInputDisposition::HostStopping);return Fail("host_stopping");}
+    input.contributorIds={};input.contributorIds[0]=input.requestId;input.contributorCount=1;
+    input.lineageComplete=input.requestScope&&input.requestId;input.lastResetRequestId=input.reset?input.requestId:0;
+    if(input.phase==EViewerPointerPhase::Move&&!i.controls.empty()){auto& last=i.controls.back();if(last.kind==EControl::Input&&last.input.phase==input.phase&&last.input.pointerId==input.pointerId&&last.input.surfaceGeneration==input.surfaceGeneration){last.input.orbitX=std::clamp(last.input.orbitX+input.orbitX,-16.0f,16.0f);last.input.orbitY=std::clamp(last.input.orbitY+input.orbitY,-16.0f,16.0f);last.input.panX=std::clamp(last.input.panX+input.panX,-16.0f,16.0f);last.input.panY=std::clamp(last.input.panY+input.panY,-16.0f,16.0f);last.input.pinchScale=std::clamp(last.input.pinchScale*input.pinchScale,0.001f,1000.0f);last.input.reset|=input.reset;
+        input.applicationGroup=last.input.applicationGroup;
+        if(last.input.contributorCount<ViewerCameraContributorCapacity)last.input.contributorIds[last.input.contributorCount]=input.requestId;
+        if(last.input.contributorCount<UINT32_MAX)++last.input.contributorCount;
+        last.input.lineageComplete=last.input.lineageComplete&&input.lineageComplete&&last.input.requestScope==input.requestScope&&last.input.contributorCount<=ViewerCameraContributorCapacity;
+        if(last.input.requestScope!=input.requestScope)last.input.requestScope=0;
+        last.input.requestId=input.requestId;
+        if(input.reset)last.input.lastResetRequestId=input.lastResetRequestId;
+        i.CameraReceipt(input,last.input.lineageComplete?EViewerCameraInputDisposition::Coalesced:EViewerCameraInputDisposition::LineageOverflow);
+        i.changed.notify_one();return OK();}}
+    if(i.controls.size()>=MaximumControls){i.CameraReceipt(input,EViewerCameraInputDisposition::QueueFull);return Fail("control_queue_full");}
+    if(i.nextCameraGroup==UINT64_MAX){i.CameraReceipt(input,EViewerCameraInputDisposition::InvalidInput);return Fail("invalid_input");}
+    input.applicationGroup=++i.nextCameraGroup;FControl c;c.kind=EControl::Input;c.input=input;
+    i.controls.push_back(std::move(c));i.CameraReceipt(input,EViewerCameraInputDisposition::Queued);i.changed.notify_one();return OK();
 }
 FViewerStatus FAndroidRenderHost::MemoryPressure(int32_t level){FControl c;c.kind=EControl::Pressure;c.value=level;return Impl->Queue(std::move(c),true);}
 FViewerStatus FAndroidRenderHost::ThermalStatus(int32_t status){if(status<-1||status>6)return Fail("invalid_thermal_status");FControl c;c.kind=EControl::Thermal;c.value=status;return Impl->Queue(std::move(c),true);}

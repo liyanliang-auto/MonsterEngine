@@ -28,8 +28,9 @@ struct FAndroidRenderHostSnapshot {
     uint64_t surfaceGeneration = 0; ///< Current owner generation.
     bool resumed = false, windowInUse = false, manualRetryRequired = false; ///< Actual lifecycle state.
     bool pressureRetired = false; ///< True only after requested owner action safely completed.
-    uint64_t presentationReservationEstimate = 0; ///< Conservative WSI envelope, never measured driver backing.
+    uint64_t presentationReservationEstimate = 0; ///< Conservative WSI envelope also bound into original-frame diagnosticsP0; never measured driver backing.
     bool driverPresentationBackingMeasured = false; ///< Opaque WSI allocation remains unavailable.
+    std::string cameraInputReceiptsJSON; ///< Version1 fixed64 receipt history; trusted bounded producer only.
     std::string diagnosticsJSON, framesCSV; ///< Privacy-filtered bounded exports cached at most once per second; rows retain their original identities.
 };
 /** Registry-safe JNI facade; Acquire pins an owner before using any handle.

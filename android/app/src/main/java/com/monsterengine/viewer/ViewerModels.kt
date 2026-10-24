@@ -190,18 +190,43 @@ enum class ViewerPointerPhase { Begin, Move, End, Cancel }
  * @property pinchScale Positive multiplicative zoom.
  * @property reset Reset camera/history.
  * @property surfaceGeneration Attached Surface identity.
+ * @property requestId Controller-assigned monotonic input identity, zero for legacy callers.
+ * @property requestScope Unsigned decimal JNI handle scope, empty for legacy callers.
  */
 data class CameraInputState(val phase: ViewerPointerPhase = ViewerPointerPhase.Move,
     val pointerId: Int = -1, val orbitX: Float = 0f, val orbitY: Float = 0f,
     val panX: Float = 0f, val panY: Float = 0f, val pinchScale: Float = 1f,
-    val reset: Boolean = false, val surfaceGeneration: Long = 0) {
+    val reset: Boolean = false, val surfaceGeneration: Long = 0,
+    val requestId: Long = 0, val requestScope: String = "") {
     init { require(listOf(orbitX, orbitY, panX, panY, pinchScale).all { it.isFinite() })
         require(pinchScale > 0 && surfaceGeneration >= 0) }
     /** Serialize one bounded gesture command, never Gaussian arrays. */
     fun toJson(): JSONObject = JSONObject().put("schemaVersion", VIEWER_SCHEMA_VERSION)
         .put("phase", phase.name).put("pointerId", pointerId).put("orbitX", orbitX)
         .put("orbitY", orbitY).put("panX", panX).put("panY", panY).put("pinchScale", pinchScale)
-        .put("reset", reset).put("surfaceGeneration", surfaceGeneration)
+        .put("reset", reset).put("surfaceGeneration", surfaceGeneration).also {
+            if (requestId != 0L || requestScope.isNotEmpty()) {
+                it.put("requestId", requestId).put("requestScope", requestScope)
+            }
+        }
+}
+
+/** Immediate controller/JNI receipt, never proof of owner application or submission.
+ * @property requestScope Exact unsigned JNI handle scope.
+ * @property requestId Positive assigned identity, zero only when identity space exhausted.
+ * @property surfaceGeneration Requested Surface identity.
+ * @property phase Original lifecycle event.
+ * @property reset Original reset flag.
+ * @property disposition Controller rejection, JNI rejection or queue acceptance.
+ * @property code Actual native or controller code.
+ */
+data class CameraInputReceipt(val requestScope: String, val requestId: Long,
+    val surfaceGeneration: Long, val phase: ViewerPointerPhase, val reset: Boolean,
+    val disposition: String, val code: String) {
+    /** Separately versioned bounded receipt for measurement callers. */
+    fun toJson(): JSONObject = JSONObject().put("version", 1).put("requestScope", requestScope)
+        .put("requestId", requestId).put("surfaceGeneration", surfaceGeneration)
+        .put("phase", phase.name).put("reset", reset).put("disposition", disposition).put("code", code)
 }
 
 /** Stable checkpoint stage spelling and numeric order match ESplatBuildStage. */

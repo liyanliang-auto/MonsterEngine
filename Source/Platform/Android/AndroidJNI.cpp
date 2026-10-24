@@ -50,7 +50,7 @@ void UTF8(std::string& out,uint32_t c) {
     else{out+=char(0xf0|(c>>18));out+=char(0x80|((c>>12)&63));out+=char(0x80|((c>>6)&63));out+=char(0x80|(c&63));}
 }
 struct Json {
-    enum Kind { Null, Boolean, Number, Text, Array, Object } kind=Null;
+    enum Kind { Null, Boolean, Number, Text, Array, Object, NativeDiagnostics } kind=Null;
     std::string text;
     std::vector<Json> array;
     std::map<std::string,Json> object;
@@ -118,8 +118,14 @@ std::string Quote(const std::string& s){
     static const char hex[]="0123456789abcdef";std::string out="\"";
     for(unsigned char c:s){if(c=='"'||c=='\\'){out+='\\';out+=char(c);}else if(c<32){out+="\\u00";out+=hex[c>>4];out+=hex[c&15];}else out+=char(c);}return out+'"';
 }
+size_t QuotedBytes(const std::string& s){
+    size_t bytes=2;
+    for(unsigned char c:s){bytes+=c<32?6:c=='"'||c=='\\'?2:1;Need(bytes<=OutputBytes,"Output JSON limit");}
+    return bytes;
+}
 std::string Dump(const Json& j){
     if(j.kind==Json::Null)return "null";if(j.kind==Json::Text)return Quote(j.text);
+    if(j.kind==Json::NativeDiagnostics)return j.text;
     if(j.kind==Json::Boolean||j.kind==Json::Number)return j.text;
     std::string out=j.kind==Json::Object?"{":"[";bool first=true;
     if(j.kind==Json::Object)for(const auto& [key,item]:j.object){if(!first)out+=',';first=false;out+=Quote(key)+':'+Dump(item);Need(out.size()<=OutputBytes,"Output JSON limit");}
@@ -151,7 +157,7 @@ jstring JString(JNIEnv* env,const std::string& s){
         while(n--){Need(i<s.size()&&(uint8_t(s[i])&0xc0)==0x80,"Invalid UTF8 continuation");c=(c<<6)|(uint8_t(s[i++])&63);}
         Need(c>=minimum&&c<=0x10ffff&&(c<0xd800||c>0xdfff),"Invalid UTF8 scalar");
         if(c<65536)out.push_back(jchar(c));else{c-=65536;out.push_back(jchar(0xd800+(c>>10)));out.push_back(jchar(0xdc00+(c&1023)));}
-    }return env->NewString(out.data(),jsize(out.size()));
+    }auto result=env->NewString(out.data(),jsize(out.size()));JavaOK(env);Need(result,"JVM string allocation failed");return result;
 }
 template<class F> jstring StringBoundary(JNIEnv* env,F&& f) noexcept{
     try{MonsterEngine::Profiling::Scope responseScope("jni.string_response");return JString(env,Dump(f()));}
@@ -683,12 +689,18 @@ void Resume(JNIEnv* env,jobject,jlong token,jboolean resumed){VoidBoundary(env,[
 void Frame(JNIEnv* env,jobject,jlong token,jlong timestamp){MonsterEngine::Profiling::Scope boundaryScope("jni.frame_boundary",0,0,0,uint64_t(timestamp));VoidBoundary(env,[&]{Need(timestamp>0,"Invalid frame timestamp");auto s=Host(Lookup(uint64_t(token)))->RequestFrame(uint64_t(timestamp));Need(s.ok,s.code);});}
 void Input(JNIEnv* env,jobject,jlong token,jstring command){
     VoidBoundary(env,[&]{
-        auto j=Parser(String(env,command),CommandBytes).parse();Version(j);Known(j,{"schemaVersion","phase","pointerId","orbitX","orbitY","panX","panY","pinchScale","reset","surfaceGeneration"});
+        auto j=Parser(String(env,command),CommandBytes).parse();Version(j);Known(j,{"schemaVersion","phase","pointerId","orbitX","orbitY","panX","panY","pinchScale","reset","surfaceGeneration","requestId","requestScope"});
         FCameraInputState input;auto phase=j.at("phase").str();
         Need(phase=="Begin"||phase=="Move"||phase=="End"||phase=="Cancel","Invalid pointer phase");
         input.phase=phase=="Begin"?EViewerPointerPhase::Begin:phase=="End"?EViewerPointerPhase::End:phase=="Cancel"?EViewerPointerPhase::Cancel:EViewerPointerPhase::Move;
         input.pointerId=j.at("pointerId").i32();input.orbitX=j.at("orbitX").number();input.orbitY=j.at("orbitY").number();input.panX=j.at("panX").number();input.panY=j.at("panY").number();input.pinchScale=j.at("pinchScale").number();
         input.reset=j.at("reset").boolean();input.surfaceGeneration=j.at("surfaceGeneration").u64();Need(input.pinchScale>0&&input.surfaceGeneration,"Invalid camera input");
+        Need(j.has("requestId")==j.has("requestScope"),"Camera identity fields must be paired");
+        if(j.has("requestId")) {
+            input.requestId=j.at("requestId").u64();
+            Need(input.requestId&&j.at("requestScope").str()==std::to_string(uint64_t(token)),"Invalid camera request scope/identity");
+            input.requestScope=uint64_t(token);
+        }
         auto status=Host(Lookup(uint64_t(token)))->CameraInput(input);Need(status.ok,status.code);
     });
 }
@@ -795,20 +807,32 @@ jstring RetireOwner(JNIEnv* env,jobject,jlong token){
     return StringBoundary(env,[&]{WorkerOnly(env);auto status=RetireRenderer(uint64_t(token));
         Json payload=Json::Obj();payload["budgetAfterRetirement"]=Budget(Account()->Snapshot());return Result(status,std::move(payload));});
 }
-Json Diagnostics(const std::shared_ptr<Entry>& e,const std::shared_ptr<const FAndroidRenderHostSnapshot>& s){
+Json Diagnostics(const std::shared_ptr<Entry>& e,const std::shared_ptr<const FAndroidRenderHostSnapshot>& s,std::string profiling){
     MonsterEngine::Profiling::Scope snapshotScope("jni.snapshot");
     Json payload=Json::Obj();payload["schemaVersion"]=uint32_t(1);payload["status"]=Status(s->status);
     payload["profilingEnabled"]=MonsterEngine::Profiling::IsEnabled();
     payload["profiling"]=Json::Obj();payload["profiling"]["schemaVersion"]=uint32_t(1);
     payload["profiling"]["enabled"]=MonsterEngine::Profiling::IsEnabled();
     payload["profiling"]["rawJSONField"]="profilingRawJSON";
-    if(MonsterEngine::Profiling::IsEnabled()){
-        MonsterEngine::Profiling::Scope exportScope("diagnostics.profiling_export");
-        payload["profilingRawJSON"]=MonsterEngine::Profiling::ExportJson();
+    if(!profiling.empty())payload["profilingRawJSON"]=std::move(profiling);
+    if(s->diagnosticsJSON.empty()){
+        payload["diagnostics"]=Json::Obj();payload["diagnostics"]["available"]=false;
+        payload["diagnostics"]["reason"]="no_session_observation";
+    }else{
+        // Only the in-process, privacy-filtered SnapshotJSON producer can enter
+        // this route. Keep its bounded history without allocating a second DOM;
+        // all untrusted commands still use Parser's unchanged complexity limits.
+        Need(s->diagnosticsJSON.size()<=(8u<<20)&&s->diagnosticsJSON.front()=='{'&&
+            s->diagnosticsJSON.back()=='}',"Native diagnostics export limit");
+        Json native;native.kind=Json::NativeDiagnostics;native.text=s->diagnosticsJSON;
+        native.text.pop_back();native.text+=",\"available\":true}";
+        payload["diagnostics"]=std::move(native);
     }
-    payload["diagnostics"]=s->diagnosticsJSON.empty()?Json::Obj():Parser(s->diagnosticsJSON).parse();
-    payload["diagnostics"]["available"]=!s->diagnosticsJSON.empty();
-    if(s->diagnosticsJSON.empty())payload["diagnostics"]["reason"]="no_session_observation";
+    if(!s->cameraInputReceiptsJSON.empty()) {
+        Need(s->cameraInputReceiptsJSON.size()<=32768&&s->cameraInputReceiptsJSON.front()=='{'&&s->cameraInputReceiptsJSON.back()=='}',"Camera receipt export limit");
+        Json receipts;receipts.kind=Json::NativeDiagnostics;receipts.text=s->cameraInputReceiptsJSON;
+        payload["cameraInputReceipts"]=std::move(receipts);
+    }
     payload["measurementSchemaVersion"]=uint32_t(2);
     payload["framesCSV"]=s->framesCSV;payload["capabilities"]=s->capabilities.json.empty()?Json::Obj():Parser(s->capabilities.json).parse();
     payload["budget"]=Budget(Account()->Snapshot());payload["surfaceGeneration"]=s->surfaceGeneration;payload["resumed"]=s->resumed;payload["windowInUse"]=s->windowInUse;
@@ -827,13 +851,139 @@ void WriteExport(const fs::path& root,const fs::path& path,const std::vector<uin
         Need(::rename(temporary.c_str(),path.c_str())==0,"Export publication failed");int dir=::open(directory.c_str(),O_RDONLY|O_DIRECTORY|O_CLOEXEC);Need(dir>=0,"Export directory open failed");int result=::fsync(dir);::close(dir);Need(result==0,"Export directory sync failed");
     }catch(...){if(fd>=0)::close(fd);::unlink(temporary.c_str());throw;}
 }
+// Only JNI export readers take this mutex. Render publication and retirement
+// never take it, and callers acquire it before pinning any owner snapshot.
+std::mutex DiagnosticReaderMutex;
+std::atomic<uint64_t> DiagnosticReaders{0}, DiagnosticExportSequence{0};
+struct DiagnosticReader {
+    std::unique_lock<std::mutex> lock;
+    uint64_t exportId=0, readersAtAdmission=0, enteredNs=0, acquiredNs=0;
+    bool entered=false;
+    void Enter(){
+        enteredNs=MonsterEngine::Profiling::NowNs();DiagnosticReaders.fetch_add(1);entered=true;
+        lock=std::unique_lock<std::mutex>(DiagnosticReaderMutex);
+        acquiredNs=MonsterEngine::Profiling::NowNs();
+        exportId=DiagnosticExportSequence.fetch_add(1)+1;
+        Need(exportId!=0,"Diagnostic export sequence exhausted");
+        readersAtAdmission=DiagnosticReaders.load();
+    }
+    ~DiagnosticReader(){if(entered)DiagnosticReaders.fetch_sub(1);}
+};
+uint64_t CheckedTransportAdd(uint64_t a,uint64_t b){
+    Need(b<=UINT64_MAX-a,"Diagnostic transport length overflow");return a+b;
+}
+uint64_t UTF16Units(const std::string& text){
+    uint64_t units=0;
+    for(unsigned char c:text)if((c&0xc0)!=0x80)units=CheckedTransportAdd(units,c>=0xf0?2:1);
+    return units;
+}
+struct JsonLength {uint64_t bytes=0,utf16Units=0;};
+// Count the actual Dump spelling without allocating a second encoded output.
+JsonLength DumpLength(const Json& j){
+    if(j.kind==Json::Text){const auto bytes=QuotedBytes(j.text);return {bytes,CheckedTransportAdd(UTF16Units(j.text),bytes-j.text.size())};}
+    if(j.kind==Json::Null)return {4,4};
+    if(j.kind==Json::Number||j.kind==Json::Boolean||j.kind==Json::NativeDiagnostics)return {j.text.size(),UTF16Units(j.text)};
+    JsonLength out{2,2};bool first=true;
+    auto append=[&](JsonLength value){out.bytes=CheckedTransportAdd(out.bytes,value.bytes);out.utf16Units=CheckedTransportAdd(out.utf16Units,value.utf16Units);};
+    if(j.kind==Json::Object)for(const auto& [key,value]:j.object){
+        if(!first)append({1,1});first=false;
+        const auto bytes=QuotedBytes(key);append({bytes,CheckedTransportAdd(UTF16Units(key),bytes-key.size())});append({1,1});append(DumpLength(value));
+    }else for(const auto& value:j.array){if(!first)append({1,1});first=false;append(DumpLength(value));}
+    Need(out.bytes<=OutputBytes,"Output JSON limit");return out;
+}
+struct DiagnosticLengths {
+    std::optional<uint64_t> nativeInput,framesInput,profilingInput,capabilitiesInput,framesEscaped,profilingEscaped,encodedInput;
+};
+Json TransportLength(std::optional<uint64_t> value,const char* unit){
+    Json out=Json::Obj();out["status"]=value?"exact":"not_yet_computed";out["unit"]=unit;
+    out["value"]=value?Json(*value):Json();return out;
+}
+Json Admission(const FSplatBudgetAdmissionReceipt& r){
+    Json out=Json::Obj();out["accountSequence"]=r.accountSequence;out["requestedBytes"]=r.requestedBytes;
+    out["availableBytes"]=r.availableBytes;out["limitBytes"]=r.limitBytes;out["reservedBytes"]=r.reservedBytes;
+    const auto component=static_cast<size_t>(r.component);
+    out["component"]=component<size_t(ESplatBudgetComponent::Count)?Components[component]:"invalid";
+    out["granted"]=r.granted;out["reason"]=r.reason;out["unit"]="bytes";
+    out["reservedBytesScope"]="before_this_operation";return out;
+}
+Json DiagnosticResult(bool ok,const char* stage,const DiagnosticReader& reader,const DiagnosticLengths& lengths,
+    const FSplatBudgetAdmissionReceipt& bootstrap,const std::optional<FSplatBudgetAdmissionReceipt>& growth,Json payload=Json::Obj()){
+    Json transport=Json::Obj();transport["schemaVersion"]=uint32_t(1);transport["exportId"]=reader.exportId;
+    transport["processId"]=uint64_t(::getpid());transport["threadId"]=uint64_t(::gettid());transport["stage"]=stage;
+    transport["readersAtAdmission"]=reader.readersAtAdmission;transport["readersAtResult"]=DiagnosticReaders.load();
+    transport["readerCountScope"]="current_active_plus_waiting_diagnostic_jni_calls";
+    transport["readerEnteredNanoseconds"]=reader.enteredNs;transport["readerAcquiredNanoseconds"]=reader.acquiredNs;
+    transport["resultPreparedNanoseconds"]=MonsterEngine::Profiling::NowNs();transport["clockDomain"]="CLOCK_MONOTONIC";
+    transport["activeExportReaders"]=uint32_t(1);transport["ownership"]="serialized_through_jni_copy_and_native_temporary_retirement";
+    transport["bootstrapAdmission"]=Admission(bootstrap);if(growth)transport["growthAdmission"]=Admission(*growth);
+    transport["admission"]=Admission(growth?*growth:bootstrap);
+    auto values=Json::Obj();values["nativeInput"]=TransportLength(lengths.nativeInput,"utf8_bytes");
+    values["framesInput"]=TransportLength(lengths.framesInput,"utf8_bytes");values["profilingInput"]=TransportLength(lengths.profilingInput,"utf8_bytes");
+    values["capabilitiesInput"]=TransportLength(lengths.capabilitiesInput,"utf8_bytes");
+    values["framesEscaped"]=TransportLength(lengths.framesEscaped,"quoted_json_utf8_bytes");values["profilingEscaped"]=TransportLength(lengths.profilingEscaped,"quoted_json_utf8_bytes");
+    values["encodedInputParts"]=TransportLength(lengths.encodedInput,"utf8_bytes");
+    transport["encodedInputPartsScope"]="native_input_plus_quoted_frames_plus_quoted_profiling_plus_capabilities_input";
+    transport["encodedOutputScope"]="actual_returned_result_including_transport_metadata";
+    values["encodedOutput"]=TransportLength(uint64_t(0),"utf8_bytes");values["encodedOutputUTF16"]=TransportLength(uint64_t(0),"utf16_code_units");
+    transport["lengths"]=std::move(values);payload["diagnosticTransport"]=std::move(transport);
+    const auto& receipt=growth?*growth:bootstrap;
+    auto result=Result(ok,ok?"snapshot_observed":"diagnostic_transport_budget_exceeded",ok?"":receipt.reason,std::move(payload));
+    auto& outputLengths=result["payload"]["diagnosticTransport"]["lengths"];
+    // Self-reported final lengths change only the number of decimal digits.
+    // Converge before Dump; no large output is allocated on refusal.
+    for(unsigned i=0;i<16;++i){
+        const auto count=DumpLength(result);
+        Need(ok||count.bytes<=16384,"Diagnostic refusal envelope limit");
+        if(outputLengths["encodedOutput"]["value"].u64()==count.bytes&&outputLengths["encodedOutputUTF16"]["value"].u64()==count.utf16Units)return result;
+        outputLengths["encodedOutput"]["value"]=count.bytes;outputLengths["encodedOutputUTF16"]["value"]=count.utf16Units;
+    }
+    Need(false,"Diagnostic length convergence failed");return {};
+}
 jstring Snapshot(JNIEnv* env,jobject,jlong token,jstring command){
+    // Retain admission through Dump and UTF-16/JVM string creation, including
+    // exception unwinding. This is a policy envelope, not measured process RAM.
+    // Declaration order is intentional: the reader gate retires last, after
+    // StringBoundary destroys its result DOM, Dump string and UTF-16 vector,
+    // and after both accounting leases retire. No render-owner lock is held.
+    DiagnosticReader reader;
+    std::optional<FSplatBudgetCoordinator::FReservation> transport,transportExtra;
     return StringBoundary(env,[&]{
         auto j=Parser(String(env,command),CommandBytes).parse();Version(j);Known(j,{"schemaVersion","kind","includePrivatePaths"});if(j.has("includePrivatePaths"))Need(!j.at("includePrivatePaths").boolean(),"Raw private-path diagnostics are not supported");
         auto e=Lookup(uint64_t(token));auto host=Host(e);auto kind=j.at("kind").str();
         if(kind=="builtinScene"){Json payload=Json::Obj();payload["descriptor"]=Descriptor(e->builtin);return Result(true,"builtin_ready","",std::move(payload));}
         if(kind=="budget")return Result(true,"budget_observed","",Budget(Account()->Snapshot()));
-        if(kind=="diagnostics"||kind=="framesCSV")return Result(true,"snapshot_observed","",Diagnostics(e,host->Snapshot()));
+        if(kind=="diagnostics"||kind=="framesCSV"){
+            reader.Enter();DiagnosticLengths lengths;
+            // Bootstrap covers the bounded profiler's 16384-row copy and export
+            // before its actual length is known. Grow only by the required delta.
+            constexpr uint64_t BootstrapBytes=32ull<<20;
+            auto account=Account();std::string reason;FSplatBudgetAdmissionReceipt bootstrap;
+            std::optional<FSplatBudgetAdmissionReceipt> growth;
+            transport=account->TryReserveWithReceipt(ESplatBudgetComponent::Metadata,BootstrapBytes,reason,bootstrap);
+            if(!transport)return DiagnosticResult(false,"bootstrap_admission",reader,lengths,bootstrap,growth);
+            const auto snapshot=host->Snapshot();std::string profiling;
+            if(MonsterEngine::Profiling::IsEnabled()){
+                MonsterEngine::Profiling::Scope exportScope("diagnostics.profiling_export");
+                profiling=MonsterEngine::Profiling::ExportJson();
+            }
+            // Input-sized bound includes escaping, subtree ownership, string
+            // growth, Dump, UTF-16 vector and the JVM copy. Reserve before DOM
+            // or native-subtree copies. The small typed envelope has 2 MiB slack.
+            Need(snapshot->diagnosticsJSON.size()<=(8u<<20),"Native diagnostics export limit");
+            lengths.nativeInput=snapshot->diagnosticsJSON.size();lengths.framesInput=snapshot->framesCSV.size();
+            lengths.profilingInput=profiling.size();lengths.capabilitiesInput=snapshot->capabilities.json.size();
+            lengths.framesEscaped=QuotedBytes(snapshot->framesCSV);lengths.profilingEscaped=QuotedBytes(profiling);
+            const uint64_t encoded=CheckedTransportAdd(CheckedTransportAdd(*lengths.nativeInput,*lengths.framesEscaped),
+                CheckedTransportAdd(*lengths.profilingEscaped,*lengths.capabilitiesInput));lengths.encodedInput=encoded;
+            Need(encoded<=OutputBytes,"Output JSON limit");
+            Need(encoded<=(UINT64_MAX-(2ull<<20))/8,"Diagnostic transport length overflow");
+            const uint64_t required=encoded*8+(2ull<<20);
+            if(required>BootstrapBytes){
+                growth.emplace();transportExtra=account->TryReserveWithReceipt(ESplatBudgetComponent::Metadata,required-BootstrapBytes,reason,*growth);
+                if(!transportExtra)return DiagnosticResult(false,"growth_admission",reader,lengths,bootstrap,growth);
+            }
+            return DiagnosticResult(true,"serialization_admitted",reader,lengths,bootstrap,growth,Diagnostics(e,snapshot,std::move(profiling)));
+        }
         if(kind=="screenshot")return Result(host->RequestScreenshot());
         if(kind=="screenshotStatus"){
             WorkerOnly(env);FViewerScreenshot image;if(!host->TakeScreenshot(image)){Json payload=Json::Obj();payload["status"]="pending";payload["gpuCompleted"]=false;return Result(false,"pending","",std::move(payload));}

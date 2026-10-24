@@ -38,6 +38,10 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
     private val worker = viewerWorker
     private val surfaceIds = AtomicLong(0)
     private val sceneIds = AtomicLong(0)
+    private val cameraRequestIds = AtomicLong(0)
+    /** Only the latest immediate receipt is retained; native bounded receipts carry owner disposition. */
+    @Volatile var latestCameraInputReceipt: CameraInputReceipt? = null
+        private set
     private val importCancelled = AtomicBoolean(false)
     private val pollQueued = AtomicBoolean(false)
     private val initializing = AtomicBoolean(false)
@@ -317,7 +321,23 @@ class ViewerController(context: Context) : Choreographer.FrameCallback {
         framePosted=false;attachPendingSince=0
         if(!closed&&resumed&&attachedGeneration>0&&pendingDetach==0L&&openAccepted&&!state.buildBlocked){if(!NativeBridge.frame(handle,frameTimeNanos).ok)resetFps();scheduleFrames()}
     }
-    fun cameraInput(input: CameraInputState) {if(!closed&&input.surfaceGeneration==attachedGeneration&&!state.buildBlocked)NativeBridge.input(handle,input)}
+    fun cameraInput(input: CameraInputState): CameraInputReceipt {
+        val owner=handle
+        val scope=owner.value.toULong().toString()
+        val id=cameraRequestIds.updateAndGet { if(it==Long.MAX_VALUE) it else it+1 }
+        val rejection=when {
+            id==Long.MAX_VALUE -> "controller_request_ids_exhausted"
+            closed -> "controller_closed"
+            input.surfaceGeneration!=attachedGeneration -> "controller_stale_surface"
+            state.buildBlocked -> "controller_build_blocked"
+            else -> null
+        }
+        val result=if(rejection==null)NativeBridge.input(owner,input.copy(requestId=id,requestScope=scope)) else null
+        return CameraInputReceipt(scope,if(rejection=="controller_request_ids_exhausted")0 else id,
+            input.surfaceGeneration,input.phase,input.reset,
+            rejection?:if(result?.ok==true)"queued" else "jni_rejected",rejection?:result!!.code)
+            .also { latestCameraInputReceipt=it }
+    }
     fun trim(level: Int) {NativeBridge.trim(handle,level);if(level>=80){stopFrames();openAccepted=false;update(state.copy(presentation=ViewerPresentation.PAUSED,retryAvailable=true,message="内存不足，已暂停画面；可手动重试"))}}
     private fun control(owner: NativeHandle, action: String): NativeResult {
         if(!owner.isValid)return if(!nativeOwner.get().isValid&&sceneLease==null)NativeResult(true,"no_native_owner") else NativeResult(false,"invalid_handle")
