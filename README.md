@@ -34,7 +34,7 @@ MonsterEngine.exe 中的 Bicycle 场景展示。桌面查看器提供 GPU 投影
 
 ![MonsterEngine.exe Bicycle 三维场景交互展示](docs/images/samples/monster_engine_bicycle_show_readme.gif)
 
-Bicycle 使用外部训练的 3DGS 模型；MonsterEngine 负责加载与渲染。此动图保留原录制开头约 20.75 秒，仅截去尾部，原始尺寸、帧时长与图像数据保持不变。
+
 
 ### Android App · Bonsai 场景展示
 
