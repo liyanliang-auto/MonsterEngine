@@ -6,65 +6,98 @@
 ![Vulkan](https://img.shields.io/badge/backend-Vulkan-red)
 ![OpenGL](https://img.shields.io/badge/backend-OpenGL-orange)
 
-MonsterEngine 是使用 C++20 开发的 3D 渲染引擎，提供 Vulkan / OpenGL 渲染后端、基于物理的渲染（PBR），以及基于 Vulkan Compute Shader 的 3D Gaussian Splatting（3DGS）。引擎围绕 RHI、场景、材质和资源管理组织代码。
+**从视频重建到桌面与 Android 上的 3D Gaussian Splatting 展示。**
 
-项目目前以 **Windows + Vulkan** 为主要开发与验证环境，同时提供 **Android + Vulkan** 客户端。3DGS 管线支持百万级高斯渲染，并提供离线 LOD 构建、异步分页加载、显存预算控制和相机序列工具。
+MonsterEngine 是使用 C++20 开发的 3D 渲染引擎，提供 Vulkan / OpenGL 后端、PBR 渲染，以及基于 Vulkan Compute Shader 的 3DGS 管线。当前主要开发与验证平台为 **Windows / Android+ Vulkan**。
 
-## 示例效果
+| 应用 | 用途 |
+| --- | --- |
+| **MonsterStudio** | Windows Qt 工作台：本地视频重建、项目与执行历史、暂停 / 恢复、嵌入式 Vulkan 结果预览 |
+| **MonsterEngine.exe** | Windows 桌面查看器：加载 3DGS 模型、交互漫游、LOD / 分页流式渲染与相机序列 |
+| **Android App** | 移动端 Vulkan 查看器：场景导入、交互查看、有界 LOD 构建与恢复 |
 
-### 3D Gaussian Splatting · Bicycle
+[效果展示](#效果展示) · [快速开始](#快速开始) · [核心能力](#核心能力) · [构建与运行](#构建与运行) · [文档](#文档) · [测试与贡献](#测试与贡献)
 
-全量画质：约 613.2 万个高斯 · SH3 · 1920×1080 内部渲染分辨率 
+## 效果展示
 
-![MonsterEngine Bicycle 实际窗口](docs/images/samples/bicycle_monsterengine_window.png)
+### MonsterStudio · 视频重建
 
-<a href="docs/images/samples/bicycle_monsterengine_path_window.mp4">
-  <img src="docs/images/samples/bicycle_monsterengine_path_window_preview.gif" alt="Bicycle 相机路径预览，点击查看完整视频" width="100%">
-</a>
+使用 MonsterStudio 重建场景，并在工作台内查看三维结果。项目管理、重建任务与 Vulkan 预览集中在同一窗口。
 
-[观看真实窗口录屏](docs/images/samples/bicycle_monsterengine_path_window.mp4) · [观看 1080p 高清导出视频](docs/images/samples/bicycle_3dgs_full_1080p.mp4)
+(示例场景从导入视频-重建-显示 总耗时2分15秒)
+
+![MonsterStudio LEGO 视频重建与三维结果预览](docs/images/samples/monsterStudio_LEGO_show_public.gif)
+
+### MonsterEngine · Bicycle 桌面渲染
+
+MonsterEngine.exe 中的 Bicycle 场景展示。桌面查看器提供 GPU 投影与排序、Tile 合成、LOD 选择、异步分页加载和相机控制。
+
+![MonsterEngine.exe Bicycle 三维场景交互展示](docs/images/samples/monster_engine_bicycle_show_readme.gif)
+
+Bicycle 使用外部训练的 3DGS 模型；MonsterEngine 负责加载与渲染。此动图保留原录制开头约 20.75 秒，仅截去尾部，原始尺寸、帧时长与图像数据保持不变。
+
+### Android App · Bonsai 场景展示
+
+Android 客户端中的 Bonsai 场景查看与交互，复用引擎的 Vulkan 3DGS 渲染与分页流式路径。
+
+![Android App Bonsai 三维场景交互展示](docs/images/samples/android_bonsai_show.gif)
 
 
 
-Bicycle 使用外部训练的 3DGS 模型。本项目实现模型加载、GPU 渲染与排序、LOD 构建与选择、异步流式加载、交互控制及视频导出。
+<details>
+<summary>更多渲染示例与历史视频</summary>
 
-### 3D Gaussian Splatting · Bonsai
+**3DGS · Bonsai**
 
 ![Vulkan 3DGS Bonsai](docs/images/samples/vulkan_3DGS_bonsai_30k.png)
 
-<a href="docs/images/samples/bonsai_monsterengine_path_window.mp4">
-  <img src="docs/images/samples/vulkan_3DGS_bonsai_30k.gif" alt="Bonsai 30 秒漫游：拉近、拉远、围绕盆景半周，点击观看高清视频" width="100%">
-</a>
+[Bonsai 桌面漫游视频](docs/images/samples/bonsai_monsterengine_path_window.mp4) · [Bicycle 桌面窗口录屏](docs/images/samples/bicycle_monsterengine_path_window.mp4) · [Bicycle 1080p 导出视频](docs/images/samples/bicycle_3dgs_full_1080p.mp4) · [Android 历史漫游视频](docs/images/samples/bicycle_3dgs_android.mp4)
 
+**PBR · Helmet**
 
-
-**Android 客户端当前场景**：
-
-![Android MuMu 当前钢琴与自行车场景](docs/images/samples/android_mumu_current_scene_optimized.png)
-
-
-
-<a href="docs/images/samples/bicycle_3dgs_android.mp4">
-  <img src="docs/images/samples/bicycle_3dgs_android_preview.gif" alt="Android 客户端钢琴与自行车场景漫游，点击观看完整视频" width="100%">
-</a>
-
-打开页面后 GIF 预览自动循环播放；点击可观看完整 MP4。
-
-### PBR · Helmet
-
-Cook–Torrance BRDF、Metallic–Roughness 材质、基于图像的光照（IBL）、法线贴图和环境光遮蔽。
+Cook–Torrance BRDF、Metallic–Roughness 材质、IBL、法线贴图与环境光遮蔽。
 
 ![Vulkan PBR Helmet](docs/images/samples/Vulkan_PBR_helmet.jpg)
 
-### 场景与光照
+**场景与光照**
 
-笑脸立方体使用 2048×2048 Shadow Map 与 3×3 PCF，在木地板上投射阴影。
+2048×2048 Shadow Map 与 3×3 PCF 阴影示例。
 
 ![Vulkan 立方体与地面场景](docs/images/samples/vulkan_smile_cube.jpg)
 
+</details>
 
+## 快速开始
 
-## 获取与构建
+先按下方[构建与运行](#构建与运行)准备程序与依赖。模型和生成的分页数据需要自行准备。
+
+| 想做什么 | 入口 |
+| --- | --- |
+| 从视频重建三维场景 | 启动 `MonsterStudioQt.exe`，配置本地重建工具环境后创建项目、导入视频并开始重建 |
+| 查看已有 3DGS 模型 | 在仓库根目录运行下方命令 |
+| 在 Android 上查看场景 | 按 [Android 指南](android/README.md)准备资源、构建并安装 APK，在应用中导入场景 |
+
+```powershell
+./build/bin/Release/MonsterEngine.exe --splat "path/to/model.ply"
+```
+
+输入应是包含高斯属性的 3DGS PLY；普通点云 PLY 不能直接视为兼容模型。模型准备与分页构建见 [3DGS 使用指南](docs/3dgs.md)。
+
+## 核心能力
+
+| 模块 | 能力 |
+| --- | --- |
+| 3DGS 渲染 | PLY 加载、最高 SH3、GPU 投影、前缀扫描、稳定 48 / 64 位基数排序、16×16 Tile 合成 |
+| LOD / Streaming | 离线 LOD 构建、屏幕空间误差选择、异步页面读取、CPU 缓存、GPU 页池与资源预算 |
+| MonsterStudio | 本地视频重建、质量预设、项目与执行历史、安全暂停 / 恢复、嵌入式三维预览 |
+| Android | `arm64-v8a` / `x86_64`、最低 API 26、Vulkan 1.1、场景导入、有界 LOD 构建与生命周期恢复 |
+| PBR 与场景 | Cook–Torrance、Metallic–Roughness、IBL、法线贴图、阴影、glTF 加载 |
+| 引擎基础 | RHI、内存管理、容器、异步 I/O、日志、纹理与资源管理 |
+| 调试与工具 | ImGui 控制面板、JSON 配置、相机关键帧、遥测与 MP4 导出（需要 FFmpeg） |
+
+3DGS 桌面与 Android 展示使用 Vulkan；Android 与 Windows 共享 `FSplatViewerSession` 和 `FSplatStreamingController`。OpenGL 提供桌面后端实现，其能力与验证范围以对应模块为准。
+
+## 构建与运行
 
 从源码构建 MonsterEngine：
 
@@ -79,77 +112,55 @@ cmake --build build --config Release --target MonsterEngine SplatLODBuilder
 
 工具集、依赖与其他构建方式见 [Windows 构建指南](BUILD.md)。模型与生成的 3DGS 分页数据需要自行准备。
 
-Android 客户端通过 PowerShell 脚本构建（需要 PowerShell 7、JDK 21、Android SDK / NDK 与 Vulkan SDK 的 `glslc`）：
+Android 客户端通过 PowerShell 脚本构建（需要 PowerShell 7、JDK 21、Android SDK / NDK、`glslc` 与 `spirv-val`）：
 
 ```powershell
 ./Tools/Android/build_android.ps1 -Variant Debug
 ```
 
-脚本构建 `arm64-v8a` 与 `x86_64` 双 ABI APK，产物位于 `android/app/build/outputs/`。环境变量、打包与安装步骤见 [Android 客户端指南](android/README.md)。
+先构建宿主 `SplatMobileLODBuilder`，准备指南要求的内置 PLY，并设置 `SPLAT_MOBILE_LOD_BUILDER`。脚本构建 `arm64-v8a` 与 `x86_64` 双 ABI APK，产物位于 `android/app/build/outputs/`。环境变量、打包与安装步骤见 [Android 客户端指南](android/README.md)。
 
-## 文档
+### MonsterStudio Qt 工作台
 
-| 文档 | 内容 |
-| --- | --- |
-| [构建指南](BUILD.md) | Windows 环境、CMake 与 Visual Studio 构建 |
-| [Android 客户端指南](android/README.md) | Android Vulkan viewer、双 ABI 构建、场景恢复与验证边界 |
-| [引擎架构](devDocument/引擎的架构和设计.md) | RHI 分层、渲染与资源系统的设计说明 |
-| [Shader 系统](Shaders/README.md) | Shader 组织、编译与渲染模块 |
-| [3DGS 使用指南](docs/3dgs.md) | 模型准备、LOD 构建、预算配置、相机序列与视频导出 |
-| [3DGS 验证记录](docs/validation/3dgs/README.md) | CPU、GPU 与集成测试结果及验证范围 |
+MonsterStudio 提供项目管理、视频重建任务、暂停 / 恢复及 Vulkan 3DGS 预览。最新 Qt 工作台需要 Qt 6.8 或更新版本的 MSVC x64 开发包：
 
-## 功能特性
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+  -DMONSTER_BUILD_STUDIO_QT_PRODUCT=ON -DCMAKE_PREFIX_PATH="<Qt MSVC x64 安装目录>"
+cmake --build build --config Release --target MonsterEngine MonsterStudioQt MonsterStudio
+./build/bin/Release/MonsterStudioQt.exe
+```
 
-### API 与渲染后端
+运行 Qt 工作台前，将 Qt 的 `bin` 加入当前进程 PATH，或用该 Qt 安装中的 `windeployqt --release` 部署其运行库。视频重建还需要单独准备可准入的本地重建工具环境；Qt 工作台本身不包含完整训练工具链。预览支持左键拖动、滚轮缩放、R 复位与 F11 全屏。
 
-- Native C++ API，应用生命周期、窗口与输入接口。
-- RHI 抽象层：设备、资源、命令列表、管线和交换链。
-- Vulkan 后端：图形 / Compute 管线、资源上传与 GPU 同步。
-- OpenGL 后端：对应的设备、资源与命令接口。
+<details>
+<summary>高画质展示、FPS 与录制配置</summary>
 
-3DGS 展示与本次 GPU 验证使用 Vulkan 后端。其他平台与后端的能力以各模块实现为准。
+MonsterEngine 默认场景使用 Bicycle 模型，窗口标题栏约每秒更新 `Render FPS`，按实际提交的渲染帧统计。对外展示可使用全量 SH3、原生 1920×1080 内部渲染，隐藏控制面板。该配置关闭 validation 与 benchmark，需要原始 PLY 和足够的 GPU 内存：
 
-### Android 客户端
+```powershell
+Remove-Item Env:MONSTER_SPLAT_DIAG -ErrorAction SilentlyContinue
+./build/bin/Release/MonsterEngine.exe `
+  --splat-config resources/3dgs_sequences/bicycle_full_quality.json `
+  --splat-render-width 1920 --splat-render-height 1080 --splat-no-ui
+```
 
-- Android Vulkan viewer：`ViewerSurfaceView` + Choreographer 驱动，`AndroidRenderHost` 在独立线程持有原生渲染。
-- 支持 `arm64-v8a` / `x86_64`，最低 API 26；渲染准入要求 Vulkan 1.2 与 `shaderInt64`。
-- 与原 Windows 入口共享 `FSplatViewerSession` / `FSplatStreamingController`，复用 3DGS 渲染与分页流式代码。
-- 内置场景、用户 PLY 导入、离线有界 LOD 构建，以及后台构建的暂停 / 恢复。
-- 前后台切换与 Activity 重建时的 native owner 串行替换和 Surface 恢复。
+细节优先的流式展示可将配置换为 `bicycle_lod_high.json`，保留上述 1080p 参数并添加 `--splat-quality 0.1`。场景 manifest 与 pages 应在同一真实目录树内；指向树外 pages 的 junction / symlink 会被资源路径校验拒绝，运行时可用 `--splat-scene <真实场景目录中的manifest>` 指定原始资源位置。
 
-### PBR 与场景渲染
+如需额外构建不显示标题栏 FPS 的展示版，配置独立构建目录时添加 `-DMONSTER_WINDOW_FPS_TITLE=OFF`；默认 ON 保留实时 FPS。OFF 仅显示应用与渲染后端名称，不改变帧计数、画质或模型。复用原资源运行的本地构建可另加 `-DMONSTER_COPY_RUNTIME_RESOURCES=OFF`，跳过链接后的大型 resources 复制；Shader 与 GLFW DLL 仍部署，从仓库根目录运行或显式指定资源路径。
 
-- Cook–Torrance 微表面 BRDF 与 Metallic–Roughness 工作流。
-- IBL、法线贴图、环境光遮蔽和 PBR 材质参数。
-- 场景、相机、网格与光源管理。
-- 阴影深度与投影 Pass，立方体 / 地面场景示例。
-- glTF 资源加载与纹理读取。
+Android 默认场景由 `resources/point_cloud/bonsai_30k.ply` 离线生成分页资源。Release 关闭 Java / JNI 调试与 profileable，实时 FPS 默认开启，也可用 Gradle 属性 `-PMONSTER_ANDROID_FPS_OVERLAY=ON` 显式开启。录制前进入画质面板应用“最高画质”，关闭面板并等待分页加载稳定；该请求使用最长边 1920、最多 2073600 内部像素及完整 SH3，实际尺寸与细节仍受窗口和内存准入限制。FPS 约每 1.5 秒更新，表示提交 / present 返回节奏。
 
-### 3D Gaussian Splatting
+无外部签名配置时 Release APK 为 unsigned，需签名后安装；本地录制可使用本地测试签名，正式分发使用发布密钥。安装已签名 APK 后启动：
 
-- PLY 模型加载，高斯属性解码与最高三阶球谐（SH3）求值。
-- GPU 高斯投影、可见性处理、前缀扫描与 Tile 分配。
-- 稳定基数排序，支持 48 / 64 位排序键。
-- Tile 内高斯透明度合成与窗口呈现。
-- 相机漫游、视野与裁剪控制、高斯调试显示。
+```powershell
+adb -s <设备序列号> install -r <已签名的Release.apk>
+adb -s <设备序列号> shell am start -n com.monsterengine.viewer/.MainActivity
+```
 
-### LOD 与流式加载
+上述命令用于准备展示配置；已有录制素材的实际参数以其采集记录为准。
 
-- `SplatLODBuilder` 离线工具：稀疏八叉树、代理高斯与独立分页资源。
-- 屏幕空间误差驱动的 LOD 选择，父子节点覆盖替换。
-- 异步页面读取、CPU 缓存与 GPU 页池。
-- 场景、暂存与临时 GPU 内存预算，活动高斯与排序容量控制。
-- 页面生命周期管理，等待 GPU 完成后回收资源。
-- 上传量、排序溢出、驻留内存与 GPU Pass 耗时遥测。
-
-### 引擎基础与工具
-
-- 自定义内存管理：`FMemory`、`FMemoryManager`、`FMallocBinned2`。
-- 容器与字符串：`TArray`、`TMap`、`TSet`、`FString`、`FName`、`FText`。
-- 智能指针、异步文件 I/O、日志和纹理资源管理。
-- 纹理流式加载与虚拟纹理模块。
-- Dear ImGui 控制面板、JSON 配置与相机关键帧序列。
-- MP4 视频导出（需要 FFmpeg）及正式 C++ 测试。
+</details>
 
 ## 使用 MonsterEngine
 
@@ -214,6 +225,17 @@ int main()
 
 渲染管线实现见 [SplatPipeline](Source/Renderer/Splat/SplatPipeline.cpp)，应用集成见 [SplatSceneApplication](Source/SplatSceneApplication.cpp)。PBR 示例入口见 [CubeSceneApplicationPBR](Source/CubeSceneApplicationPBR.cpp)。
 
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [构建指南](BUILD.md) | Windows 环境、CMake 与 Visual Studio 构建 |
+| [Android 客户端指南](android/README.md) | Android Vulkan viewer、双 ABI 构建、场景恢复与验证边界 |
+| [源码导航](CODE_WIKI.md) | 模块职责、关键调用链与源码入口 |
+| [Shader 系统](Shaders/README.md) | Shader 组织、编译与渲染模块 |
+| [3DGS 使用指南](docs/3dgs.md) | 模型准备、LOD 构建、预算配置、相机序列与视频导出 |
+| [3DGS 验证记录](docs/validation/3dgs/README.md) | CPU、GPU 与集成测试结果及验证范围 |
+
 ## 资源与工具
 
 - `resources/3dgs_sequences/`：运行预算配置与相机路径。
@@ -225,13 +247,15 @@ int main()
 
 ## 测试与贡献
 
-3DGS 包含 CPU、GPU 和集成三套正式 C++ 测试。最近一次独立源码构建验证通过 **94 项检查**：CPU 47、GPU 33、集成 14；构建归属与日志见 [验证记录](docs/validation/3dgs/README.md)。
+3DGS 包含 CPU、GPU 和集成三套正式 C++ 测试。测试结果应与具体源码、Shader、设备和构建身份对应；历史结果及验证范围见 [验证记录](docs/validation/3dgs/README.md)。
 
 ```powershell
-cmake -S . -B build -DSPLAT_BUILD_CPU_TESTS=ON -DSPLAT_BUILD_GPU_TESTS=ON -DSPLAT_BUILD_INTEGRATION_TESTS=ON
-cmake --build build --config Release --target SplatLODTestsCPU SplatLODTestsGPU SplatLODTestsIntegration
-ctest --test-dir build -C Release --output-on-failure
+cmake -S . -B build/verify -G "Visual Studio 17 2022" -A x64 -DSPLAT_BUILD_CPU_TESTS=ON -DSPLAT_BUILD_GPU_TESTS=ON -DSPLAT_BUILD_INTEGRATION_TESTS=ON
+cmake --build build/verify --config Release --target SplatLODTestsCPU SplatLODTestsGPU SplatLODTestsIntegration
+ctest --test-dir build/verify -C Release --output-on-failure
 ```
+
+GPU 与集成测试需要真实 Vulkan 运行时及本次编译的 Shader。Android 构建、模拟器、真机性能和实际 16 KiB 页运行分别验证；历史记录不代表当前工作区全部通过。
 
 欢迎通过 Issue 或 Pull Request 讨论与改进。提交时请说明问题、改动与验证方法；涉及 RHI 接口时检查对应后端，涉及 GPU 生命周期时提供相关测试结果。
 

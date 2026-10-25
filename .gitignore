@@ -68,6 +68,10 @@ devDocument/3DGS/diagnostic_artifacts/
 *.key
 
 # Local 3DGS datasets, generated scenes, capture scripts and evidence workspace
+# Original showcase exceeds GitHub's 100 MiB limit; publish its trimmed _readme.gif instead.
+/docs/images/samples/monster_engine_bicycle_show.gif
+# Keep the unredacted Studio capture local; README uses the public copy.
+/docs/images/samples/monsterStudio_LEGO_show.gif
 TestFile/
 specs/
 resources/point_cloud/
