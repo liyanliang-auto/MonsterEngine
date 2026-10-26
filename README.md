@@ -44,8 +44,7 @@ Android 客户端中的 Bonsai 场景查看与交互，复用引擎的 Vulkan 3D
 
 
 
-<details>
-<summary>更多渲染示例与历史视频</summary>
+### 更多渲染示例与历史视频
 
 **3DGS · Bonsai**
 
@@ -64,8 +63,6 @@ Cook–Torrance BRDF、Metallic–Roughness 材质、IBL、法线贴图与环境
 2048×2048 Shadow Map 与 3×3 PCF 阴影示例。
 
 ![Vulkan 立方体与地面场景](docs/images/samples/vulkan_smile_cube.jpg)
-
-</details>
 
 ## 快速开始
 
